@@ -1,0 +1,116 @@
+@startuml Aroll_ERD
+title Figure 3 — Core Entity-Relationship Diagram
+
+entity "business_registration" as BR {
+  * id : UUID
+  --
+  business_name
+  owner_email
+  status : enum
+  submitted_at
+}
+
+entity "business" as B {
+  * id : UUID
+  --
+  name
+  status
+  created_at
+}
+
+entity "business_location" as BL {
+  * id : UUID
+  --
+  latitude
+  longitude
+  geofence_radius_m
+}
+
+entity "user" as U {
+  * id : UUID
+  --
+  email
+  password_hash
+  role : enum
+}
+
+entity "employee" as E {
+  * id : UUID
+  --
+  full_name
+  hire_date
+  is_active
+}
+
+entity "employee_face_embedding" as EFE {
+  * id : UUID
+  --
+  embedding : vector
+  enrolled_at
+}
+
+entity "shift" as S {
+  * id : UUID
+  --
+  name
+  start_time
+  end_time
+}
+
+entity "shift_assignment" as SA {
+  * id : UUID
+  --
+  assigned_date
+}
+
+entity "attendance_record" as AR {
+  * id : UUID
+  --
+  time_in
+  time_out
+  status
+  latitude
+  longitude
+  match_score
+}
+
+entity "payroll_run" as PR {
+  * id : UUID
+  --
+  period_start
+  period_end
+  status
+}
+
+entity "payslip" as P {
+  * id : UUID
+  --
+  gross_pay
+  deductions
+  net_pay
+}
+
+entity "performance_feedback" as PF {
+  * id : UUID
+  --
+  comment
+  rating
+  created_at
+}
+
+BR ||--o| B : approves to
+B ||--|{ BL : has
+B ||--|{ U : employs
+B ||--|{ E : has
+U ||--o| E : may link
+E ||--|{ EFE : has
+B ||--|{ S : defines
+E ||--|{ SA : assigned
+S ||--|{ SA : via
+E ||--|{ AR : generates
+B ||--|{ PR : runs
+PR ||--|{ P : contains
+E ||--|{ P : for
+E ||--|{ PF : receives
+
+@enduml

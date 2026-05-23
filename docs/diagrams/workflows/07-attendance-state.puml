@@ -1,0 +1,14 @@
+@startuml Attendance_State
+title Figure 7 — Attendance Record States
+
+[*] --> InProgress : clock in
+
+InProgress --> Complete : clock out\n(on time)
+InProgress --> Late : clock in after\nshift start
+InProgress --> Incomplete : no clock out\nby cutoff
+Late --> Complete : clock out
+
+Complete --> [*]
+Incomplete --> [*]
+
+@enduml

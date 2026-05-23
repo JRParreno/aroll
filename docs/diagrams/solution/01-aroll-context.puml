@@ -1,0 +1,32 @@
+@startuml Aroll_Context
+title Figure 1 — Aroll+ System Context
+
+actor Employee
+actor Manager
+actor "Business Owner" as Owner
+actor "Platform Admin" as Admin
+
+rectangle "Aroll+ Platform" {
+  [Mobile App\nFlutter] as Mobile
+  [Admin Web\nReact] as Web
+  [REST API\nFastAPI] as API
+  [Face Service\nOpenCV] as Face
+  database "PostgreSQL\n+ pgvector" as DB
+}
+
+cloud "Email SMTP" as Email
+
+Employee --> Mobile : clock in, view payslip
+Manager --> Mobile : monitor attendance
+Manager --> Web : dashboards, shifts
+Owner --> Web : manage business
+Admin --> Web : approve businesses
+
+Mobile --> API
+Web --> API
+API --> Face
+API --> DB
+Face --> DB
+API --> Email : notifications
+
+@enduml

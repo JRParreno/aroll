@@ -1,0 +1,30 @@
+@startuml Data_Flow
+title Figure 12 — Data Flow: Attendance to Payroll
+
+rectangle "Capture" {
+  (Clock in/out) as CI
+  (attendance_record) as AR
+}
+
+rectangle "Schedule" {
+  (shift_assignment) as SA
+}
+
+rectangle "Compute" {
+  (payroll_run) as PR
+  (payslip) as PS
+}
+
+rectangle "Deliver" {
+  (Flutter payslip view) as View
+  (Email) as Mail
+}
+
+CI --> AR : creates/updates
+SA --> AR : expected hours
+AR --> PR : aggregate hours
+PR --> PS : calculate pay
+PS --> View
+PS --> Mail
+
+@enduml

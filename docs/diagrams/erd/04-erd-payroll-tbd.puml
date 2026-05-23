@@ -1,0 +1,43 @@
+@startuml ERD_Payroll_TBD
+title Figure D — Payroll Rules (TBD W1)
+
+entity "payroll_rule" as prule {
+  * id : UUID
+  * business_id : UUID
+  --
+  pay_period_type : enum
+  standard_hours_per_day : decimal
+}
+
+entity "overtime_rule" as ot {
+  * id : UUID
+  * business_id : UUID
+  --
+  multiplier : decimal
+  threshold_hours : decimal
+}
+
+entity "deduction_type" as dt {
+  * id : UUID
+  * business_id : UUID
+  --
+  name : varchar
+  is_percentage : boolean
+  default_amount : decimal
+}
+
+entity "business" as b2 {
+  * id : UUID
+}
+
+b2 ||--|{ prule
+b2 ||--|{ ot
+b2 ||--|{ dt
+
+note bottom of prule
+  Lock formulas in W1 June
+  with Mr. Bean, Ugom,
+  Pande Doc, Benzon
+end note
+
+@enduml

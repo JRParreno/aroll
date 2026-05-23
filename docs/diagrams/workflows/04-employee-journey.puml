@@ -1,0 +1,28 @@
+@startuml Employee_Journey
+title Figure 4 — Employee Journey
+
+|#LightBlue|Employee|#LightBlue|
+start
+:Receive account\nfrom manager;
+:First login\n(email + password);
+if (Face enrolled?) then (no)
+  :Wait for manager\nface enrollment;
+  stop
+else (yes)
+endif
+:Open Clock In;
+:Liveness challenge;
+:Capture face + GPS;
+if (Verified?) then (yes)
+  :Attendance recorded;
+else (no)
+  :Show error\n(retry or contact manager);
+  stop
+endif
+:Work until shift end;
+:Clock Out\n(face + GPS again);
+:View attendance history;
+:View payslip\n(after payroll run);
+stop
+
+@enduml

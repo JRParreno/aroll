@@ -1,0 +1,30 @@
+@startuml Onboarding_Sequence
+title Figure 5 — Business Onboarding Sequence
+
+actor "Business Owner" as Owner
+actor "Platform Admin" as Admin
+participant "React Admin" as Web
+participant "FastAPI" as API
+database "PostgreSQL" as DB
+
+Owner -> Web : submit registration
+Web -> API : POST /registrations
+API -> DB : insert business_registration\n(status=pending)
+API --> Web : 201 created
+
+Admin -> Web : view pending list
+Web -> API : GET /registrations?status=pending
+API -> DB : query
+API --> Web : list
+
+Admin -> Web : approve
+Web -> API : PATCH /registrations/{id}/approve
+API -> DB : update status=approved\ninsert business
+API --> Web : success
+
+Owner -> Web : login, complete setup
+Web -> API : POST /businesses/{id}/locations
+API -> DB : insert business_location
+API --> Web : ready for employees
+
+@enduml

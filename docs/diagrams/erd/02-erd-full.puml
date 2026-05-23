@@ -1,0 +1,170 @@
+@startuml Aroll_ERD_Full
+title Figure B — Full Entity-Relationship Diagram
+
+skinparam linetype ortho
+
+entity "business_registration" as br {
+  * **id** : UUID <<PK>>
+  --
+  business_name : varchar(200)
+  owner_name : varchar(200)
+  owner_email : varchar(255)
+  owner_phone : varchar(50)
+  proposed_address : text
+  status : registration_status
+  reviewed_by : UUID <<FK user>>
+  reviewed_at : timestamptz
+  rejection_reason : text
+  submitted_at : timestamptz
+}
+
+entity "business" as b {
+  * **id** : UUID <<PK>>
+  --
+  registration_id : UUID <<FK, unique>>
+  name : varchar(200)
+  status : business_status
+  timezone : varchar(64)
+  created_at : timestamptz
+}
+
+entity "business_location" as bl {
+  * **id** : UUID <<PK>>
+  * business_id : UUID <<FK>>
+  --
+  label : varchar(100)
+  address : text
+  latitude : decimal(10,7)
+  longitude : decimal(10,7)
+  geofence_radius_m : int
+  is_primary : boolean
+}
+
+entity "user" as u {
+  * **id** : UUID <<PK>>
+  * business_id : UUID <<FK, nullable>>
+  --
+  email : varchar(255) <<unique per business>>
+  password_hash : varchar(255)
+  role : user_role
+  is_active : boolean
+  last_login_at : timestamptz
+}
+
+entity "employee" as e {
+  * **id** : UUID <<PK>>
+  * business_id : UUID <<FK>>
+  * user_id : UUID <<FK, unique>>
+  --
+  employee_code : varchar(50)
+  full_name : varchar(200)
+  position : varchar(100)
+  hourly_rate : decimal(10,2) <<TBD W1>>
+  hire_date : date
+  is_active : boolean
+}
+
+entity "employee_face_embedding" as efe {
+  * **id** : UUID <<PK>>
+  * employee_id : UUID <<FK>>
+  --
+  embedding : vector(128)
+  model_version : varchar(50)
+  sample_index : smallint
+  enrolled_by : UUID <<FK user>>
+  enrolled_at : timestamptz
+}
+
+entity "shift" as s {
+  * **id** : UUID <<PK>>
+  * business_id : UUID <<FK>>
+  --
+  name : varchar(100)
+  start_time : time
+  end_time : time
+  break_minutes : int
+  is_active : boolean
+}
+
+entity "shift_assignment" as sa {
+  * **id** : UUID <<PK>>
+  * shift_id : UUID <<FK>>
+  * employee_id : UUID <<FK>>
+  --
+  work_date : date
+  notes : text
+}
+
+entity "attendance_record" as ar {
+  * **id** : UUID <<PK>>
+  * business_id : UUID <<FK>>
+  * employee_id : UUID <<FK>>
+  --
+  shift_assignment_id : UUID <<FK, nullable>>
+  clock_type : clock_type
+  time_in : timestamptz
+  time_out : timestamptz
+  status : attendance_status
+  latitude_in : decimal(10,7)
+  longitude_in : decimal(10,7)
+  latitude_out : decimal(10,7)
+  longitude_out : decimal(10,7)
+  face_match_score : decimal(5,4)
+  liveness_passed : boolean
+  created_at : timestamptz
+}
+
+entity "payroll_run" as pr {
+  * **id** : UUID <<PK>>
+  * business_id : UUID <<FK>>
+  --
+  period_start : date
+  period_end : date
+  status : payroll_run_status
+  run_by : UUID <<FK user>>
+  finalized_at : timestamptz
+}
+
+entity "payslip" as ps {
+  * **id** : UUID <<PK>>
+  * payroll_run_id : UUID <<FK>>
+  * employee_id : UUID <<FK>>
+  --
+  regular_hours : decimal(8,2)
+  overtime_hours : decimal(8,2)
+  gross_pay : decimal(12,2)
+  total_deductions : decimal(12,2)
+  net_pay : decimal(12,2)
+  breakdown_json : jsonb
+}
+
+entity "performance_feedback" as pf {
+  * **id** : UUID <<PK>>
+  * business_id : UUID <<FK>>
+  * employee_id : UUID <<FK>>
+  * author_id : UUID <<FK user>>
+  --
+  rating : smallint
+  comment : text
+  feedback_date : date
+}
+
+br ||--o| b : "approves to"
+b ||--|{ bl : has
+b ||--|{ u : employs
+b ||--|{ e : has
+u ||--|| e : "login for"
+e ||--|{ efe : has
+b ||--|{ s : defines
+s ||--|{ sa : on
+e ||--|{ sa : assigned
+e ||--|{ ar : clocks
+b ||--|{ ar : scopes
+sa ||--o{ ar : "optional link"
+b ||--|{ pr : runs
+pr ||--|{ ps : contains
+e ||--|{ ps : receives
+e ||--|{ pf : receives
+u ||--|{ pf : writes
+
+@enduml

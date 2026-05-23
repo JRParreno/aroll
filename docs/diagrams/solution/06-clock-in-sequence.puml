@@ -1,0 +1,33 @@
+@startuml ClockIn_Sequence
+title Figure 6 — Clock-In Sequence
+
+actor Employee
+participant "Flutter App" as App
+participant "FastAPI" as API
+participant "Face Service" as Face
+database "PostgreSQL" as DB
+
+Employee -> App : open clock-in
+App -> App : liveness challenge\n(blink / head turn)
+Employee -> App : capture face + GPS
+App -> API : POST /attendance/clock-in\n(JWT, image, lat, lng)
+API -> Face : detect and embed face
+Face --> API : embedding vector
+
+API -> DB : fetch employee embeddings\n(pgvector similarity)
+API -> API : compare score vs threshold
+
+API -> DB : get business_location geofence
+API -> API : verify distance <= radius
+
+alt match OK and inside geofence
+  API -> DB : insert attendance_record
+  API --> App : 200 success
+  App --> Employee : confirmed
+else face mismatch
+  API --> App : 403 face not recognized
+else outside geofence
+  API --> App : 403 outside work location
+end
+
+@enduml

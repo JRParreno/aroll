@@ -1,0 +1,33 @@
+# Environment
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Node / React
+node_modules/
+dist/
+build/
+
+# Flutter
+.dart_tool/
+build/
+*.iml
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# PlantUML export (optional; keep sources in repo)
+# docs/diagrams/**/*.png
+# docs/diagrams/**/*.svg

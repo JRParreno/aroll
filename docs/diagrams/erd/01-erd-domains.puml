@@ -1,0 +1,37 @@
+@startuml ERD_Domains
+title Figure A — Data Domains
+
+package "Platform" #EEEEEE {
+  [business_registration]
+}
+
+package "Tenant" #E8F4E8 {
+  [business]
+  [business_location]
+}
+
+package "Identity" #E8EEF4 {
+  [user]
+  [employee]
+  [employee_face_embedding]
+}
+
+package "Scheduling" #FFF8E8 {
+  [shift]
+  [shift_assignment]
+}
+
+package "Operations" #F4E8F4 {
+  [attendance_record]
+}
+
+package "Payroll" #F4E8E8 {
+  [payroll_run]
+  [payslip]
+}
+
+package "HR" #E8F4F4 {
+  [performance_feedback]
+}
+
+@enduml

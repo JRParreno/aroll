@@ -1,0 +1,22 @@
+@startuml RBAC_Flow
+title Figure 11 — Login and Role Routing
+
+actor User
+participant "Client App" as Client
+participant "FastAPI" as API
+database "PostgreSQL" as DB
+
+User -> Client : email + password
+Client -> API : POST /auth/login
+API -> DB : find user + verify hash
+API --> Client : JWT (role, business_id)
+
+alt platform_admin
+  Client --> User : React admin\n(registrations)
+elseif owner or manager
+  Client --> User : React dashboards\n+ optional Flutter
+elseif employee
+  Client --> User : Flutter\n(clock-in, payslip)
+end
+
+@enduml

@@ -1,0 +1,24 @@
+@startuml Business_State
+title Figure 3 — Business Registration State Machine
+
+[*] --> Pending : owner submits form
+
+Pending --> Approved : admin approves
+Pending --> Rejected : admin rejects
+
+Approved --> Active : owner completes\nprofile + location
+Active --> Suspended : admin/owner suspend
+Suspended --> Active : reactivate
+
+Rejected --> [*]
+note right of Pending
+  business_registration.status
+  = pending
+end note
+
+note right of Active
+  business.status = active
+  employees can be added
+end note
+
+@enduml

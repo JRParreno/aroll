@@ -1,0 +1,42 @@
+@startuml Aroll_UseCase
+title Figure 4 — Aroll+ Use Cases
+
+left to right direction
+
+actor "Platform Admin" as Admin
+actor "Business Owner" as Owner
+actor Manager
+actor Employee
+
+rectangle "Aroll+ System" {
+  usecase "Approve business\nregistration" as UC1
+  usecase "Register business" as UC2
+  usecase "Manage employees" as UC3
+  usecase "Create and assign\nshifts" as UC4
+  usecase "Enroll employee face" as UC5
+  usecase "Clock in / out" as UC6
+  usecase "Monitor attendance" as UC7
+  usecase "Process payroll" as UC8
+  usecase "View payslip" as UC9
+  usecase "View performance\nfeedback" as UC10
+}
+
+Admin --> UC1
+Owner --> UC2
+Owner --> UC3
+Owner --> UC4
+Owner --> UC8
+Manager --> UC3
+Manager --> UC4
+Manager --> UC5
+Manager --> UC7
+Manager --> UC8
+Employee --> UC6
+Employee --> UC9
+Employee --> UC10
+
+UC2 ..> UC1 : <<include>>
+UC6 ..> UC5 : requires enrollment
+UC8 ..> UC7 : uses attendance data
+
+@enduml

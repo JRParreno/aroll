@@ -1,0 +1,18 @@
+@startuml Payroll_State
+title Figure 10 — Payroll Run State Machine
+
+[*] --> Draft : create run
+
+Draft --> Draft : recalculate
+Draft --> Finalized : finalize
+Draft --> Cancelled : cancel
+
+Finalized --> [*] : payslips locked
+Cancelled --> [*]
+
+note right of Finalized
+  payslip rows immutable
+  employees can view
+end note
+
+@enduml

@@ -1,0 +1,27 @@
+@startuml Face_Enrollment
+title Figure 5 — Face Enrollment Sequence
+
+actor Manager
+participant "Flutter / Web" as UI
+participant "FastAPI" as API
+participant "Face Service" as Face
+database "PostgreSQL" as DB
+
+Manager -> UI : select employee
+loop 3 to 5 samples
+  Manager -> UI : capture photo
+  UI -> API : POST /employees/{id}/face-samples
+  API -> Face : detect + align + embed
+  alt no face detected
+    Face --> API : error
+    API --> UI : retry message
+  else OK
+    Face --> API : vector[128]
+    API -> DB : INSERT employee_face_embedding
+    API --> UI : sample saved
+  end
+end
+API --> UI : enrollment complete
+Manager --> Manager : employee can clock in
+
+@enduml

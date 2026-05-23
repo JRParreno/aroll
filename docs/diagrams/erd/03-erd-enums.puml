@@ -1,0 +1,41 @@
+@startuml ERD_Enums
+title Figure C — Enumeration Types
+
+enum registration_status {
+  pending
+  approved
+  rejected
+}
+
+enum business_status {
+  active
+  suspended
+}
+
+enum user_role {
+  platform_admin
+  owner
+  manager
+  employee
+}
+
+enum clock_type {
+  clock_in
+  clock_out
+}
+
+enum attendance_status {
+  in_progress
+  complete
+  late
+  absent
+  incomplete
+}
+
+enum payroll_run_status {
+  draft
+  finalized
+  cancelled
+}
+
+@enduml

@@ -1,0 +1,19 @@
+@startuml Shift_Workflow
+title Figure 8 — Shift Assignment Flow
+
+|Manager|
+start
+:Create shift template\n(name, start, end);
+:Assign shift to employee\nfor work_date;
+:Saved as shift_assignment;
+
+|Employee|
+:View schedule in Flutter\n(read-only);
+
+|System|
+:On clock-in, optional link\nto shift_assignment;
+:Compare time_in vs shift.start_time;
+:Mark late if after grace period;
+
+stop
+@enduml

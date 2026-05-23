@@ -1,0 +1,23 @@
+@startuml Payroll_Sequence
+title Figure 7 — Payroll Run Sequence
+
+actor Manager
+participant "React Admin" as Web
+participant "FastAPI" as API
+database "PostgreSQL" as DB
+cloud "Email SMTP" as Email
+
+Manager -> Web : start payroll run
+Web -> API : POST /payroll/runs\n(period_start, period_end)
+API -> DB : fetch attendance_records\n+ shift_assignments
+API -> API : apply payroll rules\n(TBD W1)
+API -> DB : insert payroll_run, payslips
+API --> Web : run complete
+
+Manager -> Web : finalize run
+Web -> API : POST /payroll/runs/{id}/finalize
+API -> DB : lock payslips
+API -> Email : send payslip emails
+API --> Web : done
+
+@enduml

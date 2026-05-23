@@ -1,0 +1,30 @@
+@startuml System_Overview
+title Figure 1 — How Aroll+ Works (Overview)
+
+|Employee|
+start
+:Login (Flutter);
+:Enroll face\n(if first time, by manager);
+:Clock in:\nface + liveness + GPS;
+:Work shift;
+:Clock out;
+:View attendance & payslip;
+stop
+
+|Manager|
+start
+:Login (Web or Flutter);
+:Add employees & shifts;
+:Monitor attendance dashboard;
+:Run payroll for period;
+:Send / finalize payslips;
+stop
+
+|Platform Admin|
+start
+:Login (React);
+:Review business signup;
+:Approve or reject;
+stop
+
+@enduml

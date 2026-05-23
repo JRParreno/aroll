@@ -1,0 +1,28 @@
+@startuml Request_Flow
+title Figure 2 — Typical Request Flow
+
+actor User
+participant "Flutter / React" as UI
+participant "FastAPI" as API
+participant "Auth\n(JWT)" as Auth
+participant "Face Service" as Face
+database "PostgreSQL" as DB
+
+User -> UI : action
+UI -> API : HTTPS + Bearer token
+API -> Auth : validate JWT\n(role, business_id)
+Auth --> API : OK / 401
+
+alt needs face
+  API -> Face : image bytes
+  Face --> API : embedding / error
+  API -> DB : query / insert
+else normal CRUD
+  API -> DB : SQL
+end
+
+DB --> API : result
+API --> UI : JSON response
+UI --> User : screen update
+
+@enduml

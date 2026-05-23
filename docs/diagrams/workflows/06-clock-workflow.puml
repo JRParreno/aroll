@@ -1,0 +1,44 @@
+@startuml Clock_Workflow
+title Figure 6 — Clock-In Activity Diagram
+
+start
+:Employee opens app;
+:JWT valid?;
+
+if (no) then (yes)
+  :Redirect to login;
+  stop
+endif
+
+:Start liveness check;
+if (liveness failed?) then (yes)
+  :Reject;
+  stop
+endif
+
+:Capture selfie + GPS;
+:POST /attendance/clock-in;
+
+partition "Server" {
+  :Extract face embedding;
+  if (face found?) then (no)
+    :403 not recognized;
+    stop
+  endif
+  :Compare to employee embeddings\n(pgvector cosine);
+  if (score < threshold?) then (yes)
+    :403 low confidence;
+    stop
+  endif
+  :Compute distance to\nbusiness_location;
+  if (outside geofence?) then (yes)
+    :403 outside location;
+    stop
+  endif
+  :Insert attendance_record\n(time_in, GPS, score);
+}
+
+:Show success + time;
+stop
+
+@enduml

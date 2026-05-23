@@ -1,0 +1,35 @@
+@startuml Aroll_Container
+title Figure 2 — Aroll+ Containers
+
+package "Client tier" {
+  [Flutter Mobile] as Flutter
+  [React Admin Web] as React
+}
+
+package "Server tier" {
+  [FastAPI Backend] as API
+  [Face Pipeline\nOpenCV] as Face
+}
+
+database "PostgreSQL" as PG {
+  frame "Relational data" as Rel
+  frame "pgvector\nembeddings" as Vec
+}
+
+Flutter --> API : HTTPS / JSON
+React --> API : HTTPS / JSON
+API --> Face : internal HTTP
+API --> PG : SQL
+Face --> PG : read/write embeddings
+
+note right of Flutter
+  Employees: clock-in, schedules,
+  payslips. Managers: mobile views.
+end note
+
+note right of React
+  Platform admin: business approval.
+  Owners/managers: reports, payroll.
+end note
+
+@enduml

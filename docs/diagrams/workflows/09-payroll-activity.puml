@@ -1,0 +1,27 @@
+@startuml Payroll_Activity
+title Figure 9 — Payroll Processing Activity
+
+|Manager|
+start
+:Select pay period\n(start, end);
+:POST /payroll/runs (draft);
+
+partition "Payroll engine" {
+  :Load attendance_records\nin period;
+  :Load shift_assignments;
+  :Apply rules (TBD W1)\nhours, OT, deductions;
+  :Generate payslip rows;
+}
+
+:Review totals on dashboard;
+if (Correct?) then (no)
+  :Adjust attendance or rules;
+  :Recalculate draft;
+else (yes)
+endif
+:Finalize payroll_run;
+:Email payslips (optional);
+:Employees view in app;
+
+stop
+@enduml

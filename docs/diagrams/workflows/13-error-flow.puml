@@ -1,0 +1,30 @@
+@startuml Error_Flow
+title Figure 13 — Clock-In Failure Paths
+
+start
+:Clock-in request;
+
+if (network?) then (down)
+  :Fail fast;
+  stop
+endif
+
+if (liveness?) then (fail)
+  :403;
+  stop
+endif
+
+if (face match?) then (fail)
+  :403;
+  stop
+endif
+
+if (geofence?) then (fail)
+  :403;
+  stop
+endif
+
+:200 success;
+stop
+
+@enduml
