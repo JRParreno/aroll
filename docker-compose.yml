@@ -1,0 +1,21 @@
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: aroll-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: aroll
+      POSTGRES_PASSWORD: aroll
+      POSTGRES_DB: aroll
+    ports:
+      - "5432:5432"
+    volumes:
+      - aroll_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aroll -d aroll"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  aroll_pgdata:

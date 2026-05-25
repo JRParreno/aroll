@@ -117,7 +117,7 @@ end note
 
 1. Owner fills registration on web → `pending`.
 2. Platform admin approves → `business` row created → owner invited to set password.
-3. Owner adds **business_location** (geofence) → business is **active**.
+3. Owner adds **business_location** (`address` + `latitude`/`longitude` + geofence radius) → business is **active**.
 4. Manager enrolls employees and assigns shifts.
 
 ---
@@ -130,11 +130,12 @@ title Figure 4 — Employee Journey
 
 |#LightBlue|Employee|#LightBlue|
 start
-:Receive account\nfrom manager;
-:First login\n(email + password);
+:Receive email + temp password\nfrom owner/manager;
+:First login\n(Flutter);
+:Forced change password\n(must_change_password);
 if (Face enrolled?) then (no)
-  :Wait for manager\nface enrollment;
-  stop
+  :Face enrollment\n(deferred — last build block);
+  note right: Interim: view schedule/payslip only
 else (yes)
 endif
 :Open Clock In;
@@ -420,15 +421,17 @@ PS --> Mail
 
 How the system behaves when something fails (supports ISO 25010 Reliability discussion in Ch. 5).
 
-| Failure | System response | User message |
-|---------|-----------------|--------------|
-| No network | Request fails | Check internet connection |
-| Face not detected | 400 from face service | Center face in frame |
-| Face not recognized | 403 | Identity not verified |
-| Outside geofence | 403 | You must be at the workplace |
-| Liveness failed | 403 | Please try liveness again |
-| No enrollment | 403 | Contact manager for face setup |
-| Payroll already finalized | 409 | Period already closed |
+
+| Failure                   | System response       | User message                   |
+| ------------------------- | --------------------- | ------------------------------ |
+| No network                | Request fails         | Check internet connection      |
+| Face not detected         | 400 from face service | Center face in frame           |
+| Face not recognized       | 403                   | Identity not verified          |
+| Outside geofence          | 403                   | You must be at the workplace   |
+| Liveness failed           | 403                   | Please try liveness again      |
+| No enrollment             | 403                   | Contact manager for face setup |
+| Payroll already finalized | 409                   | Period already closed          |
+
 
 ```plantuml
 @startuml Error_Flow
@@ -467,21 +470,23 @@ stop
 
 ## 12. Diagram index
 
-| Figure | File section | Diagram type |
-|--------|--------------|--------------|
-| 1 | §1 | Activity — overview |
-| 2 | §2 | Sequence — request flow |
-| 3 | §3 | State — business lifecycle |
-| 4 | §4 | Activity — employee journey |
-| 5 | §5 | Sequence — face enrollment |
-| 6 | §6 | Activity — clock-in |
-| 7 | §6 | State — attendance |
-| 8 | §7 | Activity — shifts |
-| 9 | §8 | Activity — payroll |
-| 10 | §8 | State — payroll run |
-| 11 | §9 | Sequence — login/RBAC |
-| 12 | §10 | Component — data flow |
-| 13 | §11 | Activity — errors |
+
+| Figure | File section | Diagram type                |
+| ------ | ------------ | --------------------------- |
+| 1      | §1           | Activity — overview         |
+| 2      | §2           | Sequence — request flow     |
+| 3      | §3           | State — business lifecycle  |
+| 4      | §4           | Activity — employee journey |
+| 5      | §5           | Sequence — face enrollment  |
+| 6      | §6           | Activity — clock-in         |
+| 7      | §6           | State — attendance          |
+| 8      | §7           | Activity — shifts           |
+| 9      | §8           | Activity — payroll          |
+| 10     | §8           | State — payroll run         |
+| 11     | §9           | Sequence — login/RBAC       |
+| 12     | §10          | Component — data flow       |
+| 13     | §11          | Activity — errors           |
+
 
 ---
 
@@ -495,6 +500,9 @@ stop
 
 ## Document history
 
-| Version | Date | Notes |
-|---------|------|-------|
-| 1.0 | May 2026 | Initial workflow document |
+
+| Version | Date     | Notes                     |
+| ------- | -------- | ------------------------- |
+| 1.0     | May 2026 | Initial workflow document |
+
+

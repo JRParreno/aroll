@@ -10,6 +10,10 @@ Design documentation for the thesis **System Design** chapter and implementation
 | [DATABASE-ERD.md](DATABASE-ERD.md) | Database design — full ERD, tables, enums, SQL notes |
 | [SYSTEM-WORKFLOWS.md](SYSTEM-WORKFLOWS.md) | Process design — 13 workflow diagrams (clock-in, payroll, states) |
 
+## Getting started
+
+- **[PROJECT-SETUP.md](PROJECT-SETUP.md)** — first-time install (prerequisites, env files, `scripts/setup.ps1`)
+
 ## Suggested reading order
 
 1. **SOLUTION.md** — start here for the big picture  

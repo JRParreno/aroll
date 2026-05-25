@@ -33,12 +33,19 @@ entity "business_location" as bl {
   * business_id : UUID <<FK>>
   --
   label : varchar(100)
-  address : text
-  latitude : decimal(10,7)
-  longitude : decimal(10,7)
+  address : text <<human-readable; display only>>
+  latitude : decimal(10,7) <<WGS84; geofence center>>
+  longitude : decimal(10,7) <<WGS84; geofence center>>
   geofence_radius_m : int
   is_primary : boolean
 }
+
+note right of bl
+  **Address vs coordinates**
+  address: formatted workplace text
+  latitude/longitude: required for geofence
+  (map pin or geocode from address)
+end note
 
 entity "user" as u {
   * **id** : UUID <<PK>>

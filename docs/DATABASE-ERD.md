@@ -100,9 +100,9 @@ entity "business_location" as bl {
   * business_id : UUID <<FK>>
   --
   label : varchar(100)
-  address : text
-  latitude : decimal(10,7)
-  longitude : decimal(10,7)
+  address : text <<human-readable; not used for geofence>>
+  latitude : decimal(10,7) <<WGS84; geofence center>>
+  longitude : decimal(10,7) <<WGS84; geofence center>>
   geofence_radius_m : int
   is_primary : boolean
 }
@@ -309,7 +309,7 @@ enum payroll_run_status {
 | owner_name | varchar(200) | |
 | owner_email | varchar(255) | Becomes owner `user` on approval |
 | owner_phone | varchar(50) | Optional |
-| proposed_address | text | |
+| proposed_address | text | Free-text workplace address at signup; converted to `business_location.address` + lat/lng after approval |
 | status | enum | pending → approved/rejected |
 | reviewed_by | UUID FK → user | Platform admin only |
 | reviewed_at | timestamptz | |
@@ -329,6 +329,15 @@ enum payroll_run_status {
 
 ### 5.2 Location
 
+Each worksite stores a **human-readable address** and **GPS coordinates** together. Attendance geofencing uses only `latitude`, `longitude`, and `geofence_radius_m`; `address` is for display and admin reference.
+
+| Field role | Columns | Purpose |
+|------------|---------|---------|
+| Display | `label`, `address` | Branch name and formatted street address (maps, payslips, owner UI) |
+| Geofence | `latitude`, `longitude`, `geofence_radius_m` | WGS84 center and radius (meters) for clock-in/out validation |
+
+**Onboarding flow:** Registration collects `proposed_address` (text only). After approval, the owner sets the primary `business_location` by entering or confirming `address`, then pinning coordinates on a map (or geocoding the address to populate `latitude` / `longitude`). Both address and coordinates are required before the business can accept geofenced attendance.
+
 #### `business_location`
 
 | Column | Type | Notes |
@@ -336,9 +345,9 @@ enum payroll_run_status {
 | id | UUID PK | |
 | business_id | UUID FK | |
 | label | varchar(100) | e.g. Main branch |
-| address | text | |
-| latitude | decimal(10,7) | WGS84 |
-| longitude | decimal(10,7) | WGS84 |
+| address | text | Human-readable workplace address (street, barangay, city, province). Shown in admin and mobile; **not** used for distance checks. |
+| latitude | decimal(10,7) | WGS84 latitude of geofence center; paired with `longitude` for Haversine validation on clock-in/out |
+| longitude | decimal(10,7) | WGS84 longitude of geofence center; set via map pin or geocode of `address` during setup |
 | geofence_radius_m | int | Default TBD W1 (e.g. 100m) |
 | is_primary | boolean | One primary per business for clock-in |
 
@@ -354,6 +363,7 @@ enum payroll_run_status {
 | password_hash | varchar(255) | bcrypt/argon2 |
 | role | enum | See user_role |
 | is_active | boolean | |
+| must_change_password | boolean | Default true for provisioned employees |
 | last_login_at | timestamptz | |
 
 #### `employee`
@@ -495,55 +505,40 @@ enum payroll_run_status {
 
 ---
 
-## 7. Payroll extension (TBD — W1)
+## 7. Payroll configuration (W1 locked)
 
-The following tables are **placeholders** until data-requirements interviews with pilot businesses:
+See [W1-DATA-REQUIREMENTS.md](W1-DATA-REQUIREMENTS.md) for defaults (₱1/min late, ₱1/min OT, 75 m geofence).
 
-```plantuml
-@startuml ERD_Payroll_TBD
-title Figure D — Payroll Rules (TBD W1)
+#### `position`
 
-entity "payroll_rule" as prule {
-  * id : UUID
-  * business_id : UUID
-  --
-  pay_period_type : enum
-  standard_hours_per_day : decimal
-}
+| Column | Type | Notes |
+|--------|------|-------|
+| id | UUID PK | |
+| business_id | UUID FK | |
+| title | varchar(100) | Cashier, Barista, etc. |
+| daily_rate | decimal(10,2) | Pesos per day |
+| is_active | boolean | |
 
-entity "overtime_rule" as ot {
-  * id : UUID
-  * business_id : UUID
-  --
-  multiplier : decimal
-  threshold_hours : decimal
-}
+#### `business_payroll_config`
 
-entity "deduction_type" as dt {
-  * id : UUID
-  * business_id : UUID
-  --
-  name : varchar
-  is_percentage : boolean
-  default_amount : decimal
-}
+| Column | Type | Notes |
+|--------|------|-------|
+| business_id | UUID PK FK | One row per business |
+| pay_period_type | enum | weekly, semi_monthly, monthly |
+| late_deduction_enabled | boolean | Default true |
+| late_deduction_per_minute | decimal(10,2) | Default 1.00 |
+| overtime_enabled | boolean | Default true |
+| overtime_per_minute | decimal(10,2) | Default 1.00 |
+| next_payday_date | date | Optional |
 
-entity "business" as b2 {
-  * id : UUID
-}
+#### `employee` (additions)
 
-b2 ||--|{ prule
-b2 ||--|{ ot
-b2 ||--|{ dt
+| Column | Type | Notes |
+|--------|------|-------|
+| position_id | UUID FK nullable | Links to `position` |
+| employment_type | varchar(50) | full_time, part_time |
 
-note bottom of prule
-  Lock formulas in W1 June
-  with Mr. Bean, Ugom,
-  Pande Doc, Benzon
-end note
-
-@enduml
-```
+Custom `deduction_type` / named rules: **Phase 2** (not MVP).
 
 ---
 

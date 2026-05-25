@@ -16,8 +16,12 @@ build/
 
 # Flutter
 .dart_tool/
+.packages
+.pub-cache/
 build/
 *.iml
+mobile/.flutter-plugins
+mobile/.flutter-plugins-dependencies
 
 # IDE
 .idea/

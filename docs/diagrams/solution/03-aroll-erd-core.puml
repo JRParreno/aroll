@@ -21,8 +21,10 @@ entity "business" as B {
 entity "business_location" as BL {
   * id : UUID
   --
-  latitude
-  longitude
+  label
+  address : text
+  latitude : decimal
+  longitude : decimal
   geofence_radius_m
 }
 

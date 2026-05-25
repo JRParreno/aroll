@@ -1,0 +1,16 @@
+import 'package:aroll_mobile/core/error/failures.dart';
+import 'package:aroll_mobile/domain/entities/user_session.dart';
+
+typedef AuthResult<T> = ({T? data, Failure? failure});
+
+abstract class AuthRepository {
+  Future<AuthResult<UserSession>> login({
+    required String email,
+    required String password,
+  });
+
+  Future<AuthResult<void>> changePassword({
+    required String currentPassword,
+    required String newPassword,
+  });
+}

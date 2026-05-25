@@ -2,111 +2,116 @@
 
 **Face Recognition-Based Attendance and Payroll System**
 
-Capstone / thesis project for small food-and-service businesses in Bicol, Philippines. Aroll+ replaces manual logbooks and spreadsheet payroll with a mobile app that clocks attendance using **facial recognition**, **liveness detection**, and **geolocation**, then computes payroll from recorded work time.
+Capstone / thesis project for small food-and-service businesses in Bicol, Philippines.
+
+---
+
+## Project setup (first time)
+
+**Prerequisites:** Python 3.11+, Node.js 18+, Flutter 3.2+, Docker Desktop (recommended).
+
+```powershell
+cd c:\Users\jrparreno\Development\aroll
+.\scripts\setup.ps1
+```
+
+This installs dependencies, creates `.env` files, and (if Docker is available) migrates and seeds the database.
+
+Full guide: [**docs/PROJECT-SETUP.md**](docs/PROJECT-SETUP.md)
+
+---
+
+## Quick start (daily dev)
+
+```powershell
+.\scripts\aroll.ps1
+```
+
+Menu options:
+
+| # | Action |
+|---|--------|
+| 0 | **Project setup** (first time — same as `setup.ps1`) |
+| 1 | Start PostgreSQL (Docker) |
+| 2 | Migrate + seed database |
+| 3 | Start FastAPI backend → http://localhost:8000/docs |
+| 4 | Start admin web → http://localhost:5173 |
+| 5 | Start Flutter mobile |
+| 6 | Start all (DB + migrate + backend + admin-web) |
+| 7 | Build all |
+| 8 | Clean all |
+
+**Default platform admin:** `admin@example.com` / `changeme123`
+
+---
+
+## Project layout
+
+```
+aroll/
+  backend/         # FastAPI + Alembic
+  admin-web/       # React + Vite + shadcn-style UI
+  mobile/          # Flutter + BLoC + go_router + shadcn_ui
+  docs/            # System design + W1 data requirements
+  scripts/         # setup.ps1, aroll.ps1 menu, build, clean
+  docker-compose.yml
+```
 
 ---
 
 ## Pilot businesses
 
-| Business | Type |
-|----------|------|
-| Mr. Bean Cafe | Cafe |
-| Ugom Cafe | Cafe |
-| Pande Doc | Service |
-| Benzon Burger House | Quick-service restaurant |
+Mr. Bean Cafe, Ugom Cafe, Pande Doc, Benzon Burger House
 
 ---
 
-## Study objectives
-
-1. Determine data requirements for system development  
-2. Design a mobile application for attendance and payroll using facial recognition  
-3. Evaluate the system using **ISO/IEC 25010** (Functional Suitability and Reliability)
-
----
-
-## Tech stack (planned)
+## Tech stack
 
 | Layer | Technology |
 |-------|------------|
-| Mobile | Flutter |
-| Admin web | React |
-| API | FastAPI (Python) |
-| Face pipeline | OpenCV (+ embeddings) |
-| Database | PostgreSQL + pgvector |
+| Mobile | Flutter, BLoC, go_router, GetIt, shadcn_ui, dio |
+| Admin web | React, Vite, Tailwind, shadcn-style components, TanStack Query |
+| API | FastAPI, JWT, SQLAlchemy, Alembic |
+| Database | PostgreSQL + pgvector (Docker) |
 
 ---
 
 ## Documentation
 
-Design documents live in [`docs/`](docs/). Use them as the source for **Thesis Chapter 3** (System Design).
-
 | Document | Description |
 |----------|-------------|
-| [**SOLUTION.md**](docs/SOLUTION.md) | Main system design — architecture, stack, use cases, core sequences |
-| [**DATABASE-ERD.md**](docs/DATABASE-ERD.md) | Detailed ERD, entity dictionary, enums, relationships |
-| [**SYSTEM-WORKFLOWS.md**](docs/SYSTEM-WORKFLOWS.md) | How the system works — activity, sequence, and state diagrams |
-| [**diagrams/**](docs/diagrams/) | 24 standalone `.puml` files (export PNG/SVG for thesis) |
-
-### Viewing PlantUML diagrams
-
-Diagrams use `@startuml` blocks inside the markdown files.
-
-1. Open any file in [`docs/diagrams/`](docs/diagrams/) with the [PlantUML](https://marketplace.visualstudio.com/items?itemName=jebbs.plantuml) extension, or  
-2. Paste a diagram block into [plantuml.com/plantuml](https://www.plantuml.com/plantuml)
+| [docs/SOLUTION.md](docs/SOLUTION.md) | System design |
+| [docs/W1-DATA-REQUIREMENTS.md](docs/W1-DATA-REQUIREMENTS.md) | Locked data rules |
+| [docs/PROJECT-SETUP.md](docs/PROJECT-SETUP.md) | First-time setup guide |
+| [docs/IMPLEMENTATION-W1-W4.md](docs/IMPLEMENTATION-W1-W4.md) | Build notes |
+| [clean_code_bloc.md](clean_code_bloc.md) | Flutter BLoC guide |
 
 ---
 
-## Project status
+## Manual commands
 
-| Phase | Status |
-|-------|--------|
-| Chapter 1 (problem & scope) | Done |
-| System design docs | Done |
-| W1 data requirements (ERD, payroll rules) | Pending |
-| Application code (`backend/`, `mobile/`, etc.) | Not started |
+```powershell
+# Database
+docker compose up -d
 
-**Build timeline:** June – mid-September 2026 (see [`aroll+_thesis_understanding_0f94b20e.plan.md`](aroll+_thesis_understanding_0f94b20e.plan.md))
+# Backend
+cd backend
+python -m venv .venv
+.\.venv\Scripts\pip install -r requirements.txt
+.\.venv\Scripts\alembic upgrade head
+.\.venv\Scripts\python -m app.seed
+.\.venv\Scripts\uvicorn app.main:app --reload --port 8000
 
----
+# Admin web
+cd admin-web
+npm install
+npm run dev
 
-## Planned repository layout
-
+# Mobile
+cd mobile
+flutter pub get
+flutter run
 ```
-aroll/
-  backend/           # FastAPI + Alembic migrations
-  face-service/      # OpenCV embedding API
-  mobile/            # Flutter app
-  admin-web/         # React admin dashboard
-  docs/              # Design documentation (this repo phase)
-  docker-compose.yml # PostgreSQL + pgvector (dev)
-```
-
----
-
-## Key features (in scope)
-
-- Business registration and platform admin approval  
-- Role-based access: platform admin, owner, manager, employee  
-- Face enrollment and clock-in/out with liveness + geofence  
-- Shift scheduling and attendance monitoring  
-- Automated payroll and digital payslips  
-- Email notifications for attendance and payroll records  
-
-**Out of scope:** inventory, POS, customer purchases.
-
----
-
-## Authentication note (thesis manuscript)
-
-Chapter 1 **Scope** specifies facial recognition. The **Significance** section still mentions QR/pincode — update that text before defense. The implemented system uses **face recognition only** for clock-in.
-
----
-
-## Institutional alignment
-
-- UN **SDG 8** — Decent Work and Economic Growth  
-- **Bicol University** Thematic Area 2 — Industry, Energy, and Emerging Technology
 
 ---
 

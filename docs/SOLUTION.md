@@ -102,6 +102,8 @@ Aroll+ allows stakeholders to:
 |------------|:--------------:|:-----:|:-------:|:--------:|
 | Approve/reject business registration | Yes | — | — | — |
 | Manage business profile | — | Yes | — | — |
+| Configure payroll rules (per business) | — | Yes | Yes | — |
+| Provision employee account (temp password) | — | Yes | Yes | — |
 | CRUD employees | — | Yes | Yes | — |
 | Create/assign shifts | — | Yes | Yes | — |
 | Enroll employee face | — | Yes | Yes | — |
@@ -113,12 +115,14 @@ Aroll+ allows stakeholders to:
 | View performance feedback (own) | — | — | — | Yes |
 | Edit attendance/payroll records | — | Yes | Yes* | No |
 
-\*Manager manual attendance override (if any) is **TBD in W1**; default design is employee self clock-in only.
+\*Until face recognition ships, owners/managers may record **interim attendance** on web.
 
 ### 3.3 Authentication model
 
-- **Login:** Username/email + password; API issues **JWT** with role and `business_id` claims.
-- **Clock-in verification:** Face + liveness + geolocation **after** login; face match confirms the logged-in employee is the person at the device.
+- **Login:** Email + password; API issues **JWT** with role and `business_id` claims.
+- **Employee provisioning:** Owner/manager creates the employee; API returns a **one-time temporary password** (system-generated). `user.must_change_password = true` until the employee sets a new password via `POST /auth/change-password`.
+- **No employee self-registration** (no public signup; Business ID is not used to link employees).
+- **Clock-in verification (later):** Face + liveness + geolocation **after** login; deferred to final implementation block per build plan.
 
 ---
 
@@ -244,7 +248,7 @@ Development uses **Docker Compose** (PostgreSQL + pgvector, API, optional face-s
 |--------|---------|
 | `business_registration` | Pending/approved/rejected signup requests |
 | `business` | Approved tenant (name, status, settings) |
-| `business_location` | Worksite coordinates and geofence radius (meters) |
+| `business_location` | Worksite label, human-readable `address`, WGS84 `latitude`/`longitude` (geofence center), and `geofence_radius_m` |
 | `user` | Login account (email, password hash, role) |
 | `employee` | Workforce member linked to `user` and `business` |
 | `employee_face_embedding` | Face vector(s) per employee (pgvector column) |
@@ -283,8 +287,10 @@ entity "business" as B {
 entity "business_location" as BL {
   * id : UUID
   --
-  latitude
-  longitude
+  label
+  address : text
+  latitude : decimal
+  longitude : decimal
   geofence_radius_m
 }
 
@@ -489,7 +495,7 @@ API --> Web : ready for employees
 @enduml
 ```
 
-**Narrative:** The owner submits a registration request. The platform admin approves or rejects it. On approval, a `business` record is created. The owner configures the worksite location (for geofencing) and may add managers and employees.
+**Narrative:** The owner submits a registration request. The platform admin approves or rejects it. On approval, a `business` record is created. The owner configures the worksite **business_location**: a human-readable `address` for display plus WGS84 `latitude` and `longitude` (map pin or geocode) and `geofence_radius_m` for attendance validation. Managers and employees can then be added.
 
 ### 8.2 Clock-in (face + liveness + geolocation)
 
@@ -572,7 +578,7 @@ API --> Web : done
 | **Enrollment** | Manager captures multiple face images per employee → face service detects and crops face → generates embedding → stored in `employee_face_embedding`. |
 | **Verification (clock-in)** | Live capture → liveness gate → embedding → pgvector similarity search within the employee’s business → accept if score ≥ threshold. |
 | **Liveness** | Lightweight challenge on device (e.g. blink or head turn) or frame-variance check before API call. |
-| **Geolocation** | Haversine distance from `business_location` center; reject if outside `geofence_radius_m`. |
+| **Geolocation** | Haversine distance from `business_location` `latitude`/`longitude` center; reject if outside `geofence_radius_m`. `address` is display-only and does not affect the check. |
 
 **Design parameters (to tune during July build):**
 
