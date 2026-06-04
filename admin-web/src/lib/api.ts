@@ -20,6 +20,8 @@ export type Registration = {
   business_name: string;
   owner_name: string;
   owner_email: string;
+  owner_phone?: string;
+  proposed_address?: string;
   status: string;
   submitted_at: string;
 };
@@ -33,17 +35,26 @@ export type Employee = {
   is_active: boolean;
 };
 
-export type EmployeeCreateResponse = Employee & { temporary_password: string };
+export type EmployeeCreateResponse = Employee & {
+  temporary_password: string;
+};
 
 export async function login(email: string, password: string) {
-  const { data } = await api.post<LoginResponse>("/auth/login", { email, password });
+  const { data } = await api.post<LoginResponse>("/auth/login", {
+    email,
+    password,
+  });
   return data;
 }
 
-export async function listRegistrations(status = "pending") {
+export async function listRegistrations(status?: string) {
+  const params =
+    status && status !== "all" ? { status_filter: status } : undefined;
+
   const { data } = await api.get<Registration[]>("/admin/registrations", {
-    params: { status_filter: status },
+    params,
   });
+
   return data;
 }
 
@@ -52,8 +63,34 @@ export async function approveRegistration(id: string) {
   return data;
 }
 
+export async function submitRegistration(payload: {
+  business_name: string;
+  owner_name: string;
+  owner_email: string;
+  owner_phone: string;
+  proposed_address: string;
+}) {
+  const { data } = await api.post("/registrations", payload);
+  return data;
+}
+
+export async function getDashboardStats() {
+  const { data } = await api.get("/admin/dashboard-stats");
+  return data;
+}
+
+export async function listBusinesses() {
+  const { data } = await api.get("/admin/businesses");
+  return data;
+}
+
 export async function listEmployees() {
   const { data } = await api.get<Employee[]>("/employees");
+  return data;
+}
+
+export async function listActivityLogs() {
+  const { data } = await api.get("/admin/activity-logs");
   return data;
 }
 
@@ -64,6 +101,9 @@ export async function createEmployee(payload: {
   employment_type?: string;
   phone?: string;
 }) {
-  const { data } = await api.post<EmployeeCreateResponse>("/employees", payload);
+  const { data } = await api.post<EmployeeCreateResponse>(
+    "/employees",
+    payload
+  );
   return data;
 }

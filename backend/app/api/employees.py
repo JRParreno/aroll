@@ -15,6 +15,7 @@ from app.schemas.employee import (
     EmployeeCreateResponse,
     EmployeeResponse,
 )
+from app.services.activity_logger import create_log
 
 router = APIRouter(prefix="/employees", tags=["employees"])
 
