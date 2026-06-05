@@ -4,19 +4,9 @@ import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import {
-  approveRegistration,
-  rejectRegistration,
-  listRegistrations,
-} from "@/lib/api";
+import { approveRegistration, rejectRegistration, listRegistrations, } from "@/lib/api";
 
 export function AdminRegistrationsPage() {
   const qc = useQueryClient();
