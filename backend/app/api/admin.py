@@ -13,11 +13,7 @@ from app.models.business import Business, BusinessRegistration
 from app.models.enums import BusinessStatus, RegistrationStatus, UserRole
 from app.models.payroll import BusinessPayrollConfig
 from app.models.user import User
-from app.schemas.registration import (
-    RegistrationApproveResponse,
-    RegistrationReject,
-    RegistrationResponse,
-)
+from app.schemas.registration import ( RegistrationApproveResponse, RegistrationReject, RegistrationResponse,)
 from app.services.activity_logger import create_log
 from app.models.activity_log import ActivityLog
 
@@ -158,11 +154,24 @@ def reject_registration(
     reg = db.get(BusinessRegistration, registration_id)
     if reg is None:
         raise HTTPException(404, "Registration not found")
+
+    if reg.status != RegistrationStatus.pending:
+        raise HTTPException(400, "Registration is not pending")
+
     reg.status = RegistrationStatus.rejected
     reg.rejection_reason = body.rejection_reason
     reg.reviewed_by = admin.id
     reg.reviewed_at = datetime.now(timezone.utc)
+
     db.commit()
+
+    create_log(
+        db=db,
+        user_id=admin.id,
+        action="REJECT_REGISTRATION",
+        description=f"Rejected registration for {reg.business_name}",
+    )
+
     return {"status": "rejected"}
 
 @router.get("/activity-logs")

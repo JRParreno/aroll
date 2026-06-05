@@ -4,7 +4,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.core.deps import get_current_user, require_roles
+from app.core.deps import require_roles
 from app.core.security import generate_temporary_password, hash_password
 from app.db.session import get_db
 from app.models.employee import Employee
@@ -15,8 +15,6 @@ from app.schemas.employee import (
     EmployeeCreateResponse,
     EmployeeResponse,
 )
-from app.services.activity_logger import create_log
-
 router = APIRouter(prefix="/employees", tags=["employees"])
 
 

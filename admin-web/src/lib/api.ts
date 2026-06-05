@@ -15,6 +15,16 @@ export type LoginResponse = {
   must_change_password: boolean;
 };
 
+export type UserMe = {
+  id: string;
+  email: string;
+  role: string;
+  business_id: string | null;
+  must_change_password: boolean;
+  full_name: string | null;
+  business_name: string | null;
+};
+
 export type Registration = {
   id: string;
   business_name: string;
@@ -47,6 +57,11 @@ export async function login(email: string, password: string) {
   return data;
 }
 
+export async function getMe() {
+  const { data } = await api.get<UserMe>("/auth/me");
+  return data;
+}
+
 export async function listRegistrations(status?: string) {
   const params =
     status && status !== "all" ? { status_filter: status } : undefined;
@@ -54,6 +69,18 @@ export async function listRegistrations(status?: string) {
   const { data } = await api.get<Registration[]>("/admin/registrations", {
     params,
   });
+
+  return data;
+}
+
+export async function rejectRegistration(
+  id: string,
+  rejection_reason: string
+) {
+  const { data } = await api.post(
+    `/admin/registrations/${id}/reject`,
+    { rejection_reason }
+  );
 
   return data;
 }
