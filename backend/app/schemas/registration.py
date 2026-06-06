@@ -17,8 +17,12 @@ class RegistrationResponse(BaseModel):
     business_name: str
     owner_name: str
     owner_email: str
+    owner_phone: str | None = None
+    proposed_address: str | None = None
     status: str
     submitted_at: datetime
+    reviewed_at: datetime | None = None
+    rejection_reason: str | None = None
 
     class Config:
         from_attributes = True

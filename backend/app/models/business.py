@@ -47,7 +47,7 @@ class Business(Base):
     business_code: Mapped[str] = mapped_column(String(20), unique=True, nullable=False)
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     status: Mapped[BusinessStatus] = mapped_column(
-        Enum(BusinessStatus), default=BusinessStatus.active
+        Enum(BusinessStatus), default=BusinessStatus.inactive
     )
     timezone: Mapped[str] = mapped_column(String(64), default="Asia/Manila")
     created_at: Mapped[datetime] = mapped_column(

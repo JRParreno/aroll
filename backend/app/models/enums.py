@@ -16,6 +16,7 @@ class RegistrationStatus(str, enum.Enum):
 
 class BusinessStatus(str, enum.Enum):
     active = "active"
+    inactive = "inactive"
     suspended = "suspended"
 
 

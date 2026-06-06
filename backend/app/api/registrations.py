@@ -32,6 +32,8 @@ def submit_registration(
         business_name=reg.business_name,
         owner_name=reg.owner_name,
         owner_email=reg.owner_email,
+        owner_phone=reg.owner_phone,
+        proposed_address=reg.proposed_address,
         status=reg.status.value,
         submitted_at=reg.submitted_at,
     )
