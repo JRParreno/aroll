@@ -5,9 +5,12 @@ import { LoginPage } from "@/pages/LoginPage";
 import { OwnerEmployeesPage } from "@/pages/OwnerEmployeesPage";
 import { AdminDashboardPage } from "@/pages/AdminDashboardPage";
 import { ApprovedBusinessPage } from "@/pages/ApprovedBusinessPage";
+import { BusinessDetailPage } from "@/pages/BusinessDetailPage";
 import { AdminProfilePage } from "@/pages/AdminProfilePage";
 import { ActivityLogsPage } from "@/pages/ActivityLogsPage";
 import { BusinessRegistrationPage } from "@/pages/BusinessRegistrationPage";
+import { RegistrationDetailPage } from "@/pages/RegistrationDetailPage";
+import { AdminNotFoundPage } from "@/pages/AdminNotFoundPage";
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const token = localStorage.getItem("aroll_token");
@@ -35,10 +38,13 @@ export default function App() {
       >
         <Route path="dashboard" element={<AdminDashboardPage />} />
         <Route path="approved-business" element={<ApprovedBusinessPage />} />
+        <Route path="approved-business/:id" element={<BusinessDetailPage />} />
         <Route path="registrations" element={<AdminRegistrationsPage />} />
+        <Route path="registrations/:id" element={<RegistrationDetailPage />} />
         <Route path="activity-logs" element={<ActivityLogsPage />} />
         <Route path="profile" element={<AdminProfilePage />} />
         <Route index element={<Navigate to="dashboard" replace />} />
+        <Route path="*" element={<AdminNotFoundPage />} />
       </Route>
 
       <Route
