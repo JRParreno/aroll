@@ -4,6 +4,7 @@ from app.models.employee import Employee
 from app.models.payroll import BusinessPayrollConfig, Payslip, PayrollRun, Position
 from app.models.scheduling import Shift, ShiftAssignment
 from app.models.user import User
+from app.models.activity_log import ActivityLog
 
 __all__ = [
     "User",
@@ -18,4 +19,5 @@ __all__ = [
     "AttendanceRecord",
     "PayrollRun",
     "Payslip",
+    "ActivityLog",
 ]

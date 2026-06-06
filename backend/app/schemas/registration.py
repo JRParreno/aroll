@@ -9,7 +9,7 @@ class RegistrationCreate(BaseModel):
     owner_email: EmailStr
     owner_phone: str | None = None
     proposed_address: str | None = None
-    password: str = Field(min_length=8)
+    # REMOVE password
 
 
 class RegistrationResponse(BaseModel):
