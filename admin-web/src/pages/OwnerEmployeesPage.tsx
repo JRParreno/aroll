@@ -41,7 +41,7 @@ export function OwnerEmployeesPage() {
   });
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="min-h-full space-y-6 bg-muted/30 p-6">
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-semibold">Employees</h1>
         <Button onClick={() => setShowForm(!showForm)}>

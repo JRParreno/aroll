@@ -1,7 +1,7 @@
 import uuid
 from datetime import date, datetime
 
-from sqlalchemy import Boolean, Date, DateTime, Enum, ForeignKey, Numeric, String, func
+from sqlalchemy import Boolean, Date, DateTime, Enum, ForeignKey, Numeric, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -20,6 +20,7 @@ class Position(Base):
     )
     title: Mapped[str] = mapped_column(String(100), nullable=False)
     daily_rate: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
 
@@ -39,6 +40,7 @@ class BusinessPayrollConfig(Base):
     overtime_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     overtime_per_minute: Mapped[float] = mapped_column(Numeric(10, 2), default=1.0)
     next_payday_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    auto_reset_payroll_cycle: Mapped[bool] = mapped_column(Boolean, default=True)
 
 
 class PayrollRun(Base):

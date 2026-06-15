@@ -1,10 +1,35 @@
 """Run: python -m app.seed (from backend/ with venv active)."""
 
-from app.core.security import hash_password
+from app.core.security import hash_password, verify_password
 from app.db.base import Base
 from app.db.session import SessionLocal, engine
+from app.models.business import Business
 from app.models.enums import UserRole
 from app.models.user import User
+
+
+def sync_owner_passwords() -> int:
+    """Set each owner's password to their business_code (for accounts created before that rule)."""
+    db = SessionLocal()
+    try:
+        owners = db.query(User).filter(User.role == UserRole.owner).all()
+        updated = 0
+        for owner in owners:
+            if owner.business_id is None:
+                continue
+            business = db.get(Business, owner.business_id)
+            if business is None:
+                continue
+            if verify_password(business.business_code, owner.password_hash):
+                continue
+            owner.password_hash = hash_password(business.business_code)
+            owner.must_change_password = True
+            updated += 1
+        if updated:
+            db.commit()
+        return updated
+    finally:
+        db.close()
 
 
 def seed():
@@ -46,3 +71,6 @@ def seed():
 
 if __name__ == "__main__":
     seed()
+    count = sync_owner_passwords()
+    if count:
+        print(f"Synced {count} owner password(s) to business code")

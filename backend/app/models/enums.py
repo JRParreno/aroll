@@ -22,6 +22,7 @@ class BusinessStatus(str, enum.Enum):
 
 class PayPeriodType(str, enum.Enum):
     weekly = "weekly"
+    bi_weekly = "bi_weekly"
     semi_monthly = "semi_monthly"
     monthly = "monthly"
 
@@ -43,3 +44,31 @@ class AttendanceStatus(str, enum.Enum):
     late = "late"
     absent = "absent"
     incomplete = "incomplete"
+
+
+class ShiftType(str, enum.Enum):
+    morning = "morning"
+    afternoon = "afternoon"
+    evening = "evening"
+    night = "night"
+
+
+class HolidayType(str, enum.Enum):
+    regular = "regular"
+    special_non_working = "special_non_working"
+    company = "company"
+
+
+class MissingClockOutPolicy(str, enum.Enum):
+    auto_clock_out = "auto_clock_out"
+    require_manager_approval = "require_manager_approval"
+
+
+class Weekday(str, enum.Enum):
+    monday = "monday"
+    tuesday = "tuesday"
+    wednesday = "wednesday"
+    thursday = "thursday"
+    friday = "friday"
+    saturday = "saturday"
+    sunday = "sunday"

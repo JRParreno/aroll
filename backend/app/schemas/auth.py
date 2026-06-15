@@ -1,7 +1,14 @@
 from pydantic import BaseModel, EmailStr, Field
+from datetime import datetime
 
 
 class LoginRequest(BaseModel):
+    email: EmailStr
+    password: str
+
+
+class BusinessOwnerLoginRequest(BaseModel):
+    business_code: str
     email: EmailStr
     password: str
 
@@ -25,3 +32,5 @@ class UserMeResponse(BaseModel):
     must_change_password: bool
     full_name: str | None = None
     business_name: str | None = None
+    business_code: str | None = None
+    setup_completed_at: datetime | None = None

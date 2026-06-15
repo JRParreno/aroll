@@ -322,7 +322,7 @@ def approve_registration(
     owner = User(
         business_id=business.id,
         email=reg.owner_email.lower(),
-        password_hash=hash_password("changeme123"),
+        password_hash=hash_password(code),
         role=UserRole.owner,
         must_change_password=True,
     )
