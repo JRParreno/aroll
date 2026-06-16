@@ -322,8 +322,26 @@ export type Holiday = {
   name: string;
   holiday_date: string;
   is_paid: boolean;
+  pay_multiplier: number;
   holiday_type: string;
   is_active: boolean;
+};
+
+export type AccountSettings = {
+  business_name: string;
+  owner_name: string | null;
+  email: string;
+  contact_phone: string | null;
+  address: string;
+  business_type: string | null;
+};
+
+export type AccountSettingsUpdate = {
+  business_name: string;
+  owner_name: string;
+  contact_phone?: string | null;
+  address: string;
+  business_type?: string | null;
 };
 
 export async function getSetupStatus() {
@@ -423,9 +441,41 @@ export async function createHoliday(payload: {
   name: string;
   holiday_date: string;
   is_paid?: boolean;
+  pay_multiplier?: number;
   holiday_type?: string;
 }) {
   const { data } = await api.post<Holiday>("/holidays", payload);
+  return data;
+}
+
+export async function updateHoliday(
+  id: string,
+  payload: {
+    name?: string;
+    holiday_date?: string;
+    is_paid?: boolean;
+    pay_multiplier?: number;
+    holiday_type?: string;
+  }
+) {
+  const { data } = await api.put<Holiday>(`/holidays/${id}`, payload);
+  return data;
+}
+
+export async function deleteHoliday(id: string) {
+  const { data } = await api.delete(`/holidays/${id}`);
+  return data;
+}
+
+export async function getAccountSettings() {
+  const { data } = await api.get<AccountSettings>(
+    "/businesses/me/account-settings"
+  );
+  return data;
+}
+
+export async function updateAccountSettings(payload: AccountSettingsUpdate) {
+  const { data } = await api.put("/businesses/me/account-settings", payload);
   return data;
 }
 

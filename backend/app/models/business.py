@@ -50,6 +50,7 @@ class Business(Base):
         Enum(BusinessStatus), default=BusinessStatus.inactive
     )
     timezone: Mapped[str] = mapped_column(String(64), default="Asia/Manila")
+    business_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
     setup_completed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )

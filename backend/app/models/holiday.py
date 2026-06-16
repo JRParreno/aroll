@@ -1,7 +1,7 @@
 import uuid
 from datetime import date, datetime
 
-from sqlalchemy import Boolean, Date, DateTime, Enum, ForeignKey, String, func
+from sqlalchemy import Boolean, Date, DateTime, Enum, ForeignKey, Numeric, String, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -21,6 +21,7 @@ class Holiday(Base):
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     holiday_date: Mapped[date] = mapped_column(Date, nullable=False)
     is_paid: Mapped[bool] = mapped_column(Boolean, default=True)
+    pay_multiplier: Mapped[float] = mapped_column(Numeric(5, 2), default=1.0)
     holiday_type: Mapped[HolidayType] = mapped_column(Enum(HolidayType), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(

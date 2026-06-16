@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { HolidaySetupSection } from "@/components/owner/setup/HolidaySetupSection";
 import {
   completeSetup,
   createPosition,
@@ -16,10 +17,8 @@ import {
   getBusinessLocation,
   getPayrollConfig,
   getSetupStatus,
-  listHolidays,
   listPositions,
   listShifts,
-  seedDefaultHolidays,
   updateAttendancePolicy,
   updateBusinessLocation,
   updatePayrollConfig,
@@ -60,10 +59,6 @@ export function OwnerSetupWizardPage() {
   const { data: payroll } = useQuery({
     queryKey: ["payroll-config"],
     queryFn: getPayrollConfig,
-  });
-  const { data: holidays = [], refetch: refetchHolidays } = useQuery({
-    queryKey: ["holidays"],
-    queryFn: listHolidays,
   });
   const { data: attendancePolicy } = useQuery({
     queryKey: ["attendance-policy"],
@@ -264,15 +259,6 @@ export function OwnerSetupWizardPage() {
       }),
     onSuccess: () => {
       toast.success("Rest day policy saved");
-      qc.invalidateQueries({ queryKey: ["setup-status"] });
-    },
-  });
-
-  const seedHolidays = useMutation({
-    mutationFn: seedDefaultHolidays,
-    onSuccess: () => {
-      toast.success("Philippine holidays added");
-      refetchHolidays();
       qc.invalidateQueries({ queryKey: ["setup-status"] });
     },
   });
@@ -688,29 +674,7 @@ export function OwnerSetupWizardPage() {
               </>
             )}
 
-            {step === 4 && (
-              <>
-                <p className="text-sm text-muted-foreground">
-                  Load default Philippine holidays or manage your own.
-                </p>
-                <Button
-                  variant="outline"
-                  onClick={() => seedHolidays.mutate()}
-                  disabled={seedHolidays.isPending}
-                >
-                  Load Philippine Holidays
-                </Button>
-                <ul className="divide-y text-sm">
-                  {holidays
-                    .filter((h) => h.business_id)
-                    .map((h) => (
-                      <li key={h.id} className="py-2">
-                        {h.name} — {h.holiday_date}
-                      </li>
-                    ))}
-                </ul>
-              </>
-            )}
+            {step === 4 && <HolidaySetupSection />}
 
             {step === 5 && (
               <>

@@ -141,13 +141,15 @@ class HolidayCreate(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     holiday_date: date
     is_paid: bool = True
-    holiday_type: HolidayType = HolidayType.regular
+    pay_multiplier: float = Field(default=1.0, gt=0)
+    holiday_type: HolidayType = HolidayType.company
 
 
 class HolidayUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=200)
     holiday_date: date | None = None
     is_paid: bool | None = None
+    pay_multiplier: float | None = Field(default=None, gt=0)
     holiday_type: HolidayType | None = None
     is_active: bool | None = None
 
@@ -158,6 +160,7 @@ class HolidayResponse(BaseModel):
     name: str
     holiday_date: date
     is_paid: bool
+    pay_multiplier: float
     holiday_type: str
     is_active: bool
 

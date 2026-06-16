@@ -6,12 +6,17 @@ from sqlalchemy.orm import Session
 from app.core.deps import require_roles
 from app.db.session import get_db
 from app.models.attendance_policy import BusinessAttendancePolicy
-from app.models.business import Business, BusinessLocation
+from app.models.business import Business, BusinessLocation, BusinessRegistration
 from app.models.enums import UserRole
 from app.models.payroll import BusinessPayrollConfig
 from app.models.rest_day_policy import BusinessRestDayPolicy
 from app.models.user import User
-from app.schemas.business import LocationResponse, LocationUpdate
+from app.schemas.business import (
+    AccountSettingsResponse,
+    AccountSettingsUpdate,
+    LocationResponse,
+    LocationUpdate,
+)
 from app.schemas.owner_setup import (
     AttendancePolicyResponse,
     AttendancePolicyUpdate,
@@ -282,5 +287,85 @@ def update_location(
         loc.latitude = body.latitude
         loc.longitude = body.longitude
         loc.geofence_radius_m = body.geofence_radius_m
+    db.commit()
+    return {"status": "ok"}
+
+
+def _account_settings_response(
+    db: Session, user: User, business: Business
+) -> AccountSettingsResponse:
+    reg = (
+        db.get(BusinessRegistration, business.registration_id)
+        if business.registration_id
+        else None
+    )
+    loc = (
+        db.query(BusinessLocation)
+        .filter(
+            BusinessLocation.business_id == business.id,
+            BusinessLocation.is_primary.is_(True),
+        )
+        .first()
+    )
+    address = loc.address if loc else (reg.proposed_address if reg else "")
+    return AccountSettingsResponse(
+        business_name=business.name,
+        owner_name=reg.owner_name if reg else None,
+        email=user.email,
+        contact_phone=reg.owner_phone if reg else None,
+        address=address or "",
+        business_type=business.business_type,
+    )
+
+
+@router.get("/me/account-settings", response_model=AccountSettingsResponse)
+def get_account_settings(
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(require_roles(UserRole.owner))],
+):
+    if user.business_id is None:
+        raise HTTPException(400, "No business context")
+    business = db.get(Business, user.business_id)
+    if business is None:
+        raise HTTPException(404, "Business not found")
+    return _account_settings_response(db, user, business)
+
+
+@router.put("/me/account-settings")
+def update_account_settings(
+    body: AccountSettingsUpdate,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(require_roles(UserRole.owner))],
+):
+    if user.business_id is None:
+        raise HTTPException(400, "No business context")
+    business = db.get(Business, user.business_id)
+    if business is None:
+        raise HTTPException(404, "Business not found")
+
+    business.name = body.business_name
+    business.business_type = body.business_type
+
+    if business.registration_id:
+        reg = db.get(BusinessRegistration, business.registration_id)
+        if reg:
+            reg.owner_name = body.owner_name
+            reg.owner_phone = body.contact_phone
+
+    loc = (
+        db.query(BusinessLocation)
+        .filter(
+            BusinessLocation.business_id == business.id,
+            BusinessLocation.is_primary.is_(True),
+        )
+        .first()
+    )
+    if loc:
+        loc.address = body.address
+    elif business.registration_id:
+        reg = db.get(BusinessRegistration, business.registration_id)
+        if reg:
+            reg.proposed_address = body.address
+
     db.commit()
     return {"status": "ok"}

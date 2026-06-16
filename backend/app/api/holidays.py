@@ -14,13 +14,19 @@ from app.schemas.owner_setup import HolidayCreate, HolidayResponse, HolidayUpdat
 
 router = APIRouter(prefix="/holidays", tags=["holidays"])
 
-PH_DEFAULT_HOLIDAYS = [
-    ("New Year's Day", (1, 1), HolidayType.regular),
-    ("Independence Day", (6, 12), HolidayType.regular),
-    ("National Heroes Day", (8, 26), HolidayType.regular),
-    ("Bonifacio Day", (11, 30), HolidayType.regular),
-    ("Christmas Day", (12, 25), HolidayType.regular),
-    ("Rizal Day", (12, 30), HolidayType.regular),
+# (name, month, day, type, default pay multiplier)
+PH_DEFAULT_HOLIDAYS: list[tuple[str, int, int, HolidayType, float]] = [
+    ("New Year's Day", 1, 1, HolidayType.regular, 2.0),
+    ("EDSA People Power Revolution Anniversary", 2, 25, HolidayType.special_non_working, 1.3),
+    ("Araw ng Kagitingan", 4, 9, HolidayType.regular, 2.0),
+    ("Labor Day", 5, 1, HolidayType.regular, 2.0),
+    ("Independence Day", 6, 12, HolidayType.regular, 2.0),
+    ("National Heroes Day", 8, 26, HolidayType.regular, 2.0),
+    ("All Saints' Day", 11, 1, HolidayType.special_non_working, 1.3),
+    ("Bonifacio Day", 11, 30, HolidayType.regular, 2.0),
+    ("Feast of the Immaculate Conception", 12, 8, HolidayType.special_non_working, 1.3),
+    ("Christmas Day", 12, 25, HolidayType.regular, 2.0),
+    ("Rizal Day", 12, 30, HolidayType.regular, 2.0),
 ]
 
 
@@ -31,6 +37,7 @@ def _holiday_response(h: Holiday) -> HolidayResponse:
         name=h.name,
         holiday_date=h.holiday_date,
         is_paid=h.is_paid,
+        pay_multiplier=float(h.pay_multiplier),
         holiday_type=h.holiday_type.value,
         is_active=h.is_active,
     )
@@ -46,8 +53,8 @@ def list_holidays(
     rows = (
         db.query(Holiday)
         .filter(
+            Holiday.business_id == user.business_id,
             Holiday.is_active.is_(True),
-            (Holiday.business_id == user.business_id) | (Holiday.business_id.is_(None)),
         )
         .order_by(Holiday.holiday_date)
         .all()
@@ -68,6 +75,7 @@ def create_holiday(
         name=body.name,
         holiday_date=body.holiday_date,
         is_paid=body.is_paid,
+        pay_multiplier=body.pay_multiplier,
         holiday_type=body.holiday_type,
     )
     db.add(holiday)
@@ -106,6 +114,8 @@ def delete_holiday(
     holiday = db.get(Holiday, holiday_id)
     if holiday is None or holiday.business_id != user.business_id:
         raise HTTPException(404, "Holiday not found")
+    if holiday.holiday_type != HolidayType.company:
+        raise HTTPException(400, "Only custom holidays can be deleted")
     holiday.is_active = False
     db.commit()
     return {"status": "ok"}
@@ -123,13 +133,14 @@ def seed_default_holidays(
     target_year = year or date.today().year
     created: list[Holiday] = []
 
-    for name, (month, day), htype in PH_DEFAULT_HOLIDAYS:
+    for name, month, day, htype, multiplier in PH_DEFAULT_HOLIDAYS:
         hdate = date(target_year, month, day)
         exists = (
             db.query(Holiday)
             .filter(
                 Holiday.business_id == user.business_id,
                 Holiday.holiday_date == hdate,
+                Holiday.name == name,
                 Holiday.is_active.is_(True),
             )
             .first()
@@ -141,6 +152,7 @@ def seed_default_holidays(
             name=name,
             holiday_date=hdate,
             is_paid=True,
+            pay_multiplier=multiplier,
             holiday_type=htype,
         )
         db.add(holiday)
