@@ -26,6 +26,7 @@ class Shift(Base):
     end_time: Mapped[time] = mapped_column(Time, nullable=False)
     break_minutes: Mapped[int] = mapped_column(Integer, default=0)
     employee_capacity: Mapped[int] = mapped_column(Integer, default=1)
+    color: Mapped[str | None] = mapped_column(String(7), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
 

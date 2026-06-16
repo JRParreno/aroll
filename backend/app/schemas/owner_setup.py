@@ -18,6 +18,7 @@ class ShiftCreate(BaseModel):
     end_time: time
     break_minutes: int = Field(default=0, ge=0)
     employee_capacity: int = Field(default=1, ge=1)
+    color: str | None = Field(default=None, max_length=7)
 
 
 class ShiftUpdate(BaseModel):
@@ -27,6 +28,7 @@ class ShiftUpdate(BaseModel):
     end_time: time | None = None
     break_minutes: int | None = Field(default=None, ge=0)
     employee_capacity: int | None = Field(default=None, ge=1)
+    color: str | None = Field(default=None, max_length=7)
     is_active: bool | None = None
 
 
@@ -38,6 +40,7 @@ class ShiftResponse(BaseModel):
     end_time: time
     break_minutes: int
     employee_capacity: int
+    color: str | None
     is_active: bool
 
     class Config:

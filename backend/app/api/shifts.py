@@ -23,6 +23,7 @@ def _shift_response(shift: Shift) -> ShiftResponse:
         end_time=shift.end_time,
         break_minutes=shift.break_minutes,
         employee_capacity=shift.employee_capacity,
+        color=shift.color,
         is_active=shift.is_active,
     )
 
@@ -59,6 +60,7 @@ def create_shift(
         end_time=body.end_time,
         break_minutes=body.break_minutes,
         employee_capacity=body.employee_capacity,
+        color=body.color,
     )
     db.add(shift)
     db.commit()

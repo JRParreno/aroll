@@ -253,7 +253,26 @@ export type Shift = {
   end_time: string;
   break_minutes: number;
   employee_capacity: number;
+  color: string | null;
   is_active: boolean;
+};
+
+export type ScheduleAssignment = {
+  id: string;
+  shift_id: string;
+  employee_id: string;
+  work_date: string;
+  employee_name: string;
+  shift_name: string;
+  shift_start_time: string;
+  shift_end_time: string;
+  shift_color: string | null;
+};
+
+export type WeeklySchedule = {
+  week_start: string;
+  week_end: string;
+  assignments: ScheduleAssignment[];
 };
 
 export type Position = {
@@ -406,5 +425,24 @@ export async function createHoliday(payload: {
   holiday_type?: string;
 }) {
   const { data } = await api.post<Holiday>("/holidays", payload);
+  return data;
+}
+
+export async function getWeeklySchedule(weekStart: string) {
+  const { data } = await api.get<WeeklySchedule>("/schedules/weekly", {
+    params: { week_start: weekStart },
+  });
+  return data;
+}
+
+export async function assignSchedule(payload: {
+  shift_id: string;
+  work_date: string;
+  employee_ids: string[];
+}) {
+  const { data } = await api.post<{
+    created: number;
+    assignments: ScheduleAssignment[];
+  }>("/schedules/assign", payload);
   return data;
 }
