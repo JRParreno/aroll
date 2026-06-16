@@ -220,6 +220,7 @@ export async function createEmployee(payload: {
   email: string;
   full_name: string;
   position_title?: string;
+  position_id?: string;
   employment_type?: string;
   phone?: string;
 }) {
@@ -444,5 +445,25 @@ export async function assignSchedule(payload: {
     created: number;
     assignments: ScheduleAssignment[];
   }>("/schedules/assign", payload);
+  return data;
+}
+
+export type BusinessLocationConfig = {
+  label: string;
+  address: string;
+  latitude: number | null;
+  longitude: number | null;
+  geofence_radius_m: number;
+};
+
+export async function getBusinessLocation() {
+  const { data } = await api.get<BusinessLocationConfig>(
+    "/businesses/me/location"
+  );
+  return data;
+}
+
+export async function updateBusinessLocation(payload: BusinessLocationConfig) {
+  const { data } = await api.put("/businesses/me/location", payload);
   return data;
 }

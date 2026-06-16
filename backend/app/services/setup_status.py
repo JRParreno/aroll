@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 
 from app.models.attendance_policy import BusinessAttendancePolicy
-from app.models.business import Business
+from app.models.business import Business, BusinessLocation
 from app.models.enums import BusinessStatus
 from app.models.holiday import Holiday
 from app.models.payroll import BusinessPayrollConfig, Position
@@ -18,8 +18,17 @@ SETUP_STEPS = [
     ("attendance_policy", "Attendance Policy"),
     ("holidays", "Holiday Management"),
     ("rest_day", "Rest Day Policy"),
+    ("location", "Business Location"),
     ("review", "Review & Complete"),
 ]
+
+REQUIRED_SETUP_KEYS = frozenset({"shifts", "positions", "payroll", "location"})
+
+
+class SetupIncompleteError(Exception):
+    def __init__(self, missing_items: list[str]) -> None:
+        self.missing_items = missing_items
+        super().__init__("Setup incomplete")
 
 
 def _step_complete(db: Session, business_id, key: str, business: Business) -> bool:
@@ -51,6 +60,21 @@ def _step_complete(db: Session, business_id, key: str, business: Business) -> bo
         )
     if key == "rest_day":
         return db.get(BusinessRestDayPolicy, business_id) is not None
+    if key == "location":
+        loc = (
+            db.query(BusinessLocation)
+            .filter(
+                BusinessLocation.business_id == business_id,
+                BusinessLocation.is_primary.is_(True),
+            )
+            .first()
+        )
+        return (
+            loc is not None
+            and loc.latitude is not None
+            and loc.longitude is not None
+            and loc.geofence_radius_m is not None
+        )
     if key == "review":
         return business.setup_completed_at is not None
     return False
@@ -82,6 +106,15 @@ def get_setup_status(db: Session, business: Business) -> SetupStatusResponse:
 
 
 def complete_setup(db: Session, business: Business) -> None:
+    status = get_setup_status(db, business)
+    missing_required = [
+        f"{step.label} not configured"
+        for step in status.steps
+        if step.key in REQUIRED_SETUP_KEYS and not step.complete
+    ]
+    if missing_required:
+        raise SetupIncompleteError(missing_required)
+
     business.setup_completed_at = datetime.now(timezone.utc)
     business.status = BusinessStatus.active
     db.commit()

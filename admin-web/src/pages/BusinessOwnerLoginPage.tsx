@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { businessOwnerLogin } from "@/lib/api";
+import { businessOwnerLogin, getMe } from "@/lib/api";
 
 export function BusinessOwnerLoginPage() {
   const navigate = useNavigate();
@@ -34,8 +34,13 @@ export function BusinessOwnerLoginPage() {
         toast.success("Signed in. Please change your password to continue.");
         navigate("/owner/change-password");
       } else {
+        const me = await getMe();
         toast.success("Signed in successfully");
-        navigate("/owner/dashboard");
+        if (!me.setup_completed_at) {
+          navigate("/owner/setup-wizard");
+        } else {
+          navigate("/owner/dashboard");
+        }
       }
     } catch {
       toast.error("Invalid business code, email, or password");

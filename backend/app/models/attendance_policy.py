@@ -24,7 +24,7 @@ class BusinessAttendancePolicy(Base):
     )
     overtime_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     overtime_minimum_minutes: Mapped[int] = mapped_column(Integer, default=30)
-    overtime_rate_per_minute: Mapped[float] = mapped_column(Numeric(10, 2), default=5.0)
+    overtime_rate_per_minute: Mapped[float] = mapped_column(Numeric(10, 2), default=1.0)
     missing_clock_out_policy: Mapped[MissingClockOutPolicy] = mapped_column(
         Enum(MissingClockOutPolicy), default=MissingClockOutPolicy.auto_clock_out
     )

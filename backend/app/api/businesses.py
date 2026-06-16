@@ -11,7 +11,7 @@ from app.models.enums import UserRole
 from app.models.payroll import BusinessPayrollConfig
 from app.models.rest_day_policy import BusinessRestDayPolicy
 from app.models.user import User
-from app.schemas.business import LocationUpdate
+from app.schemas.business import LocationResponse, LocationUpdate
 from app.schemas.owner_setup import (
     AttendancePolicyResponse,
     AttendancePolicyUpdate,
@@ -21,7 +21,11 @@ from app.schemas.owner_setup import (
     RestDayPolicyUpdate,
     SetupStatusResponse,
 )
-from app.services.setup_status import complete_setup, get_setup_status
+from app.services.setup_status import (
+    SetupIncompleteError,
+    complete_setup,
+    get_setup_status,
+)
 
 router = APIRouter(prefix="/businesses", tags=["businesses"])
 
@@ -49,7 +53,13 @@ def mark_setup_complete(
     business = db.get(Business, user.business_id)
     if business is None:
         raise HTTPException(404, "Business not found")
-    complete_setup(db, business)
+    try:
+        complete_setup(db, business)
+    except SetupIncompleteError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={"message": "Setup incomplete", "missing_items": exc.missing_items},
+        ) from exc
     return {"status": "ok"}
 
 
@@ -98,6 +108,13 @@ def update_payroll_config(
     cfg.overtime_enabled = body.overtime_enabled
     cfg.overtime_per_minute = body.overtime_per_minute
     db.commit()
+
+    policy = db.get(BusinessAttendancePolicy, user.business_id)
+    if policy is not None:
+        policy.overtime_rate_per_minute = body.overtime_per_minute
+        policy.overtime_enabled = body.overtime_enabled
+        db.commit()
+
     return {"status": "ok"}
 
 
@@ -111,6 +128,10 @@ def get_attendance_policy(
     policy = db.get(BusinessAttendancePolicy, user.business_id)
     if policy is None:
         policy = BusinessAttendancePolicy(business_id=user.business_id)
+        payroll_cfg = db.get(BusinessPayrollConfig, user.business_id)
+        if payroll_cfg is not None:
+            policy.overtime_rate_per_minute = payroll_cfg.overtime_per_minute
+            policy.overtime_enabled = payroll_cfg.overtime_enabled
         db.add(policy)
         db.commit()
         db.refresh(policy)
@@ -141,7 +162,12 @@ def update_attendance_policy(
     if policy is None:
         policy = BusinessAttendancePolicy(business_id=user.business_id)
         db.add(policy)
-    for field, value in body.model_dump().items():
+    payroll_cfg = db.get(BusinessPayrollConfig, user.business_id)
+    payload = body.model_dump()
+    if payroll_cfg is not None:
+        payload["overtime_rate_per_minute"] = float(payroll_cfg.overtime_per_minute)
+        payload["overtime_enabled"] = payroll_cfg.overtime_enabled
+    for field, value in payload.items():
         setattr(policy, field, value)
     db.commit()
     return {"status": "ok"}
@@ -187,6 +213,39 @@ def update_rest_day_policy(
         setattr(policy, field, value)
     db.commit()
     return {"status": "ok"}
+
+
+@router.get("/me/location", response_model=LocationResponse)
+def get_location(
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(require_roles(UserRole.owner, UserRole.manager))],
+):
+    if user.business_id is None:
+        raise HTTPException(400, "No business context")
+
+    loc = (
+        db.query(BusinessLocation)
+        .filter(
+            BusinessLocation.business_id == user.business_id,
+            BusinessLocation.is_primary.is_(True),
+        )
+        .first()
+    )
+    if loc is None:
+        return LocationResponse(
+            label="Main",
+            address="",
+            latitude=None,
+            longitude=None,
+            geofence_radius_m=75,
+        )
+    return LocationResponse(
+        label=loc.label,
+        address=loc.address,
+        latitude=float(loc.latitude) if loc.latitude is not None else None,
+        longitude=float(loc.longitude) if loc.longitude is not None else None,
+        geofence_radius_m=loc.geofence_radius_m,
+    )
 
 
 @router.put("/me/location")

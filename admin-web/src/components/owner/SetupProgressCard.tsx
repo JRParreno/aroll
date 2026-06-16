@@ -10,6 +10,7 @@ const STEP_LABELS: Record<string, string> = {
   attendance_policy: "Attendance Policies",
   holidays: "Holiday Management",
   rest_day: "Rest Day Policy",
+  location: "Business Location",
 };
 
 type Props = {

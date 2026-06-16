@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -12,12 +12,16 @@ import {
   createShift,
   deletePosition,
   deleteShift,
+  getAttendancePolicy,
+  getBusinessLocation,
   getPayrollConfig,
+  getSetupStatus,
   listHolidays,
   listPositions,
   listShifts,
   seedDefaultHolidays,
   updateAttendancePolicy,
+  updateBusinessLocation,
   updatePayrollConfig,
   updateRestDayPolicy,
 } from "@/lib/api";
@@ -29,8 +33,11 @@ const STEPS = [
   "Attendance",
   "Holidays",
   "Rest Day",
+  "Location",
   "Review",
 ];
+
+const REQUIRED_SETUP_KEYS = new Set(["shifts", "positions", "payroll", "location"]);
 
 export function OwnerSetupWizardPage() {
   const navigate = useNavigate();
@@ -58,6 +65,18 @@ export function OwnerSetupWizardPage() {
     queryKey: ["holidays"],
     queryFn: listHolidays,
   });
+  const { data: attendancePolicy } = useQuery({
+    queryKey: ["attendance-policy"],
+    queryFn: getAttendancePolicy,
+  });
+  const { data: businessLocation } = useQuery({
+    queryKey: ["business-location"],
+    queryFn: getBusinessLocation,
+  });
+  const { data: setupStatus } = useQuery({
+    queryKey: ["setup-status"],
+    queryFn: getSetupStatus,
+  });
 
   const [shiftForm, setShiftForm] = useState({
     name: "",
@@ -76,6 +95,10 @@ export function OwnerSetupWizardPage() {
     pay_period_type: "monthly",
     next_payday_date: "",
     auto_reset_payroll_cycle: true,
+    late_deduction_enabled: true,
+    late_deduction_per_minute: "1",
+    overtime_enabled: true,
+    overtime_per_minute: "1",
   });
   const [attForm, setAttForm] = useState({
     early_clock_in_minutes: "15",
@@ -86,9 +109,15 @@ export function OwnerSetupWizardPage() {
     early_out_deduction_per_minute: "2",
     overtime_enabled: true,
     overtime_minimum_minutes: "30",
-    overtime_rate_per_minute: "5",
     missing_clock_out_policy: "auto_clock_out",
     attendance_based_salary_enabled: true,
+  });
+  const [locationForm, setLocationForm] = useState({
+    label: "Main",
+    address: "",
+    latitude: "",
+    longitude: "",
+    geofence_radius_m: "75",
   });
   const [restForm, setRestForm] = useState({
     weekly_rest_day: "sunday",
@@ -97,6 +126,58 @@ export function OwnerSetupWizardPage() {
     use_custom_premium: false,
     custom_premium_percent: "",
   });
+
+  useEffect(() => {
+    if (!payroll) return;
+    setPayrollForm({
+      pay_period_type: payroll.pay_period_type,
+      next_payday_date: payroll.next_payday_date ?? "",
+      auto_reset_payroll_cycle: payroll.auto_reset_payroll_cycle,
+      late_deduction_enabled: payroll.late_deduction_enabled,
+      late_deduction_per_minute: String(payroll.late_deduction_per_minute),
+      overtime_enabled: payroll.overtime_enabled,
+      overtime_per_minute: String(payroll.overtime_per_minute),
+    });
+  }, [payroll]);
+
+  useEffect(() => {
+    if (!attendancePolicy) return;
+    setAttForm({
+      early_clock_in_minutes: String(attendancePolicy.early_clock_in_minutes),
+      on_time_grace_minutes: String(attendancePolicy.on_time_grace_minutes),
+      half_day_threshold_minutes: String(
+        attendancePolicy.half_day_threshold_minutes
+      ),
+      absent_threshold_minutes: String(attendancePolicy.absent_threshold_minutes),
+      early_out_deduction_enabled: attendancePolicy.early_out_deduction_enabled,
+      early_out_deduction_per_minute: String(
+        attendancePolicy.early_out_deduction_per_minute
+      ),
+      overtime_enabled: attendancePolicy.overtime_enabled,
+      overtime_minimum_minutes: String(attendancePolicy.overtime_minimum_minutes),
+      missing_clock_out_policy: attendancePolicy.missing_clock_out_policy,
+      attendance_based_salary_enabled:
+        attendancePolicy.attendance_based_salary_enabled,
+    });
+  }, [attendancePolicy]);
+
+  useEffect(() => {
+    if (!businessLocation) return;
+    setLocationForm({
+      label: businessLocation.label,
+      address: businessLocation.address,
+      latitude: businessLocation.latitude?.toString() ?? "",
+      longitude: businessLocation.longitude?.toString() ?? "",
+      geofence_radius_m: String(businessLocation.geofence_radius_m),
+    });
+  }, [businessLocation]);
+
+  const canCompleteSetup = useMemo(() => {
+    if (!setupStatus) return false;
+    return setupStatus.steps
+      .filter((step) => REQUIRED_SETUP_KEYS.has(step.key))
+      .every((step) => step.complete);
+  }, [setupStatus]);
 
   const addShift = useMutation({
     mutationFn: () =>
@@ -137,10 +218,15 @@ export function OwnerSetupWizardPage() {
         pay_period_type: payrollForm.pay_period_type,
         next_payday_date: payrollForm.next_payday_date || null,
         auto_reset_payroll_cycle: payrollForm.auto_reset_payroll_cycle,
+        late_deduction_enabled: payrollForm.late_deduction_enabled,
+        late_deduction_per_minute: Number(payrollForm.late_deduction_per_minute),
+        overtime_enabled: payrollForm.overtime_enabled,
+        overtime_per_minute: Number(payrollForm.overtime_per_minute),
       }),
     onSuccess: () => {
       toast.success("Payroll configuration saved");
       qc.invalidateQueries({ queryKey: ["setup-status"] });
+      qc.invalidateQueries({ queryKey: ["payroll-config"] });
     },
   });
 
@@ -155,9 +241,7 @@ export function OwnerSetupWizardPage() {
         early_out_deduction_per_minute: Number(
           attForm.early_out_deduction_per_minute
         ),
-        overtime_enabled: attForm.overtime_enabled,
         overtime_minimum_minutes: Number(attForm.overtime_minimum_minutes),
-        overtime_rate_per_minute: Number(attForm.overtime_rate_per_minute),
         missing_clock_out_policy: attForm.missing_clock_out_policy,
         attendance_based_salary_enabled: attForm.attendance_based_salary_enabled,
       }),
@@ -193,6 +277,30 @@ export function OwnerSetupWizardPage() {
     },
   });
 
+  const saveLocation = useMutation({
+    mutationFn: () =>
+      updateBusinessLocation({
+        label: locationForm.label,
+        address: locationForm.address,
+        latitude: locationForm.latitude ? Number(locationForm.latitude) : null,
+        longitude: locationForm.longitude ? Number(locationForm.longitude) : null,
+        geofence_radius_m: Number(locationForm.geofence_radius_m),
+      }),
+    onSuccess: () => {
+      toast.success("Business location saved");
+      qc.invalidateQueries({ queryKey: ["business-location"] });
+      qc.invalidateQueries({ queryKey: ["setup-status"] });
+    },
+    onError: () => toast.error("Failed to save location"),
+  });
+
+  const locationCanSave =
+    locationForm.address.trim().length >= 5 &&
+    locationForm.latitude !== "" &&
+    locationForm.longitude !== "" &&
+    Number(locationForm.geofence_radius_m) >= 20 &&
+    Number(locationForm.geofence_radius_m) <= 200;
+
   const finishSetup = useMutation({
     mutationFn: completeSetup,
     onSuccess: () => {
@@ -201,6 +309,29 @@ export function OwnerSetupWizardPage() {
       qc.invalidateQueries({ queryKey: ["setup-status"] });
       qc.invalidateQueries({ queryKey: ["me"] });
       navigate("/owner/dashboard");
+    },
+    onError: (error: unknown) => {
+      const detail =
+        error &&
+        typeof error === "object" &&
+        "response" in error &&
+        error.response &&
+        typeof error.response === "object" &&
+        "data" in error.response &&
+        error.response.data &&
+        typeof error.response.data === "object" &&
+        "detail" in error.response.data
+          ? error.response.data.detail
+          : null;
+      const missing =
+        detail &&
+        typeof detail === "object" &&
+        "missing_items" in detail &&
+        Array.isArray(detail.missing_items)
+          ? detail.missing_items.join(", ")
+          : null;
+      toast.error(missing ?? "Complete all required setup steps first");
+      qc.invalidateQueries({ queryKey: ["setup-status"] });
     },
   });
 
@@ -456,6 +587,69 @@ export function OwnerSetupWizardPage() {
                   />
                   Automatically reset payroll cycle after payday
                 </label>
+
+                <div className="rounded-lg border p-4 space-y-4">
+                  <p className="text-sm font-medium">Payroll Rules (W1)</p>
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={payrollForm.late_deduction_enabled}
+                      onChange={(e) =>
+                        setPayrollForm({
+                          ...payrollForm,
+                          late_deduction_enabled: e.target.checked,
+                        })
+                      }
+                    />
+                    Enable late deduction
+                  </label>
+                  <div className="space-y-2">
+                    <Label>Late Deduction (₱/min)</Label>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={payrollForm.late_deduction_per_minute}
+                      onChange={(e) =>
+                        setPayrollForm({
+                          ...payrollForm,
+                          late_deduction_per_minute: e.target.value,
+                        })
+                      }
+                      disabled={!payrollForm.late_deduction_enabled}
+                    />
+                  </div>
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={payrollForm.overtime_enabled}
+                      onChange={(e) =>
+                        setPayrollForm({
+                          ...payrollForm,
+                          overtime_enabled: e.target.checked,
+                        })
+                      }
+                    />
+                    Enable overtime pay
+                  </label>
+                  <div className="space-y-2">
+                    <Label>Overtime Rate (₱/min)</Label>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={payrollForm.overtime_per_minute}
+                      onChange={(e) =>
+                        setPayrollForm({
+                          ...payrollForm,
+                          overtime_per_minute: e.target.value,
+                        })
+                      }
+                      disabled={!payrollForm.overtime_enabled}
+                    />
+                  </div>
+                </div>
+
                 <Button onClick={() => savePayroll.mutate()}>Save Payroll</Button>
               </>
             )}
@@ -469,7 +663,6 @@ export function OwnerSetupWizardPage() {
                     ["half_day_threshold_minutes", "Half-Day Threshold (min)"],
                     ["absent_threshold_minutes", "Absent Threshold (min)"],
                     ["overtime_minimum_minutes", "Min Overtime (min)"],
-                    ["overtime_rate_per_minute", "OT Rate (₱/min)"],
                   ].map(([key, label]) => (
                     <div key={key} className="space-y-2">
                       <Label>{label}</Label>
@@ -483,6 +676,12 @@ export function OwnerSetupWizardPage() {
                     </div>
                   ))}
                 </div>
+                <p className="text-sm text-muted-foreground">
+                  Overtime rate uses payroll configuration: ₱
+                  {payrollForm.overtime_per_minute}/min (
+                  {payrollForm.overtime_enabled ? "enabled" : "disabled"}). Update
+                  in the Payroll step.
+                </p>
                 <Button onClick={() => saveAttendance.mutate()}>
                   Save Attendance Policy
                 </Button>
@@ -566,17 +765,106 @@ export function OwnerSetupWizardPage() {
             {step === 6 && (
               <>
                 <p className="text-sm text-muted-foreground">
-                  Review your configuration and mark setup as complete. You can
-                  always update settings later.
+                  Set your primary work site and geofence. Required before
+                  employees can clock in for attendance.
                 </p>
-                <ul className="text-sm space-y-1">
-                  <li>Shifts: {shifts.length}</li>
-                  <li>Positions: {positions.length}</li>
-                  <li>Holidays: {holidays.filter((h) => h.business_id).length}</li>
+                <div className="space-y-2">
+                  <Label>Address</Label>
+                  <Input
+                    value={locationForm.address}
+                    onChange={(e) =>
+                      setLocationForm({ ...locationForm, address: e.target.value })
+                    }
+                    placeholder="123 Main St, Manila"
+                  />
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label>Latitude</Label>
+                    <Input
+                      type="number"
+                      step="any"
+                      value={locationForm.latitude}
+                      onChange={(e) =>
+                        setLocationForm({
+                          ...locationForm,
+                          latitude: e.target.value,
+                        })
+                      }
+                      placeholder="14.5995"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Longitude</Label>
+                    <Input
+                      type="number"
+                      step="any"
+                      value={locationForm.longitude}
+                      onChange={(e) =>
+                        setLocationForm({
+                          ...locationForm,
+                          longitude: e.target.value,
+                        })
+                      }
+                      placeholder="120.9842"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label>
+                    Geofence Radius: {locationForm.geofence_radius_m}m
+                  </Label>
+                  <input
+                    type="range"
+                    min={20}
+                    max={200}
+                    step={5}
+                    value={locationForm.geofence_radius_m}
+                    onChange={(e) =>
+                      setLocationForm({
+                        ...locationForm,
+                        geofence_radius_m: e.target.value,
+                      })
+                    }
+                    className="w-full"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Allowed range: 20m – 200m (default 75m)
+                  </p>
+                </div>
+                <Button
+                  onClick={() => saveLocation.mutate()}
+                  disabled={!locationCanSave || saveLocation.isPending}
+                >
+                  Save Location
+                </Button>
+              </>
+            )}
+
+            {step === 7 && (
+              <>
+                <p className="text-sm text-muted-foreground">
+                  Review your configuration and mark setup as complete. Required
+                  steps: schedules, positions, payroll, and location.
+                </p>
+                <ul className="space-y-1 text-sm">
+                  {setupStatus?.steps
+                    .filter((s) => s.key !== "review")
+                    .map((s) => (
+                      <li key={s.key}>
+                        {s.complete ? "✓" : "✗"} {s.label}
+                      </li>
+                    ))}
                 </ul>
+                {!canCompleteSetup && setupStatus?.missing_items.length ? (
+                  <p className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                    Complete required items:{" "}
+                    {setupStatus.missing_items.join(", ")}
+                  </p>
+                ) : null}
                 <Button
                   onClick={() => finishSetup.mutate()}
-                  disabled={finishSetup.isPending}
+                  disabled={finishSetup.isPending || !canCompleteSetup}
                 >
                   Mark Setup Complete
                 </Button>

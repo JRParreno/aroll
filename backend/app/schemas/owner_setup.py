@@ -114,7 +114,7 @@ class AttendancePolicyUpdate(BaseModel):
     early_out_deduction_per_minute: float = 2.0
     overtime_enabled: bool = True
     overtime_minimum_minutes: int = Field(default=30, ge=0)
-    overtime_rate_per_minute: float = 5.0
+    overtime_rate_per_minute: float = 1.0
     missing_clock_out_policy: MissingClockOutPolicy = (
         MissingClockOutPolicy.auto_clock_out
     )

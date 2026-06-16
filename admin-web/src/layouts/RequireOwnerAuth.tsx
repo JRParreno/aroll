@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useEffect } from "react";
-import { Navigate } from "react-router-dom";
+import { Navigate, useLocation } from "react-router-dom";
 import { getMe } from "@/lib/api";
 
 function readMustChangePassword(): boolean {
@@ -15,6 +15,7 @@ export function RequireOwnerAuth({
   passwordChangeOnly?: boolean;
 }) {
   const token = localStorage.getItem("aroll_token");
+  const { pathname } = useLocation();
 
   const { data: me, isLoading } = useQuery({
     queryKey: ["me"],
@@ -57,6 +58,14 @@ export function RequireOwnerAuth({
 
   if (mustChange) {
     return <Navigate to="/owner/change-password" replace />;
+  }
+
+  const setupExempt =
+    pathname.startsWith("/owner/setup-wizard") ||
+    pathname === "/owner/change-password";
+
+  if (!setupExempt && me && !me.setup_completed_at) {
+    return <Navigate to="/owner/setup-wizard" replace />;
   }
 
   return <>{children}</>;

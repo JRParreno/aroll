@@ -4,19 +4,24 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 const setupSections = [
   {
-    title: "Business Information",
-    description: "Business name, contact details, and general profile.",
+    title: "Business Schedules",
+    description: "Shifts, start/end times, and employee capacity.",
+    to: "/owner/setup-wizard?step=0",
+  },
+  {
+    title: "Business Location",
+    description: "Work site address, coordinates, and attendance geofence.",
     to: "/owner/location",
   },
   {
     title: "Positions & Salary Rates",
     description: "Define job roles and daily pay rates for your team.",
-    to: "/owner/positions-salary-rates",
+    to: "/owner/setup-wizard?step=1",
   },
   {
     title: "Payroll Configuration",
     description: "Pay period, payday schedule, and payroll rules.",
-    to: "/owner/payroll-schedule",
+    to: "/owner/setup-wizard?step=2",
   },
   {
     title: "Attendance Policies",
@@ -64,8 +69,8 @@ export function OwnerBusinessSetupsPage() {
           </CardHeader>
           <CardContent>
             <p className="mb-4 text-sm text-muted-foreground">
-              Walk through shifts, positions, payroll, attendance, holidays, and
-              rest day policies in one guided flow.
+              Walk through shifts, positions, payroll, attendance, holidays,
+              location, and rest day policies in one guided flow.
             </p>
             <Button asChild>
               <Link to="/owner/setup-wizard">Open Setup Wizard</Link>
