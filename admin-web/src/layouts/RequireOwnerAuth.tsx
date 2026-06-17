@@ -1,11 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
-import { useEffect } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { getMe } from "@/lib/api";
-
-function readMustChangePassword(): boolean {
-  return localStorage.getItem("aroll_must_change_password") === "true";
-}
 
 export function RequireOwnerAuth({
   children,
@@ -17,23 +12,13 @@ export function RequireOwnerAuth({
   const token = localStorage.getItem("aroll_token");
   const { pathname } = useLocation();
 
-  const { data: me, isLoading } = useQuery({
+  const { data: me, isLoading, isError } = useQuery({
     queryKey: ["me"],
     queryFn: getMe,
     enabled: !!token,
     retry: false,
+    staleTime: 0,
   });
-
-  useEffect(() => {
-    if (!me) return;
-    localStorage.setItem(
-      "aroll_must_change_password",
-      String(me.must_change_password)
-    );
-    if (me.business_code) {
-      localStorage.setItem("aroll_business_code", me.business_code);
-    }
-  }, [me]);
 
   if (!token) {
     return <Navigate to="/owner-login" replace />;
@@ -47,11 +32,27 @@ export function RequireOwnerAuth({
     );
   }
 
-  const mustChange = me?.must_change_password ?? readMustChangePassword();
+  if (isError || !me) {
+    localStorage.removeItem("aroll_token");
+    localStorage.removeItem("aroll_must_change_password");
+    localStorage.removeItem("aroll_business_code");
+    return <Navigate to="/owner-login" replace />;
+  }
+
+  if (me.business_code) {
+    localStorage.setItem("aroll_business_code", me.business_code);
+  }
+
+  const mustChange = me.must_change_password;
 
   if (passwordChangeOnly) {
     if (!mustChange) {
-      return <Navigate to="/owner/dashboard" replace />;
+      return (
+        <Navigate
+          to={me.setup_completed_at ? "/owner/dashboard" : "/owner/setup-wizard"}
+          replace
+        />
+      );
     }
     return <>{children}</>;
   }
@@ -64,7 +65,7 @@ export function RequireOwnerAuth({
     pathname.startsWith("/owner/setup-wizard") ||
     pathname === "/owner/change-password";
 
-  if (!setupExempt && me && !me.setup_completed_at) {
+  if (!setupExempt && !me.setup_completed_at) {
     return <Navigate to="/owner/setup-wizard" replace />;
   }
 

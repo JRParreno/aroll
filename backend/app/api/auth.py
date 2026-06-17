@@ -111,6 +111,7 @@ def change_password(
     user.password_hash = hash_password(body.new_password)
     user.must_change_password = False
     db.commit()
+    db.refresh(user)
     token = create_access_token(
         str(user.id),
         extra={"role": user.role.value, "business_id": str(user.business_id) if user.business_id else None},
@@ -137,6 +138,7 @@ def me(
     emp = db.query(Employee).filter(Employee.user_id == user.id).first()
     if emp:
         full_name = emp.full_name
+    db.refresh(user)
     return UserMeResponse(
         id=str(user.id),
         email=user.email,

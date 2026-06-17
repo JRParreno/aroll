@@ -160,9 +160,9 @@ def get_registration_by_email(
         db.query(BusinessRegistration)
         .filter(
             BusinessRegistration.owner_email == normalized,
-            BusinessRegistration.application_status == ApplicationStatus.rejected,
+            BusinessRegistration.application_status != ApplicationStatus.draft,
         )
-        .order_by(BusinessRegistration.reviewed_at.desc().nullslast())
+        .order_by(BusinessRegistration.submitted_at.desc().nullslast())
         .first()
     )
     if reg is None:
@@ -172,13 +172,6 @@ def get_registration_by_email(
                 BusinessRegistration.owner_email == normalized,
                 BusinessRegistration.application_status == ApplicationStatus.draft,
             )
-            .first()
-        )
-    if reg is None:
-        reg = (
-            db.query(BusinessRegistration)
-            .filter(BusinessRegistration.owner_email == normalized)
-            .order_by(BusinessRegistration.submitted_at.desc().nullslast())
             .first()
         )
     if reg is None:

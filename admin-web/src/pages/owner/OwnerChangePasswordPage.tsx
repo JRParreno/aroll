@@ -33,10 +33,10 @@ export function OwnerChangePasswordPage() {
     try {
       const res = await changePassword(currentPassword, newPassword);
       localStorage.setItem("aroll_token", res.access_token);
-      localStorage.setItem("aroll_must_change_password", "false");
-      await qc.invalidateQueries({ queryKey: ["me"] });
-      toast.success("Password updated successfully");
+      localStorage.removeItem("aroll_must_change_password");
       const me = await getMe();
+      qc.setQueryData(["me"], me);
+      toast.success("Password updated successfully");
       navigate(me.setup_completed_at ? "/owner/dashboard" : "/owner/setup-wizard");
     } catch {
       toast.error("Failed to update password. Check your current password.");

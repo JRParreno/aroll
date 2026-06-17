@@ -22,10 +22,7 @@ export function LoginPage() {
     try {
       const res = await login(email, password);
       localStorage.setItem("aroll_token", res.access_token);
-      localStorage.setItem(
-        "aroll_must_change_password",
-        String(res.must_change_password)
-      );
+      localStorage.removeItem("aroll_must_change_password");
       const decoded = jwtDecode<JwtPayload>(res.access_token);
       const role = decoded.role;
       if (role === "platform_admin") navigate("/admin");

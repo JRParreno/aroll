@@ -470,6 +470,10 @@ export function BusinessRegistrationPage() {
           </CardContent>
         </Card>
 
+        <Button asChild variant="outline" className="w-full">
+          <Link to="/track-registration">Track Your Registration</Link>
+        </Button>
+
         <p className="text-center text-sm text-muted-foreground">
           Already registered?{" "}
           <Link to="/owner-login" className="underline underline-offset-2">

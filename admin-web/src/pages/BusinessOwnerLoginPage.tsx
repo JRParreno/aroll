@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,6 +10,7 @@ import { businessOwnerLogin, getMe } from "@/lib/api";
 
 export function BusinessOwnerLoginPage() {
   const navigate = useNavigate();
+  const qc = useQueryClient();
   const [businessCode, setBusinessCode] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -24,23 +26,21 @@ export function BusinessOwnerLoginPage() {
         password
       );
       localStorage.setItem("aroll_token", res.access_token);
-      localStorage.setItem(
-        "aroll_must_change_password",
-        String(res.must_change_password)
-      );
       localStorage.setItem("aroll_business_code", businessCode.trim());
+      localStorage.removeItem("aroll_must_change_password");
 
-      if (res.must_change_password) {
+      await qc.resetQueries({ queryKey: ["me"] });
+      const me = await getMe();
+      qc.setQueryData(["me"], me);
+
+      if (me.must_change_password) {
         toast.success("Signed in. Please change your password to continue.");
         navigate("/owner/change-password");
       } else {
-        const me = await getMe();
         toast.success("Signed in successfully");
-        if (!me.setup_completed_at) {
-          navigate("/owner/setup-wizard");
-        } else {
-          navigate("/owner/dashboard");
-        }
+        navigate(
+          me.setup_completed_at ? "/owner/dashboard" : "/owner/setup-wizard"
+        );
       }
     } catch {
       toast.error("Invalid business code, email, or password");

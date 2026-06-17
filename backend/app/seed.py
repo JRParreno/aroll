@@ -9,7 +9,11 @@ from app.models.user import User
 
 
 def sync_owner_passwords() -> int:
-    """Set each owner's password to their business_code (for accounts created before that rule)."""
+    """Sync temp passwords for owners still on first login (must_change_password=True).
+
+    Skips owners who already completed password change so seed/migrate does not
+    reset custom passwords.
+    """
     db = SessionLocal()
     try:
         owners = db.query(User).filter(User.role == UserRole.owner).all()
@@ -19,6 +23,9 @@ def sync_owner_passwords() -> int:
                 continue
             business = db.get(Business, owner.business_id)
             if business is None:
+                continue
+            # Owner already completed first-time password change — never reset.
+            if not owner.must_change_password:
                 continue
             if verify_password(business.business_code, owner.password_hash):
                 continue

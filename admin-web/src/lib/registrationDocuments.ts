@@ -27,3 +27,11 @@ export function formatFileSize(bytes: number) {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
+
+export function formatVerificationStatus(status: string) {
+  if (status === "pending") return "Pending Verification";
+  if (status === "approved") return "Approved";
+  if (status === "rejected") return "Rejected";
+  if (status === "draft") return "Draft";
+  return status.replace(/_/g, " ");
+}

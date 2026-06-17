@@ -12,6 +12,7 @@ import { BusinessDetailPage } from "@/pages/BusinessDetailPage";
 import { AdminProfilePage } from "@/pages/AdminProfilePage";
 import { ActivityLogsPage } from "@/pages/ActivityLogsPage";
 import { BusinessRegistrationPage } from "@/pages/BusinessRegistrationPage";
+import { TrackRegistrationPage } from "@/pages/TrackRegistrationPage";
 import { RegistrationDetailPage } from "@/pages/RegistrationDetailPage";
 import { AdminNotFoundPage } from "@/pages/AdminNotFoundPage";
 import { OwnerDashboardPage } from "@/pages/owner/OwnerDashboardPage";
@@ -123,6 +124,7 @@ export default function App() {
       </Route>
 
       <Route path="/register-business" element={<BusinessRegistrationPage />} />
+      <Route path="/track-registration" element={<TrackRegistrationPage />} />
       <Route path="/pending-verification" element={<PendingVerificationPage />} />
       <Route path="/rejected-application" element={<RejectedApplicationPage />} />
 
