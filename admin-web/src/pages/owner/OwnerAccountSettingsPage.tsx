@@ -10,6 +10,7 @@ import {
   getAccountSettings,
   updateAccountSettings,
 } from "@/lib/api";
+import { ME_QUERY_KEY, setAuthSession } from "@/lib/authSession";
 
 export function OwnerAccountSettingsPage() {
   const qc = useQueryClient();
@@ -54,7 +55,7 @@ export function OwnerAccountSettingsPage() {
     onSuccess: () => {
       toast.success("Account settings saved");
       qc.invalidateQueries({ queryKey: ["account-settings"] });
-      qc.invalidateQueries({ queryKey: ["me"] });
+      qc.invalidateQueries({ queryKey: ME_QUERY_KEY });
     },
     onError: () => toast.error("Failed to save account settings"),
   });
@@ -62,7 +63,7 @@ export function OwnerAccountSettingsPage() {
   const changePasswordMutation = useMutation({
     mutationFn: () => changePassword(currentPassword, newPassword),
     onSuccess: (res) => {
-      localStorage.setItem("aroll_token", res.access_token);
+      setAuthSession(res.access_token);
       setCurrentPassword("");
       setNewPassword("");
       setConfirmPassword("");

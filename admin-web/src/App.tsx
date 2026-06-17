@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { AppLayout } from "@/layouts/AppLayout";
 import { OwnerLayout } from "@/layouts/OwnerLayout";
+import { RequireAdminAuth } from "@/layouts/RequireAdminAuth";
 import { RequireOwnerAuth } from "@/layouts/RequireOwnerAuth";
 import { AdminRegistrationsPage } from "@/pages/AdminRegistrationsPage";
 import { LoginPage } from "@/pages/LoginPage";
@@ -35,9 +36,7 @@ import { PendingVerificationPage } from "@/pages/owner/PendingVerificationPage";
 import { RejectedApplicationPage } from "@/pages/owner/RejectedApplicationPage";
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
-  const token = localStorage.getItem("aroll_token");
-  if (!token) return <Navigate to="/login" replace />;
-  return <>{children}</>;
+  return <RequireAdminAuth>{children}</RequireAdminAuth>;
 }
 
 export default function App() {

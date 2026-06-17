@@ -24,6 +24,7 @@ import {
   updatePayrollConfig,
   updateRestDayPolicy,
 } from "@/lib/api";
+import { ME_QUERY_KEY } from "@/lib/authSession";
 
 const STEPS = [
   "Shifts",
@@ -293,7 +294,7 @@ export function OwnerSetupWizardPage() {
       toast.success("Business setup marked complete");
       localStorage.removeItem("aroll_setup_card_dismissed");
       qc.invalidateQueries({ queryKey: ["setup-status"] });
-      qc.invalidateQueries({ queryKey: ["me"] });
+      qc.invalidateQueries({ queryKey: ME_QUERY_KEY });
       navigate("/owner/dashboard");
     },
     onError: (error: unknown) => {

@@ -1,7 +1,8 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { getMe } from "@/lib/api";
+import { clearAuthSession, ME_QUERY_KEY } from "@/lib/authSession";
 import { cn } from "@/lib/utils";
 import { ownerNavItems } from "@/layouts/ownerNav";
 
@@ -20,10 +21,11 @@ function isNavItemActive(
 
 export function OwnerLayout() {
   const navigate = useNavigate();
+  const qc = useQueryClient();
   const { pathname } = useLocation();
 
   const { data: me } = useQuery({
-    queryKey: ["me"],
+    queryKey: ME_QUERY_KEY,
     queryFn: getMe,
   });
 
@@ -33,9 +35,8 @@ export function OwnerLayout() {
     me?.business_code ?? localStorage.getItem("aroll_business_code") ?? "—";
 
   function logout() {
-    localStorage.removeItem("aroll_token");
-    localStorage.removeItem("aroll_must_change_password");
-    localStorage.removeItem("aroll_business_code");
+    clearAuthSession();
+    qc.clear();
     navigate("/owner-login");
   }
 

@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { changePassword, getMe } from "@/lib/api";
+import { ME_QUERY_KEY, setAuthSession } from "@/lib/authSession";
 
 export function OwnerChangePasswordPage() {
   const navigate = useNavigate();
@@ -32,10 +33,9 @@ export function OwnerChangePasswordPage() {
     setLoading(true);
     try {
       const res = await changePassword(currentPassword, newPassword);
-      localStorage.setItem("aroll_token", res.access_token);
-      localStorage.removeItem("aroll_must_change_password");
+      setAuthSession(res.access_token);
       const me = await getMe();
-      qc.setQueryData(["me"], me);
+      qc.setQueryData(ME_QUERY_KEY, me);
       toast.success("Password updated successfully");
       navigate(me.setup_completed_at ? "/owner/dashboard" : "/owner/setup-wizard");
     } catch {

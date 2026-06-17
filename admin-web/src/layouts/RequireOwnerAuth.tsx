@@ -1,6 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
 import { Navigate, useLocation } from "react-router-dom";
 import { getMe } from "@/lib/api";
+import {
+  clearAuthSession,
+  getAuthToken,
+  isAdminRole,
+  isOwnerRole,
+  ME_QUERY_KEY,
+} from "@/lib/authSession";
 
 export function RequireOwnerAuth({
   children,
@@ -9,11 +16,11 @@ export function RequireOwnerAuth({
   children: React.ReactNode;
   passwordChangeOnly?: boolean;
 }) {
-  const token = localStorage.getItem("aroll_token");
+  const token = getAuthToken();
   const { pathname } = useLocation();
 
   const { data: me, isLoading, isError } = useQuery({
-    queryKey: ["me"],
+    queryKey: ME_QUERY_KEY,
     queryFn: getMe,
     enabled: !!token,
     retry: false,
@@ -33,9 +40,16 @@ export function RequireOwnerAuth({
   }
 
   if (isError || !me) {
-    localStorage.removeItem("aroll_token");
-    localStorage.removeItem("aroll_must_change_password");
-    localStorage.removeItem("aroll_business_code");
+    clearAuthSession();
+    return <Navigate to="/owner-login" replace />;
+  }
+
+  if (isAdminRole(me.role)) {
+    return <Navigate to="/admin/dashboard" replace />;
+  }
+
+  if (!isOwnerRole(me.role)) {
+    clearAuthSession();
     return <Navigate to="/owner-login" replace />;
   }
 

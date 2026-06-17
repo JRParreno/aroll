@@ -7,6 +7,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { businessOwnerLogin, getMe } from "@/lib/api";
+import {
+  clearAuthSession,
+  isOwnerRole,
+  ME_QUERY_KEY,
+  setAuthSession,
+} from "@/lib/authSession";
 
 export function BusinessOwnerLoginPage() {
   const navigate = useNavigate();
@@ -25,13 +31,21 @@ export function BusinessOwnerLoginPage() {
         email,
         password
       );
-      localStorage.setItem("aroll_token", res.access_token);
-      localStorage.setItem("aroll_business_code", businessCode.trim());
-      localStorage.removeItem("aroll_must_change_password");
 
-      await qc.resetQueries({ queryKey: ["me"] });
+      qc.clear();
+      setAuthSession(res.access_token);
+
       const me = await getMe();
-      qc.setQueryData(["me"], me);
+
+      if (!isOwnerRole(me.role)) {
+        clearAuthSession();
+        qc.clear();
+        toast.error("This account is not a business owner account.");
+        return;
+      }
+
+      localStorage.setItem("aroll_business_code", businessCode.trim());
+      qc.setQueryData(ME_QUERY_KEY, me);
 
       if (me.must_change_password) {
         toast.success("Signed in. Please change your password to continue.");

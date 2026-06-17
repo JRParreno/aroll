@@ -24,6 +24,7 @@ import {
   listEmployees,
   listShifts,
 } from "@/lib/api";
+import { ME_QUERY_KEY } from "@/lib/authSession";
 
 export function OwnerSchedulePage() {
   const qc = useQueryClient();
@@ -35,7 +36,7 @@ export function OwnerSchedulePage() {
   const weekStartKey = toDateKey(weekStart);
 
   const { data: me } = useQuery({
-    queryKey: ["me"],
+    queryKey: ME_QUERY_KEY,
     queryFn: getMe,
   });
 

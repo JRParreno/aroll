@@ -3,12 +3,13 @@ import { useState } from "react";
 import { StatCard } from "@/components/dashboard/StatCard";
 import { SetupProgressCard } from "@/components/owner/SetupProgressCard";
 import { getMe, getSetupStatus, listEmployees } from "@/lib/api";
+import { ME_QUERY_KEY } from "@/lib/authSession";
 
 export function OwnerDashboardPage() {
   const [dismissed, setDismissed] = useState(false);
 
   const { data: me } = useQuery({
-    queryKey: ["me"],
+    queryKey: ME_QUERY_KEY,
     queryFn: getMe,
   });
 

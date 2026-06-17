@@ -1,12 +1,32 @@
 import axios from "axios";
+import { getAuthToken } from "@/lib/authSession";
 
 const API_BASE = import.meta.env.VITE_API_URL ?? "http://localhost:8000/api/v1";
+
+/** Auth/register endpoints must not send a stale session token. */
+const PUBLIC_AUTH_PATHS = [
+  "/auth/login",
+  "/auth/business-owner-login",
+  "/registrations",
+] as const;
 
 export const api = axios.create({ baseURL: API_BASE });
 
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem("aroll_token");
-  if (token) config.headers.Authorization = `Bearer ${token}`;
+  const path = config.url ?? "";
+  const isPublicAuth = PUBLIC_AUTH_PATHS.some((segment) => path.includes(segment));
+
+  if (isPublicAuth) {
+    delete config.headers.Authorization;
+    return config;
+  }
+
+  const token = getAuthToken();
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  } else {
+    delete config.headers.Authorization;
+  }
   return config;
 });
 

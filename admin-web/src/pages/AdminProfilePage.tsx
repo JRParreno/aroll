@@ -1,7 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
+import { Navigate } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getMe } from "@/lib/api";
+import { isAdminRole, isOwnerRole, ME_QUERY_KEY } from "@/lib/authSession";
 
 function formatRole(role: string) {
   return role
@@ -12,9 +14,14 @@ function formatRole(role: string) {
 
 export function AdminProfilePage() {
   const { data, isLoading, isError } = useQuery({
-    queryKey: ["me"],
+    queryKey: ME_QUERY_KEY,
     queryFn: getMe,
+    staleTime: 0,
   });
+
+  if (data && isOwnerRole(data.role)) {
+    return <Navigate to="/owner/dashboard" replace />;
+  }
 
   return (
     <div className="p-6">
@@ -34,7 +41,7 @@ export function AdminProfilePage() {
             </p>
           )}
 
-          {data && (
+          {data && isAdminRole(data.role) && (
             <>
               <div>
                 <p className="text-sm text-muted-foreground">Full Name</p>
@@ -50,13 +57,6 @@ export function AdminProfilePage() {
                 <p className="text-sm text-muted-foreground">Role</p>
                 <p className="font-medium">{formatRole(data.role)}</p>
               </div>
-
-              {data.business_name && (
-                <div>
-                  <p className="text-sm text-muted-foreground">Business</p>
-                  <p className="font-medium">{data.business_name}</p>
-                </div>
-              )}
 
               {data.must_change_password && (
                 <Badge variant="secondary">Password change required</Badge>
