@@ -30,6 +30,8 @@ import { OwnerBusinessSettingsPage } from "@/pages/owner/OwnerBusinessSettingsPa
 import { OwnerBusinessSetupsPage } from "@/pages/owner/OwnerBusinessSetupsPage";
 import { OwnerHelpPage } from "@/pages/owner/OwnerHelpPage";
 import { OwnerSetupWizardPage } from "@/pages/owner/setup/OwnerSetupWizardPage";
+import { PendingVerificationPage } from "@/pages/owner/PendingVerificationPage";
+import { RejectedApplicationPage } from "@/pages/owner/RejectedApplicationPage";
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const token = localStorage.getItem("aroll_token");
@@ -121,6 +123,8 @@ export default function App() {
       </Route>
 
       <Route path="/register-business" element={<BusinessRegistrationPage />} />
+      <Route path="/pending-verification" element={<PendingVerificationPage />} />
+      <Route path="/rejected-application" element={<RejectedApplicationPage />} />
 
       <Route path="*" element={<Navigate to="/login" replace />} />
     </Routes>

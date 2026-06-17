@@ -8,6 +8,7 @@ from app.models.rest_day_policy import BusinessRestDayPolicy
 from app.models.scheduling import Shift, ShiftAssignment
 from app.models.user import User
 from app.models.activity_log import ActivityLog
+from app.models.registration_document import RegistrationDocument
 
 __all__ = [
     "User",
@@ -26,4 +27,5 @@ __all__ = [
     "PayrollRun",
     "Payslip",
     "ActivityLog",
+    "RegistrationDocument",
 ]

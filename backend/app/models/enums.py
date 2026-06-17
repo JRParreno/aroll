@@ -14,6 +14,20 @@ class RegistrationStatus(str, enum.Enum):
     rejected = "rejected"
 
 
+class ApplicationStatus(str, enum.Enum):
+    draft = "draft"
+    pending = "pending"
+    approved = "approved"
+    rejected = "rejected"
+
+
+class RegistrationDocumentType(str, enum.Enum):
+    business_permit = "business_permit"
+    valid_id = "valid_id"
+    dti_sec = "dti_sec"
+    bir_cor = "bir_cor"
+
+
 class BusinessStatus(str, enum.Enum):
     active = "active"
     inactive = "inactive"

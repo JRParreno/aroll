@@ -1,9 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import { ChevronRight, ClipboardList, Mail, MapPin } from "lucide-react";
+import { ChevronRight, ClipboardList, FileText, Mail, MapPin } from "lucide-react";
 import { formatDateTime, StatusBadge } from "@/components/detail/DetailLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { listRegistrations } from "@/lib/api";
+import { formatBusinessType } from "@/lib/registrationDocuments";
 
 export function AdminRegistrationsPage() {
   const { data = [], isLoading } = useQuery({
@@ -73,6 +74,12 @@ export function AdminRegistrationsPage() {
                         {registration.owner_name} · {registration.owner_email}
                       </p>
                       <div className="mt-2 flex flex-wrap gap-4 text-xs text-muted-foreground">
+                        <span>{formatBusinessType(registration.business_type)}</span>
+                        <span className="inline-flex items-center gap-1">
+                          <FileText className="h-3.5 w-3.5" />
+                          {registration.documents.length} document
+                          {registration.documents.length === 1 ? "" : "s"}
+                        </span>
                         {registration.proposed_address && (
                           <span className="inline-flex items-center gap-1">
                             <MapPin className="h-3.5 w-3.5" />

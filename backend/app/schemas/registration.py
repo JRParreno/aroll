@@ -9,7 +9,19 @@ class RegistrationCreate(BaseModel):
     owner_email: EmailStr
     owner_phone: str | None = None
     proposed_address: str | None = None
-    # REMOVE password
+    business_type: str | None = Field(default=None, max_length=100)
+
+
+class RegistrationDocumentResponse(BaseModel):
+    id: str
+    document_type: str
+    original_filename: str
+    content_type: str
+    file_size: int
+    uploaded_at: datetime
+
+    class Config:
+        from_attributes = True
 
 
 class RegistrationResponse(BaseModel):
@@ -19,10 +31,13 @@ class RegistrationResponse(BaseModel):
     owner_email: str
     owner_phone: str | None = None
     proposed_address: str | None = None
+    business_type: str | None = None
     status: str
-    submitted_at: datetime
+    application_status: str
+    submitted_at: datetime | None = None
     reviewed_at: datetime | None = None
     rejection_reason: str | None = None
+    documents: list[RegistrationDocumentResponse] = []
 
     class Config:
         from_attributes = True

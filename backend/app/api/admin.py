@@ -6,6 +6,7 @@ from typing import Annotated
 from app.core.timezone import manila_now
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import FileResponse
 from sqlalchemy import extract, func
 from sqlalchemy.orm import Session
 
@@ -17,11 +18,13 @@ from app.models.attendance import AttendanceRecord
 from app.models.business import Business, BusinessLocation, BusinessRegistration
 from app.models.employee import Employee
 from app.models.enums import (
+    ApplicationStatus,
     AttendanceStatus,
     BusinessStatus,
     RegistrationStatus,
     UserRole,
 )
+from app.models.registration_document import RegistrationDocument
 from app.models.payroll import BusinessPayrollConfig
 from app.models.user import User
 from app.schemas.admin_business import (
@@ -42,6 +45,8 @@ from app.schemas.registration import (
     RegistrationResponse,
 )
 from app.services.activity_logger import create_log
+from app.services.registration_documents import get_document_file_path
+from app.services.registration_service import document_response, registration_response
 
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -52,18 +57,7 @@ def _gen_business_code() -> str:
 
 
 def _registration_response(reg: BusinessRegistration) -> RegistrationResponse:
-    return RegistrationResponse(
-        id=str(reg.id),
-        business_name=reg.business_name,
-        owner_name=reg.owner_name,
-        owner_email=reg.owner_email,
-        owner_phone=reg.owner_phone,
-        proposed_address=reg.proposed_address,
-        status=reg.status.value,
-        submitted_at=reg.submitted_at,
-        reviewed_at=reg.reviewed_at,
-        rejection_reason=reg.rejection_reason,
-    )
+    return registration_response(reg)
 
 
 def _business_list_response(db: Session, business: Business) -> BusinessListResponse:
@@ -103,7 +97,9 @@ def _business_detail_response(db: Session, business: Business) -> BusinessDetail
     )
 
     owner: BusinessOwnerResponse | None = None
+    registration_id: str | None = None
     registration_submitted_at = None
+    registration_documents = []
     if business.registration_id:
         reg = db.get(BusinessRegistration, business.registration_id)
         if reg:
@@ -112,7 +108,11 @@ def _business_detail_response(db: Session, business: Business) -> BusinessDetail
                 email=reg.owner_email,
                 phone=reg.owner_phone,
             )
+            registration_id = str(reg.id)
             registration_submitted_at = reg.submitted_at
+            registration_documents = [
+                document_response(doc) for doc in reg.documents
+            ]
 
     return BusinessDetailResponse(
         id=str(business.id),
@@ -123,7 +123,9 @@ def _business_detail_response(db: Session, business: Business) -> BusinessDetail
         created_at=business.created_at,
         employee_count=employee_count,
         owner=owner,
+        registration_id=registration_id,
         registration_submitted_at=registration_submitted_at,
+        registration_documents=registration_documents,
         locations=[
             BusinessLocationResponse(
                 id=str(loc.id),
@@ -145,7 +147,9 @@ def list_registrations(
     _: Annotated[User, Depends(require_roles(UserRole.platform_admin))],
     status_filter: str | None = None
 ):
-    q = db.query(BusinessRegistration)
+    q = db.query(BusinessRegistration).filter(
+        BusinessRegistration.application_status != ApplicationStatus.draft
+    )
 
     if status_filter and status_filter != "all":
         q = q.filter(
@@ -166,6 +170,27 @@ def get_registration(
         raise HTTPException(404, "Registration not found")
     return _registration_response(reg)
 
+
+@router.get("/registrations/{registration_id}/documents/{document_id}/file")
+def download_registration_document(
+    registration_id: uuid.UUID,
+    document_id: uuid.UUID,
+    db: Annotated[Session, Depends(get_db)],
+    _: Annotated[User, Depends(require_roles(UserRole.platform_admin))],
+):
+    document = db.get(RegistrationDocument, document_id)
+    if document is None or document.registration_id != registration_id:
+        raise HTTPException(404, "Document not found")
+    file_path = get_document_file_path(document)
+    if not file_path.exists():
+        raise HTTPException(404, "File not found on server")
+    return FileResponse(
+        path=file_path,
+        media_type=document.content_type,
+        filename=document.original_filename,
+    )
+
+
 @router.get("/dashboard-stats", response_model=DashboardStatsResponse)
 def dashboard_stats(
     db: Session = Depends(get_db),
@@ -174,7 +199,7 @@ def dashboard_stats(
     total_businesses = db.query(Business).count()
 
     pending_requests = db.query(BusinessRegistration).filter(
-        BusinessRegistration.status == RegistrationStatus.pending
+        BusinessRegistration.application_status == ApplicationStatus.pending
     ).count()
 
     active_businesses = (
@@ -333,6 +358,7 @@ def approve_registration(
 
     # Update registration status
     reg.status = RegistrationStatus.approved
+    reg.application_status = ApplicationStatus.approved
     reg.reviewed_by = admin.id
     reg.reviewed_at = datetime.now(timezone.utc)
 
@@ -368,6 +394,7 @@ def reject_registration(
         raise HTTPException(400, "Registration is not pending")
 
     reg.status = RegistrationStatus.rejected
+    reg.application_status = ApplicationStatus.rejected
     reg.rejection_reason = body.rejection_reason
     reg.reviewed_by = admin.id
     reg.reviewed_at = datetime.now(timezone.utc)

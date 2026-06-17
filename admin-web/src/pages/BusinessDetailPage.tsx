@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import {
   Building2,
   CalendarClock,
+  FileText,
   Hash,
   Mail,
   MapPin,
@@ -19,6 +20,7 @@ import {
   StatusBadge,
 } from "@/components/detail/DetailLayout";
 import { Button } from "@/components/ui/button";
+import { BusinessRegistrationDocumentsSection } from "@/components/business/BusinessRegistrationDocumentsSection";
 import { getBusiness } from "@/lib/api";
 
 export function BusinessDetailPage() {
@@ -157,6 +159,17 @@ export function BusinessDetailPage() {
                 />
               </DetailSection>
             )}
+
+            <DetailSection
+              title="Registration Documents"
+              description="Official compliance documents submitted during registration."
+              icon={<FileText className="h-4 w-4" />}
+            >
+              <BusinessRegistrationDocumentsSection
+                registrationId={data.registration_id}
+                documents={data.registration_documents}
+              />
+            </DetailSection>
 
             <section className="rounded-xl border bg-card p-5 shadow-sm sm:p-6">
               <div className="mb-5 flex items-start gap-3">

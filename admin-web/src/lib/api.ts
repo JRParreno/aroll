@@ -34,10 +34,13 @@ export type Registration = {
   owner_email: string;
   owner_phone?: string | null;
   proposed_address?: string | null;
+  business_type?: string | null;
   status: string;
-  submitted_at: string;
+  application_status: string;
+  submitted_at: string | null;
   reviewed_at?: string | null;
   rejection_reason?: string | null;
+  documents: RegistrationDocument[];
 };
 
 export type BusinessListItem = {
@@ -75,6 +78,8 @@ export type BusinessDetail = {
     phone: string | null;
   } | null;
   registration_submitted_at: string | null;
+  registration_id: string | null;
+  registration_documents: RegistrationDocument[];
   locations: BusinessLocation[];
 };
 
@@ -186,9 +191,109 @@ export async function submitRegistration(payload: {
   owner_email: string;
   owner_phone: string;
   proposed_address: string;
+  business_type?: string;
 }) {
-  const { data } = await api.post("/registrations", payload);
+  const { data } = await api.post<PublicRegistration>("/registrations", payload);
   return data;
+}
+
+export type RegistrationDocument = {
+  id: string;
+  document_type: string;
+  original_filename: string;
+  content_type: string;
+  file_size: number;
+  uploaded_at: string;
+};
+
+export type PublicRegistration = {
+  id: string;
+  business_name: string;
+  owner_name: string;
+  owner_email: string;
+  owner_phone?: string | null;
+  proposed_address?: string | null;
+  business_type?: string | null;
+  status: string;
+  application_status: string;
+  submitted_at: string | null;
+  reviewed_at?: string | null;
+  rejection_reason?: string | null;
+  documents: RegistrationDocument[];
+};
+
+export async function getRegistrationByEmail(email: string) {
+  const { data } = await api.get<PublicRegistration>(
+    `/registrations/by-email/${encodeURIComponent(email.trim())}`
+  );
+  return data;
+}
+
+export async function uploadRegistrationDocument(
+  registrationId: string,
+  documentType: string,
+  file: File
+) {
+  const formData = new FormData();
+  formData.append("document_type", documentType);
+  formData.append("file", file);
+  const { data } = await api.post<RegistrationDocument>(
+    `/registrations/${registrationId}/documents`,
+    formData,
+    { headers: { "Content-Type": "multipart/form-data" } }
+  );
+  return data;
+}
+
+export async function submitRegistrationApplication(registrationId: string) {
+  const { data } = await api.post<PublicRegistration>(
+    `/registrations/${registrationId}/submit`
+  );
+  return data;
+}
+
+export async function resubmitRegistrationApplication(registrationId: string) {
+  const { data } = await api.post<PublicRegistration>(
+    `/registrations/${registrationId}/resubmit`
+  );
+  return data;
+}
+
+export async function fetchAdminRegistrationDocumentFile(
+  registrationId: string,
+  documentId: string
+) {
+  const { data } = await api.get<Blob>(
+    `/admin/registrations/${registrationId}/documents/${documentId}/file`,
+    { responseType: "blob" }
+  );
+  return data;
+}
+
+export async function fetchRegistrationDocumentFile(
+  registrationId: string,
+  documentId: string
+) {
+  const { data } = await api.get<Blob>(
+    `/registrations/${registrationId}/documents/${documentId}/file`,
+    { responseType: "blob" }
+  );
+  return data;
+}
+
+export function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
+export function previewBlob(blob: Blob) {
+  const url = URL.createObjectURL(blob);
+  window.open(url, "_blank", "noopener,noreferrer");
+  window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
 
 export async function getDashboardStats() {
