@@ -3,20 +3,24 @@ import { getAuthToken } from "@/lib/authSession";
 
 const API_BASE = import.meta.env.VITE_API_URL ?? "http://localhost:8000/api/v1";
 
-/** Auth/register endpoints must not send a stale session token. */
-const PUBLIC_AUTH_PATHS = [
-  "/auth/login",
-  "/auth/business-owner-login",
-  "/registrations",
-] as const;
+/** Routes that must not send a stale session token. */
+function isPublicAuthPath(path: string): boolean {
+  if (
+    path.includes("/auth/login") ||
+    path.includes("/auth/business-owner-login")
+  ) {
+    return true;
+  }
+  // Public owner signup only — not admin review under /admin/registrations
+  return path.startsWith("/registrations");
+}
 
 export const api = axios.create({ baseURL: API_BASE });
 
 api.interceptors.request.use((config) => {
   const path = config.url ?? "";
-  const isPublicAuth = PUBLIC_AUTH_PATHS.some((segment) => path.includes(segment));
 
-  if (isPublicAuth) {
+  if (isPublicAuthPath(path)) {
     delete config.headers.Authorization;
     return config;
   }
@@ -504,6 +508,19 @@ export type AccountSettingsUpdate = {
   business_type?: string | null;
 };
 
+export type BusinessSettings = {
+  business_name: string;
+  business_type: string | null;
+  business_code: string;
+  address: string;
+  owner_name: string | null;
+  owner_email: string;
+  owner_phone: string | null;
+  registration_id: string | null;
+  application_status: string | null;
+  registration_documents: RegistrationDocument[];
+};
+
 export async function getSetupStatus() {
   const { data } = await api.get<SetupStatus>("/businesses/me/setup-status");
   return data;
@@ -624,6 +641,21 @@ export async function updateHoliday(
 
 export async function deleteHoliday(id: string) {
   const { data } = await api.delete(`/holidays/${id}`);
+  return data;
+}
+
+export async function fetchOwnerRegistrationDocumentFile(documentId: string) {
+  const { data } = await api.get<Blob>(
+    `/businesses/me/registration-documents/${documentId}/file`,
+    { responseType: "blob" }
+  );
+  return data;
+}
+
+export async function getBusinessSettings() {
+  const { data } = await api.get<BusinessSettings>(
+    "/businesses/me/business-settings"
+  );
   return data;
 }
 

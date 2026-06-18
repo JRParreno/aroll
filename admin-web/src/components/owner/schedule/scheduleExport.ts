@@ -17,11 +17,16 @@ type ExportRow = {
   cells: ScheduleCell[];
 };
 
-function cellLabel(cell: ScheduleCell): string {
-  if (!cell) {
+function cellLabel(cells: ScheduleCell): string {
+  if (cells.length === 0) {
     return "OFF";
   }
-  return `${cell.shift_name}\n${formatShiftTime(cell.shift_start_time)} – ${formatShiftTime(cell.shift_end_time)}`;
+  return cells
+    .map(
+      (cell) =>
+        `${cell.shift_name} ${formatShiftTime(cell.shift_start_time)} – ${formatShiftTime(cell.shift_end_time)}`
+    )
+    .join("; ");
 }
 
 function buildTableBody(rows: ExportRow[], weekStart: Date): string[][] {
@@ -30,10 +35,15 @@ function buildTableBody(rows: ExportRow[], weekStart: Date): string[][] {
     employee.full_name,
     ...cells.map((cell, index) => {
       const dateKey = toDateKey(weekDays[index]);
-      if (!cell) {
+      if (cell.length === 0) {
         return "OFF";
       }
-      return `${cell.shift_name} (${formatShiftTime(cell.shift_start_time)} – ${formatShiftTime(cell.shift_end_time)}) [${dateKey}]`;
+      return cell
+        .map(
+          (assignment) =>
+            `${assignment.shift_name} (${formatShiftTime(assignment.shift_start_time)} – ${formatShiftTime(assignment.shift_end_time)}) [${dateKey}]`
+        )
+        .join("; ");
     }),
   ]);
 }
@@ -119,15 +129,19 @@ export function printSchedule(options: {
   const tableRows = options.rows
     .map(({ employee, cells }) => {
       const cellsHtml = cells
-        .map((cell) => {
-          if (!cell) {
+        .map((dayCells) => {
+          if (dayCells.length === 0) {
             return "<td>OFF</td>";
           }
-          const bg = cell.shift_color ?? "#f1f5f9";
-          const color = cell.shift_color
-            ? textColorForBackground(cell.shift_color)
-            : "#334155";
-          return `<td style="background:${bg};color:${color};padding:8px;font-size:12px;"><strong>${cell.shift_name}</strong><br/>${formatShiftTime(cell.shift_start_time)} – ${formatShiftTime(cell.shift_end_time)}</td>`;
+          return `<td style="padding:8px;font-size:12px;vertical-align:top;">${dayCells
+            .map((cell) => {
+              const bg = cell.shift_color ?? "#f1f5f9";
+              const color = cell.shift_color
+                ? textColorForBackground(cell.shift_color)
+                : "#334155";
+              return `<div style="background:${bg};color:${color};padding:6px;border-radius:4px;margin-bottom:4px;"><strong>${cell.shift_name}</strong><br/>${formatShiftTime(cell.shift_start_time)} – ${formatShiftTime(cell.shift_end_time)}</div>`;
+            })
+            .join("")}</td>`;
         })
         .join("");
       return `<tr><td><strong>${employee.full_name}</strong></td>${cellsHtml}</tr>`;

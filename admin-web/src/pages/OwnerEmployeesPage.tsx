@@ -173,10 +173,14 @@ export function OwnerEmployeesPage() {
   function handlePositionSelect(nextPositionId: string) {
     setPositionId(nextPositionId);
     const selected = positions.find((position) => position.id === nextPositionId);
-    if (selected) {
-      setPositionTitle(selected.title);
-    }
+    setPositionTitle(selected?.title ?? "");
   }
+
+  const hasPositions = positions.length > 0;
+  const canCreate =
+    fullName &&
+    email &&
+    (hasPositions ? Boolean(positionId) : Boolean(positionTitle));
 
   return (
     <div className="min-h-full space-y-6 bg-muted/30 p-6">
@@ -220,34 +224,35 @@ export function OwnerEmployeesPage() {
             </div>
             <div className="space-y-2">
               <Label htmlFor="position">Position</Label>
-              {positions.length > 0 ? (
-                <select
-                  id="position"
-                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                  value={positionId}
-                  onChange={(e) => handlePositionSelect(e.target.value)}
-                >
-                  <option value="">Select position</option>
-                  {positions.map((position) => (
-                    <option key={position.id} value={position.id}>
-                      {position.title} — ₱{position.daily_rate}/day
-                    </option>
-                  ))}
-                </select>
+              {hasPositions ? (
+                <>
+                  <select
+                    id="position"
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    value={positionId}
+                    onChange={(e) => handlePositionSelect(e.target.value)}
+                  >
+                    <option value="">Select position</option>
+                    {positions.map((position) => (
+                      <option key={position.id} value={position.id}>
+                        {position.title} — ₱{position.daily_rate}/day
+                      </option>
+                    ))}
+                  </select>
+                </>
               ) : (
-                <Input
-                  id="position"
-                  value={positionTitle}
-                  onChange={(e) => setPositionTitle(e.target.value)}
-                  placeholder="Cashier"
-                />
-              )}
-              {positions.length > 0 && (
-                <Input
-                  value={positionTitle}
-                  onChange={(e) => setPositionTitle(e.target.value)}
-                  placeholder="Or enter position manually"
-                />
+                <>
+                  <Input
+                    id="position"
+                    value={positionTitle}
+                    onChange={(e) => setPositionTitle(e.target.value)}
+                    placeholder="Cashier"
+                  />
+                  <p className="text-sm text-muted-foreground">
+                    No positions configured yet. Enter a title here, or add
+                    positions under Business Setup first.
+                  </p>
+                </>
               )}
             </div>
             <div className="space-y-2">
@@ -261,9 +266,7 @@ export function OwnerEmployeesPage() {
             </div>
             <Button
               onClick={() => create.mutate()}
-              disabled={
-                create.isPending || !fullName || !email || !positionTitle
-              }
+              disabled={create.isPending || !canCreate}
             >
               Create & generate password
             </Button>

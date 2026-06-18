@@ -145,7 +145,7 @@ def _business_detail_response(db: Session, business: Business) -> BusinessDetail
 def list_registrations(
     db: Annotated[Session, Depends(get_db)],
     _: Annotated[User, Depends(require_roles(UserRole.platform_admin))],
-    status_filter: str | None = None
+    status_filter: str | None = None,
 ):
     q = db.query(BusinessRegistration).filter(
         BusinessRegistration.application_status != ApplicationStatus.draft
@@ -153,9 +153,11 @@ def list_registrations(
 
     if status_filter and status_filter != "all":
         q = q.filter(
-            BusinessRegistration.status == RegistrationStatus(status_filter)
-    )
-    rows = q.order_by(BusinessRegistration.submitted_at.desc()).all()
+            BusinessRegistration.application_status
+            == ApplicationStatus(status_filter)
+        )
+
+    rows = q.order_by(BusinessRegistration.submitted_at.desc().nullslast()).all()
     return [_registration_response(r) for r in rows]
 
 
@@ -325,7 +327,7 @@ def approve_registration(
     if reg is None:
         raise HTTPException(404, "Registration not found")
 
-    if reg.status != RegistrationStatus.pending:
+    if reg.application_status != ApplicationStatus.pending:
         raise HTTPException(400, "Registration is not pending")
 
     # Generate unique business code
@@ -390,7 +392,7 @@ def reject_registration(
     if reg is None:
         raise HTTPException(404, "Registration not found")
 
-    if reg.status != RegistrationStatus.pending:
+    if reg.application_status != ApplicationStatus.pending:
         raise HTTPException(400, "Registration is not pending")
 
     reg.status = RegistrationStatus.rejected

@@ -128,23 +128,6 @@ def assign_schedule(
             f"Shift capacity exceeded. Maximum {shift.employee_capacity} employees allowed.",
         )
 
-    for employee_id in new_employee_ids:
-        conflict = (
-            db.query(ShiftAssignment)
-            .filter(
-                ShiftAssignment.employee_id == employee_id,
-                ShiftAssignment.work_date == body.work_date,
-            )
-            .first()
-        )
-        if conflict is not None:
-            emp = db.get(Employee, employee_id)
-            name = emp.full_name if emp else "Employee"
-            raise HTTPException(
-                400,
-                f"{name} is already scheduled on {body.work_date.isoformat()}.",
-            )
-
     created_assignments: list[ShiftAssignment] = []
     employee_map = {emp.id: emp for emp in employees}
 

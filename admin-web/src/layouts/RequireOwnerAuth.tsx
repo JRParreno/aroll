@@ -77,7 +77,8 @@ export function RequireOwnerAuth({
 
   const setupExempt =
     pathname.startsWith("/owner/setup-wizard") ||
-    pathname === "/owner/change-password";
+    pathname === "/owner/change-password" ||
+    pathname === "/owner/location";
 
   if (!setupExempt && !me.setup_completed_at) {
     return <Navigate to="/owner/setup-wizard" replace />;

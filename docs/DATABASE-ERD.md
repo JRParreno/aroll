@@ -572,6 +572,23 @@ CREATE INDEX idx_efe_embedding ON employee_face_embedding
 
 ---
 
+## 10. Migration 004 — owner setup extensions
+
+Added in Alembic revision `004` for the owner setup wizard.
+
+| Table / column | Purpose |
+|----------------|---------|
+| `business.setup_completed_at` | Timestamp when owner completes guided setup (`NULL` until finished). |
+| `shift.shift_type` | Enum: `morning`, `afternoon`, `evening`, `night`. |
+| `shift.employee_capacity` | Max employees assignable to the shift (default `1`). |
+| `business_attendance_policy` | Per-business attendance rules (PK = `business_id`): grace periods, overtime, missing clock-out policy. |
+| `business_rest_day_policy` | Per-business weekly rest day and premium settings (PK = `business_id`). |
+| `holiday` | Business or platform holidays: date, paid flag, type, multiplier. |
+
+Setup wizard step completion for attendance, rest day, and holidays requires an **explicit save** (PUT/create) — GET endpoints return defaults without inserting policy rows.
+
+---
+
 ## Document history
 
 | Version | Date | Notes |

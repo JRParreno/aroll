@@ -39,13 +39,8 @@ const setupSections = [
     to: "/owner/settings/account",
   },
   {
-    title: "Personal Settings",
-    description: "Owner profile and notification preferences.",
-    to: "/owner/settings/personal",
-  },
-  {
     title: "Business Settings",
-    description: "Operational preferences and business-wide defaults.",
+    description: "Business profile, registration documents, and business code.",
     to: "/owner/settings/business",
   },
 ];

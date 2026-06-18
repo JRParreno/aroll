@@ -1,5 +1,7 @@
 from pydantic import BaseModel, Field
 
+from app.schemas.registration import RegistrationDocumentResponse
+
 
 class LocationUpdate(BaseModel):
     label: str = "Main"
@@ -32,3 +34,16 @@ class AccountSettingsUpdate(BaseModel):
     contact_phone: str | None = Field(default=None, max_length=50)
     address: str = Field(min_length=5)
     business_type: str | None = Field(default=None, max_length=100)
+
+
+class BusinessSettingsResponse(BaseModel):
+    business_name: str
+    business_type: str | None = None
+    business_code: str
+    address: str = ""
+    owner_name: str | None = None
+    owner_email: str
+    owner_phone: str | None = None
+    registration_id: str | None = None
+    application_status: str | None = None
+    registration_documents: list[RegistrationDocumentResponse] = []

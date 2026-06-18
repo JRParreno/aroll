@@ -83,23 +83,28 @@ def login(body: LoginRequest, db: Annotated[Session, Depends(get_db)]):
             detail="Invalid email or password",
         )
 
-    if user.role != UserRole.employee:
+    if user.role == UserRole.employee:
+        if not user.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Account is inactive",
+            )
+        emp = db.query(Employee).filter(Employee.user_id == user.id).first()
+        if emp is None or emp.status == EmployeeStatus.inactive:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Account is inactive",
+            )
+    elif user.role == UserRole.platform_admin:
+        if not user.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Account is inactive",
+            )
+    else:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password",
-        )
-
-    if not user.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Account is inactive",
-        )
-
-    emp = db.query(Employee).filter(Employee.user_id == user.id).first()
-    if emp is None or emp.status == EmployeeStatus.inactive:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Account is inactive",
         )
 
     user.last_login_at = datetime.now(timezone.utc)

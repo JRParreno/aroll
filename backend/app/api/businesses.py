@@ -1,19 +1,23 @@
 from typing import Annotated
+import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.core.deps import require_roles
 from app.db.session import get_db
 from app.models.attendance_policy import BusinessAttendancePolicy
 from app.models.business import Business, BusinessLocation, BusinessRegistration
-from app.models.enums import UserRole
+from app.models.enums import MissingClockOutPolicy, UserRole, Weekday
 from app.models.payroll import BusinessPayrollConfig
+from app.models.registration_document import RegistrationDocument
 from app.models.rest_day_policy import BusinessRestDayPolicy
 from app.models.user import User
 from app.schemas.business import (
     AccountSettingsResponse,
     AccountSettingsUpdate,
+    BusinessSettingsResponse,
     LocationResponse,
     LocationUpdate,
 )
@@ -31,8 +35,69 @@ from app.services.setup_status import (
     complete_setup,
     get_setup_status,
 )
+from app.services.registration_documents import get_document_file_path
+from app.services.registration_service import document_response
 
 router = APIRouter(prefix="/businesses", tags=["businesses"])
+
+
+def _attendance_policy_response(
+    db: Session, business_id, policy: BusinessAttendancePolicy | None
+) -> AttendancePolicyResponse:
+    if policy is not None:
+        return AttendancePolicyResponse(
+            early_clock_in_minutes=policy.early_clock_in_minutes,
+            on_time_grace_minutes=policy.on_time_grace_minutes,
+            half_day_threshold_minutes=policy.half_day_threshold_minutes,
+            absent_threshold_minutes=policy.absent_threshold_minutes,
+            early_out_deduction_enabled=policy.early_out_deduction_enabled,
+            early_out_deduction_per_minute=float(policy.early_out_deduction_per_minute),
+            overtime_enabled=policy.overtime_enabled,
+            overtime_minimum_minutes=policy.overtime_minimum_minutes,
+            overtime_rate_per_minute=float(policy.overtime_rate_per_minute),
+            missing_clock_out_policy=policy.missing_clock_out_policy.value,
+            attendance_based_salary_enabled=policy.attendance_based_salary_enabled,
+        )
+
+    payroll_cfg = db.get(BusinessPayrollConfig, business_id)
+    return AttendancePolicyResponse(
+        early_clock_in_minutes=15,
+        on_time_grace_minutes=10,
+        half_day_threshold_minutes=120,
+        absent_threshold_minutes=240,
+        early_out_deduction_enabled=False,
+        early_out_deduction_per_minute=2.0,
+        overtime_enabled=payroll_cfg.overtime_enabled if payroll_cfg else True,
+        overtime_minimum_minutes=30,
+        overtime_rate_per_minute=float(payroll_cfg.overtime_per_minute)
+        if payroll_cfg
+        else 1.0,
+        missing_clock_out_policy=MissingClockOutPolicy.auto_clock_out.value,
+        attendance_based_salary_enabled=True,
+    )
+
+
+def _rest_day_policy_response(
+    policy: BusinessRestDayPolicy | None,
+) -> RestDayPolicyResponse:
+    if policy is not None:
+        return RestDayPolicyResponse(
+            weekly_rest_day=policy.weekly_rest_day.value,
+            work_on_rest_day_allowed=policy.work_on_rest_day_allowed,
+            rest_day_premium_percent=float(policy.rest_day_premium_percent),
+            use_custom_premium=policy.use_custom_premium,
+            custom_premium_percent=float(policy.custom_premium_percent)
+            if policy.custom_premium_percent is not None
+            else None,
+        )
+
+    return RestDayPolicyResponse(
+        weekly_rest_day=Weekday.sunday.value,
+        work_on_rest_day_allowed=False,
+        rest_day_premium_percent=30.0,
+        use_custom_premium=False,
+        custom_premium_percent=None,
+    )
 
 
 @router.get("/me/setup-status", response_model=SetupStatusResponse)
@@ -131,28 +196,7 @@ def get_attendance_policy(
     if user.business_id is None:
         raise HTTPException(400, "No business context")
     policy = db.get(BusinessAttendancePolicy, user.business_id)
-    if policy is None:
-        policy = BusinessAttendancePolicy(business_id=user.business_id)
-        payroll_cfg = db.get(BusinessPayrollConfig, user.business_id)
-        if payroll_cfg is not None:
-            policy.overtime_rate_per_minute = payroll_cfg.overtime_per_minute
-            policy.overtime_enabled = payroll_cfg.overtime_enabled
-        db.add(policy)
-        db.commit()
-        db.refresh(policy)
-    return AttendancePolicyResponse(
-        early_clock_in_minutes=policy.early_clock_in_minutes,
-        on_time_grace_minutes=policy.on_time_grace_minutes,
-        half_day_threshold_minutes=policy.half_day_threshold_minutes,
-        absent_threshold_minutes=policy.absent_threshold_minutes,
-        early_out_deduction_enabled=policy.early_out_deduction_enabled,
-        early_out_deduction_per_minute=float(policy.early_out_deduction_per_minute),
-        overtime_enabled=policy.overtime_enabled,
-        overtime_minimum_minutes=policy.overtime_minimum_minutes,
-        overtime_rate_per_minute=float(policy.overtime_rate_per_minute),
-        missing_clock_out_policy=policy.missing_clock_out_policy.value,
-        attendance_based_salary_enabled=policy.attendance_based_salary_enabled,
-    )
+    return _attendance_policy_response(db, user.business_id, policy)
 
 
 @router.put("/me/attendance-policy")
@@ -186,20 +230,7 @@ def get_rest_day_policy(
     if user.business_id is None:
         raise HTTPException(400, "No business context")
     policy = db.get(BusinessRestDayPolicy, user.business_id)
-    if policy is None:
-        policy = BusinessRestDayPolicy(business_id=user.business_id)
-        db.add(policy)
-        db.commit()
-        db.refresh(policy)
-    return RestDayPolicyResponse(
-        weekly_rest_day=policy.weekly_rest_day.value,
-        work_on_rest_day_allowed=policy.work_on_rest_day_allowed,
-        rest_day_premium_percent=float(policy.rest_day_premium_percent),
-        use_custom_premium=policy.use_custom_premium,
-        custom_premium_percent=float(policy.custom_premium_percent)
-        if policy.custom_premium_percent is not None
-        else None,
-    )
+    return _rest_day_policy_response(policy)
 
 
 @router.put("/me/rest-day-policy")
@@ -315,6 +346,79 @@ def _account_settings_response(
         contact_phone=reg.owner_phone if reg else None,
         address=address or "",
         business_type=business.business_type,
+    )
+
+
+def _business_settings_response(
+    db: Session, user: User, business: Business
+) -> BusinessSettingsResponse:
+    reg = (
+        db.get(BusinessRegistration, business.registration_id)
+        if business.registration_id
+        else None
+    )
+    loc = (
+        db.query(BusinessLocation)
+        .filter(
+            BusinessLocation.business_id == business.id,
+            BusinessLocation.is_primary.is_(True),
+        )
+        .first()
+    )
+    address = loc.address if loc else (reg.proposed_address if reg else "")
+    documents = (
+        [document_response(doc) for doc in reg.documents] if reg is not None else []
+    )
+    return BusinessSettingsResponse(
+        business_name=business.name,
+        business_type=business.business_type,
+        business_code=business.business_code,
+        address=address or "",
+        owner_name=reg.owner_name if reg else None,
+        owner_email=user.email,
+        owner_phone=reg.owner_phone if reg else None,
+        registration_id=str(business.registration_id) if business.registration_id else None,
+        application_status=reg.application_status.value if reg else None,
+        registration_documents=documents,
+    )
+
+
+@router.get("/me/business-settings", response_model=BusinessSettingsResponse)
+def get_business_settings(
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(require_roles(UserRole.owner))],
+):
+    if user.business_id is None:
+        raise HTTPException(400, "No business context")
+    business = db.get(Business, user.business_id)
+    if business is None:
+        raise HTTPException(404, "Business not found")
+    return _business_settings_response(db, user, business)
+
+
+@router.get("/me/registration-documents/{document_id}/file")
+def download_owner_registration_document(
+    document_id: uuid.UUID,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(require_roles(UserRole.owner))],
+):
+    if user.business_id is None:
+        raise HTTPException(400, "No business context")
+    business = db.get(Business, user.business_id)
+    if business is None or business.registration_id is None:
+        raise HTTPException(404, "Business registration not found")
+
+    document = db.get(RegistrationDocument, document_id)
+    if document is None or document.registration_id != business.registration_id:
+        raise HTTPException(404, "Document not found")
+
+    file_path = get_document_file_path(document)
+    if not file_path.exists():
+        raise HTTPException(404, "File not found on server")
+    return FileResponse(
+        path=file_path,
+        media_type=document.content_type,
+        filename=document.original_filename,
     )
 
 

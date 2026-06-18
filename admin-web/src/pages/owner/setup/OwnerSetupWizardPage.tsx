@@ -542,7 +542,6 @@ export function OwnerSetupWizardPage() {
                       }
                     >
                       <option value="weekly">Weekly</option>
-                      <option value="bi_weekly">Bi-Weekly</option>
                       <option value="semi_monthly">Semi-Monthly</option>
                       <option value="monthly">Monthly</option>
                     </select>

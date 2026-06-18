@@ -17,7 +17,6 @@ export const ownerNavItems: OwnerNavItem[] = [
     label: "Business Setup",
     activePaths: [
       "/owner/settings/setup",
-      "/owner/settings/personal",
       "/owner/settings/account",
       "/owner/settings/business",
       "/owner/positions-salary-rates",

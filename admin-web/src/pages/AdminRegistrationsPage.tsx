@@ -7,9 +7,11 @@ import { listRegistrations } from "@/lib/api";
 import { formatBusinessType } from "@/lib/registrationDocuments";
 
 export function AdminRegistrationsPage() {
-  const { data = [], isLoading } = useQuery({
-    queryKey: ["registrations"],
+  const { data = [], isLoading, isError } = useQuery({
+    queryKey: ["registrations", "pending"],
     queryFn: () => listRegistrations("pending"),
+    staleTime: 0,
+    refetchOnWindowFocus: true,
   });
 
   return (
@@ -46,7 +48,16 @@ export function AdminRegistrationsPage() {
               </div>
             )}
 
-            {!isLoading && data.length === 0 && (
+            {!isLoading && isError && (
+              <div className="p-8 text-center">
+                <p className="font-medium">Unable to load registration requests</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Sign in as a platform admin and try again.
+                </p>
+              </div>
+            )}
+
+            {!isLoading && !isError && data.length === 0 && (
               <div className="p-8 text-center">
                 <ClipboardList className="mx-auto h-10 w-10 text-muted-foreground/50" />
                 <p className="mt-3 font-medium">All caught up</p>
@@ -56,7 +67,7 @@ export function AdminRegistrationsPage() {
               </div>
             )}
 
-            {!isLoading && data.length > 0 && (
+            {!isLoading && !isError && data.length > 0 && (
               <div className="divide-y">
                 {data.map((registration) => (
                   <Link
@@ -67,7 +78,7 @@ export function AdminRegistrationsPage() {
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
                         <p className="font-medium">{registration.business_name}</p>
-                        <StatusBadge status={registration.status} />
+                        <StatusBadge status={registration.application_status} />
                       </div>
                       <p className="mt-1 flex items-center gap-1.5 text-sm text-muted-foreground">
                         <Mail className="h-3.5 w-3.5 shrink-0" />

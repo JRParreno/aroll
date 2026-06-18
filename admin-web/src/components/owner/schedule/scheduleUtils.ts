@@ -48,7 +48,7 @@ export function textColorForBackground(hex: string): string {
   return luminance > 0.6 ? "#1e293b" : "#ffffff";
 }
 
-export type ScheduleCell = ScheduleAssignment | null;
+export type ScheduleCell = ScheduleAssignment[];
 
 export function buildScheduleMatrix(
   employees: Employee[],
@@ -61,18 +61,21 @@ export function buildScheduleMatrix(
   const weekDays = getWeekDays(weekStart);
   const dateKeys = weekDays.map(toDateKey);
 
-  const byEmployeeDate = new Map<string, Map<string, ScheduleAssignment>>();
+  const byEmployeeDate = new Map<string, Map<string, ScheduleAssignment[]>>();
   for (const assignment of assignments) {
     const employeeMap =
-      byEmployeeDate.get(assignment.employee_id) ?? new Map<string, ScheduleAssignment>();
-    employeeMap.set(assignment.work_date, assignment);
+      byEmployeeDate.get(assignment.employee_id) ??
+      new Map<string, ScheduleAssignment[]>();
+    const dayAssignments = employeeMap.get(assignment.work_date) ?? [];
+    dayAssignments.push(assignment);
+    employeeMap.set(assignment.work_date, dayAssignments);
     byEmployeeDate.set(assignment.employee_id, employeeMap);
   }
 
   return employees.map((employee) => ({
     employee,
     cells: dateKeys.map(
-      (dateKey) => byEmployeeDate.get(employee.id)?.get(dateKey) ?? null
+      (dateKey) => byEmployeeDate.get(employee.id)?.get(dateKey) ?? []
     ),
   }));
 }

@@ -41,6 +41,10 @@ function isImageDocument(document: RegistrationDocument) {
 type BusinessRegistrationDocumentsSectionProps = {
   registrationId: string | null;
   documents: RegistrationDocument[];
+  fetchDocumentFile?: (
+    registrationId: string,
+    documentId: string
+  ) => Promise<Blob>;
 };
 
 type ImagePreviewState = {
@@ -52,6 +56,7 @@ type ImagePreviewState = {
 export function BusinessRegistrationDocumentsSection({
   registrationId,
   documents,
+  fetchDocumentFile = fetchAdminRegistrationDocumentFile,
 }: BusinessRegistrationDocumentsSectionProps) {
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [imagePreview, setImagePreview] = useState<ImagePreviewState | null>(
@@ -70,7 +75,7 @@ export function BusinessRegistrationDocumentsSection({
     documents.map((document) => [document.document_type, document])
   );
 
-  if (!registrationId || documents.length === 0) {
+  if (!registrationId) {
     return (
       <p className="text-sm text-muted-foreground">
         No registration documents available.
@@ -83,7 +88,7 @@ export function BusinessRegistrationDocumentsSection({
 
     setLoadingId(document.id);
     try {
-      const blob = await fetchAdminRegistrationDocumentFile(
+      const blob = await fetchDocumentFile(
         registrationId,
         document.id
       );
@@ -120,7 +125,7 @@ export function BusinessRegistrationDocumentsSection({
 
     setLoadingId(document.id);
     try {
-      const blob = await fetchAdminRegistrationDocumentFile(
+      const blob = await fetchDocumentFile(
         registrationId,
         document.id
       );
@@ -158,7 +163,7 @@ export function BusinessRegistrationDocumentsSection({
                   </p>
                   {document ? (
                     <>
-                      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                      <div className="mt-3 grid gap-3 sm:grid-cols-3">
                         <div>
                           <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                             File Name
@@ -174,6 +179,12 @@ export function BusinessRegistrationDocumentsSection({
                           <p className="mt-1 text-sm">
                             {formatDateTime(document.uploaded_at)}
                           </p>
+                        </div>
+                        <div>
+                          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                            Status
+                          </p>
+                          <p className="mt-1 text-sm">Uploaded</p>
                         </div>
                       </div>
                       <div className="mt-4 flex flex-wrap gap-2">

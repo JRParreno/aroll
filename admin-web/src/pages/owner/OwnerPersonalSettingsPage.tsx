@@ -1,5 +1,5 @@
-import { OwnerComingSoon } from "@/components/owner/OwnerComingSoon";
+import { Navigate } from "react-router-dom";
 
 export function OwnerPersonalSettingsPage() {
-  return <OwnerComingSoon title="Account Settings" />;
+  return <Navigate to="/owner/settings/account" replace />;
 }

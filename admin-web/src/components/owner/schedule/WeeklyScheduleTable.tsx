@@ -16,30 +16,37 @@ type Props = {
   }[];
 };
 
-function ScheduleCellView({ cell }: { cell: ScheduleCell }) {
-  if (!cell) {
+function ScheduleCellView({ cells }: { cells: ScheduleCell }) {
+  if (cells.length === 0) {
     return <span className="text-xs text-muted-foreground">OFF</span>;
   }
 
-  const backgroundColor = cell.shift_color ?? undefined;
-
   return (
-    <div
-      className="rounded-md px-2 py-1.5 text-xs"
-      style={
-        backgroundColor
-          ? {
-              backgroundColor,
-              color: textColorForBackground(backgroundColor),
+    <div className="space-y-1">
+      {cells.map((cell) => {
+        const backgroundColor = cell.shift_color ?? undefined;
+
+        return (
+          <div
+            key={cell.id}
+            className="rounded-md px-2 py-1.5 text-xs"
+            style={
+              backgroundColor
+                ? {
+                    backgroundColor,
+                    color: textColorForBackground(backgroundColor),
+                  }
+                : undefined
             }
-          : undefined
-      }
-    >
-      <p className="font-medium">{cell.shift_name}</p>
-      <p>
-        {formatShiftTime(cell.shift_start_time)} –{" "}
-        {formatShiftTime(cell.shift_end_time)}
-      </p>
+          >
+            <p className="font-medium">{cell.shift_name}</p>
+            <p>
+              {formatShiftTime(cell.shift_start_time)} –{" "}
+              {formatShiftTime(cell.shift_end_time)}
+            </p>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -79,7 +86,7 @@ export function WeeklyScheduleTable({ weekStart, rows }: Props) {
               <td className="px-4 py-3 font-medium">{employee.full_name}</td>
               {cells.map((cell, index) => (
                 <td key={`${employee.id}-${index}`} className="px-3 py-3">
-                  <ScheduleCellView cell={cell} />
+                  <ScheduleCellView cells={cell} />
                 </td>
               ))}
             </tr>
