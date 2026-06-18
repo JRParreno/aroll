@@ -22,6 +22,12 @@ class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     must_change_password: bool = False
+    employee_id: str | None = None
+    business_id: str | None = None
+    full_name: str | None = None
+    position: str | None = None
+    role: str | None = None
+    business_name: str | None = None
 
 
 class UserMeResponse(BaseModel):
@@ -30,7 +36,9 @@ class UserMeResponse(BaseModel):
     role: str
     business_id: str | None
     must_change_password: bool
+    employee_id: str | None = None
     full_name: str | None = None
+    position: str | None = None
     business_name: str | None = None
     business_code: str | None = None
     setup_completed_at: datetime | None = None

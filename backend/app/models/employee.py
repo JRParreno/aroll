@@ -6,7 +6,7 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
-from app.models.enums import EmploymentType
+from app.models.enums import EmployeeStatus, EmploymentType
 
 
 class Employee(Base):
@@ -32,6 +32,9 @@ class Employee(Base):
     )
     phone: Mapped[str | None] = mapped_column(String(50), nullable=True)
     hire_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    status: Mapped[EmployeeStatus] = mapped_column(
+        Enum(EmployeeStatus), default=EmployeeStatus.invited
+    )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()

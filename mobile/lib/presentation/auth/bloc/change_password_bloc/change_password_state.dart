@@ -1,3 +1,4 @@
+import 'package:aroll_mobile/domain/entities/user_session.dart';
 import 'package:equatable/equatable.dart';
 
 abstract class ChangePasswordState extends Equatable {
@@ -16,7 +17,12 @@ class LoadingChangePasswordState extends ChangePasswordState {
 }
 
 class SuccessChangePasswordState extends ChangePasswordState {
-  const SuccessChangePasswordState();
+  const SuccessChangePasswordState({required this.session});
+
+  final UserSession session;
+
+  @override
+  List<Object?> get props => [session];
 }
 
 class ErrorChangePasswordState extends ChangePasswordState {

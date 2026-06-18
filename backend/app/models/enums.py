@@ -46,6 +46,12 @@ class EmploymentType(str, enum.Enum):
     part_time = "part_time"
 
 
+class EmployeeStatus(str, enum.Enum):
+    invited = "invited"
+    active = "active"
+    inactive = "inactive"
+
+
 class PayrollRunStatus(str, enum.Enum):
     draft = "draft"
     finalized = "finalized"

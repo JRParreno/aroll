@@ -33,6 +33,12 @@ api.interceptors.request.use((config) => {
 export type LoginResponse = {
   access_token: string;
   must_change_password: boolean;
+  employee_id?: string | null;
+  business_id?: string | null;
+  full_name?: string | null;
+  position?: string | null;
+  role?: string | null;
+  business_name?: string | null;
 };
 
 export type UserMe = {
@@ -41,7 +47,9 @@ export type UserMe = {
   role: string;
   business_id: string | null;
   must_change_password: boolean;
+  employee_id?: string | null;
   full_name: string | null;
+  position?: string | null;
   business_name: string | null;
   business_code: string | null;
   setup_completed_at: string | null;
@@ -128,13 +136,14 @@ export type Employee = {
   email: string;
   full_name: string;
   position_title: string | null;
+  phone: string | null;
   employment_type: string;
-  is_active: boolean;
+  status: "invited" | "active" | "inactive";
+  must_change_password: boolean;
+  temporary_password: string | null;
 };
 
-export type EmployeeCreateResponse = Employee & {
-  temporary_password: string;
-};
+export type EmployeeCreateResponse = Employee;
 
 export async function login(email: string, password: string) {
   const { data } = await api.post<LoginResponse>("/auth/login", {
@@ -331,8 +340,10 @@ export async function getBusiness(id: string) {
   return data;
 }
 
-export async function listEmployees() {
-  const { data } = await api.get<Employee[]>("/employees");
+export async function listEmployees(includeInactive = false) {
+  const { data } = await api.get<Employee[]>("/employees", {
+    params: includeInactive ? { include_inactive: true } : undefined,
+  });
   return data;
 }
 
@@ -344,7 +355,7 @@ export async function listActivityLogs() {
 export async function createEmployee(payload: {
   email: string;
   full_name: string;
-  position_title?: string;
+  position_title: string;
   position_id?: string;
   employment_type?: string;
   phone?: string;
@@ -353,6 +364,30 @@ export async function createEmployee(payload: {
     "/employees",
     payload
   );
+  return data;
+}
+
+export async function updateEmployee(
+  id: string,
+  payload: {
+    full_name?: string;
+    position_title?: string;
+    position_id?: string;
+    employment_type?: string;
+    phone?: string | null;
+  }
+) {
+  const { data } = await api.put<Employee>(`/employees/${id}`, payload);
+  return data;
+}
+
+export async function deactivateEmployee(id: string) {
+  const { data } = await api.post<Employee>(`/employees/${id}/deactivate`);
+  return data;
+}
+
+export async function reactivateEmployee(id: string) {
+  const { data } = await api.post<Employee>(`/employees/${id}/reactivate`);
   return data;
 }
 

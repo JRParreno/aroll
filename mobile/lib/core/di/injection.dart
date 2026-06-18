@@ -8,6 +8,7 @@ import 'package:aroll_mobile/domain/repositories/auth_repository.dart';
 import 'package:aroll_mobile/domain/usecase/attendance/get_attendance_history_usecase.dart';
 import 'package:aroll_mobile/domain/usecase/auth/change_password_usecase.dart';
 import 'package:aroll_mobile/domain/usecase/auth/login_usecase.dart';
+import 'package:aroll_mobile/domain/usecase/auth/logout_usecase.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:get_it/get_it.dart';
 
@@ -25,6 +26,7 @@ Future<void> initDependencies() async {
 
   sl.registerLazySingleton(() => LoginUsecase(sl<AuthRepository>()));
   sl.registerLazySingleton(() => ChangePasswordUsecase(sl<AuthRepository>()));
+  sl.registerLazySingleton(() => LogoutUsecase(sl<AuthRepository>()));
   sl.registerLazySingleton(() => GetAttendanceHistoryUsecase(sl<AttendanceRepository>()));
 
   sl.registerLazySingleton(AppState.new);

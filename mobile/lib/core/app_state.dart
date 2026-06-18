@@ -10,6 +10,10 @@ class AppState extends ChangeNotifier {
     session = s;
     isLoggedIn = true;
     mustChangePassword = mustChange;
+    debugPrint(
+      '[AppState] setSession must_change_password=$mustChangePassword '
+      '(session.mustChangePassword=${s.mustChangePassword})',
+    );
     notifyListeners();
   }
 
@@ -22,6 +26,22 @@ class AppState extends ChangeNotifier {
 
   void passwordChanged() {
     mustChangePassword = false;
+    if (session != null) {
+      session = UserSession(
+        userId: session!.userId,
+        employeeId: session!.employeeId,
+        businessId: session!.businessId,
+        fullName: session!.fullName,
+        position: session!.position,
+        role: session!.role,
+        businessName: session!.businessName,
+        mustChangePassword: false,
+      );
+    }
+    debugPrint(
+      '[AppState] passwordChanged must_change_password=$mustChangePassword '
+      '(session.mustChangePassword=${session?.mustChangePassword})',
+    );
     notifyListeners();
   }
 }

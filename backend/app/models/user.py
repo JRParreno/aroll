@@ -23,6 +23,9 @@ class User(Base):
     role: Mapped[UserRole] = mapped_column(Enum(UserRole), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     must_change_password: Mapped[bool] = mapped_column(Boolean, default=False)
+    pending_temporary_password: Mapped[str | None] = mapped_column(
+        String(50), nullable=True
+    )
     last_login_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )

@@ -1,4 +1,4 @@
-import 'package:aroll_mobile/core/error/failures.dart';
+import 'package:aroll_mobile/domain/entities/user_session.dart';
 import 'package:aroll_mobile/domain/repositories/auth_repository.dart';
 
 class ChangePasswordUsecase {
@@ -6,14 +6,13 @@ class ChangePasswordUsecase {
 
   final AuthRepository _repository;
 
-  Future<({Failure? failure})> call({
+  Future<AuthResult<UserSession>> call({
     required String currentPassword,
     required String newPassword,
-  }) async {
-    final result = await _repository.changePassword(
+  }) {
+    return _repository.changePassword(
       currentPassword: currentPassword,
       newPassword: newPassword,
     );
-    return (failure: result.failure);
   }
 }
