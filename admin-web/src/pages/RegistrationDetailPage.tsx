@@ -6,6 +6,7 @@ import {
   CalendarClock,
   CheckCircle2,
   Clock,
+  FileText,
   Mail,
   MapPin,
   Phone,
@@ -22,6 +23,7 @@ import {
   StatusBadge,
 } from "@/components/detail/DetailLayout";
 import { Button } from "@/components/ui/button";
+import { RegistrationDocumentsSection } from "@/components/registration/RegistrationDocumentsSection";
 import {
   Dialog,
   DialogContent,
@@ -35,6 +37,7 @@ import {
   getRegistration,
   rejectRegistration,
 } from "@/lib/api";
+import { formatBusinessType } from "@/lib/registrationDocuments";
 
 export function RegistrationDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -148,6 +151,11 @@ export function RegistrationDetailPage() {
                 icon={<Building2 className="h-3.5 w-3.5" />}
               />
               <DetailField
+                label="Business Type"
+                value={formatBusinessType(data.business_type)}
+                icon={<Building2 className="h-3.5 w-3.5" />}
+              />
+              <DetailField
                 label="Proposed Address"
                 value={data.proposed_address || "Not provided"}
                 icon={<MapPin className="h-3.5 w-3.5" />}
@@ -194,6 +202,19 @@ export function RegistrationDetailPage() {
                 icon={<Phone className="h-3.5 w-3.5" />}
               />
             </DetailSection>
+
+            <DetailSection
+              title="Uploaded Documents"
+              description="Review submitted verification files."
+              icon={<FileText className="h-4 w-4" />}
+            >
+              <div className="sm:col-span-2">
+                <RegistrationDocumentsSection
+                  registrationId={data.id}
+                  documents={data.documents}
+                />
+              </div>
+            </DetailSection>
           </div>
 
           <div className="space-y-6">
@@ -233,7 +254,8 @@ export function RegistrationDetailPage() {
               <section className="rounded-xl border bg-muted/30 p-5">
                 <h2 className="text-sm font-semibold">Review checklist</h2>
                 <ul className="mt-3 space-y-2 text-sm text-muted-foreground">
-                  <li>• Verify business name and address look legitimate</li>
+                  <li>• Verify business name, type, and address look legitimate</li>
+                  <li>• Preview or download all uploaded documents</li>
                   <li>• Confirm owner contact details are reachable</li>
                   <li>• Approve to create business code and owner login</li>
                 </ul>

@@ -6,7 +6,7 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
-from app.models.enums import BusinessStatus, RegistrationStatus
+from app.models.enums import ApplicationStatus, BusinessStatus, RegistrationStatus
 
 
 class BusinessRegistration(Base):
@@ -20,8 +20,12 @@ class BusinessRegistration(Base):
     owner_email: Mapped[str] = mapped_column(String(255), nullable=False)
     owner_phone: Mapped[str | None] = mapped_column(String(50), nullable=True)
     proposed_address: Mapped[str | None] = mapped_column(Text, nullable=True)
+    business_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
     status: Mapped[RegistrationStatus] = mapped_column(
         Enum(RegistrationStatus), default=RegistrationStatus.pending
+    )
+    application_status: Mapped[ApplicationStatus] = mapped_column(
+        Enum(ApplicationStatus), default=ApplicationStatus.draft
     )
     reviewed_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("user.id"), nullable=True
@@ -30,8 +34,14 @@ class BusinessRegistration(Base):
         DateTime(timezone=True), nullable=True
     )
     rejection_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
-    submitted_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
+    submitted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    documents = relationship(
+        "RegistrationDocument",
+        back_populates="registration",
+        cascade="all, delete-orphan",
     )
 
 
@@ -50,6 +60,10 @@ class Business(Base):
         Enum(BusinessStatus), default=BusinessStatus.inactive
     )
     timezone: Mapped[str] = mapped_column(String(64), default="Asia/Manila")
+    business_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    setup_completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

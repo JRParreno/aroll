@@ -2,6 +2,8 @@ from datetime import datetime
 
 from pydantic import BaseModel
 
+from app.schemas.registration import RegistrationDocumentResponse
+
 
 class BusinessLocationResponse(BaseModel):
     id: str
@@ -39,5 +41,7 @@ class BusinessDetailResponse(BaseModel):
     created_at: datetime
     employee_count: int
     owner: BusinessOwnerResponse | None = None
+    registration_id: str | None = None
     registration_submitted_at: datetime | None = None
+    registration_documents: list[RegistrationDocumentResponse] = []
     locations: list[BusinessLocationResponse]

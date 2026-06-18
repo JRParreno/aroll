@@ -14,6 +14,20 @@ class RegistrationStatus(str, enum.Enum):
     rejected = "rejected"
 
 
+class ApplicationStatus(str, enum.Enum):
+    draft = "draft"
+    pending = "pending"
+    approved = "approved"
+    rejected = "rejected"
+
+
+class RegistrationDocumentType(str, enum.Enum):
+    business_permit = "business_permit"
+    valid_id = "valid_id"
+    dti_sec = "dti_sec"
+    bir_cor = "bir_cor"
+
+
 class BusinessStatus(str, enum.Enum):
     active = "active"
     inactive = "inactive"
@@ -22,6 +36,7 @@ class BusinessStatus(str, enum.Enum):
 
 class PayPeriodType(str, enum.Enum):
     weekly = "weekly"
+    bi_weekly = "bi_weekly"
     semi_monthly = "semi_monthly"
     monthly = "monthly"
 
@@ -29,6 +44,12 @@ class PayPeriodType(str, enum.Enum):
 class EmploymentType(str, enum.Enum):
     full_time = "full_time"
     part_time = "part_time"
+
+
+class EmployeeStatus(str, enum.Enum):
+    invited = "invited"
+    active = "active"
+    inactive = "inactive"
 
 
 class PayrollRunStatus(str, enum.Enum):
@@ -43,3 +64,31 @@ class AttendanceStatus(str, enum.Enum):
     late = "late"
     absent = "absent"
     incomplete = "incomplete"
+
+
+class ShiftType(str, enum.Enum):
+    morning = "morning"
+    afternoon = "afternoon"
+    evening = "evening"
+    night = "night"
+
+
+class HolidayType(str, enum.Enum):
+    regular = "regular"
+    special_non_working = "special_non_working"
+    company = "company"
+
+
+class MissingClockOutPolicy(str, enum.Enum):
+    auto_clock_out = "auto_clock_out"
+    require_manager_approval = "require_manager_approval"
+
+
+class Weekday(str, enum.Enum):
+    monday = "monday"
+    tuesday = "tuesday"
+    wednesday = "wednesday"
+    thursday = "thursday"
+    friday = "friday"
+    saturday = "saturday"
+    sunday = "sunday"

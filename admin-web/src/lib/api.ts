@@ -1,18 +1,48 @@
 import axios from "axios";
+import { getAuthToken } from "@/lib/authSession";
 
 const API_BASE = import.meta.env.VITE_API_URL ?? "http://localhost:8000/api/v1";
+
+/** Routes that must not send a stale session token. */
+function isPublicAuthPath(path: string): boolean {
+  if (
+    path.includes("/auth/login") ||
+    path.includes("/auth/business-owner-login")
+  ) {
+    return true;
+  }
+  // Public owner signup only — not admin review under /admin/registrations
+  return path.startsWith("/registrations");
+}
 
 export const api = axios.create({ baseURL: API_BASE });
 
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem("aroll_token");
-  if (token) config.headers.Authorization = `Bearer ${token}`;
+  const path = config.url ?? "";
+
+  if (isPublicAuthPath(path)) {
+    delete config.headers.Authorization;
+    return config;
+  }
+
+  const token = getAuthToken();
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  } else {
+    delete config.headers.Authorization;
+  }
   return config;
 });
 
 export type LoginResponse = {
   access_token: string;
   must_change_password: boolean;
+  employee_id?: string | null;
+  business_id?: string | null;
+  full_name?: string | null;
+  position?: string | null;
+  role?: string | null;
+  business_name?: string | null;
 };
 
 export type UserMe = {
@@ -21,8 +51,12 @@ export type UserMe = {
   role: string;
   business_id: string | null;
   must_change_password: boolean;
+  employee_id?: string | null;
   full_name: string | null;
+  position?: string | null;
   business_name: string | null;
+  business_code: string | null;
+  setup_completed_at: string | null;
 };
 
 export type Registration = {
@@ -32,10 +66,13 @@ export type Registration = {
   owner_email: string;
   owner_phone?: string | null;
   proposed_address?: string | null;
+  business_type?: string | null;
   status: string;
-  submitted_at: string;
+  application_status: string;
+  submitted_at: string | null;
   reviewed_at?: string | null;
   rejection_reason?: string | null;
+  documents: RegistrationDocument[];
 };
 
 export type BusinessListItem = {
@@ -73,6 +110,8 @@ export type BusinessDetail = {
     phone: string | null;
   } | null;
   registration_submitted_at: string | null;
+  registration_id: string | null;
+  registration_documents: RegistrationDocument[];
   locations: BusinessLocation[];
 };
 
@@ -101,13 +140,14 @@ export type Employee = {
   email: string;
   full_name: string;
   position_title: string | null;
+  phone: string | null;
   employment_type: string;
-  is_active: boolean;
+  status: "invited" | "active" | "inactive";
+  must_change_password: boolean;
+  temporary_password: string | null;
 };
 
-export type EmployeeCreateResponse = Employee & {
-  temporary_password: string;
-};
+export type EmployeeCreateResponse = Employee;
 
 export async function login(email: string, password: string) {
   const { data } = await api.post<LoginResponse>("/auth/login", {
@@ -117,8 +157,31 @@ export async function login(email: string, password: string) {
   return data;
 }
 
+export async function businessOwnerLogin(
+  business_code: string,
+  email: string,
+  password: string
+) {
+  const { data } = await api.post<LoginResponse>(
+    "/auth/business-owner-login",
+    { business_code, email, password }
+  );
+  return data;
+}
+
 export async function getMe() {
   const { data } = await api.get<UserMe>("/auth/me");
+  return data;
+}
+
+export async function changePassword(
+  current_password: string,
+  new_password: string
+) {
+  const { data } = await api.post<LoginResponse>("/auth/change-password", {
+    current_password,
+    new_password,
+  });
   return data;
 }
 
@@ -161,9 +224,109 @@ export async function submitRegistration(payload: {
   owner_email: string;
   owner_phone: string;
   proposed_address: string;
+  business_type?: string;
 }) {
-  const { data } = await api.post("/registrations", payload);
+  const { data } = await api.post<PublicRegistration>("/registrations", payload);
   return data;
+}
+
+export type RegistrationDocument = {
+  id: string;
+  document_type: string;
+  original_filename: string;
+  content_type: string;
+  file_size: number;
+  uploaded_at: string;
+};
+
+export type PublicRegistration = {
+  id: string;
+  business_name: string;
+  owner_name: string;
+  owner_email: string;
+  owner_phone?: string | null;
+  proposed_address?: string | null;
+  business_type?: string | null;
+  status: string;
+  application_status: string;
+  submitted_at: string | null;
+  reviewed_at?: string | null;
+  rejection_reason?: string | null;
+  documents: RegistrationDocument[];
+};
+
+export async function getRegistrationByEmail(email: string) {
+  const { data } = await api.get<PublicRegistration>(
+    `/registrations/by-email/${encodeURIComponent(email.trim())}`
+  );
+  return data;
+}
+
+export async function uploadRegistrationDocument(
+  registrationId: string,
+  documentType: string,
+  file: File
+) {
+  const formData = new FormData();
+  formData.append("document_type", documentType);
+  formData.append("file", file);
+  const { data } = await api.post<RegistrationDocument>(
+    `/registrations/${registrationId}/documents`,
+    formData,
+    { headers: { "Content-Type": "multipart/form-data" } }
+  );
+  return data;
+}
+
+export async function submitRegistrationApplication(registrationId: string) {
+  const { data } = await api.post<PublicRegistration>(
+    `/registrations/${registrationId}/submit`
+  );
+  return data;
+}
+
+export async function resubmitRegistrationApplication(registrationId: string) {
+  const { data } = await api.post<PublicRegistration>(
+    `/registrations/${registrationId}/resubmit`
+  );
+  return data;
+}
+
+export async function fetchAdminRegistrationDocumentFile(
+  registrationId: string,
+  documentId: string
+) {
+  const { data } = await api.get<Blob>(
+    `/admin/registrations/${registrationId}/documents/${documentId}/file`,
+    { responseType: "blob" }
+  );
+  return data;
+}
+
+export async function fetchRegistrationDocumentFile(
+  registrationId: string,
+  documentId: string
+) {
+  const { data } = await api.get<Blob>(
+    `/registrations/${registrationId}/documents/${documentId}/file`,
+    { responseType: "blob" }
+  );
+  return data;
+}
+
+export function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
+export function previewBlob(blob: Blob) {
+  const url = URL.createObjectURL(blob);
+  window.open(url, "_blank", "noopener,noreferrer");
+  window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
 
 export async function getDashboardStats() {
@@ -181,8 +344,10 @@ export async function getBusiness(id: string) {
   return data;
 }
 
-export async function listEmployees() {
-  const { data } = await api.get<Employee[]>("/employees");
+export async function listEmployees(includeInactive = false) {
+  const { data } = await api.get<Employee[]>("/employees", {
+    params: includeInactive ? { include_inactive: true } : undefined,
+  });
   return data;
 }
 
@@ -194,7 +359,8 @@ export async function listActivityLogs() {
 export async function createEmployee(payload: {
   email: string;
   full_name: string;
-  position_title?: string;
+  position_title: string;
+  position_id?: string;
   employment_type?: string;
   phone?: string;
 }) {
@@ -202,5 +368,344 @@ export async function createEmployee(payload: {
     "/employees",
     payload
   );
+  return data;
+}
+
+export async function updateEmployee(
+  id: string,
+  payload: {
+    full_name?: string;
+    position_title?: string;
+    position_id?: string;
+    employment_type?: string;
+    phone?: string | null;
+  }
+) {
+  const { data } = await api.put<Employee>(`/employees/${id}`, payload);
+  return data;
+}
+
+export async function deactivateEmployee(id: string) {
+  const { data } = await api.post<Employee>(`/employees/${id}/deactivate`);
+  return data;
+}
+
+export async function reactivateEmployee(id: string) {
+  const { data } = await api.post<Employee>(`/employees/${id}/reactivate`);
+  return data;
+}
+
+export type SetupStepStatus = {
+  key: string;
+  label: string;
+  complete: boolean;
+};
+
+export type SetupStatus = {
+  setup_completed_at: string | null;
+  completion_percent: number;
+  completed_steps: number;
+  total_steps: number;
+  steps: SetupStepStatus[];
+  missing_items: string[];
+};
+
+export type Shift = {
+  id: string;
+  name: string;
+  shift_type: string;
+  start_time: string;
+  end_time: string;
+  break_minutes: number;
+  employee_capacity: number;
+  color: string | null;
+  is_active: boolean;
+};
+
+export type ScheduleAssignment = {
+  id: string;
+  shift_id: string;
+  employee_id: string;
+  work_date: string;
+  employee_name: string;
+  shift_name: string;
+  shift_start_time: string;
+  shift_end_time: string;
+  shift_color: string | null;
+};
+
+export type WeeklySchedule = {
+  week_start: string;
+  week_end: string;
+  assignments: ScheduleAssignment[];
+};
+
+export type Position = {
+  id: string;
+  title: string;
+  daily_rate: number;
+  description: string | null;
+  is_active: boolean;
+};
+
+export type PayrollConfig = {
+  pay_period_type: string;
+  next_payday_date: string | null;
+  auto_reset_payroll_cycle: boolean;
+  late_deduction_enabled: boolean;
+  late_deduction_per_minute: number;
+  overtime_enabled: boolean;
+  overtime_per_minute: number;
+};
+
+export type AttendancePolicy = {
+  early_clock_in_minutes: number;
+  on_time_grace_minutes: number;
+  half_day_threshold_minutes: number;
+  absent_threshold_minutes: number;
+  early_out_deduction_enabled: boolean;
+  early_out_deduction_per_minute: number;
+  overtime_enabled: boolean;
+  overtime_minimum_minutes: number;
+  overtime_rate_per_minute: number;
+  missing_clock_out_policy: string;
+  attendance_based_salary_enabled: boolean;
+};
+
+export type RestDayPolicy = {
+  weekly_rest_day: string;
+  work_on_rest_day_allowed: boolean;
+  rest_day_premium_percent: number;
+  use_custom_premium: boolean;
+  custom_premium_percent: number | null;
+};
+
+export type Holiday = {
+  id: string;
+  business_id: string | null;
+  name: string;
+  holiday_date: string;
+  is_paid: boolean;
+  pay_multiplier: number;
+  holiday_type: string;
+  is_active: boolean;
+};
+
+export type AccountSettings = {
+  business_name: string;
+  owner_name: string | null;
+  email: string;
+  contact_phone: string | null;
+  address: string;
+  business_type: string | null;
+};
+
+export type AccountSettingsUpdate = {
+  business_name: string;
+  owner_name: string;
+  contact_phone?: string | null;
+  address: string;
+  business_type?: string | null;
+};
+
+export type BusinessSettings = {
+  business_name: string;
+  business_type: string | null;
+  business_code: string;
+  address: string;
+  owner_name: string | null;
+  owner_email: string;
+  owner_phone: string | null;
+  registration_id: string | null;
+  application_status: string | null;
+  registration_documents: RegistrationDocument[];
+};
+
+export async function getSetupStatus() {
+  const { data } = await api.get<SetupStatus>("/businesses/me/setup-status");
+  return data;
+}
+
+export async function completeSetup() {
+  const { data } = await api.post("/businesses/me/complete-setup");
+  return data;
+}
+
+export async function listShifts() {
+  const { data } = await api.get<Shift[]>("/shifts");
+  return data;
+}
+
+export async function createShift(payload: {
+  name: string;
+  shift_type: string;
+  start_time: string;
+  end_time: string;
+  break_minutes?: number;
+  employee_capacity?: number;
+}) {
+  const { data } = await api.post<Shift>("/shifts", payload);
+  return data;
+}
+
+export async function deleteShift(id: string) {
+  const { data } = await api.delete(`/shifts/${id}`);
+  return data;
+}
+
+export async function listPositions() {
+  const { data } = await api.get<Position[]>("/positions");
+  return data;
+}
+
+export async function createPosition(payload: {
+  title: string;
+  daily_rate: number;
+  description?: string;
+}) {
+  const { data } = await api.post<Position>("/positions", payload);
+  return data;
+}
+
+export async function deletePosition(id: string) {
+  const { data } = await api.delete(`/positions/${id}`);
+  return data;
+}
+
+export async function getPayrollConfig() {
+  const { data } = await api.get<PayrollConfig>("/businesses/me/payroll-config");
+  return data;
+}
+
+export async function updatePayrollConfig(payload: Partial<PayrollConfig>) {
+  const { data } = await api.put("/businesses/me/payroll-config", payload);
+  return data;
+}
+
+export async function getAttendancePolicy() {
+  const { data } = await api.get<AttendancePolicy>(
+    "/businesses/me/attendance-policy"
+  );
+  return data;
+}
+
+export async function updateAttendancePolicy(payload: Partial<AttendancePolicy>) {
+  const { data } = await api.put("/businesses/me/attendance-policy", payload);
+  return data;
+}
+
+export async function getRestDayPolicy() {
+  const { data } = await api.get<RestDayPolicy>("/businesses/me/rest-day-policy");
+  return data;
+}
+
+export async function updateRestDayPolicy(payload: Partial<RestDayPolicy>) {
+  const { data } = await api.put("/businesses/me/rest-day-policy", payload);
+  return data;
+}
+
+export async function listHolidays() {
+  const { data } = await api.get<Holiday[]>("/holidays");
+  return data;
+}
+
+export async function seedDefaultHolidays() {
+  const { data } = await api.post<Holiday[]>("/holidays/seed-defaults");
+  return data;
+}
+
+export async function createHoliday(payload: {
+  name: string;
+  holiday_date: string;
+  is_paid?: boolean;
+  pay_multiplier?: number;
+  holiday_type?: string;
+}) {
+  const { data } = await api.post<Holiday>("/holidays", payload);
+  return data;
+}
+
+export async function updateHoliday(
+  id: string,
+  payload: {
+    name?: string;
+    holiday_date?: string;
+    is_paid?: boolean;
+    pay_multiplier?: number;
+    holiday_type?: string;
+  }
+) {
+  const { data } = await api.put<Holiday>(`/holidays/${id}`, payload);
+  return data;
+}
+
+export async function deleteHoliday(id: string) {
+  const { data } = await api.delete(`/holidays/${id}`);
+  return data;
+}
+
+export async function fetchOwnerRegistrationDocumentFile(documentId: string) {
+  const { data } = await api.get<Blob>(
+    `/businesses/me/registration-documents/${documentId}/file`,
+    { responseType: "blob" }
+  );
+  return data;
+}
+
+export async function getBusinessSettings() {
+  const { data } = await api.get<BusinessSettings>(
+    "/businesses/me/business-settings"
+  );
+  return data;
+}
+
+export async function getAccountSettings() {
+  const { data } = await api.get<AccountSettings>(
+    "/businesses/me/account-settings"
+  );
+  return data;
+}
+
+export async function updateAccountSettings(payload: AccountSettingsUpdate) {
+  const { data } = await api.put("/businesses/me/account-settings", payload);
+  return data;
+}
+
+export async function getWeeklySchedule(weekStart: string) {
+  const { data } = await api.get<WeeklySchedule>("/schedules/weekly", {
+    params: { week_start: weekStart },
+  });
+  return data;
+}
+
+export async function assignSchedule(payload: {
+  shift_id: string;
+  work_date: string;
+  employee_ids: string[];
+}) {
+  const { data } = await api.post<{
+    created: number;
+    assignments: ScheduleAssignment[];
+  }>("/schedules/assign", payload);
+  return data;
+}
+
+export type BusinessLocationConfig = {
+  label: string;
+  address: string;
+  latitude: number | null;
+  longitude: number | null;
+  geofence_radius_m: number;
+};
+
+export async function getBusinessLocation() {
+  const { data } = await api.get<BusinessLocationConfig>(
+    "/businesses/me/location"
+  );
+  return data;
+}
+
+export async function updateBusinessLocation(payload: BusinessLocationConfig) {
+  const { data } = await api.put("/businesses/me/location", payload);
   return data;
 }

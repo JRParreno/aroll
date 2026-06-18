@@ -1,0 +1,130 @@
+import { useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { businessOwnerLogin, getMe } from "@/lib/api";
+import {
+  clearAuthSession,
+  isOwnerRole,
+  ME_QUERY_KEY,
+  setAuthSession,
+} from "@/lib/authSession";
+
+export function BusinessOwnerLoginPage() {
+  const navigate = useNavigate();
+  const qc = useQueryClient();
+  const [businessCode, setBusinessCode] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      const res = await businessOwnerLogin(
+        businessCode.trim(),
+        email,
+        password
+      );
+
+      qc.clear();
+      setAuthSession(res.access_token);
+
+      const me = await getMe();
+
+      if (!isOwnerRole(me.role)) {
+        clearAuthSession();
+        qc.clear();
+        toast.error("This account is not a business owner account.");
+        return;
+      }
+
+      localStorage.setItem("aroll_business_code", businessCode.trim());
+      qc.setQueryData(ME_QUERY_KEY, me);
+
+      if (me.must_change_password) {
+        toast.success("Signed in. Please change your password to continue.");
+        navigate("/owner/change-password");
+      } else {
+        toast.success("Signed in successfully");
+        navigate(
+          me.setup_completed_at ? "/owner/dashboard" : "/owner/setup-wizard"
+        );
+      }
+    } catch {
+      toast.error("Invalid business code, email, or password");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="flex min-h-screen items-center justify-center p-4">
+      <Card className="w-full max-w-md">
+        <CardHeader>
+          <CardTitle>Business Owner Login</CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Sign in with your business code and owner credentials
+          </p>
+        </CardHeader>
+
+        <CardContent>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="business_code">Business Code</Label>
+              <Input
+                id="business_code"
+                type="text"
+                placeholder="MB-D90987"
+                value={businessCode}
+                onChange={(e) => setBusinessCode(e.target.value)}
+                required
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="email">Email Address</Label>
+              <Input
+                id="email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="password">Password</Label>
+              <Input
+                id="password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+              />
+            </div>
+
+            <Button type="submit" className="w-full" disabled={loading}>
+              {loading ? "Signing in…" : "Login"}
+            </Button>
+
+            <p className="text-center text-xs text-muted-foreground">
+              Not yet registered?{" "}
+              <Link
+                to="/register-business"
+                className="underline underline-offset-2"
+              >
+                Register here
+              </Link>
+            </p>
+          </form>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}

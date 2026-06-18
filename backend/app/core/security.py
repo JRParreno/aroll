@@ -39,6 +39,8 @@ def decode_access_token(token: str) -> dict | None:
         return None
 
 
-def generate_temporary_password(length: int = 12) -> str:
-    alphabet = string.ascii_letters + string.digits
-    return "".join(secrets.choice(alphabet) for _ in range(length))
+def generate_temporary_password(length: int = 6) -> str:
+    """Generate a one-time employee password like EMP-8F2A91."""
+    alphabet = string.ascii_uppercase + string.digits
+    suffix = "".join(secrets.choice(alphabet) for _ in range(length))
+    return f"EMP-{suffix}"

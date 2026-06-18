@@ -1,17 +1,20 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { login } from "@/lib/api";
+import { login, getMe } from "@/lib/api";
+import { ME_QUERY_KEY, setAuthSession } from "@/lib/authSession";
 import { jwtDecode } from "jwt-decode";
 
 type JwtPayload = { role?: string };
 
 export function LoginPage() {
   const navigate = useNavigate();
+  const qc = useQueryClient();
   const [email, setEmail] = useState("admin@example.com");
   const [password, setPassword] = useState("changeme123");
   const [loading, setLoading] = useState(false);
@@ -21,12 +24,19 @@ export function LoginPage() {
     setLoading(true);
     try {
       const res = await login(email, password);
-      localStorage.setItem("aroll_token", res.access_token);
       const decoded = jwtDecode<JwtPayload>(res.access_token);
       const role = decoded.role;
-      if (role === "platform_admin") navigate("/admin");
-      else if (role === "owner" || role === "manager") navigate("/owner");
-      else toast.error("Use the mobile app for employee login");
+
+      if (role !== "platform_admin") {
+        toast.error("Use the Business Owner Login page for owner accounts.");
+        return;
+      }
+
+      qc.clear();
+      setAuthSession(res.access_token);
+      const me = await getMe();
+      qc.setQueryData(ME_QUERY_KEY, me);
+      navigate("/admin");
     } catch {
       toast.error("Invalid email or password");
     } finally {
