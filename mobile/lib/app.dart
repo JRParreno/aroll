@@ -18,22 +18,47 @@ class _ArollAppState extends State<ArollApp> {
 
   @override
   Widget build(BuildContext context) {
-    return ShadApp.custom(
-      themeMode: ThemeMode.light,
-      darkTheme: ShadThemeData(brightness: Brightness.dark, colorScheme: const ShadZincColorScheme.dark()),
-      theme: ShadThemeData(brightness: Brightness.light, colorScheme: const ShadZincColorScheme.light()),
-      appBuilder: (context) {
-        return MaterialApp.router(
-          title: 'Aroll+',
-          debugShowCheckedModeBanner: false,
-          theme: ThemeData(
-            colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF2E7D32)),
-            useMaterial3: true,
+    return AnimatedBuilder(
+      animation: _appState,
+      builder: (context, _) {
+        final primary = _hexColor(
+              _appState.session?.branding?.theme.primaryColor,
+            ) ??
+            const Color(0xFF2E7D32);
+
+        return ShadApp.custom(
+          themeMode: ThemeMode.light,
+          darkTheme: ShadThemeData(
+            brightness: Brightness.dark,
+            colorScheme: const ShadZincColorScheme.dark(),
           ),
-          routerConfig: _router,
-          builder: (context, child) => ShadAppBuilder(child: child!),
+          theme: ShadThemeData(
+            brightness: Brightness.light,
+            colorScheme: const ShadZincColorScheme.light(),
+          ),
+          appBuilder: (context) {
+            return MaterialApp.router(
+              title: _appState.session?.businessName ?? 'Aroll+',
+              debugShowCheckedModeBanner: false,
+              theme: ThemeData(
+                colorScheme: ColorScheme.fromSeed(seedColor: primary),
+                useMaterial3: true,
+              ),
+              routerConfig: _router,
+              builder: (context, child) => ShadAppBuilder(child: child!),
+            );
+          },
         );
       },
     );
   }
+}
+
+Color? _hexColor(String? value) {
+  if (value == null || value.isEmpty) return null;
+  final normalized = value.replaceFirst('#', '');
+  if (normalized.length != 6) return null;
+  final parsed = int.tryParse('FF$normalized', radix: 16);
+  if (parsed == null) return null;
+  return Color(parsed);
 }

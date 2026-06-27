@@ -33,9 +33,16 @@ export function AttendanceSummary({
   const progress = (display.present_rate / 100) * circumference;
 
   return (
-    <div className="rounded-2xl border bg-card p-6 shadow-sm">
+    <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
       <div className="flex items-center justify-between gap-2">
-        <h2 className="text-lg font-semibold">Today&apos;s Attendance Summary</h2>
+        <div>
+          <h2 className="text-lg font-semibold text-[#1F2937]">
+            Today&apos;s Attendance Summary
+          </h2>
+          <p className="mt-1 text-sm text-[#6B7280]">
+            Present, absent, and late counts across active businesses.
+          </p>
+        </div>
         {!hasData && !loading && (
           <span className="rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-medium text-amber-700">
             Sample data
@@ -66,14 +73,14 @@ export function AttendanceSummary({
                 cy="80"
                 r={radius}
                 fill="none"
-                stroke="#22c55e"
+                stroke="#4D9A21"
                 strokeWidth="14"
                 strokeLinecap="round"
                 strokeDasharray={`${progress} ${circumference}`}
               />
             </svg>
             <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-              <span className="text-2xl font-bold text-emerald-600">
+              <span className="text-2xl font-semibold text-[#4D9A21]">
                 {display.present_rate}%
               </span>
               <span className="text-xs text-muted-foreground">Present Rate</span>
@@ -81,9 +88,9 @@ export function AttendanceSummary({
           </div>
 
           <div className="w-full space-y-4 sm:flex-1">
-            <AttendanceStat label="Present" value={display.present} color="text-emerald-600" />
-            <AttendanceStat label="Absent" value={display.absent} color="text-red-500" />
-            <AttendanceStat label="Late" value={display.late} color="text-amber-500" />
+            <AttendanceStat label="Present" value={display.present} color="text-[#4D9A21]" />
+            <AttendanceStat label="Absent" value={display.absent} color="text-[#DC2626]" />
+            <AttendanceStat label="Late" value={display.late} color="text-[#D97706]" />
           </div>
         </div>
       )}
@@ -102,7 +109,7 @@ function AttendanceStat({
 }) {
   return (
     <div className="flex items-baseline justify-between border-b border-dashed pb-2 last:border-0">
-      <span className={`text-2xl font-bold ${color}`}>
+      <span className={`text-2xl font-semibold ${color}`}>
         {value.toLocaleString()}
       </span>
       <span className="text-sm text-muted-foreground">{label}</span>

@@ -14,8 +14,8 @@ class WelcomeHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final primary = theme.colorScheme.primary;
-
+    final primary = _hexColor(session.branding?.theme.primaryColor) ??
+        theme.colorScheme.primary;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(20, 20, 12, 20),
@@ -88,6 +88,15 @@ class WelcomeHeader extends StatelessWidget {
       ),
     );
   }
+}
+
+Color? _hexColor(String? value) {
+  if (value == null || value.isEmpty) return null;
+  final normalized = value.replaceFirst('#', '');
+  if (normalized.length != 6) return null;
+  final parsed = int.tryParse('FF$normalized', radix: 16);
+  if (parsed == null) return null;
+  return Color(parsed);
 }
 
 class _InfoRow extends StatelessWidget {

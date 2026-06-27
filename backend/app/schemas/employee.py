@@ -1,15 +1,15 @@
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, Field
 
 from app.models.enums import EmploymentType
 
 
 class EmployeeCreate(BaseModel):
-    email: EmailStr
     full_name: str = Field(min_length=2, max_length=200)
     position_title: str = Field(min_length=1, max_length=100)
     employment_type: EmploymentType = EmploymentType.full_time
     phone: str | None = None
     position_id: str | None = None
+    email: str | None = None
 
 
 class EmployeeUpdate(BaseModel):
@@ -23,9 +23,12 @@ class EmployeeUpdate(BaseModel):
 class EmployeeResponse(BaseModel):
     id: str
     email: str
+    username: str
+    generated_username: str | None = None
     full_name: str
     position_title: str | None
     phone: str | None = None
+    profile_image_url: str | None = None
     employment_type: str
     status: str
     must_change_password: bool

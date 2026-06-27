@@ -27,21 +27,18 @@ class AppState extends ChangeNotifier {
   void passwordChanged() {
     mustChangePassword = false;
     if (session != null) {
-      session = UserSession(
-        userId: session!.userId,
-        employeeId: session!.employeeId,
-        businessId: session!.businessId,
-        fullName: session!.fullName,
-        position: session!.position,
-        role: session!.role,
-        businessName: session!.businessName,
-        mustChangePassword: false,
-      );
+      session = session!.copyWith(mustChangePassword: false);
     }
     debugPrint(
       '[AppState] passwordChanged must_change_password=$mustChangePassword '
       '(session.mustChangePassword=${session?.mustChangePassword})',
     );
+    notifyListeners();
+  }
+
+  void updateSetupCompletedAt(DateTime? setupCompletedAt) {
+    if (session == null) return;
+    session = session!.copyWith(setupCompletedAt: setupCompletedAt);
     notifyListeners();
   }
 }

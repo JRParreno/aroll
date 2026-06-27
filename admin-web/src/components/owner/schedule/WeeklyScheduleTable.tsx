@@ -22,14 +22,14 @@ function ScheduleCellView({ cells }: { cells: ScheduleCell }) {
   }
 
   return (
-    <div className="space-y-1">
+    <div className="space-y-2">
       {cells.map((cell) => {
         const backgroundColor = cell.shift_color ?? undefined;
 
         return (
           <div
             key={cell.id}
-            className="rounded-md px-2 py-1.5 text-xs"
+            className="rounded-lg border border-black/5 px-2.5 py-2 text-xs shadow-sm"
             style={
               backgroundColor
                 ? {
@@ -58,12 +58,12 @@ export function WeeklyScheduleTable({ weekStart, rows }: Props) {
     <div id="owner-weekly-schedule" className="overflow-x-auto">
       <table className="w-full min-w-[960px] border-collapse text-sm">
         <thead>
-          <tr className="border-b bg-[#1e3a5f] text-left text-white">
+          <tr className="border-b bg-[#F9FAFB] text-left text-[#6B7280]">
             <th className="px-4 py-3 font-medium">Employee</th>
             {WEEKDAY_LABELS.map((label, index) => (
               <th key={label} className="px-3 py-3 font-medium">
                 <div>{label}</div>
-                <div className="text-xs font-normal opacity-80">
+                <div className="text-xs font-normal text-[#9CA3AF]">
                   {toDateKey(weekDays[index])}
                 </div>
               </th>
@@ -82,10 +82,12 @@ export function WeeklyScheduleTable({ weekStart, rows }: Props) {
             </tr>
           )}
           {rows.map(({ employee, cells }) => (
-            <tr key={employee.id} className="border-b align-top">
-              <td className="px-4 py-3 font-medium">{employee.full_name}</td>
+            <tr key={employee.id} className="border-b align-top last:border-b-0">
+              <td className="px-4 py-4 font-medium text-[#1F2937]">
+                {employee.full_name}
+              </td>
               {cells.map((cell, index) => (
-                <td key={`${employee.id}-${index}`} className="px-3 py-3">
+                <td key={`${employee.id}-${index}`} className="px-3 py-4">
                   <ScheduleCellView cells={cell} />
                 </td>
               ))}

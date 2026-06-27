@@ -30,3 +30,8 @@ class ScheduleAssignRequest(BaseModel):
 class ScheduleAssignResponse(BaseModel):
     created: int
     assignments: list[ScheduleAssignmentResponse]
+
+
+class ScheduleAssignmentUpdateRequest(BaseModel):
+    shift_id: str
+    work_date: date

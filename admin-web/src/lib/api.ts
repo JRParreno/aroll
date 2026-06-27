@@ -57,6 +57,7 @@ export type UserMe = {
   business_name: string | null;
   business_code: string | null;
   setup_completed_at: string | null;
+  branding?: BusinessBrandingSettings | null;
 };
 
 export type Registration = {
@@ -138,6 +139,8 @@ export type DashboardStats = {
 export type Employee = {
   id: string;
   email: string;
+  username: string;
+  generated_username: string | null;
   full_name: string;
   position_title: string | null;
   phone: string | null;
@@ -145,6 +148,114 @@ export type Employee = {
   status: "invited" | "active" | "inactive";
   must_change_password: boolean;
   temporary_password: string | null;
+};
+
+export type OwnerPerformanceSummary = {
+  has_performance_data: boolean;
+  assigned_shifts: number;
+  attended_shifts: number;
+  completed_shifts: number;
+  on_time_clock_ins: number;
+  late_clock_ins: number;
+  absent_shifts: number;
+  undertime_shifts: number;
+  overtime_shifts: number;
+  attendance_rate: number;
+  punctuality_rate: number;
+  total_overtime_hours: number;
+  productivity_score: number;
+};
+
+export type OwnerPerformanceTrendItem = {
+  label: string;
+  on_time: number;
+  late: number;
+  undertime: number;
+  overtime: number;
+  absent: number;
+};
+
+export type EmployeePerformanceItem = {
+  employee_id: string;
+  full_name: string;
+  position_title: string | null;
+  phone: string | null;
+  profile_image_url: string | null;
+  employment_type: string;
+  assigned_shifts: number;
+  attended_shifts: number;
+  completed_shifts: number;
+  on_time_clock_ins: number;
+  late_clock_ins: number;
+  absent_shifts: number;
+  undertime_shifts: number;
+  overtime_hours: number;
+  attendance_rate: number;
+  punctuality_rate: number;
+  productivity_score: number;
+  reasons: string[];
+};
+
+export type OwnerPerformance = {
+  summary: OwnerPerformanceSummary;
+  trend: OwnerPerformanceTrendItem[];
+  employees: EmployeePerformanceItem[];
+};
+
+export type OwnerAttendanceReport = {
+  summary: { present: number; late: number; absent: number };
+  records: {
+    id: string;
+    employee_name: string;
+    position_title: string | null;
+    date: string;
+    time_in: string | null;
+    time_out: string | null;
+    status: string;
+    shift_name: string | null;
+  }[];
+};
+
+export type OwnerPayrollReport = {
+  items: {
+    employee_id: string;
+    employee_name: string;
+    position_title: string | null;
+    period_start: string;
+    period_end: string;
+    daily_rate: number;
+    worked_days: number;
+    overtime_pay: number;
+    deductions: number;
+    total_salary: number;
+    pay_period_type: string;
+  }[];
+};
+
+export type EmployeePayslip = {
+  employee_id: string;
+  employee_name: string;
+  position_title: string | null;
+  employment_type: string;
+  period_start: string;
+  period_end: string;
+  daily_rate: number;
+  worked_days: number;
+  overtime_minutes: number;
+  overtime_hours: number;
+  overtime_pay: number;
+  holiday_pay: number;
+  deductions: number;
+  absent_days: number;
+  gross_pay: number;
+  net_pay: number;
+  attendance_records: {
+    date: string;
+    status: string;
+    time_in: string | null;
+    time_out: string | null;
+    holiday_name: string | null;
+  }[];
 };
 
 export type EmployeeCreateResponse = Employee;
@@ -272,8 +383,7 @@ export async function uploadRegistrationDocument(
   formData.append("file", file);
   const { data } = await api.post<RegistrationDocument>(
     `/registrations/${registrationId}/documents`,
-    formData,
-    { headers: { "Content-Type": "multipart/form-data" } }
+    formData
   );
   return data;
 }
@@ -357,7 +467,7 @@ export async function listActivityLogs() {
 }
 
 export async function createEmployee(payload: {
-  email: string;
+  email?: string;
   full_name: string;
   position_title: string;
   position_id?: string;
@@ -390,8 +500,44 @@ export async function deactivateEmployee(id: string) {
   return data;
 }
 
+export async function deleteEmployee(id: string) {
+  const { data } = await api.delete(`/employees/${id}`);
+  return data;
+}
+
 export async function reactivateEmployee(id: string) {
   const { data } = await api.post<Employee>(`/employees/${id}/reactivate`);
+  return data;
+}
+
+export async function getOwnerPerformance(days = 30) {
+  const { data } = await api.get<OwnerPerformance>("/owner/performance", {
+    params: { days },
+  });
+  return data;
+}
+
+export async function getOwnerAttendanceReport() {
+  const { data } = await api.get<OwnerAttendanceReport>("/owner/reports/attendance");
+  return data;
+}
+
+export async function getOwnerPayrollReport() {
+  const { data } = await api.get<OwnerPayrollReport>("/owner/reports/payroll");
+  return data;
+}
+
+export async function getEmployeePayslip(employeeId: string) {
+  const { data } = await api.get<EmployeePayslip>(
+    `/owner/reports/payroll/${employeeId}/payslip`
+  );
+  return data;
+}
+
+export async function getMyPayslip() {
+  const { data } = await api.get<EmployeePayslip>(
+    "/owner/reports/payroll/me/payslip"
+  );
   return data;
 }
 
@@ -498,6 +644,7 @@ export type AccountSettings = {
   contact_phone: string | null;
   address: string;
   business_type: string | null;
+  branding: BusinessBrandingSettings;
 };
 
 export type AccountSettingsUpdate = {
@@ -506,6 +653,26 @@ export type AccountSettingsUpdate = {
   contact_phone?: string | null;
   address: string;
   business_type?: string | null;
+  branding?: BusinessBrandingSettings;
+};
+
+export type BusinessThemeSettings = {
+  primary_color: string;
+  secondary_color: string;
+  sidebar_color: string;
+  accent_color: string;
+  button_color: string;
+  card_style: string;
+  font_size: string;
+  color_mode: string;
+  layout_density: string;
+};
+
+export type BusinessBrandingSettings = {
+  logo_url: string | null;
+  owner_profile_image_url: string | null;
+  display_image_url: string | null;
+  theme: BusinessThemeSettings;
 };
 
 export type BusinessSettings = {
@@ -519,6 +686,7 @@ export type BusinessSettings = {
   registration_id: string | null;
   application_status: string | null;
   registration_documents: RegistrationDocument[];
+  branding: BusinessBrandingSettings;
 };
 
 export async function getSetupStatus() {
@@ -687,6 +855,25 @@ export async function assignSchedule(payload: {
     created: number;
     assignments: ScheduleAssignment[];
   }>("/schedules/assign", payload);
+  return data;
+}
+
+export async function updateScheduleAssignment(
+  assignmentId: string,
+  payload: {
+    shift_id: string;
+    work_date: string;
+  }
+) {
+  const { data } = await api.put<ScheduleAssignment>(
+    `/schedules/assignments/${assignmentId}`,
+    payload
+  );
+  return data;
+}
+
+export async function deleteScheduleAssignment(assignmentId: string) {
+  const { data } = await api.delete(`/schedules/assignments/${assignmentId}`);
   return data;
 }
 

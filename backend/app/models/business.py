@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import DateTime, Enum, ForeignKey, Integer, Numeric, String, Text, func
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -61,6 +61,10 @@ class Business(Base):
     )
     timezone: Mapped[str] = mapped_column(String(64), default="Asia/Manila")
     business_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    logo_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    owner_profile_image_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    display_image_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    theme_settings: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     setup_completed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )

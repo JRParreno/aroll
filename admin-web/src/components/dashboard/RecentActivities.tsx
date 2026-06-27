@@ -47,9 +47,16 @@ export function RecentActivities({ activities, loading }: RecentActivitiesProps)
   const isSample = activities.length === 0 && !loading;
 
   return (
-    <div className="rounded-2xl border bg-card p-6 shadow-sm">
+    <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
       <div className="flex items-center justify-between gap-2">
-        <h2 className="text-lg font-semibold">Recent Activities</h2>
+        <div>
+          <h2 className="text-lg font-semibold text-[#1F2937]">
+            Recent Activities
+          </h2>
+          <p className="mt-1 text-sm text-[#6B7280]">
+            Latest approvals and platform actions.
+          </p>
+        </div>
         {isSample && (
           <span className="rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-medium text-amber-700">
             Sample data
@@ -64,9 +71,9 @@ export function RecentActivities({ activities, loading }: RecentActivitiesProps)
           {items.map((activity) => (
             <div
               key={activity.id}
-              className="flex items-center justify-between gap-3 rounded-xl border bg-background px-4 py-3 shadow-sm"
+              className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 bg-[#FAFBFC] px-4 py-3"
             >
-              <p className="text-sm font-medium text-blue-700">
+              <p className="text-sm font-medium text-[#1E3A5F]">
                 {activity.description}
               </p>
               <span className="shrink-0 text-xs text-muted-foreground">

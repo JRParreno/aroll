@@ -1,88 +1,69 @@
 import { Link } from "react-router-dom";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import type { SetupStatus } from "@/lib/api";
 
-const STEP_LABELS: Record<string, string> = {
-  shifts: "Schedules Created",
-  positions: "Positions Configured",
-  payroll: "Payroll Configuration",
-  attendance_policy: "Attendance Policies",
-  holidays: "Holiday Management",
-  rest_day: "Rest Day Policy",
-  location: "Business Location",
-};
+const STEP_ORDER = [
+  "shifts",
+  "positions",
+  "payroll",
+  "attendance_policy",
+  "holidays",
+  "rest_day",
+  "location",
+];
 
 type Props = {
   status: SetupStatus;
-  onDismiss?: () => void;
 };
 
-export function SetupProgressCard({ status, onDismiss }: Props) {
+export function SetupProgressCard({ status }: Props) {
   if (status.setup_completed_at && status.completion_percent >= 100) {
     return null;
   }
 
-  const dismissed =
-    localStorage.getItem("aroll_setup_card_dismissed") === "true";
-
-  if (dismissed && status.completion_percent >= 80) {
-    return null;
-  }
-
-  const checklistSteps = status.steps.filter((step) => step.key !== "review");
+  const setupSteps = status.steps.filter((step) => step.key !== "review");
+  const firstIncomplete = setupSteps.find((step) => !step.complete);
+  const firstIncompleteIndex = Math.max(
+    STEP_ORDER.indexOf(firstIncomplete?.key ?? "shifts"),
+    0
+  );
+  const continuePath = `/owner/setup-wizard?step=${firstIncompleteIndex}`;
+  const completedParts = setupSteps.filter((step) => step.complete).length;
+  const totalParts = setupSteps.length;
 
   return (
-    <Card className="border-primary/30">
-      <CardHeader>
-        <CardTitle className="flex items-center justify-between text-lg">
-          <span>Business Setup Progress</span>
-          <span className="text-sm font-normal text-muted-foreground">
-            {status.completion_percent}% complete
-          </span>
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
-          <div
-            className="h-full rounded-full bg-[#3b9ae8] transition-all"
-            style={{ width: `${status.completion_percent}%` }}
-          />
+    <section className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <div className="flex items-center gap-3">
+            <h2 className="text-sm font-semibold text-[#1F2937]">
+              Business Setup Progress
+            </h2>
+            <span className="rounded-full bg-[#F3F6FA] px-2.5 py-1 text-xs font-medium text-[#1E3A5F]">
+              {status.completion_percent}%
+            </span>
+          </div>
+          <p className="mt-1 text-xs text-[#6B7280]">
+            {completedParts} of {totalParts} parts completed
+          </p>
         </div>
 
-        <ul className="space-y-1.5 text-sm">
-          {checklistSteps.map((step) => {
-            const label = STEP_LABELS[step.key] ?? step.label;
-            return (
-              <li
-                key={step.key}
-                className={
-                  step.complete
-                    ? "text-foreground"
-                    : "text-muted-foreground"
-                }
-              >
-                {step.complete ? "✓" : "✗"} {label}
-              </li>
-            );
-          })}
-        </ul>
-
-        <div className="flex flex-wrap gap-2">
-          <Button asChild>
-            <Link to="/owner/setup-wizard">Continue Setup</Link>
-          </Button>
+        <div className="flex items-center gap-3 sm:min-w-[260px]">
+          <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-[#E5E7EB]">
+            <div
+              className="h-full rounded-full bg-[#1E3A5F] transition-all"
+              style={{ width: `${status.completion_percent}%` }}
+            />
+          </div>
           <Button
-            variant="outline"
-            onClick={() => {
-              localStorage.setItem("aroll_setup_card_dismissed", "true");
-              onDismiss?.();
-            }}
+            asChild
+            size="sm"
+            className="h-9 rounded-xl bg-[#1E3A5F] px-4 text-xs text-white hover:bg-[#284B73]"
           >
-            Remind me later
+            <Link to={continuePath}>Continue Setup</Link>
           </Button>
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </section>
   );
 }

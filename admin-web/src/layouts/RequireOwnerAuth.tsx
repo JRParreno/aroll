@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { Navigate, useLocation } from "react-router-dom";
+import { Navigate } from "react-router-dom";
 import { getMe } from "@/lib/api";
 import {
   clearAuthSession,
@@ -17,7 +17,6 @@ export function RequireOwnerAuth({
   passwordChangeOnly?: boolean;
 }) {
   const token = getAuthToken();
-  const { pathname } = useLocation();
 
   const { data: me, isLoading, isError } = useQuery({
     queryKey: ME_QUERY_KEY,
@@ -73,15 +72,6 @@ export function RequireOwnerAuth({
 
   if (mustChange) {
     return <Navigate to="/owner/change-password" replace />;
-  }
-
-  const setupExempt =
-    pathname.startsWith("/owner/setup-wizard") ||
-    pathname === "/owner/change-password" ||
-    pathname === "/owner/location";
-
-  if (!setupExempt && !me.setup_completed_at) {
-    return <Navigate to="/owner/setup-wizard" replace />;
   }
 
   return <>{children}</>;

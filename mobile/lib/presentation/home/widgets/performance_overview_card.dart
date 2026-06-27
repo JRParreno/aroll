@@ -18,9 +18,8 @@ class _PerformanceOverviewCardState extends State<PerformanceOverviewCard> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final snapshot = DashboardMock.performance(_period);
-    final maxValue = snapshot.metrics
-        .map((m) => m.value)
-        .fold(1, (a, b) => a > b ? a : b);
+    final maxValue =
+        snapshot.metrics.map((m) => m.value).fold(1, (a, b) => a > b ? a : b);
 
     return DashboardCard(
       child: Column(
@@ -53,7 +52,7 @@ class _PerformanceOverviewCardState extends State<PerformanceOverviewCard> {
               setState(() => _period = selection.first);
             },
             showSelectedIcon: false,
-            style: ButtonStyle(
+            style: const ButtonStyle(
               visualDensity: VisualDensity.compact,
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
             ),

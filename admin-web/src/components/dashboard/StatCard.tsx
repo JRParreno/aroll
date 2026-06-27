@@ -18,17 +18,17 @@ export function StatCard({ label, value, subtitle, to, className, loading }: Sta
 
   const content = (
     <>
-      <p className="text-sm font-medium opacity-90">{label}</p>
-      <p className="mt-2 text-4xl font-bold tracking-tight">{value}</p>
+      <p className="text-sm font-medium opacity-85">{label}</p>
+      <p className="mt-3 text-3xl font-semibold tracking-tight">{value}</p>
       {subtitle && (
-        <p className="mt-1 text-xs opacity-75">{subtitle}</p>
+        <p className="mt-2 text-xs opacity-75">{subtitle}</p>
       )}
     </>
   );
 
   const cardClassName = cn(
-    "rounded-2xl px-6 py-5 text-white shadow-md",
-    to && "block transition-all hover:scale-[1.02] hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50",
+    "rounded-2xl border border-white/20 px-6 py-5 text-white shadow-sm",
+    to && "block transition-all hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#284B73]/30",
     className
   );
 

@@ -131,10 +131,9 @@ export function HolidaySetupSection() {
 
   return (
     <div className="space-y-6">
-      <p className="text-sm text-muted-foreground">
-        Configure Philippine default holidays and custom company holidays. Turn a
-        holiday off to skip holiday pay. Step completes once holidays are loaded,
-        even if some are disabled.
+      <p className="rounded-xl bg-[#F3F6FA] px-4 py-3 text-sm text-[#6B7280]">
+        Add the holidays your business follows. This helps the system calculate
+        schedules and pay correctly.
       </p>
 
       {isLoading && (
@@ -147,9 +146,9 @@ export function HolidaySetupSection() {
       )}
 
       {!isLoading && holidays.length > 0 && (
-        <div className="overflow-x-auto rounded-md border">
+        <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white">
           <table className="w-full min-w-[640px] text-sm">
-            <thead className="bg-muted/50 text-left">
+            <thead className="bg-[#F3F6FA] text-left">
               <tr>
                 <th className="px-3 py-2 font-medium">Name</th>
                 <th className="px-3 py-2 font-medium">Date</th>
@@ -160,7 +159,7 @@ export function HolidaySetupSection() {
             </thead>
             <tbody>
               {holidays.map((holiday) => (
-                <tr key={holiday.id} className="border-t align-middle">
+                <tr key={holiday.id} className="border-t border-slate-100 align-middle">
                   <td className="px-3 py-2">
                     {editingId === holiday.id && isCustomHoliday(holiday) ? (
                       <Input
@@ -259,12 +258,22 @@ export function HolidaySetupSection() {
         </div>
       )}
 
-      <div className="rounded-lg border p-4 space-y-4">
-        <p className="text-sm font-medium">Add Custom Holiday</p>
-        <div className="grid gap-4 sm:grid-cols-2">
+      <div className="space-y-4 rounded-2xl border border-slate-200 bg-[#FAFBFC] p-4">
+        <div>
+          <p className="text-sm font-medium text-[#1F2937]">
+            Add Custom Holiday
+          </p>
+          <p className="mt-1 text-xs text-[#6B7280]">
+            Use this for company holidays or special closure days.
+          </p>
+        </div>
+        <div className="grid gap-5 sm:grid-cols-2">
           <div className="space-y-2">
             <Label>Name</Label>
             <Input
+              className={`h-11 rounded-xl border-slate-200 bg-white ${
+                !customForm.is_paid ? "opacity-50" : ""
+              }`}
               value={customForm.name}
               onChange={(e) =>
                 setCustomForm({ ...customForm, name: e.target.value })
@@ -275,6 +284,7 @@ export function HolidaySetupSection() {
           <div className="space-y-2">
             <Label>Date</Label>
             <Input
+              className="h-11 rounded-xl border-slate-200 bg-white"
               type="date"
               value={customForm.holiday_date}
               onChange={(e) =>
@@ -285,6 +295,7 @@ export function HolidaySetupSection() {
           <div className="space-y-2">
             <Label>Pay Multiplier</Label>
             <Input
+              className="h-11 rounded-xl border-slate-200 bg-white"
               type="number"
               step="0.1"
               min="0.01"
@@ -293,7 +304,6 @@ export function HolidaySetupSection() {
                 setCustomForm({ ...customForm, pay_multiplier: e.target.value })
               }
               disabled={!customForm.is_paid}
-              className={!customForm.is_paid ? "opacity-50" : undefined}
             />
           </div>
           <div className="flex items-end">
@@ -310,6 +320,7 @@ export function HolidaySetupSection() {
           </div>
         </div>
         <Button
+          className="rounded-xl bg-[#1E3A5F] hover:bg-[#284B73]"
           onClick={() => addCustom.mutate()}
           disabled={addCustom.isPending}
         >
@@ -319,6 +330,7 @@ export function HolidaySetupSection() {
 
       <Button
         variant="outline"
+        className="rounded-xl border-slate-200"
         onClick={() => seedDefaults.mutate()}
         disabled={seedDefaults.isPending}
       >

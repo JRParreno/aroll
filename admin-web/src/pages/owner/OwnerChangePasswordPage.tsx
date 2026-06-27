@@ -1,9 +1,9 @@
 import { useState } from "react";
+import { ArrowRight, KeyRound, LockKeyhole, ShieldCheck } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { changePassword, getMe } from "@/lib/api";
@@ -46,54 +46,83 @@ export function OwnerChangePasswordPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-muted/30 p-4">
-      <Card className="w-full max-w-md">
-        <CardHeader>
-          <CardTitle>Change Password</CardTitle>
-          <p className="text-sm text-muted-foreground">
-            You must set a new password before accessing your dashboard.
-          </p>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="current_password">Current Password</Label>
-              <Input
-                id="current_password"
-                type="password"
-                value={currentPassword}
-                onChange={(e) => setCurrentPassword(e.target.value)}
-                required
-              />
+    <div className="min-h-screen bg-[#F4F6F8] text-[#111827]">
+      <main className="flex min-h-screen items-center justify-center px-5 py-8 sm:px-8 lg:px-12">
+        <div className="w-full max-w-md">
+          <div className="mb-8">
+            <div className="mb-5 inline-flex items-center gap-2 rounded-full bg-[#EAF2FB] px-4 py-2 text-xs font-medium text-[#1E3A5F]">
+              <ShieldCheck className="h-4 w-4" />
+              Security update
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="new_password">New Password</Label>
-              <Input
-                id="new_password"
-                type="password"
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                required
-                minLength={8}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="confirm_password">Confirm New Password</Label>
-              <Input
-                id="confirm_password"
-                type="password"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                required
-                minLength={8}
-              />
-            </div>
-            <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? "Updating…" : "Update Password"}
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
+            <h1 className="text-3xl font-semibold tracking-tight text-[#111827] sm:text-4xl">
+              Change Password
+            </h1>
+            <p className="mt-3 text-sm leading-6 text-[#6B7280]">
+              You must set a new password before accessing your dashboard.
+            </p>
+          </div>
+
+          <section className="rounded-3xl border border-white/70 bg-white/75 p-5 shadow-sm backdrop-blur sm:p-7">
+            <form onSubmit={handleSubmit} className="space-y-5">
+              <div className="space-y-2">
+                <Label htmlFor="current_password">Current Password</Label>
+                <div className="relative">
+                  <LockKeyhole className="absolute left-3 top-3.5 h-4 w-4 text-[#9CA3AF]" />
+                  <Input
+                    id="current_password"
+                    type="password"
+                    value={currentPassword}
+                    onChange={(e) => setCurrentPassword(e.target.value)}
+                    required
+                    className="h-11 rounded-lg border-0 bg-white pl-10 shadow-sm"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="new_password">New Password</Label>
+                <div className="relative">
+                  <KeyRound className="absolute left-3 top-3.5 h-4 w-4 text-[#9CA3AF]" />
+                  <Input
+                    id="new_password"
+                    type="password"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    required
+                    minLength={8}
+                    className="h-11 rounded-lg border-0 bg-white pl-10 shadow-sm"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="confirm_password">Confirm New Password</Label>
+                <div className="relative">
+                  <KeyRound className="absolute left-3 top-3.5 h-4 w-4 text-[#9CA3AF]" />
+                  <Input
+                    id="confirm_password"
+                    type="password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    required
+                    minLength={8}
+                    className="h-11 rounded-lg border-0 bg-white pl-10 shadow-sm"
+                  />
+                </div>
+              </div>
+
+              <Button
+                type="submit"
+                className="h-12 w-full rounded-xl bg-[#1E3A5F] text-white shadow-sm hover:bg-[#284B73]"
+                disabled={loading}
+              >
+                {loading ? "Updating..." : "Update Password"}
+                {!loading && <ArrowRight className="ml-2 h-4 w-4" />}
+              </Button>
+            </form>
+          </section>
+        </div>
+      </main>
     </div>
   );
 }
