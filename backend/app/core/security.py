@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 
 from jose import JWTError, jwt
 from passlib.context import CryptContext
+from passlib.exc import UnknownHashError
 
 from app.core.config import settings
 
@@ -14,8 +15,13 @@ def hash_password(password: str) -> str:
     return pwd_context.hash(password)
 
 
-def verify_password(plain: str, hashed: str) -> bool:
-    return pwd_context.verify(plain, hashed)
+def verify_password(plain: str, hashed: str | None) -> bool:
+    if not hashed or not hashed.strip():
+        return False
+    try:
+        return pwd_context.verify(plain, hashed)
+    except (ValueError, UnknownHashError):
+        return False
 
 
 def verify_user_password(

@@ -97,7 +97,7 @@ class _OwnerPayrollListScreenState extends State<OwnerPayrollListScreen> {
           IconButton(
             tooltip: 'Refresh',
             onPressed: _loading ? null : _load,
-            icon: const Icon(Icons.download_outlined),
+            icon: const Icon(Icons.refresh_rounded),
           ),
         ],
       ),

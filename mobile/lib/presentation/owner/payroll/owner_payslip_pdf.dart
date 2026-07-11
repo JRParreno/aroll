@@ -1,7 +1,9 @@
 import 'dart:io';
 
 import 'package:aroll_mobile/presentation/owner/payroll/owner_payroll_format.dart';
-import 'package:pdf/pdf.dart';import 'package:pdf/widgets.dart' as pw;
+import 'package:path_provider/path_provider.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
 
 Future<String> generateOwnerPayslipPdf({
   required Map<String, dynamic> payslip,
@@ -65,8 +67,9 @@ Future<String> generateOwnerPayslipPdf({
 
   final safeName =
       employeeName.toLowerCase().replaceAll(RegExp(r'\s+'), '-');
+  final dir = await getTemporaryDirectory();
   final file = File(
-    '${Directory.systemTemp.path}/$safeName-payslip-${DateTime.now().millisecondsSinceEpoch}.pdf',
+    '${dir.path}/$safeName-payslip-${DateTime.now().millisecondsSinceEpoch}.pdf',
   );
   await file.writeAsBytes(await doc.save());
   return file.path;

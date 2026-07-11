@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:aroll_mobile/core/utils/format.dart';
 import 'package:aroll_mobile/domain/entities/user_session.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -12,13 +13,8 @@ Color employeePrimary(
       Theme.of(context).colorScheme.primary;
 }
 
-String money(num value) {
-  return NumberFormat.currency(
-    locale: 'en_PH',
-    symbol: 'PHP ',
-    decimalDigits: 2,
-  ).format(value);
-}
+/// Formats [value] as Philippine pesos. Delegates to [formatPeso].
+String money(num value) => formatPeso(value);
 
 String shortDate(DateTime value) => DateFormat('MMM d, yyyy').format(value);
 

@@ -3,6 +3,7 @@ import 'package:aroll_mobile/domain/entities/employee_portal.dart';
 import 'package:aroll_mobile/domain/repositories/employee_repository.dart';
 import 'package:aroll_mobile/presentation/employee/employee_ui.dart';
 import 'package:flutter/material.dart';
+import 'package:share_plus/share_plus.dart';
 
 class EmployeePayslipScreen extends StatefulWidget {
   const EmployeePayslipScreen({super.key});
@@ -19,8 +20,11 @@ class _EmployeePayslipScreenState extends State<EmployeePayslipScreen> {
     try {
       final path = await sl<EmployeeRepository>().downloadPayslipPdf();
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Payslip downloaded: $path')),
+      await SharePlus.instance.share(
+        ShareParams(
+          files: [XFile(path, mimeType: 'application/pdf')],
+          subject: 'Payslip PDF',
+        ),
       );
     } catch (_) {
       if (!mounted) return;

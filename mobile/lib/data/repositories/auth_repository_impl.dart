@@ -193,12 +193,51 @@ class AuthRepositoryImpl implements AuthRepository {
     await _api.clearBusinessCode();
   }
 
+  @override
+  Future<UserSession?> restoreSession() async {
+    final token = await _api.readToken();
+    if (token == null || token.isEmpty) {
+      return null;
+    }
+
+    try {
+      final me = await _fetchMe(token);
+      final role = me['role'] as String;
+      final mustChange = me['must_change_password'] as bool? ?? false;
+      final businessCode = await _api.readBusinessCode();
+      return _sessionFromMe(
+        me,
+        role: role,
+        mustChangePassword: mustChange,
+        businessCode: businessCode,
+      );
+    } on DioException catch (e) {
+      debugPrint(
+        '[auth] restoreSession failed status=${e.response?.statusCode} '
+        'type=${e.type}',
+      );
+      if (_isInvalidTokenError(e)) {
+        await _api.clearToken();
+        await _api.clearBusinessCode();
+      }
+      return null;
+    } catch (e, st) {
+      debugPrint('[auth] restoreSession unexpected error: $e\n$st');
+      return null;
+    }
+  }
+
   Future<Map<String, dynamic>> _fetchMe(String token) async {
     final me = await _api.dio.get<Map<String, dynamic>>(
       '/auth/me',
       options: Options(headers: {'Authorization': 'Bearer $token'}),
     );
     return me.data!;
+  }
+
+  bool _isInvalidTokenError(DioException e) {
+    final status = e.response?.statusCode;
+    return status == 401 || status == 403;
   }
 
   AuthResult<UserSession> _loginFailure(DioException e,

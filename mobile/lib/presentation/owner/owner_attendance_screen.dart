@@ -3,7 +3,7 @@ import 'dart:math' as math;
 import 'package:aroll_mobile/core/di/injection.dart';
 import 'package:aroll_mobile/data/repositories/owner_repository.dart';
 import 'package:aroll_mobile/presentation/employee/employee_ui.dart';
-import 'package:aroll_mobile/presentation/owner/owner_mobile.dart';
+import 'package:aroll_mobile/presentation/owner/owner_shell.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 

@@ -22,7 +22,7 @@ def sync_owner_passwords() -> int:
             if owner.business_id is None:
                 continue
             business = db.get(Business, owner.business_id)
-            if business is None:
+            if business is None or not business.business_code:
                 continue
             # Owner already completed first-time password change — never reset.
             if not owner.must_change_password:
@@ -31,6 +31,7 @@ def sync_owner_passwords() -> int:
                 continue
             owner.password_hash = hash_password(business.business_code)
             owner.must_change_password = True
+            owner.pending_temporary_password = None
             updated += 1
         if updated:
             db.commit()

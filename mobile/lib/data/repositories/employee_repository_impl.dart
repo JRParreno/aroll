@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:aroll_mobile/core/network/api_client.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:aroll_mobile/domain/entities/employee_portal.dart';
 import 'package:aroll_mobile/domain/entities/user_session.dart';
 import 'package:aroll_mobile/domain/repositories/employee_repository.dart';
@@ -90,8 +91,9 @@ class EmployeeRepositoryImpl implements EmployeeRepository {
       '/employee/payslip/pdf',
       options: Options(responseType: ResponseType.bytes),
     );
+    final dir = await getTemporaryDirectory();
     final safeDate = DateTime.now().millisecondsSinceEpoch;
-    final file = File('${Directory.systemTemp.path}/aroll-payslip-$safeDate.pdf');
+    final file = File('${dir.path}/aroll-payslip-$safeDate.pdf');
     await file.writeAsBytes(res.data ?? const []);
     return file.path;
   }

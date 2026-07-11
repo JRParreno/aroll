@@ -14,7 +14,12 @@ import 'package:aroll_mobile/presentation/home/home_screen.dart';
 import 'package:aroll_mobile/presentation/home/scan_attendance_screen.dart';
 import 'package:aroll_mobile/presentation/owner/owner_attendance_screen.dart';
 import 'package:aroll_mobile/presentation/owner/owner_employees_screen.dart';
-import 'package:aroll_mobile/presentation/owner/owner_mobile.dart';
+import 'package:aroll_mobile/presentation/owner/owner_dashboard_screen.dart';
+import 'package:aroll_mobile/presentation/owner/owner_location_screen.dart';
+import 'package:aroll_mobile/presentation/owner/owner_productivity_screen.dart';
+import 'package:aroll_mobile/presentation/owner/owner_profile_screen.dart';
+import 'package:aroll_mobile/presentation/owner/owner_settings_screen.dart';
+import 'package:aroll_mobile/presentation/owner/owner_setup_screen.dart';
 import 'package:aroll_mobile/presentation/owner/owner_registration.dart';
 import 'package:aroll_mobile/presentation/owner/owner_set_schedule_screen.dart';
 import 'package:aroll_mobile/presentation/owner/payroll/owner_payroll_detail_screen.dart';
@@ -32,9 +37,26 @@ bool _isPublicRoute(String loc) {
       loc == '/track-registration';
 }
 
+/// Resolves the landing route after auth (login, restore, or password change).
+String resolveAuthenticatedRoute(AppState appState) {
+  if (!appState.isLoggedIn || appState.session == null) {
+    return '/login';
+  }
+  final session = appState.session!;
+  if (appState.mustChangePassword) {
+    return '/change-password';
+  }
+  if (session.isOwner) {
+    return session.setupCompletedAt == null
+        ? '/owner/setup-wizard'
+        : '/owner/home';
+  }
+  return '/home';
+}
+
 GoRouter createAppRouter(AppState appState) {
   return GoRouter(
-    initialLocation: '/login',
+    initialLocation: resolveAuthenticatedRoute(appState),
     debugLogDiagnostics: kDebugMode,
     refreshListenable: appState,
     observers: [AppNavObserver()],
@@ -55,13 +77,7 @@ GoRouter createAppRouter(AppState appState) {
           loc.startsWith('/login/') ||
           loc == '/register-business' ||
           loc == '/track-registration') {
-        redirect = appState.mustChangePassword
-            ? '/change-password'
-            : session?.isOwner == true
-                ? session?.setupCompletedAt == null
-                    ? '/owner/setup-wizard'
-                    : '/owner/home'
-                : '/home';
+        redirect = resolveAuthenticatedRoute(appState);
       } else if (session?.isOwner == true &&
           !loc.startsWith('/owner/') &&
           loc != '/change-password') {

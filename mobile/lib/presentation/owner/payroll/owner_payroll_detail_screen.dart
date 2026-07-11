@@ -5,6 +5,7 @@ import 'package:aroll_mobile/presentation/employee/employee_ui.dart';
 import 'package:aroll_mobile/presentation/owner/payroll/owner_payroll_format.dart';
 import 'package:aroll_mobile/presentation/owner/payroll/owner_payslip_pdf.dart';
 import 'package:flutter/material.dart';
+import 'package:share_plus/share_plus.dart';
 class OwnerPayrollDetailScreen extends StatefulWidget {
   const OwnerPayrollDetailScreen({
     super.key,
@@ -79,8 +80,11 @@ class _OwnerPayrollDetailScreenState extends State<OwnerPayrollDetailScreen> {
         businessName: businessName,
       );
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Payslip downloaded: $path')),
+      await SharePlus.instance.share(
+        ShareParams(
+          files: [XFile(path, mimeType: 'application/pdf')],
+          subject: 'Payslip PDF',
+        ),
       );
     } catch (_) {
       if (!mounted) return;

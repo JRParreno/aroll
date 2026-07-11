@@ -1,9 +1,8 @@
+import 'package:aroll_mobile/core/utils/format.dart';
 import 'package:intl/intl.dart';
 
-String ownerPayrollMoney(num value) {
-  final formatted = NumberFormat('#,##0.##', 'en_PH').format(value);
-  return '$formatted Pesos';
-}
+/// Formats [value] as Philippine pesos. Delegates to [formatPeso].
+String ownerPayrollMoney(num value) => formatPeso(value);
 
 String ownerPayrollShortDate(String? isoDate) {
   if (isoDate == null || isoDate.isEmpty) return '--';

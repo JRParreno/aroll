@@ -21,4 +21,7 @@ abstract class AuthRepository {
   });
 
   Future<void> logout();
+
+  /// Returns a session when a stored token is valid; otherwise null.
+  Future<UserSession?> restoreSession();
 }
