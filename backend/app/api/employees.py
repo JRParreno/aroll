@@ -1,4 +1,5 @@
 import uuid
+import re
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -9,7 +10,10 @@ from app.core.security import generate_temporary_password, hash_password
 from app.db.session import get_db
 from app.models.employee import Employee
 from app.models.enums import EmployeeStatus, UserRole
+from app.models.attendance import AttendanceRecord
 from app.models.payroll import Position
+from app.models.payroll import Payslip
+from app.models.scheduling import ShiftAssignment
 from app.models.user import User
 from app.schemas.employee import (
     EmployeeCreate,
@@ -25,9 +29,12 @@ def _employee_response(emp: Employee, user: User) -> EmployeeResponse:
     return EmployeeResponse(
         id=str(emp.id),
         email=user.email,
+        username=user.email,
+        generated_username=user.email if user.must_change_password else None,
         full_name=emp.full_name,
         position_title=emp.position_title,
         phone=emp.phone,
+        profile_image_url=emp.profile_image_url,
         employment_type=emp.employment_type.value,
         status=emp.status.value,
         must_change_password=user.must_change_password,
@@ -35,6 +42,19 @@ def _employee_response(emp: Employee, user: User) -> EmployeeResponse:
             user.pending_temporary_password if user.must_change_password else None
         ),
     )
+
+
+def _generate_employee_username(db: Session, full_name: str) -> str:
+    base = re.sub(r"[^a-z0-9]+", ".", full_name.lower().strip()).strip(".")
+    if not base:
+        base = "employee"
+    base = base[:32]
+    candidate = base
+    counter = 1
+    while db.query(User).filter(User.email == candidate).first() is not None:
+        counter += 1
+        candidate = f"{base}{counter}"
+    return candidate
 
 
 def _get_business_employee(
@@ -79,10 +99,7 @@ def create_employee(
     if user.business_id is None:
         raise HTTPException(400, "No business context")
 
-    email = body.email.lower().strip()
-    existing = db.query(User).filter(User.email == email).first()
-    if existing:
-        raise HTTPException(400, "Email already registered")
+    username = _generate_employee_username(db, body.full_name)
 
     position_id = uuid.UUID(body.position_id) if body.position_id else None
     position_title = body.position_title.strip()
@@ -96,7 +113,7 @@ def create_employee(
     temp_password = generate_temporary_password()
     new_user = User(
         business_id=user.business_id,
-        email=email,
+        email=username,
         password_hash=hash_password(temp_password),
         role=UserRole.employee,
         must_change_password=True,
@@ -118,6 +135,7 @@ def create_employee(
     db.add(employee)
     db.commit()
     db.refresh(employee)
+    db.refresh(new_user)
 
     return _employee_response(employee, new_user)
 
@@ -181,6 +199,34 @@ def deactivate_employee(
     db.commit()
     db.refresh(emp)
     return _employee_response(emp, linked_user)
+
+
+@router.delete("/{employee_id}")
+def delete_employee(
+    employee_id: uuid.UUID,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(require_roles(UserRole.owner, UserRole.manager))],
+):
+    if user.business_id is None:
+        raise HTTPException(400, "No business context")
+
+    emp, linked_user = _get_business_employee(db, employee_id, user.business_id)
+
+    db.query(AttendanceRecord).filter(
+        AttendanceRecord.business_id == user.business_id,
+        AttendanceRecord.employee_id == emp.id,
+    ).delete(synchronize_session=False)
+    db.query(ShiftAssignment).filter(
+        ShiftAssignment.employee_id == emp.id,
+    ).delete(synchronize_session=False)
+    db.query(Payslip).filter(Payslip.employee_id == emp.id).delete(
+        synchronize_session=False
+    )
+
+    db.delete(emp)
+    db.delete(linked_user)
+    db.commit()
+    return {"status": "ok"}
 
 
 @router.post("/{employee_id}/reactivate", response_model=EmployeeResponse)

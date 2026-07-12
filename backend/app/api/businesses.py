@@ -17,6 +17,8 @@ from app.models.user import User
 from app.schemas.business import (
     AccountSettingsResponse,
     AccountSettingsUpdate,
+    BusinessBrandingSettings,
+    BusinessThemeSettings,
     BusinessSettingsResponse,
     LocationResponse,
     LocationUpdate,
@@ -39,6 +41,16 @@ from app.services.registration_documents import get_document_file_path
 from app.services.registration_service import document_response
 
 router = APIRouter(prefix="/businesses", tags=["businesses"])
+
+
+def _branding_response(business: Business) -> BusinessBrandingSettings:
+    theme_payload = business.theme_settings or {}
+    return BusinessBrandingSettings(
+        logo_url=business.logo_url,
+        owner_profile_image_url=business.owner_profile_image_url,
+        display_image_url=business.display_image_url,
+        theme=BusinessThemeSettings(**theme_payload),
+    )
 
 
 def _attendance_policy_response(
@@ -346,6 +358,7 @@ def _account_settings_response(
         contact_phone=reg.owner_phone if reg else None,
         address=address or "",
         business_type=business.business_type,
+        branding=_branding_response(business),
     )
 
 
@@ -380,6 +393,7 @@ def _business_settings_response(
         registration_id=str(business.registration_id) if business.registration_id else None,
         application_status=reg.application_status.value if reg else None,
         registration_documents=documents,
+        branding=_branding_response(business),
     )
 
 
@@ -449,6 +463,11 @@ def update_account_settings(
 
     business.name = body.business_name
     business.business_type = body.business_type
+    if body.branding is not None:
+        business.logo_url = body.branding.logo_url
+        business.owner_profile_image_url = body.branding.owner_profile_image_url
+        business.display_image_url = body.branding.display_image_url
+        business.theme_settings = body.branding.theme.model_dump()
 
     if business.registration_id:
         reg = db.get(BusinessRegistration, business.registration_id)

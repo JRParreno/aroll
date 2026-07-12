@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 
 from jose import JWTError, jwt
 from passlib.context import CryptContext
+from passlib.exc import UnknownHashError
 
 from app.core.config import settings
 
@@ -14,8 +15,47 @@ def hash_password(password: str) -> str:
     return pwd_context.hash(password)
 
 
-def verify_password(plain: str, hashed: str) -> bool:
-    return pwd_context.verify(plain, hashed)
+def verify_password(plain: str, hashed: str | None) -> bool:
+    if not hashed or not hashed.strip():
+        return False
+    try:
+        return pwd_context.verify(plain, hashed)
+    except (ValueError, UnknownHashError):
+        return False
+
+
+def verify_user_password(
+    plain: str,
+    password_hash: str,
+    *,
+    pending_temporary_password: str | None = None,
+    must_change_password: bool = False,
+) -> tuple[bool, str | None]:
+    """Verify a login password against bcrypt hash and optional pending temp password.
+
+    Returns (is_valid, canonical_password). When canonical_password is set, callers
+    should re-hash and persist it so future bcrypt checks succeed.
+    """
+    password = plain.strip()
+    if not password:
+        return False, None
+
+    if verify_password(password, password_hash):
+        return True, None
+
+    if not must_change_password or not pending_temporary_password:
+        return False, None
+
+    if secrets.compare_digest(password, pending_temporary_password):
+        return True, None
+
+    # Generated temp passwords are uppercase (EMP-XXXXXX); accept case-insensitive entry.
+    if secrets.compare_digest(
+        password.upper(), pending_temporary_password.upper()
+    ):
+        return True, pending_temporary_password
+
+    return False, None
 
 
 def create_access_token(subject: str, extra: dict | None = None) -> str:

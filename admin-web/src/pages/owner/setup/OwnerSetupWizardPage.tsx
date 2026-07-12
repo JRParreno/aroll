@@ -1,6 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import {
+  ArrowLeft,
+  ArrowRight,
+  CheckCircle2,
+  Circle,
+  ClipboardCheck,
+} from "lucide-react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -36,6 +43,19 @@ const STEPS = [
   "Location",
   "Review",
 ];
+
+const STEP_HELP: Record<string, string> = {
+  Shifts: "Add the work shifts your employees can be assigned to.",
+  Positions: "Create job roles and daily rates for payroll calculations.",
+  Payroll: "Set when employees are paid and how pay rules are applied.",
+  Attendance: "Choose the time rules used for lateness, absences, and overtime.",
+  Holidays:
+    "Add the holidays your business follows. This helps schedules and pay stay accurate.",
+  "Rest Day": "Choose the regular weekly rest day and rest day pay settings.",
+  Location:
+    "Set your business work site so attendance can be checked by location.",
+  Review: "Check your setup progress and finish when the required parts are ready.",
+};
 
 const REQUIRED_SETUP_KEYS = new Set(["shifts", "positions", "payroll", "location"]);
 
@@ -175,6 +195,66 @@ export function OwnerSetupWizardPage() {
       .every((step) => step.complete);
   }, [setupStatus]);
 
+  const setupStepComplete = useMemo(() => {
+    const map = new Map<string, boolean>();
+    for (const item of setupStatus?.steps ?? []) {
+      map.set(item.key, item.complete);
+    }
+    return map;
+  }, [setupStatus]);
+
+  const isStepComplete = (key: string) => setupStepComplete.get(key) === true;
+
+  const shiftDraftValid =
+    shiftForm.name.trim().length > 0 &&
+    Boolean(shiftForm.start_time) &&
+    Boolean(shiftForm.end_time) &&
+    Number(shiftForm.break_minutes) >= 0 &&
+    Number(shiftForm.employee_capacity) >= 1;
+
+  const positionDraftValid =
+    posForm.title.trim().length > 0 && Number(posForm.daily_rate) > 0;
+
+  const payrollFormValid =
+    Boolean(payrollForm.next_payday_date) &&
+    Number(payrollForm.late_deduction_per_minute) >= 0 &&
+    Number(payrollForm.overtime_per_minute) >= 0;
+
+  const locationCanSave =
+    locationForm.address.trim().length >= 5 &&
+    locationForm.latitude !== "" &&
+    locationForm.longitude !== "" &&
+    Number(locationForm.geofence_radius_m) >= 20 &&
+    Number(locationForm.geofence_radius_m) <= 200;
+
+  const currentStepCanContinue = useMemo(() => {
+    switch (step) {
+      case 0:
+        return isStepComplete("shifts") || shiftDraftValid;
+      case 1:
+        return isStepComplete("positions") || positionDraftValid;
+      case 2:
+        return isStepComplete("payroll") || payrollFormValid;
+      case 3:
+        return isStepComplete("attendance_policy");
+      case 4:
+        return isStepComplete("holidays");
+      case 5:
+        return isStepComplete("rest_day");
+      case 6:
+        return isStepComplete("location") || locationCanSave;
+      default:
+        return false;
+    }
+  }, [
+    step,
+    setupStepComplete,
+    shiftDraftValid,
+    positionDraftValid,
+    payrollFormValid,
+    locationCanSave,
+  ]);
+
   const addShift = useMutation({
     mutationFn: () =>
       createShift({
@@ -281,13 +361,6 @@ export function OwnerSetupWizardPage() {
     onError: () => toast.error("Failed to save location"),
   });
 
-  const locationCanSave =
-    locationForm.address.trim().length >= 5 &&
-    locationForm.latitude !== "" &&
-    locationForm.longitude !== "" &&
-    Number(locationForm.geofence_radius_m) >= 20 &&
-    Number(locationForm.geofence_radius_m) <= 200;
-
   const finishSetup = useMutation({
     mutationFn: completeSetup,
     onSuccess: () => {
@@ -322,49 +395,128 @@ export function OwnerSetupWizardPage() {
     },
   });
 
+  const continuePending =
+    addShift.isPending ||
+    addPosition.isPending ||
+    savePayroll.isPending ||
+    saveLocation.isPending;
+
+  async function handleContinue() {
+    if (!currentStepCanContinue) return;
+
+    try {
+      if (step === 0 && !isStepComplete("shifts") && shiftDraftValid) {
+        await addShift.mutateAsync();
+      }
+      if (step === 1 && !isStepComplete("positions") && positionDraftValid) {
+        await addPosition.mutateAsync();
+      }
+      if (step === 2 && !isStepComplete("payroll") && payrollFormValid) {
+        await savePayroll.mutateAsync();
+      }
+      if (step === 6 && !isStepComplete("location") && locationCanSave) {
+        await saveLocation.mutateAsync();
+      }
+      setStep((s) => Math.min(s + 1, STEPS.length - 1));
+    } catch {
+      toast.error("Save this step before continuing.");
+    }
+  }
+
   return (
-    <div className="min-h-screen bg-muted/30 p-6">
-      <div className="mx-auto max-w-3xl space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold">Business Setup Wizard</h1>
-            <p className="text-sm text-muted-foreground">
-              Step {step + 1} of {STEPS.length}: {STEPS[step]}
-            </p>
+    <div className="min-h-screen bg-[#F7F8FA] px-4 py-6 text-[#1F2937] sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-5xl space-y-6">
+        <header className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="min-w-0">
+              <div className="mb-3 inline-flex items-center gap-2 rounded-full bg-[#EAF2FB] px-3 py-1.5 text-xs font-medium text-[#1E3A5F]">
+                <ClipboardCheck className="h-4 w-4" />
+                Business setup
+              </div>
+              <h1 className="text-2xl font-semibold tracking-tight text-[#1F2937]">
+                Business Setup Wizard
+              </h1>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-[#6B7280]">
+                Complete the basics for scheduling, payroll, attendance, and
+                location. You can skip a step and come back from the dashboard.
+              </p>
+            </div>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+              <div className="rounded-2xl bg-[#F3F6FA] px-4 py-3 text-sm">
+                <p className="font-medium text-[#1F2937]">
+                  Step {step + 1} of {STEPS.length}
+                </p>
+                <p className="text-xs text-[#6B7280]">{STEPS[step]}</p>
+              </div>
+              <Button
+                variant="outline"
+                className="h-10 rounded-xl border-slate-200 bg-white"
+                onClick={() => navigate("/owner/dashboard")}
+                type="button"
+              >
+                Exit to Dashboard
+              </Button>
+            </div>
           </div>
-          <Button variant="outline" asChild>
-            <Link to="/owner/dashboard">Exit to Dashboard</Link>
-          </Button>
-        </div>
+        </header>
 
-        <div className="flex gap-2 overflow-x-auto pb-2">
-          {STEPS.map((label, i) => (
-            <button
-              key={label}
-              type="button"
-              onClick={() => setStep(i)}
-              className={`whitespace-nowrap rounded-full px-3 py-1 text-xs ${
-                i === step
-                  ? "bg-[#1e3a5f] text-white"
-                  : "bg-muted text-muted-foreground"
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+        <nav className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+            {STEPS.map((label, i) => {
+              const key = setupStatus?.steps[i]?.key;
+              const complete = key ? isStepComplete(key) : false;
+              const active = i === step;
+              const Icon = complete ? CheckCircle2 : Circle;
 
-        <Card>
-          <CardHeader>
-            <CardTitle>{STEPS[step]}</CardTitle>
+              return (
+                <button
+                  key={label}
+                  type="button"
+                  onClick={() => setStep(i)}
+                  className={`flex items-center gap-3 rounded-xl border px-3 py-3 text-left text-sm transition ${
+                    active
+                      ? "border-[#1E3A5F] bg-[#1E3A5F] text-white shadow-sm"
+                      : "border-slate-200 bg-[#FAFBFC] text-[#374151] hover:border-[#B9C7D8] hover:bg-white"
+                  }`}
+                >
+                  <Icon
+                    className={`h-4 w-4 shrink-0 ${
+                      active ? "text-white" : complete ? "text-emerald-600" : "text-[#9CA3AF]"
+                    }`}
+                  />
+                  <span className="min-w-0">
+                    <span className="block truncate font-medium">{label}</span>
+                    <span
+                      className={`block text-xs ${
+                        active ? "text-white/75" : "text-[#6B7280]"
+                      }`}
+                    >
+                      {complete ? "Done" : `Step ${i + 1}`}
+                    </span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </nav>
+
+        <Card className="rounded-2xl border-slate-200 bg-white shadow-sm">
+          <CardHeader className="border-b border-slate-100 px-5 py-5 sm:px-6">
+            <CardTitle className="text-xl font-semibold text-[#1F2937]">
+              {STEPS[step]}
+            </CardTitle>
+            <p className="mt-2 text-sm leading-6 text-[#6B7280]">
+              {STEP_HELP[STEPS[step]]}
+            </p>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-6 px-5 py-6 sm:px-6">
             {step === 0 && (
               <>
-                <div className="grid gap-4 sm:grid-cols-2">
+                <div className="grid gap-5 sm:grid-cols-2">
                   <div className="space-y-2">
                     <Label>Shift Name</Label>
                     <Input
+                      className="h-11 rounded-xl border-slate-200 bg-white"
                       value={shiftForm.name}
                       onChange={(e) =>
                         setShiftForm({ ...shiftForm, name: e.target.value })
@@ -375,7 +527,7 @@ export function OwnerSetupWizardPage() {
                   <div className="space-y-2">
                     <Label>Shift Type</Label>
                     <select
-                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                      className="flex h-11 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
                       value={shiftForm.shift_type}
                       onChange={(e) =>
                         setShiftForm({ ...shiftForm, shift_type: e.target.value })
@@ -390,6 +542,7 @@ export function OwnerSetupWizardPage() {
                   <div className="space-y-2">
                     <Label>Start Time</Label>
                     <Input
+                      className="h-11 rounded-xl border-slate-200 bg-white"
                       type="time"
                       value={shiftForm.start_time}
                       onChange={(e) =>
@@ -400,6 +553,7 @@ export function OwnerSetupWizardPage() {
                   <div className="space-y-2">
                     <Label>End Time</Label>
                     <Input
+                      className="h-11 rounded-xl border-slate-200 bg-white"
                       type="time"
                       value={shiftForm.end_time}
                       onChange={(e) =>
@@ -410,6 +564,7 @@ export function OwnerSetupWizardPage() {
                   <div className="space-y-2">
                     <Label>Break Minutes</Label>
                     <Input
+                      className="h-11 rounded-xl border-slate-200 bg-white"
                       type="number"
                       value={shiftForm.break_minutes}
                       onChange={(e) =>
@@ -423,6 +578,7 @@ export function OwnerSetupWizardPage() {
                   <div className="space-y-2">
                     <Label>Employee Capacity</Label>
                     <Input
+                      className="h-11 rounded-xl border-slate-200 bg-white"
                       type="number"
                       value={shiftForm.employee_capacity}
                       onChange={(e) =>
@@ -435,16 +591,17 @@ export function OwnerSetupWizardPage() {
                   </div>
                 </div>
                 <Button
+                  className="rounded-xl bg-[#1E3A5F] hover:bg-[#284B73]"
                   onClick={() => addShift.mutate()}
                   disabled={!shiftForm.name || addShift.isPending}
                 >
                   Add Shift
                 </Button>
-                <ul className="divide-y text-sm">
+                <ul className="overflow-hidden rounded-2xl border border-slate-200 text-sm">
                   {shifts.map((s) => (
                     <li
                       key={s.id}
-                      className="flex items-center justify-between py-2"
+                      className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-3 last:border-b-0"
                     >
                       <span>
                         {s.name} ({s.start_time}–{s.end_time})
@@ -466,10 +623,11 @@ export function OwnerSetupWizardPage() {
 
             {step === 1 && (
               <>
-                <div className="grid gap-4 sm:grid-cols-2">
+                <div className="grid gap-5 sm:grid-cols-2">
                   <div className="space-y-2">
                     <Label>Position Name</Label>
                     <Input
+                      className="h-11 rounded-xl border-slate-200 bg-white"
                       value={posForm.title}
                       onChange={(e) =>
                         setPosForm({ ...posForm, title: e.target.value })
@@ -479,6 +637,7 @@ export function OwnerSetupWizardPage() {
                   <div className="space-y-2">
                     <Label>Daily Rate (₱)</Label>
                     <Input
+                      className="h-11 rounded-xl border-slate-200 bg-white"
                       type="number"
                       value={posForm.daily_rate}
                       onChange={(e) =>
@@ -489,6 +648,7 @@ export function OwnerSetupWizardPage() {
                   <div className="space-y-2 sm:col-span-2">
                     <Label>Description</Label>
                     <Input
+                      className="h-11 rounded-xl border-slate-200 bg-white"
                       value={posForm.description}
                       onChange={(e) =>
                         setPosForm({ ...posForm, description: e.target.value })
@@ -497,16 +657,17 @@ export function OwnerSetupWizardPage() {
                   </div>
                 </div>
                 <Button
+                  className="rounded-xl bg-[#1E3A5F] hover:bg-[#284B73]"
                   onClick={() => addPosition.mutate()}
                   disabled={!posForm.title || !posForm.daily_rate}
                 >
                   Add Position
                 </Button>
-                <ul className="divide-y text-sm">
+                <ul className="overflow-hidden rounded-2xl border border-slate-200 text-sm">
                   {positions.map((p) => (
                     <li
                       key={p.id}
-                      className="flex items-center justify-between py-2"
+                      className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-3 last:border-b-0"
                     >
                       <span>
                         {p.title} — ₱{p.daily_rate}/day
@@ -528,11 +689,11 @@ export function OwnerSetupWizardPage() {
 
             {step === 2 && (
               <>
-                <div className="grid gap-4 sm:grid-cols-2">
+                <div className="grid gap-5 sm:grid-cols-2">
                   <div className="space-y-2">
                     <Label>Pay Period Type</Label>
                     <select
-                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                      className="flex h-11 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
                       value={payrollForm.pay_period_type}
                       onChange={(e) =>
                         setPayrollForm({
@@ -549,6 +710,7 @@ export function OwnerSetupWizardPage() {
                   <div className="space-y-2">
                     <Label>Next Payday Date</Label>
                     <Input
+                      className="h-11 rounded-xl border-slate-200 bg-white"
                       type="date"
                       value={payrollForm.next_payday_date}
                       onChange={(e) =>
@@ -560,7 +722,7 @@ export function OwnerSetupWizardPage() {
                     />
                   </div>
                 </div>
-                <label className="flex items-center gap-2 text-sm">
+                <label className="flex items-center gap-2 rounded-xl border border-slate-200 bg-[#FAFBFC] px-4 py-3 text-sm">
                   <input
                     type="checkbox"
                     checked={payrollForm.auto_reset_payroll_cycle}
@@ -574,8 +736,10 @@ export function OwnerSetupWizardPage() {
                   Automatically reset payroll cycle after payday
                 </label>
 
-                <div className="rounded-lg border p-4 space-y-4">
-                  <p className="text-sm font-medium">Payroll Rules (W1)</p>
+                <div className="space-y-4 rounded-2xl border border-slate-200 bg-[#FAFBFC] p-4">
+                  <p className="text-sm font-medium text-[#1F2937]">
+                    Pay Rules
+                  </p>
                   <label className="flex items-center gap-2 text-sm">
                     <input
                       type="checkbox"
@@ -592,6 +756,7 @@ export function OwnerSetupWizardPage() {
                   <div className="space-y-2">
                     <Label>Late Deduction (₱/min)</Label>
                     <Input
+                      className="h-11 rounded-xl border-slate-200 bg-white"
                       type="number"
                       step="0.01"
                       min="0"
@@ -621,6 +786,7 @@ export function OwnerSetupWizardPage() {
                   <div className="space-y-2">
                     <Label>Overtime Rate (₱/min)</Label>
                     <Input
+                      className="h-11 rounded-xl border-slate-200 bg-white"
                       type="number"
                       step="0.01"
                       min="0"
@@ -636,13 +802,18 @@ export function OwnerSetupWizardPage() {
                   </div>
                 </div>
 
-                <Button onClick={() => savePayroll.mutate()}>Save Payroll</Button>
+                <Button
+                  className="rounded-xl bg-[#1E3A5F] hover:bg-[#284B73]"
+                  onClick={() => savePayroll.mutate()}
+                >
+                  Save Payroll
+                </Button>
               </>
             )}
 
             {step === 3 && (
               <>
-                <div className="grid gap-4 sm:grid-cols-2">
+                <div className="grid gap-5 sm:grid-cols-2">
                   {[
                     ["early_clock_in_minutes", "Early Clock-In Window (min)"],
                     ["on_time_grace_minutes", "On-Time Grace (min)"],
@@ -653,6 +824,7 @@ export function OwnerSetupWizardPage() {
                     <div key={key} className="space-y-2">
                       <Label>{label}</Label>
                       <Input
+                        className="h-11 rounded-xl border-slate-200 bg-white"
                         type="number"
                         value={attForm[key as keyof typeof attForm] as string}
                         onChange={(e) =>
@@ -662,13 +834,16 @@ export function OwnerSetupWizardPage() {
                     </div>
                   ))}
                 </div>
-                <p className="text-sm text-muted-foreground">
+                <p className="rounded-xl bg-[#F3F6FA] px-4 py-3 text-sm text-[#6B7280]">
                   Overtime rate uses payroll configuration: ₱
                   {payrollForm.overtime_per_minute}/min (
                   {payrollForm.overtime_enabled ? "enabled" : "disabled"}). Update
                   in the Payroll step.
                 </p>
-                <Button onClick={() => saveAttendance.mutate()}>
+                <Button
+                  className="rounded-xl bg-[#1E3A5F] hover:bg-[#284B73]"
+                  onClick={() => saveAttendance.mutate()}
+                >
                   Save Attendance Policy
                 </Button>
               </>
@@ -678,11 +853,11 @@ export function OwnerSetupWizardPage() {
 
             {step === 5 && (
               <>
-                <div className="grid gap-4 sm:grid-cols-2">
+                <div className="grid gap-5 sm:grid-cols-2">
                   <div className="space-y-2">
                     <Label>Weekly Rest Day</Label>
                     <select
-                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                      className="flex h-11 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
                       value={restForm.weekly_rest_day}
                       onChange={(e) =>
                         setRestForm({
@@ -709,6 +884,7 @@ export function OwnerSetupWizardPage() {
                   <div className="space-y-2">
                     <Label>Rest Day Premium (%)</Label>
                     <Input
+                      className="h-11 rounded-xl border-slate-200 bg-white"
                       type="number"
                       value={restForm.rest_day_premium_percent}
                       onChange={(e) =>
@@ -720,7 +896,10 @@ export function OwnerSetupWizardPage() {
                     />
                   </div>
                 </div>
-                <Button onClick={() => saveRestDay.mutate()}>
+                <Button
+                  className="rounded-xl bg-[#1E3A5F] hover:bg-[#284B73]"
+                  onClick={() => saveRestDay.mutate()}
+                >
                   Save Rest Day Policy
                 </Button>
               </>
@@ -728,13 +907,14 @@ export function OwnerSetupWizardPage() {
 
             {step === 6 && (
               <>
-                <p className="text-sm text-muted-foreground">
+                <p className="rounded-xl bg-[#F3F6FA] px-4 py-3 text-sm text-[#6B7280]">
                   Set your primary work site and geofence. Required before
                   employees can clock in for attendance.
                 </p>
                 <div className="space-y-2">
                   <Label>Address</Label>
                   <Input
+                    className="h-11 rounded-xl border-slate-200 bg-white"
                     value={locationForm.address}
                     onChange={(e) =>
                       setLocationForm({ ...locationForm, address: e.target.value })
@@ -742,10 +922,11 @@ export function OwnerSetupWizardPage() {
                     placeholder="123 Main St, Manila"
                   />
                 </div>
-                <div className="grid gap-4 sm:grid-cols-2">
+                <div className="grid gap-5 sm:grid-cols-2">
                   <div className="space-y-2">
                     <Label>Latitude</Label>
                     <Input
+                      className="h-11 rounded-xl border-slate-200 bg-white"
                       type="number"
                       step="any"
                       value={locationForm.latitude}
@@ -761,6 +942,7 @@ export function OwnerSetupWizardPage() {
                   <div className="space-y-2">
                     <Label>Longitude</Label>
                     <Input
+                      className="h-11 rounded-xl border-slate-200 bg-white"
                       type="number"
                       step="any"
                       value={locationForm.longitude}
@@ -790,13 +972,14 @@ export function OwnerSetupWizardPage() {
                         geofence_radius_m: e.target.value,
                       })
                     }
-                    className="w-full"
+                    className="w-full accent-[#1E3A5F]"
                   />
                   <p className="text-xs text-muted-foreground">
                     Allowed range: 20m – 200m (default 75m)
                   </p>
                 </div>
                 <Button
+                  className="rounded-xl bg-[#1E3A5F] hover:bg-[#284B73]"
                   onClick={() => saveLocation.mutate()}
                   disabled={!locationCanSave || saveLocation.isPending}
                 >
@@ -807,11 +990,11 @@ export function OwnerSetupWizardPage() {
 
             {step === 7 && (
               <>
-                <p className="text-sm text-muted-foreground">
+                <p className="rounded-xl bg-[#F3F6FA] px-4 py-3 text-sm text-[#6B7280]">
                   Review your configuration and mark setup as complete. Required
                   steps: schedules, positions, payroll, and location.
                 </p>
-                <ul className="space-y-1 text-sm">
+                <ul className="grid gap-2 text-sm sm:grid-cols-2">
                   {setupStatus?.steps
                     .filter((s) => s.key !== "review")
                     .map((s) => (
@@ -827,31 +1010,57 @@ export function OwnerSetupWizardPage() {
                   </p>
                 ) : null}
                 <Button
+                  className="rounded-xl bg-[#1E3A5F] hover:bg-[#284B73]"
                   onClick={() => finishSetup.mutate()}
                   disabled={finishSetup.isPending || !canCompleteSetup}
                 >
                   Mark Setup Complete
+                </Button>
+                <Button
+                  variant="outline"
+                  className="rounded-xl border-slate-200"
+                  onClick={() => navigate("/owner/dashboard")}
+                  type="button"
+                >
+                  Go to Dashboard
                 </Button>
               </>
             )}
           </CardContent>
         </Card>
 
-        <div className="flex justify-between">
+        <div className="flex flex-col-reverse gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
           <Button
             variant="outline"
+            className="h-10 rounded-xl border-slate-200"
             disabled={step === 0}
             onClick={() => setStep((s) => s - 1)}
           >
+            <ArrowLeft className="mr-2 h-4 w-4" />
             Back
           </Button>
-          <div className="flex gap-2">
+          <div className="flex flex-col gap-2 sm:flex-row">
             {step < STEPS.length - 1 && (
               <>
-                <Button variant="ghost" onClick={() => setStep((s) => s + 1)}>
-                  Skip for now
+                <Button
+                  variant="ghost"
+                  className="h-10 rounded-xl"
+                  onClick={() => setStep((s) => s + 1)}
+                >
+                  Skip for Now
                 </Button>
-                <Button onClick={() => setStep((s) => s + 1)}>Continue</Button>
+                {currentStepCanContinue && (
+                  <Button
+                    className="h-10 rounded-xl bg-[#1E3A5F] hover:bg-[#284B73]"
+                    onClick={() => {
+                      void handleContinue();
+                    }}
+                    disabled={continuePending}
+                  >
+                    Continue
+                    <ArrowRight className="ml-2 h-4 w-4" />
+                  </Button>
+                )}
               </>
             )}
           </div>

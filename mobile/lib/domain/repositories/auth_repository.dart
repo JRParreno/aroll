@@ -9,10 +9,19 @@ abstract class AuthRepository {
     required String password,
   });
 
+  Future<AuthResult<UserSession>> ownerLogin({
+    required String businessCode,
+    required String email,
+    required String password,
+  });
+
   Future<AuthResult<UserSession>> changePassword({
     required String currentPassword,
     required String newPassword,
   });
 
   Future<void> logout();
+
+  /// Returns a session when a stored token is valid; otherwise null.
+  Future<UserSession?> restoreSession();
 }

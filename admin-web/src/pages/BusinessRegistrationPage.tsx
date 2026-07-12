@@ -1,8 +1,9 @@
 import { useState } from "react";
+import { ArrowLeft, FileCheck2, UploadCloud } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import { SystemBrandPanel } from "@/components/branding/SystemBranding";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -51,16 +52,16 @@ function isAcceptedFile(file: File) {
 
 function RegistrationStepIndicator({ step }: { step: number }) {
   return (
-    <div className="flex gap-2 overflow-x-auto pb-2">
+    <div className="flex gap-3 overflow-x-auto pb-2">
       {STEPS.map((label, index) => (
         <div
           key={label}
-          className={`whitespace-nowrap rounded-full px-3 py-1 text-xs ${
+          className={`whitespace-nowrap rounded-full px-4 py-2 text-xs font-medium ${
             index === step
-              ? "bg-[#1e3a5f] text-white"
+              ? "bg-[#1E3A5F] text-white shadow-sm"
               : index < step
-                ? "bg-[#3b9ae8]/20 text-[#1e3a5f]"
-                : "bg-muted text-muted-foreground"
+                ? "bg-[#DBEAFE] text-[#1E3A5F]"
+                : "bg-white text-[#6B7280]"
           }`}
         >
           Step {index + 1}: {label}
@@ -88,35 +89,43 @@ function DocumentUploadField({
   const [typeError, setTypeError] = useState<string | null>(null);
 
   return (
-    <div className="space-y-2">
-      <Label htmlFor={id}>{label}</Label>
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-        <Input
-          id={id}
-          type="file"
-          accept={ACCEPTED_FILE_TYPES}
-          className="cursor-pointer"
-          onChange={(e) => {
-            const selected = e.target.files?.[0] ?? null;
-            if (selected && !isAcceptedFile(selected)) {
-              setTypeError("File must be PDF, JPG, JPEG, or PNG");
-              onChange(null);
-              return;
-            }
-            setTypeError(null);
-            onChange(selected);
-          }}
-        />
+    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="mb-3 flex items-center gap-3">
+        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#EAF2FB] text-[#1E3A5F]">
+          <UploadCloud className="h-5 w-5" />
+        </div>
+        <div>
+          <Label htmlFor={id} className="text-sm font-medium text-[#1F2937]">
+            {label}
+          </Label>
+          <p className="text-xs text-[#6B7280]">PDF, JPG, JPEG, or PNG</p>
+        </div>
       </div>
+      <Input
+        id={id}
+        type="file"
+        accept={ACCEPTED_FILE_TYPES}
+        className="cursor-pointer border-slate-200 bg-[#FAFBFC]"
+        onChange={(e) => {
+          const selected = e.target.files?.[0] ?? null;
+          if (selected && !isAcceptedFile(selected)) {
+            setTypeError("File must be PDF, JPG, JPEG, or PNG");
+            onChange(null);
+            return;
+          }
+          setTypeError(null);
+          onChange(selected);
+        }}
+      />
       {file ? (
-        <p className="text-sm text-foreground">Uploaded: {file.name}</p>
+        <p className="mt-2 text-sm text-[#1F2937]">Uploaded: {file.name}</p>
       ) : (
-        <p className="text-xs text-muted-foreground">
+        <p className="mt-2 text-xs text-[#6B7280]">
           Accepted formats: PDF, JPG, JPEG, PNG
         </p>
       )}
-      {typeError && <p className="text-sm text-red-600">{typeError}</p>}
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {typeError && <p className="mt-2 text-sm text-red-600">{typeError}</p>}
+      {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
     </div>
   );
 }
@@ -212,7 +221,7 @@ export function BusinessRegistrationPage() {
           return;
         }
       } catch {
-        // No existing registration — create a new draft.
+        // No existing registration - create a new draft.
       }
 
       const created = await submitRegistration({
@@ -272,157 +281,210 @@ export function BusinessRegistrationPage() {
   }
 
   return (
-    <div className="min-h-screen bg-muted/30 p-4 sm:p-6">
-      <div className="mx-auto flex max-w-xl flex-col gap-6">
-        <div>
-          <h1 className="text-2xl font-semibold">Business Registration</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Register your business with Aroll+. Complete both steps to submit
-            your application.
-          </p>
-        </div>
+    <div className="min-h-screen bg-[#F4F6F8] text-[#111827] lg:grid lg:grid-cols-[minmax(300px,38vw)_1fr]">
+      <SystemBrandPanel />
 
-        <RegistrationStepIndicator step={step} />
+      <main className="flex min-h-screen items-center justify-center px-5 py-8 sm:px-8 lg:px-12">
+        <div className="w-full max-w-4xl">
+          <div className="mb-8 flex items-start gap-5">
+            <Button
+              asChild
+              variant="ghost"
+              size="icon"
+              className="mt-1 h-11 w-11 rounded-full text-[#111827] hover:bg-white"
+            >
+              <Link to="/owner-login" aria-label="Back to login">
+                <ArrowLeft className="h-6 w-6" />
+              </Link>
+            </Button>
+            <div className="min-w-0">
+              <h1 className="text-3xl font-semibold tracking-tight text-[#111827] sm:text-4xl">
+                Let's create your account!
+              </h1>
+              <p className="mt-3 max-w-2xl text-sm leading-6 text-[#6B7280]">
+                Register your business with Aroll+. Complete both steps to
+                submit your application.
+              </p>
+            </div>
+          </div>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>{STEPS[step]}</CardTitle>
-            <p className="text-sm text-muted-foreground">
-              Step {step + 1} of {STEPS.length}
-            </p>
-          </CardHeader>
+          <RegistrationStepIndicator step={step} />
 
-          <CardContent>
+          <section className="mt-5 rounded-3xl border border-white/70 bg-white/70 p-5 shadow-sm backdrop-blur sm:p-7">
+            <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="text-xl font-semibold text-[#111827]">
+                  {STEPS[step]}
+                </h2>
+                <p className="mt-1 text-sm text-[#6B7280]">
+                  Step {step + 1} of {STEPS.length}
+                </p>
+              </div>
+              <div className="flex items-center gap-2 rounded-full bg-[#EAF2FB] px-4 py-2 text-xs font-medium text-[#1E3A5F]">
+                <FileCheck2 className="h-4 w-4" />
+                Business verification
+              </div>
+            </div>
+
             {step === 0 && (
               <form
-                className="space-y-4"
+                className="space-y-5"
                 onSubmit={(e) => {
                   e.preventDefault();
                   void handleNext();
                 }}
               >
-                <div className="space-y-2">
-                  <Label htmlFor="business_name">Business Name</Label>
-                  <Input
-                    id="business_name"
-                    value={form.business_name}
-                    onChange={(e) =>
-                      setForm({ ...form, business_name: e.target.value })
-                    }
-                  />
-                  {step1Errors.business_name && (
-                    <p className="text-sm text-red-600">{step1Errors.business_name}</p>
-                  )}
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="owner_name">Owner Name</Label>
-                  <Input
-                    id="owner_name"
-                    value={form.owner_name}
-                    onChange={(e) =>
-                      setForm({ ...form, owner_name: e.target.value })
-                    }
-                  />
-                  {step1Errors.owner_name && (
-                    <p className="text-sm text-red-600">{step1Errors.owner_name}</p>
-                  )}
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="owner_email">Owner Email</Label>
-                  <Input
-                    id="owner_email"
-                    type="email"
-                    value={form.owner_email}
-                    onChange={(e) =>
-                      setForm({ ...form, owner_email: e.target.value })
-                    }
-                  />
-                  {step1Errors.owner_email && (
-                    <p className="text-sm text-red-600">{step1Errors.owner_email}</p>
-                  )}
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="owner_phone">Phone Number</Label>
-                  <Input
-                    id="owner_phone"
-                    value={form.owner_phone}
-                    onChange={(e) =>
-                      setForm({ ...form, owner_phone: e.target.value })
-                    }
-                  />
-                  {step1Errors.owner_phone && (
-                    <p className="text-sm text-red-600">{step1Errors.owner_phone}</p>
-                  )}
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="proposed_address">Business Address</Label>
-                  <Input
-                    id="proposed_address"
-                    value={form.proposed_address}
-                    onChange={(e) =>
-                      setForm({ ...form, proposed_address: e.target.value })
-                    }
-                  />
-                  {step1Errors.proposed_address && (
-                    <p className="text-sm text-red-600">
-                      {step1Errors.proposed_address}
-                    </p>
-                  )}
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="business_type">Business Type</Label>
-                  <select
-                    id="business_type"
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                    value={form.business_type}
-                    onChange={(e) =>
-                      setForm({
-                        ...form,
-                        business_type: e.target.value as BusinessTypeOption,
-                        business_type_other:
-                          e.target.value === "other"
-                            ? form.business_type_other
-                            : "",
-                      })
-                    }
-                  >
-                    <option value="">Select business type</option>
-                    <option value="restaurant">Restaurant</option>
-                    <option value="cafe">Cafe</option>
-                    <option value="other">Other</option>
-                  </select>
-                  {step1Errors.business_type && (
-                    <p className="text-sm text-red-600">{step1Errors.business_type}</p>
-                  )}
-                </div>
-
-                {form.business_type === "other" && (
+                <div className="grid gap-5 md:grid-cols-2">
                   <div className="space-y-2">
-                    <Label htmlFor="business_type_other">Specify Business Type</Label>
+                    <Label htmlFor="business_name">Business Name</Label>
                     <Input
-                      id="business_type_other"
-                      value={form.business_type_other}
+                      id="business_name"
+                      className="h-11 rounded-lg border-0 bg-white shadow-sm"
+                      value={form.business_name}
                       onChange={(e) =>
-                        setForm({ ...form, business_type_other: e.target.value })
+                        setForm({ ...form, business_name: e.target.value })
                       }
-                      placeholder="e.g. Retail, Salon, Gym"
                     />
-                    {step1Errors.business_type_other && (
+                    {step1Errors.business_name && (
                       <p className="text-sm text-red-600">
-                        {step1Errors.business_type_other}
+                        {step1Errors.business_name}
                       </p>
                     )}
                   </div>
-                )}
 
-                <Button type="submit" className="w-full" disabled={checkingEmail}>
-                  {checkingEmail ? "Checking…" : "Next"}
-                </Button>
+                  <div className="space-y-2">
+                    <Label htmlFor="owner_name">Owner Name</Label>
+                    <Input
+                      id="owner_name"
+                      className="h-11 rounded-lg border-0 bg-white shadow-sm"
+                      value={form.owner_name}
+                      onChange={(e) =>
+                        setForm({ ...form, owner_name: e.target.value })
+                      }
+                    />
+                    {step1Errors.owner_name && (
+                      <p className="text-sm text-red-600">
+                        {step1Errors.owner_name}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="owner_email">Owner Email</Label>
+                    <Input
+                      id="owner_email"
+                      type="email"
+                      className="h-11 rounded-lg border-0 bg-white shadow-sm"
+                      value={form.owner_email}
+                      onChange={(e) =>
+                        setForm({ ...form, owner_email: e.target.value })
+                      }
+                    />
+                    {step1Errors.owner_email && (
+                      <p className="text-sm text-red-600">
+                        {step1Errors.owner_email}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="owner_phone">Phone Number</Label>
+                    <Input
+                      id="owner_phone"
+                      className="h-11 rounded-lg border-0 bg-white shadow-sm"
+                      value={form.owner_phone}
+                      onChange={(e) =>
+                        setForm({ ...form, owner_phone: e.target.value })
+                      }
+                    />
+                    {step1Errors.owner_phone && (
+                      <p className="text-sm text-red-600">
+                        {step1Errors.owner_phone}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="space-y-2 md:col-span-2">
+                    <Label htmlFor="proposed_address">Business Address</Label>
+                    <Input
+                      id="proposed_address"
+                      className="h-11 rounded-lg border-0 bg-white shadow-sm"
+                      value={form.proposed_address}
+                      onChange={(e) =>
+                        setForm({ ...form, proposed_address: e.target.value })
+                      }
+                    />
+                    {step1Errors.proposed_address && (
+                      <p className="text-sm text-red-600">
+                        {step1Errors.proposed_address}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="business_type">Business Type</Label>
+                    <select
+                      id="business_type"
+                      className="flex h-11 w-full rounded-lg border-0 bg-white px-3 py-2 text-sm shadow-sm outline-none focus:ring-2 focus:ring-[#1E3A5F]/30"
+                      value={form.business_type}
+                      onChange={(e) =>
+                        setForm({
+                          ...form,
+                          business_type: e.target.value as BusinessTypeOption,
+                          business_type_other:
+                            e.target.value === "other"
+                              ? form.business_type_other
+                              : "",
+                        })
+                      }
+                    >
+                      <option value="">Select business type</option>
+                      <option value="restaurant">Restaurant</option>
+                      <option value="cafe">Cafe</option>
+                      <option value="other">Other</option>
+                    </select>
+                    {step1Errors.business_type && (
+                      <p className="text-sm text-red-600">
+                        {step1Errors.business_type}
+                      </p>
+                    )}
+                  </div>
+
+                  {form.business_type === "other" && (
+                    <div className="space-y-2">
+                      <Label htmlFor="business_type_other">
+                        Specify Business Type
+                      </Label>
+                      <Input
+                        id="business_type_other"
+                        className="h-11 rounded-lg border-0 bg-white shadow-sm"
+                        value={form.business_type_other}
+                        onChange={(e) =>
+                          setForm({
+                            ...form,
+                            business_type_other: e.target.value,
+                          })
+                        }
+                        placeholder="e.g. Retail, Salon, Gym"
+                      />
+                      {step1Errors.business_type_other && (
+                        <p className="text-sm text-red-600">
+                          {step1Errors.business_type_other}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex justify-end pt-3">
+                  <Button
+                    type="submit"
+                    className="h-12 min-w-48 rounded-xl bg-[#1E3A5F] text-white shadow-sm hover:bg-[#284B73]"
+                    disabled={checkingEmail}
+                  >
+                    {checkingEmail ? "Checking..." : "Next"}
+                  </Button>
+                </div>
               </form>
             )}
 
@@ -433,54 +495,66 @@ export function BusinessRegistrationPage() {
                 }}
                 className="space-y-6"
               >
-                <p className="text-sm text-muted-foreground">
+                <p className="text-sm leading-6 text-[#6B7280]">
                   Upload the required documents for verification. All files are
                   required before submission.
                 </p>
 
-                {DOCUMENT_FIELDS.map((field) => (
-                  <DocumentUploadField
-                    key={field.key}
-                    id={field.key}
-                    label={field.label}
-                    file={documents[field.key]}
-                    error={documentErrors[field.key]}
-                    onChange={(file) => updateDocument(field.key, file)}
-                  />
-                ))}
+                <div className="grid gap-4 md:grid-cols-2">
+                  {DOCUMENT_FIELDS.map((field) => (
+                    <DocumentUploadField
+                      key={field.key}
+                      id={field.key}
+                      label={field.label}
+                      file={documents[field.key]}
+                      error={documentErrors[field.key]}
+                      onChange={(file) => updateDocument(field.key, file)}
+                    />
+                  ))}
+                </div>
 
-                <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-between">
+                <div className="flex flex-col-reverse gap-3 pt-2 sm:flex-row sm:justify-between">
                   <Button
                     type="button"
                     variant="outline"
+                    className="h-11 rounded-xl border-slate-200 bg-white"
                     onClick={() => setStep(0)}
                   >
                     Back
                   </Button>
                   <Button
                     type="submit"
-                    className="sm:min-w-[180px]"
+                    className="h-11 min-w-48 rounded-xl bg-[#1E3A5F] text-white shadow-sm hover:bg-[#284B73]"
                     disabled={submitting}
                   >
-                    {submitting ? "Submitting…" : "Submit Application"}
+                    {submitting ? "Submitting..." : "Submit Application"}
                   </Button>
                 </div>
               </form>
             )}
-          </CardContent>
-        </Card>
+          </section>
 
-        <Button asChild variant="outline" className="w-full">
-          <Link to="/track-registration">Track Your Registration</Link>
-        </Button>
+          <div className="mt-5 grid gap-3 sm:grid-cols-2">
+            <Button
+              asChild
+              variant="outline"
+              className="h-11 rounded-xl border-slate-200 bg-white"
+            >
+              <Link to="/track-registration">Track Your Registration</Link>
+            </Button>
 
-        <p className="text-center text-sm text-muted-foreground">
-          Already registered?{" "}
-          <Link to="/owner-login" className="underline underline-offset-2">
-            Sign in here
-          </Link>
-        </p>
-      </div>
+            <p className="flex items-center justify-center text-center text-sm text-[#6B7280]">
+              Already registered?{" "}
+              <Link
+                to="/owner-login"
+                className="ml-1 font-medium text-[#1E3A5F] underline underline-offset-2"
+              >
+                Sign in here
+              </Link>
+            </p>
+          </div>
+        </div>
+      </main>
     </div>
   );
 }

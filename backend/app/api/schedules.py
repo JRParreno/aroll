@@ -14,6 +14,7 @@ from app.models.user import User
 from app.schemas.schedule import (
     ScheduleAssignRequest,
     ScheduleAssignResponse,
+    ScheduleAssignmentUpdateRequest,
     ScheduleAssignmentResponse,
     WeeklyScheduleResponse,
 )
@@ -41,6 +42,42 @@ def _assignment_response(
 
 def _week_bounds(week_start: date) -> tuple[date, date]:
     return week_start, week_start + timedelta(days=6)
+
+
+def _times_overlap(first: Shift, second: Shift) -> bool:
+    first_start = first.start_time
+    first_end = first.end_time
+    second_start = second.start_time
+    second_end = second.end_time
+    return first_start < second_end and second_start < first_end
+
+
+def _validate_employee_schedule_conflicts(
+    db: Session,
+    employee_ids: list[uuid.UUID],
+    work_date: date,
+    shift: Shift,
+    exclude_assignment_id: uuid.UUID | None = None,
+) -> None:
+    query = (
+        db.query(ShiftAssignment, Shift)
+        .join(Shift, ShiftAssignment.shift_id == Shift.id)
+        .filter(
+            Shift.business_id == shift.business_id,
+            ShiftAssignment.employee_id.in_(employee_ids),
+            ShiftAssignment.work_date == work_date,
+        )
+    )
+    if exclude_assignment_id is not None:
+        query = query.filter(ShiftAssignment.id != exclude_assignment_id)
+
+    conflicts = query.all()
+    for assignment, existing_shift in conflicts:
+        if assignment.shift_id == shift.id or _times_overlap(existing_shift, shift):
+            raise HTTPException(
+                400,
+                "Employee already has a schedule assignment that conflicts with this shift.",
+            )
 
 
 @router.get("/weekly", response_model=WeeklyScheduleResponse)
@@ -107,6 +144,8 @@ def assign_schedule(
     if len(employees) != len(employee_ids):
         raise HTTPException(400, "One or more employees not found for this business")
 
+    _validate_employee_schedule_conflicts(db, employee_ids, body.work_date, shift)
+
     existing_same_shift = (
         db.query(ShiftAssignment)
         .filter(
@@ -156,3 +195,87 @@ def assign_schedule(
             for assignment in created_assignments
         ],
     )
+
+
+@router.put(
+    "/assignments/{assignment_id}",
+    response_model=ScheduleAssignmentResponse,
+)
+def update_schedule_assignment(
+    assignment_id: uuid.UUID,
+    body: ScheduleAssignmentUpdateRequest,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(require_roles(UserRole.owner, UserRole.manager))],
+):
+    if user.business_id is None:
+        raise HTTPException(400, "No business context")
+
+    assignment = db.get(ShiftAssignment, assignment_id)
+    if assignment is None:
+        raise HTTPException(404, "Schedule assignment not found")
+
+    employee = db.get(Employee, assignment.employee_id)
+    if employee is None or employee.business_id != user.business_id:
+        raise HTTPException(404, "Schedule assignment not found")
+
+    shift = db.get(Shift, uuid.UUID(body.shift_id))
+    if shift is None or shift.business_id != user.business_id or not shift.is_active:
+        raise HTTPException(404, "Shift not found")
+
+    _validate_employee_schedule_conflicts(
+        db,
+        [assignment.employee_id],
+        body.work_date,
+        shift,
+        exclude_assignment_id=assignment.id,
+    )
+
+    existing_same_shift_count = (
+        db.query(ShiftAssignment)
+        .filter(
+            ShiftAssignment.shift_id == shift.id,
+            ShiftAssignment.work_date == body.work_date,
+            ShiftAssignment.id != assignment.id,
+        )
+        .count()
+    )
+    if existing_same_shift_count >= shift.employee_capacity:
+        raise HTTPException(
+            400,
+            f"Shift capacity exceeded. Maximum {shift.employee_capacity} employees allowed.",
+        )
+
+    assignment.shift_id = shift.id
+    assignment.work_date = body.work_date
+    db.commit()
+    db.refresh(assignment)
+    return _assignment_response(assignment, employee, shift)
+
+
+@router.delete("/assignments/{assignment_id}")
+def delete_schedule_assignment(
+    assignment_id: uuid.UUID,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(require_roles(UserRole.owner, UserRole.manager))],
+):
+    if user.business_id is None:
+        raise HTTPException(400, "No business context")
+
+    row = (
+        db.query(ShiftAssignment, Employee, Shift)
+        .join(Employee, ShiftAssignment.employee_id == Employee.id)
+        .join(Shift, ShiftAssignment.shift_id == Shift.id)
+        .filter(
+            ShiftAssignment.id == assignment_id,
+            Employee.business_id == user.business_id,
+            Shift.business_id == user.business_id,
+        )
+        .first()
+    )
+    if row is None:
+        raise HTTPException(404, "Schedule assignment not found")
+
+    assignment, _employee, _shift = row
+    db.delete(assignment)
+    db.commit()
+    return {"status": "ok"}

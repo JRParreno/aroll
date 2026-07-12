@@ -3,6 +3,25 @@ from pydantic import BaseModel, Field
 from app.schemas.registration import RegistrationDocumentResponse
 
 
+class BusinessThemeSettings(BaseModel):
+    primary_color: str = "#1E3A5F"
+    secondary_color: str = "#284B73"
+    sidebar_color: str = "#1E3A5F"
+    accent_color: str = "#3B82F6"
+    button_color: str = "#1E3A5F"
+    card_style: str = "soft"
+    font_size: str = "comfortable"
+    color_mode: str = "light"
+    layout_density: str = "rounded"
+
+
+class BusinessBrandingSettings(BaseModel):
+    logo_url: str | None = None
+    owner_profile_image_url: str | None = None
+    display_image_url: str | None = None
+    theme: BusinessThemeSettings = Field(default_factory=BusinessThemeSettings)
+
+
 class LocationUpdate(BaseModel):
     label: str = "Main"
     address: str = Field(min_length=5)
@@ -26,6 +45,7 @@ class AccountSettingsResponse(BaseModel):
     contact_phone: str | None = None
     address: str = ""
     business_type: str | None = None
+    branding: BusinessBrandingSettings = Field(default_factory=BusinessBrandingSettings)
 
 
 class AccountSettingsUpdate(BaseModel):
@@ -34,6 +54,7 @@ class AccountSettingsUpdate(BaseModel):
     contact_phone: str | None = Field(default=None, max_length=50)
     address: str = Field(min_length=5)
     business_type: str | None = Field(default=None, max_length=100)
+    branding: BusinessBrandingSettings | None = None
 
 
 class BusinessSettingsResponse(BaseModel):
@@ -46,4 +67,5 @@ class BusinessSettingsResponse(BaseModel):
     owner_phone: str | None = None
     registration_id: str | None = None
     application_status: str | None = None
-    registration_documents: list[RegistrationDocumentResponse] = []
+    registration_documents: list[RegistrationDocumentResponse] = Field(default_factory=list)
+    branding: BusinessBrandingSettings = Field(default_factory=BusinessBrandingSettings)

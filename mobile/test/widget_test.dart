@@ -8,11 +8,12 @@ void main() {
     await initDependencies();
   });
 
-  testWidgets('shows login screen', (tester) async {
+  testWidgets('shows role choice landing screen', (tester) async {
     await tester.pumpWidget(const ArollApp());
     await tester.pump();
 
-    expect(find.text('Aroll+'), findsOneWidget);
-    expect(find.text('Sign in'), findsOneWidget);
+    expect(find.text('Welcome to Aroll+'), findsOneWidget);
+    expect(find.text('Login as Employee'), findsOneWidget);
+    expect(find.text('Login as Business Owner'), findsOneWidget);
   });
 }

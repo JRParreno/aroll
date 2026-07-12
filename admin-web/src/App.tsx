@@ -31,6 +31,7 @@ import { OwnerAccountSettingsPage } from "@/pages/owner/OwnerAccountSettingsPage
 import { OwnerBusinessSettingsPage } from "@/pages/owner/OwnerBusinessSettingsPage";
 import { OwnerBusinessSetupsPage } from "@/pages/owner/OwnerBusinessSetupsPage";
 import { OwnerHelpPage } from "@/pages/owner/OwnerHelpPage";
+import { OwnerProfilePage } from "@/pages/owner/OwnerProfilePage";
 import { OwnerSetupWizardPage } from "@/pages/owner/setup/OwnerSetupWizardPage";
 import { PendingVerificationPage } from "@/pages/owner/PendingVerificationPage";
 import { RejectedApplicationPage } from "@/pages/owner/RejectedApplicationPage";
@@ -91,6 +92,7 @@ export default function App() {
         <Route path="settings/account" element={<OwnerAccountSettingsPage />} />
         <Route path="settings/business" element={<OwnerBusinessSettingsPage />} />
         <Route path="settings/setup" element={<OwnerBusinessSetupsPage />} />
+        <Route path="profile" element={<OwnerProfilePage />} />
         <Route path="help" element={<OwnerHelpPage />} />
         <Route index element={<Navigate to="dashboard" replace />} />
       </Route>

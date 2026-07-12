@@ -4,4 +4,9 @@
          to allow setting breakpoints, to provide hot reload, etc.
     -->
     <uses-permission android:name="android.permission.INTERNET"/>
+
+    <!-- Allow plain HTTP to LAN IPs during development (physical device testing).
+         android:usesCleartextTraffic is only effective in debug builds.
+         Release builds use the default (cleartext blocked). -->
+    <application android:usesCleartextTraffic="true" />
 </manifest>

@@ -1,0 +1,155 @@
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Camera } from "lucide-react";
+import { useEffect, useState } from "react";
+import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { getAccountSettings, updateAccountSettings } from "@/lib/api";
+import { ME_QUERY_KEY } from "@/lib/authSession";
+
+const PROFILE_PHOTO_KEY = "aroll_owner_profile_photo";
+const OWNER_DOB_KEY = "aroll_owner_date_of_birth";
+
+export function OwnerProfilePage() {
+  const qc = useQueryClient();
+  const [photo, setPhoto] = useState(() => localStorage.getItem(PROFILE_PHOTO_KEY) ?? "");
+  const [dateOfBirth, setDateOfBirth] = useState(() => localStorage.getItem(OWNER_DOB_KEY) ?? "");
+  const [form, setForm] = useState({
+    business_name: "",
+    owner_name: "",
+    email: "",
+    contact_phone: "",
+    address: "",
+    business_type: "",
+  });
+
+  const { data, isLoading } = useQuery({
+    queryKey: ["account-settings"],
+    queryFn: getAccountSettings,
+  });
+
+  useEffect(() => {
+    if (!data) return;
+    setForm({
+      business_name: data.business_name,
+      owner_name: data.owner_name ?? "",
+      email: data.email,
+      contact_phone: data.contact_phone ?? "",
+      address: data.address,
+      business_type: data.business_type ?? "",
+    });
+  }, [data]);
+
+  const save = useMutation({
+    mutationFn: () =>
+      updateAccountSettings({
+        business_name: form.business_name.trim(),
+        owner_name: form.owner_name.trim(),
+        contact_phone: form.contact_phone.trim() || null,
+        address: form.address.trim(),
+        business_type: form.business_type.trim() || null,
+      }),
+    onSuccess: () => {
+      localStorage.setItem(OWNER_DOB_KEY, dateOfBirth);
+      toast.success("Profile updated");
+      qc.invalidateQueries({ queryKey: ["account-settings"] });
+      qc.invalidateQueries({ queryKey: ME_QUERY_KEY });
+    },
+    onError: () => toast.error("Failed to update profile"),
+  });
+
+  function handlePhoto(file: File | null) {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const value = String(reader.result);
+      setPhoto(value);
+      localStorage.setItem(PROFILE_PHOTO_KEY, value);
+    };
+    reader.readAsDataURL(file);
+  }
+
+  return (
+    <div className="min-h-screen bg-[#F7F8FA]">
+      <header className="border-b border-slate-200 bg-white px-5 py-6 sm:px-8">
+        <h1 className="text-2xl font-semibold text-[#1F2937]">Owner Profile</h1>
+      </header>
+      <main className="px-5 py-6 sm:px-8">
+        <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
+            <div className="relative h-24 w-24 overflow-hidden rounded-full bg-slate-100">
+              {photo ? (
+                <img className="h-full w-full object-cover" src={photo} alt="Owner profile" />
+              ) : (
+                <div className="flex h-full w-full items-center justify-center text-2xl font-semibold text-[#6B7280]">
+                  {form.owner_name.slice(0, 1).toUpperCase() || "O"}
+                </div>
+              )}
+            </div>
+            <div>
+              <h2 className="text-xl font-semibold text-[#1F2937]">
+                {form.owner_name || "Business Owner"}
+              </h2>
+              <p className="text-sm text-[#6B7280]">{form.business_name}</p>
+              <label className="mt-3 inline-flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-[#374151]">
+                <Camera className="h-4 w-4" />
+                Change photo
+                <input className="hidden" type="file" accept="image/*" onChange={(e) => handlePhoto(e.target.files?.[0] ?? null)} />
+              </label>
+            </div>
+          </div>
+        </section>
+
+        <section className="mt-6 grid gap-6 xl:grid-cols-2">
+          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+            <h2 className="mb-4 text-lg font-semibold text-[#1F2937]">Personal Information</h2>
+            <div className="space-y-4">
+              <Field label="Full Name" value={form.owner_name} onChange={(value) => setForm({ ...form, owner_name: value })} />
+              <Field label="Contact Number" value={form.contact_phone} onChange={(value) => setForm({ ...form, contact_phone: value })} />
+              <Field label="Address" value={form.address} onChange={(value) => setForm({ ...form, address: value })} />
+              <Field label="Date of Birth" type="date" value={dateOfBirth} onChange={setDateOfBirth} />
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+            <h2 className="mb-4 text-lg font-semibold text-[#1F2937]">Business Information</h2>
+            <div className="space-y-4">
+              <Field label="Business Name" value={form.business_name} onChange={(value) => setForm({ ...form, business_name: value })} />
+              <Field label="Business Type" value={form.business_type} onChange={(value) => setForm({ ...form, business_type: value })} />
+              <Field label="Business Address" value={form.address} onChange={(value) => setForm({ ...form, address: value })} />
+              <Field label="Email" value={form.email} disabled onChange={() => undefined} />
+            </div>
+          </div>
+        </section>
+
+        <div className="mt-6 flex justify-end">
+          <Button className="bg-[#1E3A5F] hover:bg-[#284B73]" disabled={isLoading || save.isPending} onClick={() => save.mutate()}>
+            Save Profile
+          </Button>
+        </div>
+      </main>
+    </div>
+  );
+}
+
+function Field({
+  label,
+  value,
+  onChange,
+  type = "text",
+  disabled = false,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  type?: string;
+  disabled?: boolean;
+}) {
+  return (
+    <div className="space-y-2">
+      <Label>{label}</Label>
+      <Input disabled={disabled} type={type} value={value} onChange={(e) => onChange(e.target.value)} />
+    </div>
+  );
+}

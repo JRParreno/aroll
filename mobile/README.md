@@ -1,25 +1,29 @@
-# Aroll+ Mobile (Flutter sample)
+# Aroll+ Mobile (Flutter)
 
-Sample Flutter app for the Aroll+ thesis project. It demonstrates **clean architecture** and the **BLoC patterns** described in [`../clean_code_bloc.md`](../clean_code_bloc.md).
+Flutter mobile client for the Aroll+ thesis project. Follows **clean architecture** with a live FastAPI backend — no mock repositories.
 
-## What’s included
+## Architecture layers
 
-| Layer | Example |
-|-------|---------|
-| **Domain** | `LoginUsecase`, `GetAttendanceHistoryUsecase` |
-| **Data** | Mock repositories (no API yet) |
-| **Presentation** | Login (submit-only BLoC), Attendance history (pageable BLoC) |
-| **Core** | `PageData<T>`, `StateEnum`, GetIt DI |
+| Layer | What lives here |
+|-------|----------------|
+| **Domain** | Entities (`UserSession`, `EmployeeRecord`, …), repository contracts, use cases (`LoginUsecase`, `RestoreSessionUsecase`, …) |
+| **Data** | `AuthRepositoryImpl`, `EmployeeRepositoryImpl`, `OwnerRepository` — all backed by real API calls via `ApiClient` (Dio + FlutterSecureStorage) |
+| **Presentation** | Screens + BLoC where needed (`LoginBloc`, `ChangePasswordBloc`); simpler screens call repositories directly |
+| **Core** | AppState (ChangeNotifier), GoRouter, GetIt DI, Dio interceptors, error types |
 
 ## Project structure
 
 ```
 lib/
-  core/           # shared enums, models, DI
+  core/           # AppState, router, DI, network, error types
   domain/         # entities, repository contracts, use cases
-  data/           # repository implementations (mock)
-  presentation/   # screens + bloc/FeatureName/
-  app.dart
+  data/           # repository implementations (live API)
+  presentation/   # screens organised by feature
+    auth/         # RoleLandingScreen, EmployeeLoginScreen, OwnerLoginScreen, ChangePasswordScreen
+    home/         # HomeScreen (employee dashboard), ScanAttendanceScreen
+    employee/     # Schedule, ShiftHistory, Payroll, Payslip, Profile, FaceRegistration
+    owner/        # OwnerDashboard, Attendance, Employees, Payroll, Schedule, Settings, SetupWizard
+  app.dart        # session restore + GoRouter mount
   main.dart
 ```
 
@@ -27,36 +31,26 @@ lib/
 
 1. [Install Flutter](https://docs.flutter.dev/get-started/install) (SDK 3.2+).
 2. Add Flutter to your `PATH`.
+3. Copy `.env.example` to `.env` and set `API_BASE_URL` to your backend.
 
 ## First-time setup
 
-From the repo root:
-
 ```powershell
 cd mobile
-flutter create . --org ph.edu.bicol.aroll --project-name aroll_mobile
 flutter pub get
 ```
 
-`flutter create .` adds `android/`, `ios/`, `web/`, etc. It keeps existing `lib/` and `pubspec.yaml`.
-
-## Run from VS Code / Cursor
-
-1. Install extensions: **Dart** and **Flutter** (VS Code will prompt via `.vscode/extensions.json`).
-2. Open the repo root (`aroll/`) or the `mobile/` folder.
-3. Press **F5** or **Run and Debug** → choose **Aroll+ Mobile (debug)**.
-
-If you open only `mobile/`, use **Aroll+ (debug)** from `mobile/.vscode/launch.json`.
-
-## Run from terminal
+## Run
 
 ```powershell
 flutter run
 ```
 
+Or press **F5** in VS Code / Cursor with the **Dart** and **Flutter** extensions installed.
+
 **Demo login:** `owner@mrbean.test` / `demo1234`
 
-After sign-in, open **Attendance history** to see pagination and search.
+After sign-in the app restores your session automatically on next launch (JWT stored in FlutterSecureStorage, validated via `GET /auth/me`).
 
 ## Tests
 
@@ -64,9 +58,6 @@ After sign-in, open **Attendance history** to see pagination and search.
 flutter test
 ```
 
-## Next steps (real app)
+## Adding a new BLoC
 
-- Replace mock repositories with API clients (FastAPI backend).
-- Add `data/datasources` and DTO models.
-- Wire face enrollment and clock-in flows per `docs/SOLUTION.md`.
-- Register new BLoCs at the bottom of `core/di/bloc_service_locator.dart`.
+Register it at the bottom of `core/di/bloc_service_locator.dart`.
