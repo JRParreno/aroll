@@ -17,6 +17,16 @@ from app.models.enums import AttendanceStatus, EmployeeStatus, UserRole
 from app.models.holiday import Holiday
 from app.models.scheduling import Shift, ShiftAssignment
 from app.models.user import User
+from app.schemas.employee_attendance import (
+    AttendanceActionResponse,
+    ClockLocationRequest,
+    WorksiteResponse,
+)
+from app.services.attendance_clock import (
+    clock_in_employee,
+    clock_out_employee,
+    worksite_for_business,
+)
 
 router = APIRouter(prefix="/employee", tags=["employee-mobile"])
 
@@ -466,6 +476,49 @@ def payslip(
         "business_branding": _branding_response(business),
         **_calculate_employee_payslip(db, employee, period_start, period_end),
     }
+
+
+@router.get("/worksite", response_model=WorksiteResponse)
+def worksite(
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+):
+    _employee, business = _current_employee(db, user)
+    return worksite_for_business(db, business.id)
+
+
+@router.post("/attendance/clock-in", response_model=AttendanceActionResponse)
+def clock_in(
+    body: ClockLocationRequest,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+):
+    employee, _business = _current_employee(db, user)
+    assignment_id = (
+        uuid.UUID(body.shift_assignment_id) if body.shift_assignment_id else None
+    )
+    return clock_in_employee(
+        db,
+        employee,
+        latitude=body.latitude,
+        longitude=body.longitude,
+        shift_assignment_id=assignment_id,
+    )
+
+
+@router.post("/attendance/clock-out", response_model=AttendanceActionResponse)
+def clock_out(
+    body: ClockLocationRequest,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+):
+    employee, _business = _current_employee(db, user)
+    return clock_out_employee(
+        db,
+        employee,
+        latitude=body.latitude,
+        longitude=body.longitude,
+    )
 
 
 @router.post("/face-registration")

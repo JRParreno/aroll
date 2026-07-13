@@ -173,7 +173,11 @@ GoRouter createAppRouter(AppState appState) {
       ),
       GoRoute(
         path: '/scan-attendance',
-        builder: (_, __) => const ScanAttendanceScreen(),
+        builder: (context, state) {
+          final assignmentId =
+              state.uri.queryParameters['shift_assignment_id'];
+          return ScanAttendanceScreen(shiftAssignmentId: assignmentId);
+        },
       ),
       GoRoute(
         path: '/owner/home',

@@ -18,4 +18,17 @@ abstract class EmployeeRepository {
   Future<EmployeeProfile> updateProfileImage(String imageData);
 
   Future<String> downloadPayslipPdf();
+
+  Future<EmployeeWorksite> getWorksite();
+
+  Future<AttendanceClockResult> clockIn({
+    required double latitude,
+    required double longitude,
+    String? shiftAssignmentId,
+  });
+
+  Future<AttendanceClockResult> clockOut({
+    required double latitude,
+    required double longitude,
+  });
 }

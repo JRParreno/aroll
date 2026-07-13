@@ -85,10 +85,19 @@ class _HomeScreenState extends State<HomeScreen> {
                                     Expanded(
                                       child: _QuickActionCard(
                                         icon: Icons.center_focus_strong_rounded,
-                                        label: 'Scan for Attendance',
-                                        helper: 'Tap to scan',
-                                        onTap: () =>
-                                            context.go('/scan-attendance'),
+                                        label: 'Clock Attendance',
+                                        helper: 'GPS check',
+                                        onTap: () {
+                                          final assignmentId =
+                                              data.todaySchedule?.assignmentId;
+                                          if (assignmentId != null) {
+                                            context.go(
+                                              '/scan-attendance?shift_assignment_id=$assignmentId',
+                                            );
+                                          } else {
+                                            context.go('/scan-attendance');
+                                          }
+                                        },
                                       ),
                                     ),
                                     const SizedBox(width: 10),
