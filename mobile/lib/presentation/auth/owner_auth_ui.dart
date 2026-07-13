@@ -1,3 +1,4 @@
+import 'package:aroll_mobile/presentation/auth/password_visibility.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
@@ -154,7 +155,7 @@ class OwnerAuthCard extends StatelessWidget {
   }
 }
 
-class OwnerAuthField extends StatelessWidget {
+class OwnerAuthField extends StatefulWidget {
   const OwnerAuthField({
     super.key,
     required this.controller,
@@ -179,14 +180,23 @@ class OwnerAuthField extends StatelessWidget {
   final IconData? prefixIcon;
 
   @override
+  State<OwnerAuthField> createState() => _OwnerAuthFieldState();
+}
+
+class _OwnerAuthFieldState extends State<OwnerAuthField> {
+  bool _visible = false;
+
+  @override
   Widget build(BuildContext context) {
+    final obscure = widget.obscureText && !_visible;
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            label,
+            widget.label,
             style: const TextStyle(
               color: OwnerAuthColors.textSecondary,
               fontSize: 13,
@@ -195,25 +205,37 @@ class OwnerAuthField extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           TextField(
-            controller: controller,
-            keyboardType: keyboardType,
-            obscureText: obscureText,
-            maxLines: maxLines,
-            textInputAction: textInputAction,
-            onSubmitted: onSubmitted,
+            controller: widget.controller,
+            keyboardType: widget.keyboardType,
+            obscureText: obscure,
+            maxLines: widget.maxLines,
+            textInputAction: widget.textInputAction,
+            onSubmitted: widget.onSubmitted,
+            autocorrect: false,
+            enableSuggestions: !widget.obscureText,
             style: const TextStyle(
               color: OwnerAuthColors.textPrimary,
               fontSize: 14,
               fontWeight: FontWeight.w500,
             ),
             decoration: InputDecoration(
-              hintText: hintText,
+              hintText: widget.hintText,
               hintStyle: const TextStyle(color: Color(0xFF9CA3AF)),
               filled: true,
               fillColor: Colors.white,
-              prefixIcon: prefixIcon == null
+              prefixIcon: widget.prefixIcon == null
                   ? null
-                  : Icon(prefixIcon, size: 18, color: const Color(0xFF9CA3AF)),
+                  : Icon(
+                      widget.prefixIcon,
+                      size: 18,
+                      color: const Color(0xFF9CA3AF),
+                    ),
+              suffixIcon: widget.obscureText
+                  ? PasswordVisibilityToggle(
+                      visible: _visible,
+                      onToggle: () => setState(() => _visible = !_visible),
+                    )
+                  : null,
               contentPadding: const EdgeInsets.symmetric(
                 horizontal: 14,
                 vertical: 14,

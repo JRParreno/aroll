@@ -8,7 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 class OwnerSetupWizardScreen extends StatefulWidget {
-  const OwnerSetupWizardScreen({super.key, this.initialStep = 0});
+  const OwnerSetupWizardScreen({super.key, this.initialStep = -1});
 
   final int initialStep;
 
@@ -30,6 +30,7 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
   String? _loadError;
 
   Map<String, dynamic>? _setupStatus;
+  Map<String, dynamic>? _businessSettings;
   List<Map<String, dynamic>> _shifts = const [];
   List<Map<String, dynamic>> _positions = const [];
 
@@ -78,7 +79,9 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
   @override
   void initState() {
     super.initState();
-    _step = clampSetupStep(widget.initialStep);
+    _step = widget.initialStep < 0
+        ? -1
+        : clampSetupStep(widget.initialStep);
     _loadAll();
   }
 
@@ -121,6 +124,7 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
         _repo.attendancePolicy(),
         _repo.location(),
         _repo.restDayPolicy(),
+        _repo.businessSettings(),
       ]);
       if (!mounted) return;
       final payroll = results[3] as Map<String, dynamic>;
@@ -137,6 +141,7 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
         _setupStatus = results[0] as Map<String, dynamic>;
         _shifts = results[1] as List<Map<String, dynamic>>;
         _positions = results[2] as List<Map<String, dynamic>>;
+        _businessSettings = results[7] as Map<String, dynamic>;
         _loading = false;
       });
     } catch (_) {
@@ -527,6 +532,22 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
     if (picked != null) setState(() => _nextPaydayDate = picked);
   }
 
+  void _goToMenu() {
+    setState(() => _step = -1);
+  }
+
+  void _handleBack() {
+    if (_step >= 0) {
+      _goToMenu();
+      return;
+    }
+    if (context.canPop()) {
+      context.pop();
+    } else {
+      context.go('/owner/setup');
+    }
+  }
+
   void _showSnack(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -543,16 +564,15 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
         elevation: 0,
         scrolledUnderElevation: 0,
         toolbarHeight: 52,
-        title: const Text(
-          'Business Setup Wizard',
-          style: TextStyle(fontWeight: FontWeight.w700, fontSize: 18),
+        leading: IconButton(
+          tooltip: 'Back',
+          onPressed: _handleBack,
+          icon: const Icon(Icons.arrow_back_rounded),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => context.go('/owner/home'),
-            child: const Text('Exit', style: TextStyle(fontSize: 13)),
-          ),
-        ],
+        title: Text(
+          setupWizardScreenTitle(_step),
+          style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 18),
+        ),
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
@@ -576,15 +596,16 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
                       child: ListView(
                         padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
                         children: [
-                          _buildTitleSection(),
-                          const SizedBox(height: 14),
-                          _buildStepNav(),
-                          const SizedBox(height: _sectionGap),
-                          _buildStepCard(),
+                          if (_step < 0) ...[
+                            _buildTitleSection(),
+                            const SizedBox(height: 12),
+                            _buildSetupMenu(),
+                          ] else
+                            _buildStepCard(),
                         ],
                       ),
                     ),
-                    _buildFooter(),
+                    if (_step >= 0) _buildFooter(),
                   ],
                 ),
     );
@@ -656,12 +677,107 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 2),
       child: Text(
-        'Complete your business setup to start managing employees and '
-        'operations.',
+        'Choose a setup section to configure. Tap a card to open that area.',
         style: TextStyle(
           fontSize: 13,
           height: 1.4,
           color: Colors.grey.shade600,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSetupMenu() {
+    return Column(
+      children: [
+        for (var i = 0; i < setupMenuEntries.length; i++) ...[
+          if (i > 0) const SizedBox(height: 8),
+          _buildSetupMenuCard(setupMenuEntries[i]),
+        ],
+        if (canCompleteSetup(_setupStatus)) ...[
+          const SizedBox(height: 8),
+          _buildSetupMenuCard(
+            const SetupMenuEntry(
+              label: 'Review & Complete',
+              subtitle:
+                  'Check required steps and mark your business setup complete.',
+              stepIndex: 7,
+              statusKey: 'review',
+              icon: Icons.task_alt_outlined,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildSetupMenuCard(SetupMenuEntry entry) {
+    final complete = entry.statusKey == null
+        ? false
+        : isSetupStepComplete(_setupStatus, entry.statusKey!);
+
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () => setState(() => _step = entry.stepIndex),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: const Color(0xFFE5E7EB)),
+          ),
+          child: Row(
+            children: [
+              CircleAvatar(
+                radius: 18,
+                backgroundColor: const Color(0xFFE7EEF5),
+                child: Icon(entry.icon, size: 18, color: const Color(0xFF1E3A5F)),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      entry.label,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 15,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      entry.subtitle,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 12,
+                        height: 1.35,
+                        color: Colors.grey.shade600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (entry.statusKey != null)
+                Icon(
+                  complete
+                      ? Icons.check_circle_rounded
+                      : Icons.chevron_right_rounded,
+                  size: 20,
+                  color: complete ? Colors.green : const Color(0xFF9CA3AF),
+                )
+              else
+                const Icon(
+                  Icons.chevron_right_rounded,
+                  size: 20,
+                  color: Color(0xFF9CA3AF),
+                ),
+            ],
+          ),
         ),
       ),
     );
@@ -750,7 +866,6 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
   }
 
   Widget _buildStepCard() {
-    final label = setupWizardStepLabels[_step];
     return Card(
       margin: EdgeInsets.zero,
       child: Padding(
@@ -759,21 +874,14 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              label,
-              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              setupStepHelp[label] ?? '',
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
+              setupWizardStepHelp(_step),
               style: TextStyle(
-                fontSize: 11,
+                fontSize: 12,
                 height: 1.35,
                 color: Colors.grey.shade600,
               ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 10),
             _buildStepContent(),
           ],
         ),
@@ -783,6 +891,8 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
 
   Widget _buildStepContent() {
     switch (_step) {
+      case setupWizardBusinessInfoStep:
+        return _buildBusinessInfoStep();
       case 0:
         return _buildShiftsStep();
       case 1:
@@ -1279,6 +1389,44 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
     );
   }
 
+  Widget _buildBusinessInfoStep() {
+    final data = _businessSettings ?? const {};
+    final fields = [
+      ('Business Name', data['business_name']),
+      ('Business Code', data['business_code']),
+      ('Business Type', data['business_type']),
+      ('Address', data['address']),
+    ];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (final field in fields) ...[
+          Text(
+            field.$1,
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF6B7280),
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            field.$2 == null || '${field.$2}'.trim().isEmpty
+                ? 'Not set'
+                : '${field.$2}',
+            style: const TextStyle(fontSize: 14),
+          ),
+          const SizedBox(height: 10),
+        ],
+        _infoBox(
+          'Business profile details are managed during registration. '
+          'Use Settings for account and payroll preferences.',
+        ),
+      ],
+    );
+  }
+
   Widget _buildReviewStep() {
     final steps = (_setupStatus?['steps'] as List<dynamic>? ?? const [])
         .whereType<Map<String, dynamic>>()
@@ -1348,7 +1496,8 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
   }
 
   Widget _buildFooter() {
-    if (_step >= setupWizardStepLabels.length - 1) {
+    if (_step >= setupWizardStepLabels.length - 1 ||
+        _step == setupWizardBusinessInfoStep) {
       return const SizedBox.shrink();
     }
 
@@ -1362,14 +1511,6 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
         ),
         child: Row(
           children: [
-            OutlinedButton(
-              style: OutlinedButton.styleFrom(
-                visualDensity: VisualDensity.compact,
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-              ),
-              onPressed: _step == 0 ? null : () => setState(() => _step -= 1),
-              child: const Text('Back', style: TextStyle(fontSize: 13)),
-            ),
             const Spacer(),
             TextButton(
               style: TextButton.styleFrom(

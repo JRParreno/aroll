@@ -15,6 +15,11 @@ import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
+  OwnerPage,
+  OwnerPageContent,
+  OwnerPageHeader,
+} from "@/components/owner/layout/OwnerPageLayout";
+import {
   Dialog,
   DialogContent,
   DialogFooter,
@@ -26,7 +31,6 @@ import { Label } from "@/components/ui/label";
 import {
   createEmployee,
   deleteEmployee,
-  getMe,
   getWeeklySchedule,
   listEmployees,
   listPositions,
@@ -34,7 +38,6 @@ import {
   updateEmployee,
   type Employee,
 } from "@/lib/api";
-import { ME_QUERY_KEY } from "@/lib/authSession";
 import { getWeekStart, toDateKey } from "@/components/owner/schedule/scheduleUtils";
 
 type EmployeeForm = {
@@ -111,11 +114,6 @@ export function OwnerEmployeesPage() {
   const pageSize = 8;
   const weekStartKey = toDateKey(getWeekStart(new Date()));
 
-  const { data: me } = useQuery({
-    queryKey: ME_QUERY_KEY,
-    queryFn: getMe,
-  });
-
   const { data: employees = [], isLoading } = useQuery({
     queryKey: ["employees", "all"],
     queryFn: () => listEmployees(true),
@@ -163,9 +161,6 @@ export function OwnerEmployeesPage() {
     (page - 1) * pageSize,
     page * pageSize
   );
-
-  const businessName =
-    me?.business_name ?? localStorage.getItem("aroll_business_name") ?? "Aroll+";
 
   function resetForm() {
     setForm(emptyForm);
@@ -290,12 +285,10 @@ export function OwnerEmployeesPage() {
   const editReady = editForm.fullName.trim() && editForm.positionTitle.trim();
 
   return (
-    <div className="min-h-screen bg-[#F7F8FA]">
-      <header className="flex h-[74px] items-center justify-between border-b border-slate-200 bg-white px-5 sm:px-8">
-        <h1 className="text-2xl font-semibold text-[#1F2937]">
-          Employees
-        </h1>
-        <div className="flex items-center gap-3">
+    <OwnerPage>
+      <OwnerPageHeader
+        title="Employees"
+        actions={
           <Button
             className="h-9 rounded-xl bg-[#1E3A5F] px-3 font-medium text-white hover:bg-[#284B73]"
             onClick={() => setFormOpen(true)}
@@ -303,15 +296,10 @@ export function OwnerEmployeesPage() {
             <Plus className="h-4 w-4" />
             Add Employee
           </Button>
-          <div className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-full bg-[#f7ead4] p-1 shadow-sm">
-            <div className="flex h-full w-full items-center justify-center rounded-full bg-[#354151] text-sm font-bold text-white">
-              {businessName.slice(0, 1).toUpperCase()}
-            </div>
-          </div>
-        </div>
-      </header>
+        }
+      />
 
-      <main className="px-5 py-7 sm:px-8">
+      <OwnerPageContent>
         <div className="mb-8 flex h-12 items-center gap-4 rounded-2xl border border-slate-200 bg-white px-4 shadow-sm">
           <Search className="h-5 w-5 shrink-0 text-[#777]" />
           <input
@@ -405,7 +393,7 @@ export function OwnerEmployeesPage() {
             Next
           </Button>
         </div>
-      </main>
+      </OwnerPageContent>
 
       <Dialog open={formOpen} onOpenChange={setFormOpen}>
         <DialogContent>
@@ -690,7 +678,7 @@ export function OwnerEmployeesPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </OwnerPage>
   );
 }
 

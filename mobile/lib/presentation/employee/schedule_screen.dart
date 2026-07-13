@@ -1,6 +1,7 @@
 import 'package:aroll_mobile/core/di/injection.dart';
 import 'package:aroll_mobile/domain/entities/employee_portal.dart';
 import 'package:aroll_mobile/domain/repositories/employee_repository.dart';
+import 'package:go_router/go_router.dart';
 import 'package:aroll_mobile/presentation/employee/employee_ui.dart';
 import 'package:flutter/material.dart';
 
@@ -77,31 +78,44 @@ class _EmployeeScheduleScreenState extends State<EmployeeScheduleScreen> {
                 selectedDate: _selectedDate,
                 onChanged: (date) => setState(() => _selectedDate = date),
               ),
-              const SizedBox(height: 18),
-              const Row(
-                children: [
-                  SizedBox(
-                    width: 88,
-                    child: Text(
-                      'Date & Time',
-                      style: TextStyle(fontWeight: FontWeight.w700),
+              const SizedBox(height: 14),
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 2),
+                child: Row(
+                  children: [
+                    SizedBox(
+                      width: 88,
+                      child: Text(
+                        'Date & Time',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 12,
+                          color: EmployeeColors.textMuted,
+                        ),
+                      ),
                     ),
-                  ),
-                  SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      'Shift',
-                      style: TextStyle(fontWeight: FontWeight.w700),
+                    SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'Shift',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 12,
+                          color: EmployeeColors.textMuted,
+                        ),
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
               const SizedBox(height: 10),
               if (visibleItems.isEmpty)
-                const EmptyState(
+                const EmployeeEmptyState(
                   title: 'No schedule assigned yet.',
                   description:
                       'Your assigned shifts will appear here once published.',
+                  icon: Icons.event_busy_outlined,
+                  inCard: true,
                 )
               else
                 ...visibleItems.map(
@@ -233,23 +247,22 @@ class _ScheduleRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cardColor = _shiftColor(item.shiftName);
-    return Row(
+    return InkWell(
+      onTap: () => context.push('/schedule/detail', extra: item),
+      borderRadius: BorderRadius.circular(18),
+      child: EmployeeCard(
+        padding: const EdgeInsets.all(12),
+        margin: const EdgeInsets.only(bottom: 0),
+        child: Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Container(
           width: 88,
           padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: const Color(0xFFE5E7EB)),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.04),
-                blurRadius: 10,
-                offset: const Offset(0, 5),
-              ),
-            ],
+            color: EmployeeColors.fieldFill,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: EmployeeColors.border),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -273,7 +286,7 @@ class _ScheduleRow extends StatelessWidget {
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
               color: cardColor,
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(12),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -349,6 +362,8 @@ class _ScheduleRow extends StatelessWidget {
           ),
         ),
       ],
+        ),
+      ),
     );
   }
 }

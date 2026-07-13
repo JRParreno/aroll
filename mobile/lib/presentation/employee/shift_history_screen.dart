@@ -54,15 +54,17 @@ class _ShiftHistoryScreenState extends State<ShiftHistoryScreen> {
               ),
               const SizedBox(height: 18),
               if (items.isEmpty)
-                const EmptyState(
+                const EmployeeEmptyState(
                   title: 'No shift history yet',
                   description:
                       'Completed shifts and attendance records will appear here.',
+                  icon: Icons.history_rounded,
+                  inCard: true,
                 )
               else
                 ...items.map(
                   (item) => Padding(
-                    padding: const EdgeInsets.only(bottom: 14),
+                    padding: const EdgeInsets.only(bottom: 10),
                     child: _HistoryCard(item: item),
                   ),
                 ),
@@ -128,11 +130,9 @@ class _FilterCard extends StatelessWidget {
                 child: TextField(
                   controller: controller,
                   onChanged: onSearchChanged,
-                  decoration: const InputDecoration(
-                    prefixIcon: Icon(Icons.search_rounded, size: 18),
-                    hintText: 'Search',
-                    isDense: true,
-                    border: OutlineInputBorder(),
+                  decoration: employeeInputDecoration(
+                    hintText: 'Search shifts',
+                    prefixIcon: const Icon(Icons.search_rounded, size: 18),
                   ),
                 ),
               ),
@@ -140,10 +140,7 @@ class _FilterCard extends StatelessWidget {
               Expanded(
                 child: DropdownButtonFormField<String>(
                   initialValue: remark,
-                  decoration: const InputDecoration(
-                    isDense: true,
-                    border: OutlineInputBorder(),
-                  ),
+                  decoration: employeeInputDecoration(labelText: 'Remarks'),
                   items: const [
                     DropdownMenuItem(value: 'all', child: Text('Remarks')),
                     DropdownMenuItem(value: 'on_time', child: Text('On Time')),
@@ -164,10 +161,7 @@ class _FilterCard extends StatelessWidget {
               Expanded(
                 child: DropdownButtonFormField<int>(
                   initialValue: month,
-                  decoration: const InputDecoration(
-                    isDense: true,
-                    border: OutlineInputBorder(),
-                  ),
+                  decoration: employeeInputDecoration(labelText: 'Month'),
                   items: List.generate(
                     12,
                     (index) => DropdownMenuItem(
@@ -184,10 +178,7 @@ class _FilterCard extends StatelessWidget {
               Expanded(
                 child: DropdownButtonFormField<int>(
                   initialValue: year,
-                  decoration: const InputDecoration(
-                    isDense: true,
-                    border: OutlineInputBorder(),
-                  ),
+                  decoration: employeeInputDecoration(labelText: 'Year'),
                   items: years
                       .map(
                         (year) => DropdownMenuItem(
@@ -203,11 +194,31 @@ class _FilterCard extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 7),
+          const SizedBox(height: 8),
           const Row(
             children: [
-              Expanded(child: Text('Date', textAlign: TextAlign.center)),
-              Expanded(child: Text('Remarks', textAlign: TextAlign.center)),
+              Expanded(
+                child: Text(
+                  'Date',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: EmployeeColors.textMuted,
+                  ),
+                ),
+              ),
+              Expanded(
+                child: Text(
+                  'Remarks',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: EmployeeColors.textMuted,
+                  ),
+                ),
+              ),
             ],
           ),
         ],
@@ -225,94 +236,43 @@ class _HistoryCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final displayStatus = _displayStatus(item);
     final color = statusColor(displayStatus);
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: color),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 12,
-            offset: const Offset(0, 6),
-          ),
-        ],
-      ),
-      child: IntrinsicHeight(
-        child: Row(
-          children: [
-            Container(
-              width: 18,
-              decoration: BoxDecoration(
-                color: color.withValues(alpha: 0.72),
-                borderRadius: const BorderRadius.horizontal(
-                  left: Radius.circular(14),
-                ),
-              ),
-            ),
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.all(14),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            shortDate(item.date),
-                            style: const TextStyle(fontWeight: FontWeight.w700),
-                          ),
-                          const SizedBox(height: 6),
-                          _Line(Icons.calendar_today,
-                              'Shift: ${item.shiftStart ?? '--'} - ${item.shiftEnd ?? '--'}'),
-                          _Line(Icons.login,
-                              'Clock In: ${timeOnly(item.timeIn)}'),
-                          _Line(Icons.logout,
-                              'Clock Out: ${timeOnly(item.timeOut)}'),
-                          _Line(Icons.schedule,
-                              'Total Hours: ${_totalHours(item)} hrs'),
-                        ],
-                      ),
-                    ),
-                    Text(
-                      displayStatus,
-                      style: TextStyle(
-                        color: color,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _Line extends StatelessWidget {
-  const _Line(this.icon, this.text);
-
-  final IconData icon;
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 2),
-      child: Row(
+    return EmployeeCard(
+      padding: const EdgeInsets.all(14),
+      margin: const EdgeInsets.only(bottom: 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, size: 13, color: Colors.black54),
-          const SizedBox(width: 4),
-          Expanded(
-            child: Text(
-              text,
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Text(
+                  shortDate(item.date),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 15,
+                  ),
+                ),
+              ),
+              EmployeeStatusChip(label: displayStatus, color: color),
+            ],
+          ),
+          const SizedBox(height: 10),
+          EmployeeInfoRow(
+            icon: Icons.calendar_today_outlined,
+            text: 'Shift: ${item.shiftStart ?? '--'} - ${item.shiftEnd ?? '--'}',
+          ),
+          EmployeeInfoRow(
+            icon: Icons.login_rounded,
+            text: 'Clock In: ${timeOnly(item.timeIn)}',
+          ),
+          EmployeeInfoRow(
+            icon: Icons.logout_rounded,
+            text: 'Clock Out: ${timeOnly(item.timeOut)}',
+          ),
+          EmployeeInfoRow(
+            icon: Icons.schedule_rounded,
+            text: 'Total Hours: ${_totalHours(item)} hrs',
           ),
         ],
       ),

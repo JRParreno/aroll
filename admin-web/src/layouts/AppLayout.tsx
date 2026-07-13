@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   Activity,
   CheckSquare,
@@ -9,6 +10,7 @@ import {
 import type { LucideIcon } from "lucide-react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
+import { SignOutConfirmDialog } from "@/components/SignOutConfirmDialog";
 import { clearAuthSession } from "@/lib/authSession";
 import { cn } from "@/lib/utils";
 
@@ -25,6 +27,7 @@ const navIcons: Record<string, LucideIcon> = {
 export function AppLayout({ nav }: { nav: NavItem[] }) {
   const navigate = useNavigate();
   const qc = useQueryClient();
+  const [signOutOpen, setSignOutOpen] = useState(false);
   const primaryNav = nav.filter((item) => item.label !== "Profile");
   const profileNav = nav.find((item) => item.label === "Profile");
 
@@ -82,7 +85,7 @@ export function AppLayout({ nav }: { nav: NavItem[] }) {
           )}
           <button
             className="flex h-11 w-full items-center gap-3 rounded-xl px-4 text-sm font-medium text-white/75 transition hover:bg-white/10 hover:text-white"
-            onClick={logout}
+            onClick={() => setSignOutOpen(true)}
             type="button"
           >
             <LogOut className="h-[18px] w-[18px]" strokeWidth={2} />
@@ -90,6 +93,11 @@ export function AppLayout({ nav }: { nav: NavItem[] }) {
           </button>
         </div>
       </aside>
+      <SignOutConfirmDialog
+        open={signOutOpen}
+        onOpenChange={setSignOutOpen}
+        onConfirm={logout}
+      />
       <main className="min-h-screen flex-1 bg-[#F7F8FA] lg:pl-64">
         <Outlet />
       </main>

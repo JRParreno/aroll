@@ -1,9 +1,25 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  OwnerPage,
+  OwnerPageBackLink,
+  OwnerPageContent,
+} from "@/components/owner/layout/OwnerPageLayout";
 
-export function OwnerComingSoon({ title }: { title: string }) {
+type OwnerComingSoonProps = {
+  title: string;
+  backTo?: string;
+  backLabel?: string;
+};
+
+export function OwnerComingSoon({
+  title,
+  backTo,
+  backLabel = "Back",
+}: OwnerComingSoonProps) {
   return (
-    <div className="min-h-full bg-[#F7F8FA] p-6 sm:p-8">
-      <div className="mx-auto max-w-6xl">
+    <OwnerPage>
+      <OwnerPageContent>
+        {backTo ? <OwnerPageBackLink to={backTo} label={backLabel} /> : null}
         <Card className="rounded-2xl border-slate-200 shadow-sm">
           <CardHeader>
             <CardTitle className="text-xl font-semibold text-[#1F2937]">
@@ -16,7 +32,7 @@ export function OwnerComingSoon({ title }: { title: string }) {
             </p>
           </CardContent>
         </Card>
-      </div>
-    </div>
+      </OwnerPageContent>
+    </OwnerPage>
   );
 }

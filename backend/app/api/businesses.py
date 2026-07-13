@@ -20,6 +20,7 @@ from app.schemas.business import (
     BusinessBrandingSettings,
     BusinessThemeSettings,
     BusinessSettingsResponse,
+    BusinessSettingsUpdate,
     LocationResponse,
     LocationUpdate,
 )
@@ -410,6 +411,46 @@ def get_business_settings(
     return _business_settings_response(db, user, business)
 
 
+@router.put("/me/business-settings")
+def update_business_settings(
+    body: BusinessSettingsUpdate,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(require_roles(UserRole.owner))],
+):
+    if user.business_id is None:
+        raise HTTPException(400, "No business context")
+    business = db.get(Business, user.business_id)
+    if business is None:
+        raise HTTPException(404, "Business not found")
+
+    business.name = body.business_name
+    business.business_type = body.business_type
+
+    if body.branding is not None:
+        business.logo_url = body.branding.logo_url
+        business.theme_settings = body.branding.theme.model_dump()
+        # Keep display_image in sync with logo for legacy mobile surfaces.
+        business.display_image_url = body.branding.logo_url
+
+    loc = (
+        db.query(BusinessLocation)
+        .filter(
+            BusinessLocation.business_id == business.id,
+            BusinessLocation.is_primary.is_(True),
+        )
+        .first()
+    )
+    if loc:
+        loc.address = body.address
+    elif business.registration_id:
+        reg = db.get(BusinessRegistration, business.registration_id)
+        if reg:
+            reg.proposed_address = body.address
+
+    db.commit()
+    return {"status": "ok"}
+
+
 @router.get("/me/registration-documents/{document_id}/file")
 def download_owner_registration_document(
     document_id: uuid.UUID,
@@ -464,10 +505,7 @@ def update_account_settings(
     business.name = body.business_name
     business.business_type = body.business_type
     if body.branding is not None:
-        business.logo_url = body.branding.logo_url
         business.owner_profile_image_url = body.branding.owner_profile_image_url
-        business.display_image_url = body.branding.display_image_url
-        business.theme_settings = body.branding.theme.model_dump()
 
     if business.registration_id:
         reg = db.get(BusinessRegistration, business.registration_id)

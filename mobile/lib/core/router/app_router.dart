@@ -1,3 +1,4 @@
+import 'package:aroll_mobile/domain/entities/employee_portal.dart';
 import 'package:aroll_mobile/core/app_state.dart';
 import 'package:aroll_mobile/core/router/app_nav_observer.dart';
 import 'package:aroll_mobile/presentation/auth/change_password_screen.dart';
@@ -9,6 +10,7 @@ import 'package:aroll_mobile/presentation/employee/payroll_screen.dart';
 import 'package:aroll_mobile/presentation/employee/payslip_screen.dart';
 import 'package:aroll_mobile/presentation/employee/profile_screen.dart';
 import 'package:aroll_mobile/presentation/employee/schedule_screen.dart';
+import 'package:aroll_mobile/presentation/employee/shift_detail_screen.dart';
 import 'package:aroll_mobile/presentation/employee/shift_history_screen.dart';
 import 'package:aroll_mobile/presentation/home/home_screen.dart';
 import 'package:aroll_mobile/presentation/home/scan_attendance_screen.dart';
@@ -140,6 +142,18 @@ GoRouter createAppRouter(AppState appState) {
       GoRoute(
         path: '/schedule',
         builder: (_, __) => const EmployeeScheduleScreen(),
+        routes: [
+          GoRoute(
+            path: 'detail',
+            builder: (context, state) {
+              final item = state.extra;
+              if (item is! EmployeeScheduleItem) {
+                return const EmployeeScheduleScreen();
+              }
+              return ShiftDetailScreen(item: item);
+            },
+          ),
+        ],
       ),
       GoRoute(
         path: '/profile',
@@ -209,8 +223,9 @@ GoRouter createAppRouter(AppState appState) {
         path: '/owner/setup-wizard',
         builder: (_, state) {
           final stepParam = state.uri.queryParameters['step'];
-          final parsed = int.tryParse(stepParam ?? '0') ?? 0;
-          return OwnerSetupWizardScreen(initialStep: clampSetupStep(parsed));
+          return OwnerSetupWizardScreen(
+            initialStep: parseSetupWizardInitialStep(stepParam),
+          );
         },
       ),
       GoRoute(

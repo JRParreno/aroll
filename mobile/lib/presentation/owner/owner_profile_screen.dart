@@ -1,7 +1,5 @@
-import 'package:aroll_mobile/core/app_state.dart';
-import 'package:aroll_mobile/core/di/injection.dart';
 import 'package:aroll_mobile/domain/entities/user_session.dart';
-import 'package:aroll_mobile/domain/usecase/auth/logout_usecase.dart';
+import 'package:aroll_mobile/presentation/auth/sign_out_dialog.dart';
 import 'package:aroll_mobile/presentation/owner/owner_shell.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -11,11 +9,8 @@ class OwnerProfileScreen extends StatelessWidget {
 
   final UserSession session;
 
-  Future<void> _logout(BuildContext context) async {
-    await sl<LogoutUsecase>()();
-    sl<AppState>().clearSession();
-    if (context.mounted) context.go('/login');
-  }
+  Future<void> _confirmLogout(BuildContext context) =>
+      confirmSignOut(context);
 
   @override
   Widget build(BuildContext context) {
@@ -65,7 +60,7 @@ class OwnerProfileScreen extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           OutlinedButton.icon(
-            onPressed: () => _logout(context),
+            onPressed: () => _confirmLogout(context),
             icon: const Icon(Icons.logout_rounded),
             label: const Text('Log Out'),
           ),

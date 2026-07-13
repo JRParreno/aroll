@@ -6,8 +6,6 @@ class ScanAttendanceScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final primary = Theme.of(context).colorScheme.primary;
-
     return EmployeeScaffold(
       title: 'Scan Attendance',
       selectedIndex: 2,
@@ -17,43 +15,47 @@ class ScanAttendanceScreen extends StatelessWidget {
         child: Column(
           children: [
             const Spacer(),
-            Container(
-              height: 150,
-              width: 150,
-              decoration: BoxDecoration(
-                color: primary.withValues(alpha: 0.08),
-                borderRadius: BorderRadius.circular(28),
-                border: Border.all(color: primary.withValues(alpha: 0.18)),
-              ),
-              child: Icon(
-                Icons.face_retouching_natural_rounded,
-                size: 82,
-                color: primary,
-              ),
-            ),
-            const SizedBox(height: 22),
-            Text(
-              'Face Recognition Coming Soon',
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.w700,
+            EmployeeCard(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+              child: Column(
+                children: [
+                  Container(
+                    height: 120,
+                    width: 120,
+                    decoration: BoxDecoration(
+                      color: EmployeeColors.iconWell,
+                      borderRadius: BorderRadius.circular(28),
+                    ),
+                    child: const Icon(
+                      Icons.face_retouching_natural_rounded,
+                      size: 64,
+                      color: EmployeeColors.primary,
+                    ),
                   ),
-            ),
-            const SizedBox(height: 10),
-            Text(
-              'Attendance scanning is prepared in the app, but camera-based face recognition is not enabled yet.',
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: const Color(0xFF6B7280),
+                  const SizedBox(height: 20),
+                  Text(
+                    'Face Recognition Coming Soon',
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
                   ),
+                  const SizedBox(height: 10),
+                  const Text(
+                    'Attendance scanning is prepared in the app, but camera-based face recognition is not enabled yet.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: EmployeeColors.textMuted,
+                      height: 1.4,
+                    ),
+                  ),
+                ],
+              ),
             ),
             const Spacer(),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Back to Dashboard'),
-              ),
+            EmployeePrimaryButton(
+              label: 'Back to Dashboard',
+              onPressed: () => employeeNavigateBack(context),
             ),
           ],
         ),

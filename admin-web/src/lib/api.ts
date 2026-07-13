@@ -1,7 +1,9 @@
 import axios from "axios";
 import { getAuthToken } from "@/lib/authSession";
 
-const API_BASE = import.meta.env.VITE_API_URL ?? "http://localhost:8000/api/v1";
+const API_BASE =
+  import.meta.env.VITE_API_URL ??
+  (import.meta.env.DEV ? "/api/v1" : "http://localhost:8000/api/v1");
 
 /** Routes that must not send a stale session token. */
 function isPublicAuthPath(path: string): boolean {
@@ -647,6 +649,27 @@ export type AccountSettings = {
   branding: BusinessBrandingSettings;
 };
 
+export type BusinessSettings = {
+  business_name: string;
+  business_type: string | null;
+  business_code: string;
+  address: string;
+  owner_name: string | null;
+  owner_email: string;
+  owner_phone: string | null;
+  registration_id: string | null;
+  application_status: string | null;
+  registration_documents: RegistrationDocument[];
+  branding: BusinessBrandingSettings;
+};
+
+export type BusinessSettingsUpdate = {
+  business_name: string;
+  business_type?: string | null;
+  address: string;
+  branding?: BusinessBrandingSettings;
+};
+
 export type AccountSettingsUpdate = {
   business_name: string;
   owner_name: string;
@@ -673,20 +696,6 @@ export type BusinessBrandingSettings = {
   owner_profile_image_url: string | null;
   display_image_url: string | null;
   theme: BusinessThemeSettings;
-};
-
-export type BusinessSettings = {
-  business_name: string;
-  business_type: string | null;
-  business_code: string;
-  address: string;
-  owner_name: string | null;
-  owner_email: string;
-  owner_phone: string | null;
-  registration_id: string | null;
-  application_status: string | null;
-  registration_documents: RegistrationDocument[];
-  branding: BusinessBrandingSettings;
 };
 
 export async function getSetupStatus() {
@@ -824,6 +833,11 @@ export async function getBusinessSettings() {
   const { data } = await api.get<BusinessSettings>(
     "/businesses/me/business-settings"
   );
+  return data;
+}
+
+export async function updateBusinessSettings(payload: BusinessSettingsUpdate) {
+  const { data } = await api.put("/businesses/me/business-settings", payload);
   return data;
 }
 

@@ -3,8 +3,12 @@ import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { getBusinessLocation, getMe, updateBusinessLocation } from "@/lib/api";
-import { ME_QUERY_KEY } from "@/lib/authSession";
+import {
+  OwnerPage,
+  OwnerPageContent,
+  OwnerPageHeader,
+} from "@/components/owner/layout/OwnerPageLayout";
+import { getBusinessLocation, updateBusinessLocation } from "@/lib/api";
 
 declare global {
   interface Window {
@@ -56,18 +60,10 @@ export function OwnerLocationPage() {
     geofence_radius_m: "75",
   });
 
-  const { data: me } = useQuery({
-    queryKey: ME_QUERY_KEY,
-    queryFn: getMe,
-  });
-
   const { data: location, isLoading } = useQuery({
     queryKey: ["business-location"],
     queryFn: getBusinessLocation,
   });
-
-  const businessName =
-    me?.business_name ?? localStorage.getItem("aroll_business_name") ?? "Aroll+";
 
   useEffect(() => {
     if (!location) return;
@@ -194,19 +190,10 @@ export function OwnerLocationPage() {
     radius <= 200;
 
   return (
-    <div className="min-h-screen bg-[#F7F8FA]">
-      <header className="flex h-[74px] items-center justify-between border-b border-slate-200 bg-white px-5 sm:px-8">
-        <h1 className="text-2xl font-semibold text-[#1F2937]">
-          Location
-        </h1>
-        <div className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-full bg-[#f7ead4] p-1 shadow-sm">
-          <div className="flex h-full w-full items-center justify-center rounded-full bg-[#354151] text-sm font-bold text-white">
-            {businessName.slice(0, 1).toUpperCase()}
-          </div>
-        </div>
-      </header>
+    <OwnerPage>
+      <OwnerPageHeader title="Location" />
 
-      <main className="px-5 py-6 sm:px-8">
+      <OwnerPageContent>
         <div className="h-[260px] overflow-hidden rounded-2xl border border-slate-200 bg-[#d6e3eb] shadow-sm">
           {mapsReady ? (
             <div className="h-full w-full" ref={mapRef} />
@@ -310,7 +297,7 @@ export function OwnerLocationPage() {
             </Button>
           </div>
         </div>
-      </main>
-    </div>
+      </OwnerPageContent>
+    </OwnerPage>
   );
 }

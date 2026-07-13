@@ -32,7 +32,16 @@ class _FaceRegistrationScreenState extends State<FaceRegistrationScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF7F8FA),
+      backgroundColor: EmployeeColors.scaffold,
+      appBar: AppBar(
+        backgroundColor: EmployeeColors.scaffold,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        title: const Text(
+          'Face Registration',
+          style: TextStyle(fontWeight: FontWeight.w700),
+        ),
+      ),
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(20),
@@ -47,17 +56,14 @@ class _FaceRegistrationScreenState extends State<FaceRegistrationScreen> {
                     Container(
                       height: 110,
                       width: 110,
-                      decoration: BoxDecoration(
-                        color: Theme.of(context)
-                            .colorScheme
-                            .primary
-                            .withValues(alpha: 0.1),
+                      decoration: const BoxDecoration(
+                        color: EmployeeColors.iconWell,
                         shape: BoxShape.circle,
                       ),
-                      child: Icon(
-                        Icons.face_retouching_natural,
+                      child: const Icon(
+                        Icons.face_retouching_natural_rounded,
                         size: 58,
-                        color: Theme.of(context).colorScheme.primary,
+                        color: EmployeeColors.primary,
                       ),
                     ),
                     const SizedBox(height: 24),
@@ -69,25 +75,22 @@ class _FaceRegistrationScreenState extends State<FaceRegistrationScreen> {
                       textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: 10),
-                    Text(
+                    const Text(
                       'This helps the system verify your identity when you scan for attendance.',
-                      style: Theme.of(context).textTheme.bodyMedium,
+                      style: TextStyle(color: EmployeeColors.textBody, height: 1.4),
                       textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: 10),
-                    Text(
+                    const Text(
                       'Face registration is coming soon. You can continue to your dashboard for now.',
-                      style: Theme.of(context).textTheme.bodySmall,
+                      style: TextStyle(color: EmployeeColors.textMuted, height: 1.4),
                       textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: 24),
-                    SizedBox(
-                      width: double.infinity,
-                      child: FilledButton.icon(
-                        onPressed: null,
-                        icon: const Icon(Icons.camera_alt_rounded),
-                        label: const Text('Register Face - Coming Soon'),
-                      ),
+                    EmployeePrimaryButton(
+                      label: 'Register Face - Coming Soon',
+                      onPressed: null,
+                      icon: Icons.camera_alt_rounded,
                     ),
                     const SizedBox(height: 10),
                     TextButton(

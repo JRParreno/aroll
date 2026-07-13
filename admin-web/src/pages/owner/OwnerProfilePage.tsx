@@ -2,6 +2,11 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Camera } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import {
+  OwnerPage,
+  OwnerPageBackLink,
+  OwnerPageContent,
+} from "@/components/owner/layout/OwnerPageLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -71,11 +76,14 @@ export function OwnerProfilePage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#F7F8FA]">
-      <header className="border-b border-slate-200 bg-white px-5 py-6 sm:px-8">
-        <h1 className="text-2xl font-semibold text-[#1F2937]">Owner Profile</h1>
-      </header>
-      <main className="px-5 py-6 sm:px-8">
+    <OwnerPage>
+      <OwnerPageContent className="max-w-4xl">
+        <OwnerPageBackLink to="/owner/settings/account" label="Back to Account Settings" />
+
+        <div>
+          <h1 className="text-2xl font-semibold text-[#1F2937]">Owner Profile</h1>
+        </div>
+
         <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
           <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
             <div className="relative h-24 w-24 overflow-hidden rounded-full bg-slate-100">
@@ -101,7 +109,7 @@ export function OwnerProfilePage() {
           </div>
         </section>
 
-        <section className="mt-6 grid gap-6 xl:grid-cols-2">
+        <section className="grid gap-6 xl:grid-cols-2">
           <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
             <h2 className="mb-4 text-lg font-semibold text-[#1F2937]">Personal Information</h2>
             <div className="space-y-4">
@@ -123,13 +131,13 @@ export function OwnerProfilePage() {
           </div>
         </section>
 
-        <div className="mt-6 flex justify-end">
+        <div className="flex justify-end">
           <Button className="bg-[#1E3A5F] hover:bg-[#284B73]" disabled={isLoading || save.isPending} onClick={() => save.mutate()}>
             Save Profile
           </Button>
         </div>
-      </main>
-    </div>
+      </OwnerPageContent>
+    </OwnerPage>
   );
 }
 

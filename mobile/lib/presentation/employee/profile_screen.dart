@@ -85,7 +85,7 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
                         size: 76,
                       ),
                       Material(
-                        color: Theme.of(context).colorScheme.primary,
+                        color: EmployeeColors.primaryDark,
                         shape: const CircleBorder(),
                         child: InkWell(
                           customBorder: const CircleBorder(),
@@ -132,36 +132,87 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
               _Section(
                 title: 'Personal Information',
                 children: [
-                  _Field('Name', profile.fullName),
-                  _Field('Username', profile.username ?? 'Not available'),
-                  const _Field('Address', 'Not set'),
-                  _Field('Phone Number', profile.phone ?? 'Not set'),
-                  const _Field('Date of Birth', 'Not set'),
-                  _Field('Position', profile.position ?? 'Employee'),
-                  _Field('Employee Status', titleCase(profile.status)),
+                  EmployeeDetailField(label: 'Name', value: profile.fullName),
+                  EmployeeDetailField(
+                    label: 'Username',
+                    value: profile.username ?? 'Not available',
+                  ),
+                  const EmployeeDetailField(label: 'Address', value: 'Not set'),
+                  EmployeeDetailField(
+                    label: 'Phone Number',
+                    value: profile.phone ?? 'Not set',
+                  ),
+                  const EmployeeDetailField(
+                    label: 'Date of Birth',
+                    value: 'Not set',
+                  ),
+                  EmployeeDetailField(
+                    label: 'Position',
+                    value: profile.position ?? 'Employee',
+                  ),
+                  EmployeeDetailField(
+                    label: 'Employee Status',
+                    value: titleCase(profile.status),
+                  ),
                 ],
               ),
               const SizedBox(height: 14),
               _Section(
                 title: 'Business Information',
                 children: [
-                  _Field('Assigned Business', profile.businessName),
-                  _Field('Business Code', profile.businessCode),
-                  _Field('Business Type', profile.businessType ?? 'Not specified'),
-                  _Field('Owner', profile.ownerName ?? 'Not available'),
+                  Row(
+                    children: [
+                      BusinessLogo(
+                        logoUrl: profile.branding?.logoUrl,
+                        height: 48,
+                        width: 48,
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          profile.businessName,
+                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.w700,
+                              ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  EmployeeDetailField(
+                    label: 'Assigned Business',
+                    value: profile.businessName,
+                  ),
+                  EmployeeDetailField(
+                    label: 'Business Code',
+                    value: profile.businessCode,
+                  ),
+                  EmployeeDetailField(
+                    label: 'Business Type',
+                    value: profile.businessType ?? 'Not specified',
+                  ),
+                  EmployeeDetailField(
+                    label: 'Owner',
+                    value: profile.ownerName ?? 'Not available',
+                  ),
                 ],
               ),
               const SizedBox(height: 14),
               _Section(
                 title: 'Face Registration',
                 children: [
-                  _Field(
-                    'Status',
-                    profile.faceRegistered
+                  EmployeeDetailField(
+                    label: 'Status',
+                    value: profile.faceRegistered
                         ? 'Completed'
                         : titleCase(profile.faceRegistrationStatus),
                   ),
                 ],
+              ),
+              const SizedBox(height: 14),
+              EmployeeOutlinedButton(
+                label: 'Sign Out',
+                onPressed: () => confirmEmployeeSignOut(context),
               ),
             ],
           );
@@ -183,45 +234,9 @@ class _Section extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            title,
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w700,
-                ),
-          ),
+          EmployeeSectionTitle(title),
           const SizedBox(height: 12),
           ...children,
-        ],
-      ),
-    );
-  }
-}
-
-class _Field extends StatelessWidget {
-  const _Field(this.label, this.value);
-
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(label, style: Theme.of(context).textTheme.labelMedium),
-          const SizedBox(height: 4),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF9FAFB),
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: const Color(0xFFE5E7EB)),
-            ),
-            child: Text(value),
-          ),
         ],
       ),
     );

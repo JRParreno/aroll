@@ -1,7 +1,8 @@
 from datetime import datetime
 
-from pydantic import BaseModel, EmailStr, Field, model_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 
+from app.core.password_validation import validate_password_strength
 from app.schemas.business import BusinessBrandingSettings
 
 
@@ -28,6 +29,12 @@ class BusinessOwnerLoginRequest(BaseModel):
 class ChangePasswordRequest(BaseModel):
     current_password: str
     new_password: str = Field(min_length=8)
+
+    @field_validator("new_password")
+    @classmethod
+    def validate_new_password(cls, value: str) -> str:
+        validate_password_strength(value)
+        return value
 
 
 class TokenResponse(BaseModel):

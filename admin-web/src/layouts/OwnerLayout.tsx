@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   BarChart3,
@@ -12,6 +13,7 @@ import {
   UserRoundCog,
 } from "lucide-react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { SignOutConfirmDialog } from "@/components/SignOutConfirmDialog";
 import { getMe } from "@/lib/api";
 import { clearAuthSession, ME_QUERY_KEY } from "@/lib/authSession";
 import { cn } from "@/lib/utils";
@@ -49,6 +51,7 @@ export function OwnerLayout() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const { pathname } = useLocation();
+  const [signOutOpen, setSignOutOpen] = useState(false);
 
   const { data: me } = useQuery({
     queryKey: ME_QUERY_KEY,
@@ -132,7 +135,7 @@ export function OwnerLayout() {
             )}
             <button
               className="flex h-11 w-full items-center gap-3 rounded-xl px-2 text-[15px] font-medium text-white/75 transition hover:bg-white/10 hover:text-white"
-              onClick={logout}
+              onClick={() => setSignOutOpen(true)}
               type="button"
             >
               <LogOut className="h-[18px] w-[18px]" strokeWidth={2} />
@@ -141,6 +144,12 @@ export function OwnerLayout() {
           </div>
         </nav>
       </aside>
+
+      <SignOutConfirmDialog
+        open={signOutOpen}
+        onOpenChange={setSignOutOpen}
+        onConfirm={logout}
+      />
 
       <main className="min-h-screen flex-1 bg-[#F7F8FA] lg:pl-64">
         <Outlet />
