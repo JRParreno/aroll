@@ -2,6 +2,7 @@ from app.models.attendance import AttendanceRecord
 from app.models.attendance_policy import BusinessAttendancePolicy
 from app.models.business import Business, BusinessLocation, BusinessRegistration
 from app.models.employee import Employee
+from app.models.face_embedding import EmployeeFaceEmbedding
 from app.models.holiday import Holiday
 from app.models.payroll import BusinessPayrollConfig, Payslip, PayrollRun, Position
 from app.models.rest_day_policy import BusinessRestDayPolicy
@@ -16,6 +17,7 @@ __all__ = [
     "BusinessRegistration",
     "BusinessLocation",
     "Employee",
+    "EmployeeFaceEmbedding",
     "Position",
     "BusinessPayrollConfig",
     "BusinessAttendancePolicy",

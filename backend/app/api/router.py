@@ -6,6 +6,7 @@ from app.api import (
     businesses,
     employee_mobile,
     employees,
+    face,
     holidays,
     owner_performance,
     owner_reports,
@@ -21,6 +22,7 @@ api_router.include_router(registrations.router)
 api_router.include_router(admin.router)
 api_router.include_router(employee_mobile.router)
 api_router.include_router(employees.router)
+api_router.include_router(face.router)
 api_router.include_router(businesses.router)
 api_router.include_router(shifts.router)
 api_router.include_router(schedules.router)

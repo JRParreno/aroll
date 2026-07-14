@@ -105,7 +105,8 @@ Interim: owner/manager enters `time_in` / `time_out` on web until face clock-in 
 | `shift`, `shift_assignment` | Yes | — | W5+ |
 | `attendance_record` | Yes | Interim POST | W6+ |
 | `payroll_run`, `payslip` | Yes | — | W8+ |
-| `employee_face_embedding` | Yes (empty) | — | Face block |
+| `employee_face_embedding` | Yes (013) | Yes (enroll/verify) | Face demo |
+
 
 ---
 

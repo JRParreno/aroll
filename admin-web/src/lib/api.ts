@@ -514,6 +514,74 @@ export async function reactivateEmployee(id: string) {
   return data;
 }
 
+export type FaceStatus = {
+  employee_id: string;
+  face_registration_status: string;
+  sample_count: number;
+  model_version: string | null;
+  face_registered_at: string | null;
+  threshold: number;
+};
+
+export type FaceEnrollResult = {
+  employee_id: string;
+  face_registration_status: string;
+  sample_count: number;
+  model_version: string;
+  message: string;
+};
+
+export type FaceVerifyResult = {
+  employee_id: string;
+  match_score: number;
+  passed: boolean;
+  threshold: number;
+  model_version: string;
+  message: string;
+};
+
+export async function getEmployeeFaceStatus(employeeId: string) {
+  const { data } = await api.get<FaceStatus>(
+    `/employees/${employeeId}/face-status`
+  );
+  return data;
+}
+
+export async function enrollEmployeeFaceSamples(
+  employeeId: string,
+  files: Blob[]
+) {
+  const formData = new FormData();
+  files.forEach((file, index) => {
+    formData.append("files", file, `sample-${index + 1}.jpg`);
+  });
+  const { data } = await api.post<FaceEnrollResult>(
+    `/employees/${employeeId}/face-samples`,
+    formData,
+    { headers: { "Content-Type": "multipart/form-data" } }
+  );
+  return data;
+}
+
+export async function deleteEmployeeFaceSamples(employeeId: string) {
+  const { data } = await api.delete<{
+    status: string;
+    deleted_count: number;
+    face_registration_status: string;
+  }>(`/employees/${employeeId}/face-samples`);
+  return data;
+}
+
+export async function verifyEmployeeFace(employeeId: string, file: Blob) {
+  const formData = new FormData();
+  formData.append("employee_id", employeeId);
+  formData.append("file", file, "verify.jpg");
+  const { data } = await api.post<FaceVerifyResult>("/face/verify", formData, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+  return data;
+}
+
 export async function getOwnerPerformance(days = 30) {
   const { data } = await api.get<OwnerPerformance>("/owner/performance", {
     params: { days },

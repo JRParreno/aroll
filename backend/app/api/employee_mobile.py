@@ -3,7 +3,7 @@ from datetime import date, datetime, time, timezone, timedelta
 from io import BytesIO
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
 from pydantic import BaseModel
 
 from app.schemas.profile_image import ProfileImageRequest
@@ -599,6 +599,31 @@ def clock_in(
         longitude=body.longitude,
         shift_assignment_id=body.shift_assignment_id,
         business_timezone=business.timezone,
+    )
+
+
+@router.post("/attendance/clock-in-face", response_model=AttendanceActionResponse)
+async def clock_in_with_face(
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+    latitude: Annotated[float, Form(...)],
+    longitude: Annotated[float, Form(...)],
+    face_image: Annotated[UploadFile, File(...)],
+    shift_assignment_id: Annotated[uuid.UUID | None, Form()] = None,
+    liveness_passed: Annotated[bool, Form()] = True,
+):
+    """Clock in with GPS + face image. Used by Flutter once camera capture is wired."""
+    employee, business = _current_employee(db, user)
+    image_bytes = await face_image.read()
+    return clock_in_employee(
+        db,
+        employee,
+        latitude=latitude,
+        longitude=longitude,
+        shift_assignment_id=shift_assignment_id,
+        business_timezone=business.timezone,
+        face_image_bytes=image_bytes,
+        liveness_passed=liveness_passed,
     )
 
 

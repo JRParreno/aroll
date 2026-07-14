@@ -8,9 +8,11 @@ import {
   Filter,
   Phone,
   Plus,
+  ScanFace,
   Search,
 } from "lucide-react";
 import { useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -584,6 +586,15 @@ export function OwnerEmployeesPage() {
                   }}
                 >
                   Edit
+                </Button>
+                <Button variant="outline" asChild>
+                  <Link
+                    to={`/owner/face-demo?employeeId=${detailsEmployee.id}`}
+                    onClick={() => setDetailsEmployee(null)}
+                  >
+                    <ScanFace className="mr-2 h-4 w-4" />
+                    Enroll face
+                  </Link>
                 </Button>
                 {detailsEmployee.status === "inactive" ? (
                   <Button
