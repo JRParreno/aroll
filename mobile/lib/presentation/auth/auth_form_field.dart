@@ -1,3 +1,4 @@
+import 'package:aroll_mobile/presentation/auth/password_visibility.dart';
 import 'package:flutter/material.dart';
 
 class AuthFormField extends StatelessWidget {
@@ -20,16 +21,23 @@ class AuthFormField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (obscureText) {
+      return AuthPasswordField(
+        controller: controller,
+        hintText: hintText,
+        textInputAction: textInputAction,
+        onSubmitted: onSubmitted,
+      );
+    }
+
     return SizedBox(
       height: 46,
       child: TextField(
         controller: controller,
-        obscureText: obscureText,
         textInputAction: textInputAction,
         onSubmitted: onSubmitted,
         keyboardType: keyboardType,
         autocorrect: false,
-        enableSuggestions: !obscureText,
         textAlign: TextAlign.center,
         style: const TextStyle(
           color: Color(0xFF173A5D),
@@ -48,6 +56,82 @@ class AuthFormField extends StatelessWidget {
           contentPadding: const EdgeInsets.symmetric(
             horizontal: 18,
             vertical: 12,
+          ),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(11),
+            borderSide: BorderSide.none,
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(11),
+            borderSide: BorderSide.none,
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(11),
+            borderSide: const BorderSide(
+              color: Color(0xFFB9D7F0),
+              width: 2,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class AuthPasswordField extends StatefulWidget {
+  const AuthPasswordField({
+    super.key,
+    required this.controller,
+    required this.hintText,
+    required this.textInputAction,
+    this.onSubmitted,
+  });
+
+  final TextEditingController controller;
+  final String hintText;
+  final TextInputAction textInputAction;
+  final ValueChanged<String>? onSubmitted;
+
+  @override
+  State<AuthPasswordField> createState() => _AuthPasswordFieldState();
+}
+
+class _AuthPasswordFieldState extends State<AuthPasswordField> {
+  bool _visible = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 46,
+      child: TextField(
+        controller: widget.controller,
+        obscureText: !_visible,
+        textInputAction: widget.textInputAction,
+        onSubmitted: widget.onSubmitted,
+        autocorrect: false,
+        enableSuggestions: false,
+        textAlign: TextAlign.center,
+        style: const TextStyle(
+          color: Color(0xFF173A5D),
+          fontSize: 14,
+          fontWeight: FontWeight.w500,
+        ),
+        decoration: InputDecoration(
+          hintText: widget.hintText,
+          hintStyle: const TextStyle(
+            color: Color(0xFF315675),
+            fontSize: 13,
+            fontWeight: FontWeight.w500,
+          ),
+          filled: true,
+          fillColor: Colors.white,
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 18,
+            vertical: 12,
+          ),
+          suffixIcon: PasswordVisibilityToggle(
+            visible: _visible,
+            onToggle: () => setState(() => _visible = !_visible),
           ),
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(11),

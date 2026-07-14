@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
-import { ArrowRight, LockKeyhole, Mail, ShieldCheck } from "lucide-react";
+import { ArrowRight, Mail, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 import { SystemBrandPanel } from "@/components/branding/SystemBranding";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PasswordInput } from "@/components/ui/password-input";
 import { login, getMe } from "@/lib/api";
 import { ME_QUERY_KEY, setAuthSession } from "@/lib/authSession";
 import { jwtDecode } from "jwt-decode";
@@ -83,21 +84,14 @@ export function LoginPage() {
                 </div>
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="password">Password</Label>
-                <div className="relative">
-                  <LockKeyhole className="absolute left-3 top-3.5 h-4 w-4 text-[#9CA3AF]" />
-                  <Input
-                    id="password"
-                    type="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    required
-                    className="h-11 rounded-lg border-0 bg-white pl-10 shadow-sm"
-                    autoComplete="current-password"
-                  />
-                </div>
-              </div>
+              <PasswordInput
+                id="password"
+                label="Password"
+                value={password}
+                onChange={setPassword}
+                required
+                inputClassName="h-11 rounded-lg border-0 bg-white shadow-sm"
+              />
 
               <Button
                 type="submit"

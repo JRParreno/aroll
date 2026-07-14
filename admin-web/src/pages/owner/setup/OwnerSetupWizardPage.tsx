@@ -1,7 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import {
-  ArrowLeft,
   ArrowRight,
   CheckCircle2,
   Circle,
@@ -14,6 +13,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { HolidaySetupSection } from "@/components/owner/setup/HolidaySetupSection";
+import { OwnerPageBackLink } from "@/components/owner/layout/OwnerPageLayout";
 import {
   completeSetup,
   createPosition,
@@ -61,13 +61,24 @@ const REQUIRED_SETUP_KEYS = new Set(["shifts", "positions", "payroll", "location
 
 export function OwnerSetupWizardPage() {
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const qc = useQueryClient();
-  const initialStep = Math.min(
-    Math.max(Number(searchParams.get("step") ?? "0"), 0),
-    STEPS.length - 1
-  );
+  const rawStep = searchParams.get("step");
+  const isMenu = rawStep === null || rawStep === "menu";
+  const initialStep = isMenu
+    ? -1
+    : Math.min(Math.max(Number(rawStep ?? "0"), 0), STEPS.length - 1);
   const [step, setStep] = useState(initialStep);
+
+  function goToStep(next: number) {
+    if (next < 0) {
+      setSearchParams({ step: "menu" });
+      setStep(-1);
+      return;
+    }
+    setSearchParams({ step: String(next) });
+    setStep(next);
+  }
 
   const { data: shifts = [], refetch: refetchShifts } = useQuery({
     queryKey: ["shifts"],
@@ -417,7 +428,7 @@ export function OwnerSetupWizardPage() {
       if (step === 6 && !isStepComplete("location") && locationCanSave) {
         await saveLocation.mutateAsync();
       }
-      setStep((s) => Math.min(s + 1, STEPS.length - 1));
+      goToStep(Math.min(step + 1, STEPS.length - 1));
     } catch {
       toast.error("Save this step before continuing.");
     }
@@ -426,6 +437,11 @@ export function OwnerSetupWizardPage() {
   return (
     <div className="min-h-screen bg-[#F7F8FA] px-4 py-6 text-[#1F2937] sm:px-6 lg:px-8">
       <div className="mx-auto max-w-5xl space-y-6">
+        <OwnerPageBackLink
+          to={step < 0 ? "/owner/settings/setup" : "/owner/setup-wizard?step=menu"}
+          label={step < 0 ? "Back to Business Setup" : "Back to Setup Menu"}
+        />
+
         <header className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div className="min-w-0">
@@ -437,69 +453,53 @@ export function OwnerSetupWizardPage() {
                 Business Setup Wizard
               </h1>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-[#6B7280]">
-                Complete the basics for scheduling, payroll, attendance, and
-                location. You can skip a step and come back from the dashboard.
+                {step < 0
+                  ? "Choose a setup section to configure. You can return anytime from Business Setup."
+                  : STEP_HELP[STEPS[step]]}
               </p>
             </div>
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            {step >= 0 ? (
               <div className="rounded-2xl bg-[#F3F6FA] px-4 py-3 text-sm">
                 <p className="font-medium text-[#1F2937]">
                   Step {step + 1} of {STEPS.length}
                 </p>
                 <p className="text-xs text-[#6B7280]">{STEPS[step]}</p>
               </div>
-              <Button
-                variant="outline"
-                className="h-10 rounded-xl border-slate-200 bg-white"
-                onClick={() => navigate("/owner/dashboard")}
-                type="button"
-              >
-                Exit to Dashboard
-              </Button>
-            </div>
+            ) : null}
           </div>
         </header>
 
-        <nav className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
-          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-            {STEPS.map((label, i) => {
-              const key = setupStatus?.steps[i]?.key;
+        {step < 0 ? (
+          <div className="grid gap-4 sm:grid-cols-2">
+            {STEPS.map((label, index) => {
+              const key = setupStatus?.steps[index]?.key;
               const complete = key ? isStepComplete(key) : false;
-              const active = i === step;
-              const Icon = complete ? CheckCircle2 : Circle;
-
               return (
                 <button
                   key={label}
                   type="button"
-                  onClick={() => setStep(i)}
-                  className={`flex items-center gap-3 rounded-xl border px-3 py-3 text-left text-sm transition ${
-                    active
-                      ? "border-[#1E3A5F] bg-[#1E3A5F] text-white shadow-sm"
-                      : "border-slate-200 bg-[#FAFBFC] text-[#374151] hover:border-[#B9C7D8] hover:bg-white"
-                  }`}
+                  onClick={() => goToStep(index)}
+                  className="rounded-2xl border border-slate-200 bg-white p-5 text-left shadow-sm transition hover:border-[#B9C7D8] hover:bg-[#FAFBFC]"
                 >
-                  <Icon
-                    className={`h-4 w-4 shrink-0 ${
-                      active ? "text-white" : complete ? "text-emerald-600" : "text-[#9CA3AF]"
-                    }`}
-                  />
-                  <span className="min-w-0">
-                    <span className="block truncate font-medium">{label}</span>
-                    <span
-                      className={`block text-xs ${
-                        active ? "text-white/75" : "text-[#6B7280]"
-                      }`}
-                    >
-                      {complete ? "Done" : `Step ${i + 1}`}
-                    </span>
-                  </span>
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-semibold text-[#1F2937]">{label}</p>
+                      <p className="mt-2 text-sm text-[#6B7280]">
+                        {STEP_HELP[label]}
+                      </p>
+                    </div>
+                    {complete ? (
+                      <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-600" />
+                    ) : (
+                      <Circle className="h-5 w-5 shrink-0 text-[#9CA3AF]" />
+                    )}
+                  </div>
                 </button>
               );
             })}
           </div>
-        </nav>
-
+        ) : (
+          <>
         <Card className="rounded-2xl border-slate-200 bg-white shadow-sm">
           <CardHeader className="border-b border-slate-100 px-5 py-5 sm:px-6">
             <CardTitle className="text-xl font-semibold text-[#1F2937]">
@@ -1029,42 +1029,35 @@ export function OwnerSetupWizardPage() {
           </CardContent>
         </Card>
 
-        <div className="flex flex-col-reverse gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
-          <Button
-            variant="outline"
-            className="h-10 rounded-xl border-slate-200"
-            disabled={step === 0}
-            onClick={() => setStep((s) => s - 1)}
-          >
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            Back
-          </Button>
+        {step < STEPS.length - 1 ? (
+        <div className="flex flex-col-reverse gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-end">
           <div className="flex flex-col gap-2 sm:flex-row">
-            {step < STEPS.length - 1 && (
-              <>
+            <>
+              <Button
+                variant="ghost"
+                className="h-10 rounded-xl"
+                onClick={() => goToStep(step + 1)}
+              >
+                Skip for Now
+              </Button>
+              {currentStepCanContinue && (
                 <Button
-                  variant="ghost"
-                  className="h-10 rounded-xl"
-                  onClick={() => setStep((s) => s + 1)}
+                  className="h-10 rounded-xl bg-[#1E3A5F] hover:bg-[#284B73]"
+                  onClick={() => {
+                    void handleContinue();
+                  }}
+                  disabled={continuePending}
                 >
-                  Skip for Now
+                  Continue
+                  <ArrowRight className="ml-2 h-4 w-4" />
                 </Button>
-                {currentStepCanContinue && (
-                  <Button
-                    className="h-10 rounded-xl bg-[#1E3A5F] hover:bg-[#284B73]"
-                    onClick={() => {
-                      void handleContinue();
-                    }}
-                    disabled={continuePending}
-                  >
-                    Continue
-                    <ArrowRight className="ml-2 h-4 w-4" />
-                  </Button>
-                )}
-              </>
-            )}
+              )}
+            </>
           </div>
         </div>
+        ) : null}
+          </>
+        )}
       </div>
     </div>
   );

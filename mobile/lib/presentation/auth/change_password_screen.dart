@@ -1,13 +1,15 @@
 import 'package:aroll_mobile/core/app_state.dart';
 import 'package:aroll_mobile/core/di/injection.dart';
+import 'package:aroll_mobile/core/utils/password_validation.dart';
 import 'package:aroll_mobile/domain/usecase/auth/change_password_usecase.dart';
 import 'package:aroll_mobile/presentation/auth/bloc/change_password_bloc/change_password_bloc.dart';
 import 'package:aroll_mobile/presentation/auth/bloc/change_password_bloc/change_password_event.dart';
 import 'package:aroll_mobile/presentation/auth/bloc/change_password_bloc/change_password_state.dart';
+import 'package:aroll_mobile/presentation/auth/password_visibility.dart';
+import 'package:aroll_mobile/presentation/employee/employee_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
-import 'package:shadcn_ui/shadcn_ui.dart';
 
 class ChangePasswordScreen extends StatefulWidget {
   const ChangePasswordScreen({super.key});
@@ -22,6 +24,10 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
   final _confirm = TextEditingController();
   late final ChangePasswordBloc _bloc =
       ChangePasswordBloc(usecase: sl<ChangePasswordUsecase>());
+
+  bool _showCurrent = false;
+  bool _showNew = false;
+  bool _showConfirm = false;
 
   @override
   void dispose() {
@@ -39,8 +45,23 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
     context.go(clearedSession.isOwner ? '/owner/home' : '/face-registration');
   }
 
+  InputDecoration _passwordDecoration({
+    required String label,
+    required bool visible,
+    required VoidCallback onToggle,
+  }) {
+    return employeeInputDecoration(labelText: label).copyWith(
+      suffixIcon: PasswordVisibilityToggle(
+        visible: visible,
+        onToggle: onToggle,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final validation = validatePassword(_newPass.text);
+
     return BlocProvider.value(
       value: _bloc,
       child: BlocConsumer<ChangePasswordBloc, ChangePasswordState>(
@@ -58,41 +79,87 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
           final loading = state is LoadingChangePasswordState;
 
           return Scaffold(
+            backgroundColor: EmployeeColors.scaffold,
+            appBar: AppBar(
+              backgroundColor: EmployeeColors.scaffold,
+              elevation: 0,
+              scrolledUnderElevation: 0,
+              title: const Text(
+                'Change Password',
+                style: TextStyle(fontWeight: FontWeight.w700),
+              ),
+            ),
             body: SafeArea(
-              child: Padding(
+              child: SingleChildScrollView(
                 padding: const EdgeInsets.all(24),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     Text(
                       'Change your password',
-                      style: Theme.of(context).textTheme.headlineSmall,
+                      style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
                     ),
                     const SizedBox(height: 8),
-                    Text(
+                    const Text(
                       'You must set a new password before continuing.',
-                      style: Theme.of(context).textTheme.bodyMedium,
+                      style: TextStyle(color: EmployeeColors.textMuted),
                     ),
                     const SizedBox(height: 24),
-                    ShadInput(
+                    TextField(
                       controller: _current,
-                      placeholder: const Text('Current (temporary) password'),
-                      obscureText: true,
+                      obscureText: !_showCurrent,
+                      decoration: _passwordDecoration(
+                        label: 'Current (temporary) password',
+                        visible: _showCurrent,
+                        onToggle: () =>
+                            setState(() => _showCurrent = !_showCurrent),
+                      ),
+                      onChanged: (_) => setState(() {}),
                     ),
                     const SizedBox(height: 12),
-                    ShadInput(
+                    TextField(
                       controller: _newPass,
-                      placeholder: const Text('New password (min 8 chars)'),
-                      obscureText: true,
+                      obscureText: !_showNew,
+                      decoration: _passwordDecoration(
+                        label: 'New password',
+                        visible: _showNew,
+                        onToggle: () => setState(() => _showNew = !_showNew),
+                      ),
+                      onChanged: (_) => setState(() {}),
                     ),
+                    if (_newPass.text.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      ...validation.errors.map(
+                        (error) => Padding(
+                          padding: const EdgeInsets.only(bottom: 4),
+                          child: Text(
+                            '• $error',
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.error,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 12),
-                    ShadInput(
+                    TextField(
                       controller: _confirm,
-                      placeholder: const Text('Confirm new password'),
-                      obscureText: true,
+                      obscureText: !_showConfirm,
+                      decoration: _passwordDecoration(
+                        label: 'Confirm new password',
+                        visible: _showConfirm,
+                        onToggle: () =>
+                            setState(() => _showConfirm = !_showConfirm),
+                      ),
+                      onChanged: (_) => setState(() {}),
                     ),
                     const SizedBox(height: 24),
-                    ShadButton(
+                    EmployeePrimaryButton(
+                      label: loading ? 'Saving...' : 'Save password',
+                      loading: loading,
                       onPressed: loading
                           ? null
                           : () {
@@ -111,18 +178,16 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
                                 return;
                               }
 
-                              if (newPassword.length < 8) {
+                              if (!validation.valid) {
                                 ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text(
-                                      'Password must be at least 8 characters',
-                                    ),
+                                  SnackBar(
+                                    content: Text(validation.errors.join('\n')),
                                   ),
                                 );
                                 return;
                               }
 
-                              if (newPassword != confirmPassword) {
+                              if (!passwordsMatch(newPassword, confirmPassword)) {
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   const SnackBar(
                                     content: Text('Passwords do not match'),
@@ -138,7 +203,6 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
                                 ),
                               );
                             },
-                      child: Text(loading ? 'Saving...' : 'Save password'),
                     ),
                   ],
                 ),

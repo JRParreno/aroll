@@ -25,8 +25,19 @@ class EmployeeRepositoryImpl implements EmployeeRepository {
   }
 
   @override
-  Future<List<EmployeeScheduleItem>> getSchedule() async {
-    final res = await _api.dio.get<Map<String, dynamic>>('/employee/schedule');
+  Future<List<EmployeeScheduleItem>> getSchedule({
+    DateTime? startDate,
+    DateTime? endDate,
+    bool activeOnly = false,
+  }) async {
+    final res = await _api.dio.get<Map<String, dynamic>>(
+      '/employee/schedule',
+      queryParameters: {
+        if (startDate != null) 'start_date': _apiDate(startDate),
+        if (endDate != null) 'end_date': _apiDate(endDate),
+        if (activeOnly) 'active_only': true,
+      },
+    );
     final items = res.data!['items'] as List<dynamic>? ?? [];
     return items
         .map((item) => _scheduleFromJson(item as Map<String, dynamic>))
@@ -86,6 +97,14 @@ class EmployeeRepositoryImpl implements EmployeeRepository {
   }
 
   @override
+  Future<EmployeeProfile> removeProfileImage() async {
+    final res = await _api.dio.delete<Map<String, dynamic>>(
+      '/employee/profile/image',
+    );
+    return _profileFromJson(res.data!);
+  }
+
+  @override
   Future<String> downloadPayslipPdf() async {
     final res = await _api.dio.get<List<int>>(
       '/employee/payslip/pdf',
@@ -96,6 +115,45 @@ class EmployeeRepositoryImpl implements EmployeeRepository {
     final file = File('${dir.path}/aroll-payslip-$safeDate.pdf');
     await file.writeAsBytes(res.data ?? const []);
     return file.path;
+  }
+
+  @override
+  Future<EmployeeWorksite> getWorksite() async {
+    final res = await _api.dio.get<Map<String, dynamic>>('/employee/worksite');
+    return _worksiteFromJson(res.data!);
+  }
+
+  @override
+  Future<AttendanceClockResult> clockIn({
+    required double latitude,
+    required double longitude,
+    String? shiftAssignmentId,
+  }) async {
+    final res = await _api.dio.post<Map<String, dynamic>>(
+      '/employee/attendance/clock-in',
+      data: {
+        'latitude': latitude,
+        'longitude': longitude,
+        if (shiftAssignmentId != null)
+          'shift_assignment_id': shiftAssignmentId,
+      },
+    );
+    return _clockResultFromJson(res.data!);
+  }
+
+  @override
+  Future<AttendanceClockResult> clockOut({
+    required double latitude,
+    required double longitude,
+  }) async {
+    final res = await _api.dio.post<Map<String, dynamic>>(
+      '/employee/attendance/clock-out',
+      data: {
+        'latitude': latitude,
+        'longitude': longitude,
+      },
+    );
+    return _clockResultFromJson(res.data!);
   }
 }
 
@@ -164,6 +222,7 @@ EmployeeScheduleItem _scheduleFromJson(Map<String, dynamic> json) {
     endTime: json['end_time'] as String? ?? '',
     startLabel: json['start_label'] as String? ?? '',
     endLabel: json['end_label'] as String? ?? '',
+    status: json['status'] as String? ?? 'upcoming',
     locationLabel: json['location_label'] as String?,
     locationAddress: json['location_address'] as String?,
     holidayName: json['holiday_name'] as String?,
@@ -270,6 +329,11 @@ DateTime? _date(String? value) => value == null ? null : DateTime.tryParse(value
 
 DateTime _requiredDate(String? value) => _date(value) ?? DateTime.now();
 
+String _apiDate(DateTime value) =>
+    '${value.year.toString().padLeft(4, '0')}-'
+    '${value.month.toString().padLeft(2, '0')}-'
+    '${value.day.toString().padLeft(2, '0')}';
+
 DateTime? _dateTime(String? value) {
   if (value == null) return null;
   return DateTime.tryParse(value)?.toLocal();
@@ -285,4 +349,29 @@ double _double(Object? value) {
   if (value is double) return value;
   if (value is num) return value.toDouble();
   return double.tryParse('$value') ?? 0;
+}
+
+EmployeeWorksite _worksiteFromJson(Map<String, dynamic> json) {
+  return EmployeeWorksite(
+    label: json['label'] as String? ?? 'Work site',
+    address: json['address'] as String? ?? '',
+    latitude: _double(json['latitude']),
+    longitude: _double(json['longitude']),
+    geofenceRadiusM: _int(json['geofence_radius_m']),
+  );
+}
+
+AttendanceClockResult _clockResultFromJson(Map<String, dynamic> json) {
+  final geofence = json['geofence'] as Map<String, dynamic>? ?? {};
+  return AttendanceClockResult(
+    id: json['id'] as String,
+    status: json['status'] as String? ?? 'in_progress',
+    timeIn: _dateTime(json['time_in'] as String?),
+    timeOut: _dateTime(json['time_out'] as String?),
+    insideGeofence: geofence['inside_geofence'] as bool? ?? false,
+    distanceM: _double(geofence['distance_m']),
+    allowedRadiusM: _double(geofence['allowed_radius_m']),
+    shiftName: json['shift_name'] as String?,
+    message: json['message'] as String? ?? 'Attendance recorded.',
+  );
 }

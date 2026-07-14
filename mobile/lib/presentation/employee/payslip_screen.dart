@@ -118,10 +118,11 @@ class _EmployeePayslipScreenState extends State<EmployeePayslipScreen> {
                 ),
               ),
               const SizedBox(height: 14),
-              FilledButton(
+              EmployeePrimaryButton(
+                label: _downloading ? 'Downloading...' : 'Download Payslip (PDF)',
+                loading: _downloading,
                 onPressed: _downloading ? null : _download,
-                child: Text(
-                    _downloading ? 'Downloading...' : 'Download Payslip (PDF)'),
+                icon: Icons.download_rounded,
               ),
             ],
           );

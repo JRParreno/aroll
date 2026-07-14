@@ -7,14 +7,20 @@ type PerformanceOverviewChartProps = {
 };
 
 const METRICS = [
-  { label: "On time", key: "on_time_clock_ins" as const, color: "#22C55E" },
+  { label: "On Time", key: "on_time_clock_ins" as const, color: "#22C55E" },
   { label: "Late", key: "late_clock_ins" as const, color: "#F59E0B" },
-  { label: "Under", key: "undertime_shifts" as const, color: "#F97316" },
-  { label: "Over", key: "overtime_shifts" as const, color: "#3B82F6" },
+  { label: "Under Time", key: "undertime_shifts" as const, color: "#F97316" },
+  { label: "Over Time", key: "overtime_shifts" as const, color: "#3B82F6" },
   { label: "Absent", key: "absent_shifts" as const, color: "#EF4444" },
 ] as const;
 
-const MAX_BAR_HEIGHT = 140;
+const CHART_HEIGHT = 148;
+const MAX_BAR_HEIGHT = 120;
+
+function hasMeaningfulData(summary: OwnerPerformanceSummary | undefined) {
+  if (!summary?.has_performance_data) return false;
+  return METRICS.some((metric) => (summary[metric.key] ?? 0) > 0);
+}
 
 export function PerformanceOverviewChart({
   summary,
@@ -25,11 +31,15 @@ export function PerformanceOverviewChart({
     ...metric,
     value: summary?.[metric.key] ?? 0,
   }));
+  const hasData = hasMeaningfulData(summary);
   const maxValue = Math.max(...bars.map((bar) => bar.value), 1);
 
   return (
     <div className={className}>
-      <div className="flex h-[180px] items-end gap-2 px-1">
+      <div
+        className="flex items-end gap-2 px-1"
+        style={{ height: `${CHART_HEIGHT}px` }}
+      >
         {bars.map((bar) => {
           const barHeight =
             bar.value > 0
@@ -58,6 +68,17 @@ export function PerformanceOverviewChart({
           );
         })}
       </div>
+
+      {!isLoading && !hasData && (
+        <div className="mt-4 rounded-xl border border-dashed border-slate-200 bg-[#FAFBFC] px-4 py-3 text-center">
+          <p className="text-sm font-medium text-[#374151]">
+            No attendance records yet.
+          </p>
+          <p className="mt-1 text-xs text-[#6B7280]">
+            Charts will automatically update once employees start clocking in.
+          </p>
+        </div>
+      )}
     </div>
   );
 }

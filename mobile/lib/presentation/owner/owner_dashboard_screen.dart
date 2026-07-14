@@ -131,10 +131,10 @@ class _OwnerHeader extends StatelessWidget {
           CircleAvatar(
             radius: 24,
             backgroundColor: const Color(0xFFE7EEF5),
-            backgroundImage: session.branding?.displayImageUrl != null
-                ? NetworkImage(session.branding!.displayImageUrl!)
+            backgroundImage: session.branding?.logoUrl != null
+                ? NetworkImage(session.branding!.logoUrl!)
                 : null,
-            child: session.branding?.displayImageUrl == null
+            child: session.branding?.logoUrl == null
                 ? const Icon(Icons.storefront_rounded,
                     size: 24, color: Color(0xFF1E466E))
                 : null,

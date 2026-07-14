@@ -2,6 +2,11 @@ import { useQuery } from "@tanstack/react-query";
 import { Search } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Input } from "@/components/ui/input";
+import {
+  OwnerPage,
+  OwnerPageContent,
+  OwnerPageHeader,
+} from "@/components/owner/layout/OwnerPageLayout";
 import { getOwnerAttendanceReport } from "@/lib/api";
 
 function formatTime(value: string | null) {
@@ -80,12 +85,10 @@ export function OwnerAttendancePage() {
   const presentPercent = total > 0 ? Math.round((summary.present / total) * 100) : 0;
 
   return (
-    <div className="min-h-screen bg-[#F7F8FA]">
-      <header className="border-b border-slate-200 bg-white px-5 py-6 sm:px-8">
-        <h1 className="text-2xl font-semibold text-[#111827]">Attendance</h1>
-      </header>
+    <OwnerPage>
+      <OwnerPageHeader title="Attendance" />
 
-      <main className="mx-auto max-w-6xl space-y-5 px-5 py-5 sm:px-8">
+      <OwnerPageContent>
         <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <div className="mx-auto max-w-3xl space-y-3">
             <div className="relative">
@@ -231,7 +234,7 @@ export function OwnerAttendancePage() {
             </div>
           )}
         </section>
-      </main>
-    </div>
+      </OwnerPageContent>
+    </OwnerPage>
   );
 }

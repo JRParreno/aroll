@@ -20,6 +20,11 @@ import {
 } from "@/components/owner/schedule/scheduleUtils";
 import { Button } from "@/components/ui/button";
 import {
+  OwnerPage,
+  OwnerPageContent,
+  OwnerPageHeader,
+} from "@/components/owner/layout/OwnerPageLayout";
+import {
   Dialog,
   DialogContent,
   DialogFooter,
@@ -299,16 +304,12 @@ export function OwnerSchedulePage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#F7F8FA]">
-      <header className="border-b border-slate-200 bg-white px-5 py-5 sm:px-8">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <p className="text-sm font-medium text-[#6B7280]">Scheduling</p>
-            <h1 className="mt-1 text-2xl font-semibold text-[#1F2937]">
-              {mode === "assign" ? "Assign Schedule" : "Schedule Viewer"}
-            </h1>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
+    <OwnerPage>
+      <OwnerPageHeader
+        //eyebrow="Scheduling"
+        title={mode === "assign" ? "Assign Schedule" : "Schedule Viewer"}
+        actions={
+          <>
             <Button
               variant="outline"
               className="gap-2"
@@ -334,11 +335,11 @@ export function OwnerSchedulePage() {
             >
               View Schedule
             </Button>
-          </div>
-        </div>
-      </header>
+          </>
+        }
+      />
 
-      <main className="space-y-6 px-5 py-6 sm:px-8">
+      <OwnerPageContent>
         {mode === "assign" ? (
           <>
             <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -641,7 +642,7 @@ export function OwnerSchedulePage() {
             </div>
           </section>
         )}
-      </main>
+      </OwnerPageContent>
 
       <Dialog open={customizing} onOpenChange={setCustomizing}>
         <DialogContent className="max-w-5xl">
@@ -858,7 +859,7 @@ export function OwnerSchedulePage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </OwnerPage>
   );
 }
 

@@ -1,6 +1,7 @@
 """Run: python -m app.seed (from backend/ with venv active)."""
 
 from app.core.security import hash_password, verify_password
+from sqlalchemy import func
 from app.db.base import Base
 from app.db.session import SessionLocal, engine
 from app.models.business import Business
@@ -73,6 +74,37 @@ def seed():
             print(f"Seeded platform admin: {admin_email} / changeme123")
         else:
             print(f"Platform admin already exists: {admin.email}")
+    finally:
+        db.close()
+
+
+def reset_owner_login(email: str) -> bool:
+    """Reset a business owner to first-login credentials (business code as password)."""
+    db = SessionLocal()
+    try:
+        normalized = email.lower().strip()
+        owner = (
+            db.query(User)
+            .filter(
+                func.lower(User.email) == normalized,
+                User.role == UserRole.owner,
+            )
+            .first()
+        )
+        if owner is None or owner.business_id is None:
+            return False
+        business = db.get(Business, owner.business_id)
+        if business is None or not business.business_code:
+            return False
+        owner.password_hash = hash_password(business.business_code)
+        owner.must_change_password = True
+        owner.pending_temporary_password = None
+        db.commit()
+        print(
+            f"Reset owner login for {owner.email}. "
+            f"Use business code {business.business_code} for both code and password."
+        )
+        return True
     finally:
         db.close()
 

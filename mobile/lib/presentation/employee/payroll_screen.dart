@@ -1,3 +1,4 @@
+import 'package:aroll_mobile/core/app_state.dart';
 import 'package:aroll_mobile/core/di/injection.dart';
 import 'package:aroll_mobile/domain/entities/employee_portal.dart';
 import 'package:aroll_mobile/domain/repositories/employee_repository.dart';
@@ -27,8 +28,10 @@ class _EmployeePayrollScreenState extends State<EmployeePayrollScreen> {
       repo.getProfile(),
       repo.getPayroll(),
     ]);
+    final profile = results[0] as EmployeeProfile;
+    sl<AppState>().updateEmployeeProfileImage(profile.profileImageUrl);
     return _PayrollData(
-      profile: results[0] as EmployeeProfile,
+      profile: profile,
       payroll: results[1] as EmployeePayroll,
     );
   }
@@ -36,7 +39,7 @@ class _EmployeePayrollScreenState extends State<EmployeePayrollScreen> {
   @override
   Widget build(BuildContext context) {
     return EmployeeScaffold(
-      title: '',
+      title: 'Payroll',
       selectedIndex: 3,
       showBack: true,
       child: FutureBuilder<_PayrollData>(
@@ -58,12 +61,10 @@ class _EmployeePayrollScreenState extends State<EmployeePayrollScreen> {
               const SizedBox(height: 14),
               _DailyWageCard(payroll: payroll),
               const SizedBox(height: 16),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 42),
-                child: FilledButton(
-                  onPressed: () => context.go('/payslip'),
-                  child: const Text('View Payslip'),
-                ),
+              EmployeePrimaryButton(
+                label: 'View Payslip',
+                onPressed: () => context.go('/payslip'),
+                icon: Icons.receipt_long_rounded,
               ),
             ],
           );
@@ -87,27 +88,37 @@ class _PayrollHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        EmployeeAvatar(
-          imageUrl: profile.profileImageUrl,
-          name: profile.fullName,
-          size: 78,
-        ),
-        const SizedBox(height: 6),
-        Text(
-          'Welcome back!',
-          style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                color: const Color(0xFF6B7280),
-              ),
-        ),
-        Text(
-          profile.fullName,
-          style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                fontWeight: FontWeight.w700,
-              ),
-        ),
-      ],
+    final appState = sl<AppState>();
+
+    return ListenableBuilder(
+      listenable: appState,
+      builder: (context, _) {
+        final avatarUrl = appState.resolveEmployeeAvatarUrl(
+          profile.profileImageUrl,
+        );
+        return Column(
+          children: [
+            EmployeeAvatar(
+              imageUrl: avatarUrl,
+              name: profile.fullName,
+              size: 78,
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Welcome back!',
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: const Color(0xFF6B7280),
+                  ),
+            ),
+            Text(
+              profile.fullName,
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+            ),
+          ],
+        );
+      },
     );
   }
 }
@@ -176,8 +187,13 @@ class _DailyWageCard extends StatelessWidget {
           const SizedBox(height: 8),
           if (payroll.rows.isEmpty)
             const Padding(
-              padding: EdgeInsets.symmetric(vertical: 18),
-              child: Text('No payroll records for the current period yet.'),
+              padding: EdgeInsets.symmetric(vertical: 12),
+              child: EmployeeEmptyState(
+                title: 'No payroll records yet',
+                description:
+                    'Daily wage entries will appear here for the current pay period.',
+                icon: Icons.payments_outlined,
+              ),
             )
           else
             ...payroll.rows.map((row) => _PayrollRow(row: row)),
@@ -236,10 +252,13 @@ class _PeriodChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
-        color: const Color(0xFFF3F4F6),
+        color: EmployeeColors.chipFill,
         borderRadius: BorderRadius.circular(999),
       ),
-      child: Text(label, style: const TextStyle(fontSize: 10)),
+      child: Text(
+        label,
+        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+      ),
     );
   }
 }
@@ -256,23 +275,23 @@ class _PayrollRow extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: Row(
         children: [
-          Expanded(flex: 2, child: Text(shortDate(row.date), style: const TextStyle(fontSize: 10))),
+          Expanded(flex: 2, child: Text(shortDate(row.date), style: const TextStyle(fontSize: 11))),
           Expanded(
             child: Text(
               _rowStatus(row),
               style: TextStyle(
                 color: color,
-                fontSize: 10,
+                fontSize: 11,
                 fontWeight: FontWeight.w700,
               ),
             ),
           ),
-          Expanded(child: Text(money(row.dailyRate), style: const TextStyle(fontSize: 10))),
+          Expanded(child: Text(money(row.dailyRate), style: const TextStyle(fontSize: 11))),
           Expanded(
             child: Text(
               money(row.earned),
               textAlign: TextAlign.right,
-              style: const TextStyle(fontSize: 10),
+              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
             ),
           ),
         ],
@@ -283,7 +302,11 @@ class _PayrollRow extends StatelessWidget {
 
 class _TableHeaderStyle extends TextStyle {
   const _TableHeaderStyle()
-      : super(fontSize: 10, fontWeight: FontWeight.w700, color: Colors.black);
+      : super(
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+          color: EmployeeColors.textBody,
+        );
 }
 
 String _rowStatus(EmployeePayrollRow row) {

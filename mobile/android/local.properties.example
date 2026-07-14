@@ -1,0 +1,5 @@
+# Copy to `local.properties` (same folder). That file is git-ignored.
+#
+# Use the same Google Cloud API key as admin-web (VITE_GOOGLE_MAPS_API_KEY),
+# with "Maps SDK for Android" enabled in Google Cloud Console.
+GOOGLE_MAPS_API_KEY=your_google_maps_api_key_here

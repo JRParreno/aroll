@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ArrowRight, BadgeCheck, Building2, LockKeyhole, Mail } from "lucide-react";
+import { ArrowRight, BadgeCheck, Building2, Mail } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -7,6 +7,7 @@ import { SystemBrandPanel } from "@/components/branding/SystemBranding";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PasswordInput } from "@/components/ui/password-input";
 import { businessOwnerLogin, getMe } from "@/lib/api";
 import {
   clearAuthSession,
@@ -28,7 +29,7 @@ export function BusinessOwnerLoginPage() {
     setLoading(true);
     try {
       const res = await businessOwnerLogin(
-        businessCode.trim(),
+        businessCode.trim().toUpperCase().replace(/\s+/g, ""),
         email,
         password
       );
@@ -114,20 +115,14 @@ export function BusinessOwnerLoginPage() {
                 </div>
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="password">Password</Label>
-                <div className="relative">
-                  <LockKeyhole className="absolute left-3 top-3.5 h-4 w-4 text-[#9CA3AF]" />
-                  <Input
-                    id="password"
-                    type="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    required
-                    className="h-11 rounded-lg border-0 bg-white pl-10 shadow-sm"
-                  />
-                </div>
-              </div>
+              <PasswordInput
+                id="password"
+                label="Password"
+                value={password}
+                onChange={setPassword}
+                required
+                inputClassName="h-11 rounded-lg border-0 bg-white shadow-sm"
+              />
 
               <Button
                 type="submit"

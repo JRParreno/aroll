@@ -1,17 +1,36 @@
-import { useQuery } from "@tanstack/react-query";
-import { Building2, FileText, Mail, Phone, User } from "lucide-react";
-import { Link } from "react-router-dom";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Building2, FileText, Palette } from "lucide-react";
+import { useEffect, useState } from "react";
+import { toast } from "sonner";
 import { BusinessRegistrationDocumentsSection } from "@/components/business/BusinessRegistrationDocumentsSection";
+import {
+  BusinessLogoAndThemeFields,
+} from "@/components/owner/settings/brandingFormFields";
+import {
+  businessBrandingForSave,
+  defaultBusinessBranding,
+} from "@/components/owner/settings/brandingDefaults";
 import {
   DetailField,
   DetailSection,
   StatusBadge,
 } from "@/components/detail/DetailLayout";
+import {
+  OwnerPage,
+  OwnerPageBackLink,
+  OwnerPageContent,
+} from "@/components/owner/layout/OwnerPageLayout";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   fetchOwnerRegistrationDocumentFile,
   getBusinessSettings,
+  updateBusinessSettings,
+  type BusinessBrandingSettings,
 } from "@/lib/api";
+import { ME_QUERY_KEY } from "@/lib/authSession";
 import { formatBusinessType, formatVerificationStatus } from "@/lib/registrationDocuments";
 
 async function fetchOwnerDocument(
@@ -22,26 +41,67 @@ async function fetchOwnerDocument(
 }
 
 export function OwnerBusinessSettingsPage() {
+  const qc = useQueryClient();
+  const [form, setForm] = useState({
+    business_name: "",
+    business_type: "",
+    address: "",
+    business_code: "",
+  });
+  const [branding, setBranding] =
+    useState<BusinessBrandingSettings>(defaultBusinessBranding);
+
   const { data, isLoading, isError } = useQuery({
     queryKey: ["business-settings"],
     queryFn: getBusinessSettings,
   });
 
+  useEffect(() => {
+    if (!data) return;
+    setForm({
+      business_name: data.business_name,
+      business_type: data.business_type ?? "",
+      address: data.address,
+      business_code: data.business_code,
+    });
+    setBranding(data.branding ?? defaultBusinessBranding);
+  }, [data]);
+
+  const save = useMutation({
+    mutationFn: () =>
+      updateBusinessSettings({
+        business_name: form.business_name.trim(),
+        business_type: form.business_type.trim() || null,
+        address: form.address.trim(),
+        branding: businessBrandingForSave(branding),
+      }),
+    onSuccess: () => {
+      toast.success("Business settings saved");
+      qc.invalidateQueries({ queryKey: ["business-settings"] });
+      qc.invalidateQueries({ queryKey: ME_QUERY_KEY });
+    },
+    onError: () => toast.error("Failed to save business settings"),
+  });
+
   if (isLoading) {
     return (
-      <div className="min-h-full bg-muted/30 p-6">
-        <p className="text-sm text-muted-foreground">Loading business settings…</p>
-      </div>
+      <OwnerPage>
+        <OwnerPageContent className="max-w-4xl">
+          <p className="text-sm text-muted-foreground">Loading business settings…</p>
+        </OwnerPageContent>
+      </OwnerPage>
     );
   }
 
   if (isError || !data) {
     return (
-      <div className="min-h-full bg-muted/30 p-6">
-        <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          Unable to load business settings. Please try again.
-        </p>
-      </div>
+      <OwnerPage>
+        <OwnerPageContent className="max-w-4xl">
+          <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            Unable to load business settings. Please try again.
+          </p>
+        </OwnerPageContent>
+      </OwnerPage>
     );
   }
 
@@ -49,76 +109,102 @@ export function OwnerBusinessSettingsPage() {
     ? formatVerificationStatus(data.application_status)
     : null;
 
+  const canSave =
+    form.business_name.trim().length >= 2 && form.address.trim().length >= 5;
+
   return (
-    <div className="min-h-full bg-muted/30 p-6">
-      <div className="mx-auto max-w-4xl space-y-6">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold">Business Settings</h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Business profile, registration details, and uploaded compliance
-              documents.
-            </p>
-          </div>
-          <Button variant="outline" asChild>
-            <Link to="/owner/settings/account">Edit in Account Settings</Link>
-          </Button>
+    <OwnerPage>
+      <OwnerPageContent className="max-w-4xl">
+        <OwnerPageBackLink to="/owner/settings/setup" label="Back to Business Setup" />
+
+        <div>
+          <h1 className="text-2xl font-semibold">Business Settings</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Business profile, branding, and registration documents.
+          </p>
         </div>
 
-        <DetailSection
-          title="Business Information"
-          description="Core business profile details for your organization."
-          icon={<Building2 className="h-4 w-4" />}
-        >
-          <DetailField label="Business Name" value={data.business_name} />
-          <DetailField
-            label="Business Type"
-            value={formatBusinessType(data.business_type)}
-          />
-          <DetailField label="Business Address" value={data.address || "—"} />
-          <DetailField label="Business Code" value={data.business_code} />
-          {verificationStatus && (
-            <DetailField
-              label="Registration Status"
-              value={<StatusBadge status={verificationStatus} />}
+        <Card>
+          <CardHeader>
+            <CardTitle>Business Information</CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-2 md:col-span-2">
+              <Label htmlFor="business-name">Business Name</Label>
+              <Input
+                id="business-name"
+                value={form.business_name}
+                onChange={(event) =>
+                  setForm({ ...form, business_name: event.target.value })
+                }
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="business-type">Business Type</Label>
+              <Input
+                id="business-type"
+                value={form.business_type}
+                onChange={(event) =>
+                  setForm({ ...form, business_type: event.target.value })
+                }
+                placeholder="e.g. Cafe, Restaurant, Retail"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="business-code">Business Code</Label>
+              <Input id="business-code" value={form.business_code} disabled />
+            </div>
+            <div className="space-y-2 md:col-span-2">
+              <Label htmlFor="business-address">Business Address</Label>
+              <Input
+                id="business-address"
+                value={form.address}
+                onChange={(event) =>
+                  setForm({ ...form, address: event.target.value })
+                }
+              />
+            </div>
+            {verificationStatus ? (
+              <div className="md:col-span-2">
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  Registration Status
+                </p>
+                <div className="mt-1">
+                  <StatusBadge status={verificationStatus} />
+                </div>
+              </div>
+            ) : null}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Palette className="h-4 w-4" />
+              Business Branding & Theme
+            </CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Logo and brand colors appear in the owner portal and employee
+              mobile app. The separate display image field was removed in favor
+              of the business logo.
+            </p>
+          </CardHeader>
+          <CardContent>
+            <BusinessLogoAndThemeFields
+              branding={branding}
+              onChange={setBranding}
             />
-          )}
-        </DetailSection>
+          </CardContent>
+        </Card>
 
         <DetailSection
           title="Owner Information"
-          description="Primary owner contact details from your registration."
-          icon={<User className="h-4 w-4" />}
+          description="Read-only owner contact details from registration."
+          icon={<Building2 className="h-4 w-4" />}
         >
           <DetailField label="Owner Name" value={data.owner_name ?? "—"} />
-          <DetailField
-            label="Email"
-            value={
-              <a
-                href={`mailto:${data.owner_email}`}
-                className="text-primary hover:underline"
-              >
-                {data.owner_email}
-              </a>
-            }
-            icon={<Mail className="h-3.5 w-3.5" />}
-          />
-          <DetailField
-            label="Phone"
-            value={
-              data.owner_phone ? (
-                <a
-                  href={`tel:${data.owner_phone}`}
-                  className="text-primary hover:underline"
-                >
-                  {data.owner_phone}
-                </a>
-              ) : (
-                "Not provided"
-              )
-            }
-            icon={<Phone className="h-3.5 w-3.5" />}
-          />
+          <DetailField label="Email" value={data.owner_email} />
+          <DetailField label="Phone" value={data.owner_phone ?? "Not provided"} />
         </DetailSection>
 
         <DetailSection
@@ -132,7 +218,11 @@ export function OwnerBusinessSettingsPage() {
             fetchDocumentFile={fetchOwnerDocument}
           />
         </DetailSection>
-      </div>
-    </div>
+
+        <Button onClick={() => save.mutate()} disabled={!canSave || save.isPending}>
+          Save Business Settings
+        </Button>
+      </OwnerPageContent>
+    </OwnerPage>
   );
 }

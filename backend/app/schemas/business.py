@@ -69,3 +69,10 @@ class BusinessSettingsResponse(BaseModel):
     application_status: str | None = None
     registration_documents: list[RegistrationDocumentResponse] = Field(default_factory=list)
     branding: BusinessBrandingSettings = Field(default_factory=BusinessBrandingSettings)
+
+
+class BusinessSettingsUpdate(BaseModel):
+    business_name: str = Field(min_length=2, max_length=200)
+    business_type: str | None = Field(default=None, max_length=100)
+    address: str = Field(min_length=5)
+    branding: BusinessBrandingSettings | None = None

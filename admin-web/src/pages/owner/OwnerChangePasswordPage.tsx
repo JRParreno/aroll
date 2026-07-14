@@ -1,12 +1,15 @@
 import { useState } from "react";
-import { ArrowRight, KeyRound, LockKeyhole, ShieldCheck } from "lucide-react";
+import { ArrowRight, ShieldCheck } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import {
+  PasswordInput,
+  PasswordRequirements,
+} from "@/components/ui/password-input";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { changePassword, getMe } from "@/lib/api";
+import { canSubmitPasswordChange, validatePassword } from "@/lib/passwordValidation";
 import { ME_QUERY_KEY, setAuthSession } from "@/lib/authSession";
 
 export function OwnerChangePasswordPage() {
@@ -25,8 +28,9 @@ export function OwnerChangePasswordPage() {
       return;
     }
 
-    if (newPassword.length < 8) {
-      toast.error("New password must be at least 8 characters");
+    const validation = validatePassword(newPassword);
+    if (!validation.valid) {
+      toast.error(validation.errors[0]);
       return;
     }
 
@@ -44,6 +48,12 @@ export function OwnerChangePasswordPage() {
       setLoading(false);
     }
   }
+
+  const canSubmit = canSubmitPasswordChange({
+    currentPassword,
+    newPassword,
+    confirmPassword,
+  });
 
   return (
     <div className="min-h-screen bg-[#F4F6F8] text-[#111827]">
@@ -64,57 +74,38 @@ export function OwnerChangePasswordPage() {
 
           <section className="rounded-3xl border border-white/70 bg-white/75 p-5 shadow-sm backdrop-blur sm:p-7">
             <form onSubmit={handleSubmit} className="space-y-5">
-              <div className="space-y-2">
-                <Label htmlFor="current_password">Current Password</Label>
-                <div className="relative">
-                  <LockKeyhole className="absolute left-3 top-3.5 h-4 w-4 text-[#9CA3AF]" />
-                  <Input
-                    id="current_password"
-                    type="password"
-                    value={currentPassword}
-                    onChange={(e) => setCurrentPassword(e.target.value)}
-                    required
-                    className="h-11 rounded-lg border-0 bg-white pl-10 shadow-sm"
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="new_password">New Password</Label>
-                <div className="relative">
-                  <KeyRound className="absolute left-3 top-3.5 h-4 w-4 text-[#9CA3AF]" />
-                  <Input
-                    id="new_password"
-                    type="password"
-                    value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)}
-                    required
-                    minLength={8}
-                    className="h-11 rounded-lg border-0 bg-white pl-10 shadow-sm"
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="confirm_password">Confirm New Password</Label>
-                <div className="relative">
-                  <KeyRound className="absolute left-3 top-3.5 h-4 w-4 text-[#9CA3AF]" />
-                  <Input
-                    id="confirm_password"
-                    type="password"
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    required
-                    minLength={8}
-                    className="h-11 rounded-lg border-0 bg-white pl-10 shadow-sm"
-                  />
-                </div>
-              </div>
-
+              <PasswordInput
+                id="current_password"
+                label="Current Password"
+                value={currentPassword}
+                onChange={setCurrentPassword}
+                required
+                inputClassName="h-11 rounded-lg border-0 bg-white shadow-sm"
+              />
+              <PasswordInput
+                id="new_password"
+                label="New Password"
+                value={newPassword}
+                onChange={setNewPassword}
+                required
+                inputClassName="h-11 rounded-lg border-0 bg-white shadow-sm"
+              />
+              <PasswordInput
+                id="confirm_password"
+                label="Confirm New Password"
+                value={confirmPassword}
+                onChange={setConfirmPassword}
+                required
+                inputClassName="h-11 rounded-lg border-0 bg-white shadow-sm"
+              />
+              <PasswordRequirements
+                password={newPassword}
+                confirmPassword={confirmPassword}
+              />
               <Button
                 type="submit"
                 className="h-12 w-full rounded-xl bg-[#1E3A5F] text-white shadow-sm hover:bg-[#284B73]"
-                disabled={loading}
+                disabled={loading || !canSubmit}
               >
                 {loading ? "Updating..." : "Update Password"}
                 {!loading && <ArrowRight className="ml-2 h-4 w-4" />}

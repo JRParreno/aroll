@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   BarChart3,
@@ -12,6 +13,7 @@ import {
   UserRoundCog,
 } from "lucide-react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { SignOutConfirmDialog } from "@/components/SignOutConfirmDialog";
 import { getMe } from "@/lib/api";
 import { clearAuthSession, ME_QUERY_KEY } from "@/lib/authSession";
 import { cn } from "@/lib/utils";
@@ -49,10 +51,12 @@ export function OwnerLayout() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const { pathname } = useLocation();
+  const [signOutOpen, setSignOutOpen] = useState(false);
 
   const { data: me } = useQuery({
     queryKey: ME_QUERY_KEY,
     queryFn: getMe,
+    refetchOnWindowFocus: true,
   });
   const branding = me?.branding;
   const theme = branding?.theme;
@@ -115,24 +119,28 @@ export function OwnerLayout() {
           })}
 
           <div className="mt-auto px-8 pb-7 pt-4">
-            {ownerProfileImage && (
-              <div className="mb-4 flex items-center gap-3 rounded-xl bg-white/10 p-3">
+            <div className="mb-4 flex items-center gap-3 rounded-xl bg-white/10 p-3">
+              {ownerProfileImage ? (
                 <img
                   className="h-9 w-9 rounded-full object-cover"
                   src={ownerProfileImage}
                   alt={me?.full_name ?? "Owner profile"}
                 />
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-white">
-                    {me?.full_name ?? "Owner"}
-                  </p>
-                  <p className="text-xs text-white/60">Account owner</p>
+              ) : (
+                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-white/20 text-sm font-semibold text-white">
+                  {(me?.full_name ?? "O").slice(0, 1).toUpperCase()}
                 </div>
+              )}
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium text-white">
+                  {me?.full_name ?? "Owner"}
+                </p>
+                <p className="text-xs text-white/60">Account owner</p>
               </div>
-            )}
+            </div>
             <button
               className="flex h-11 w-full items-center gap-3 rounded-xl px-2 text-[15px] font-medium text-white/75 transition hover:bg-white/10 hover:text-white"
-              onClick={logout}
+              onClick={() => setSignOutOpen(true)}
               type="button"
             >
               <LogOut className="h-[18px] w-[18px]" strokeWidth={2} />
@@ -141,6 +149,12 @@ export function OwnerLayout() {
           </div>
         </nav>
       </aside>
+
+      <SignOutConfirmDialog
+        open={signOutOpen}
+        onOpenChange={setSignOutOpen}
+        onConfirm={logout}
+      />
 
       <main className="min-h-screen flex-1 bg-[#F7F8FA] lg:pl-64">
         <Outlet />

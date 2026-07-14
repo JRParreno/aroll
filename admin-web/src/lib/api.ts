@@ -1,7 +1,9 @@
 import axios from "axios";
 import { getAuthToken } from "@/lib/authSession";
 
-const API_BASE = import.meta.env.VITE_API_URL ?? "http://localhost:8000/api/v1";
+const API_BASE =
+  import.meta.env.VITE_API_URL ??
+  (import.meta.env.DEV ? "/api/v1" : "http://localhost:8000/api/v1");
 
 /** Routes that must not send a stale session token. */
 function isPublicAuthPath(path: string): boolean {
@@ -58,6 +60,7 @@ export type UserMe = {
   business_code: string | null;
   setup_completed_at: string | null;
   branding?: BusinessBrandingSettings | null;
+  profile_image_url?: string | null;
 };
 
 export type Registration = {
@@ -148,6 +151,7 @@ export type Employee = {
   status: "invited" | "active" | "inactive";
   must_change_password: boolean;
   temporary_password: string | null;
+  profile_image_url: string | null;
 };
 
 export type OwnerPerformanceSummary = {
@@ -647,6 +651,27 @@ export type AccountSettings = {
   branding: BusinessBrandingSettings;
 };
 
+export type BusinessSettings = {
+  business_name: string;
+  business_type: string | null;
+  business_code: string;
+  address: string;
+  owner_name: string | null;
+  owner_email: string;
+  owner_phone: string | null;
+  registration_id: string | null;
+  application_status: string | null;
+  registration_documents: RegistrationDocument[];
+  branding: BusinessBrandingSettings;
+};
+
+export type BusinessSettingsUpdate = {
+  business_name: string;
+  business_type?: string | null;
+  address: string;
+  branding?: BusinessBrandingSettings;
+};
+
 export type AccountSettingsUpdate = {
   business_name: string;
   owner_name: string;
@@ -673,20 +698,6 @@ export type BusinessBrandingSettings = {
   owner_profile_image_url: string | null;
   display_image_url: string | null;
   theme: BusinessThemeSettings;
-};
-
-export type BusinessSettings = {
-  business_name: string;
-  business_type: string | null;
-  business_code: string;
-  address: string;
-  owner_name: string | null;
-  owner_email: string;
-  owner_phone: string | null;
-  registration_id: string | null;
-  application_status: string | null;
-  registration_documents: RegistrationDocument[];
-  branding: BusinessBrandingSettings;
 };
 
 export async function getSetupStatus() {
@@ -827,6 +838,11 @@ export async function getBusinessSettings() {
   return data;
 }
 
+export async function updateBusinessSettings(payload: BusinessSettingsUpdate) {
+  const { data } = await api.put("/businesses/me/business-settings", payload);
+  return data;
+}
+
 export async function getAccountSettings() {
   const { data } = await api.get<AccountSettings>(
     "/businesses/me/account-settings"
@@ -836,6 +852,21 @@ export async function getAccountSettings() {
 
 export async function updateAccountSettings(payload: AccountSettingsUpdate) {
   const { data } = await api.put("/businesses/me/account-settings", payload);
+  return data;
+}
+
+export async function updateOwnerProfileImage(imageData: string) {
+  const { data } = await api.post<{ owner_profile_image_url: string }>(
+    "/businesses/me/profile/image",
+    { image_data: imageData }
+  );
+  return data;
+}
+
+export async function removeOwnerProfileImage() {
+  const { data } = await api.delete<{ owner_profile_image_url: null }>(
+    "/businesses/me/profile/image"
+  );
   return data;
 }
 

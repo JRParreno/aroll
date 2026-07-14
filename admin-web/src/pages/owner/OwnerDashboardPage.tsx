@@ -1,17 +1,16 @@
 import { useQuery } from "@tanstack/react-query";
-import { Activity, Clock3, MapPin, TrendingUp, UserRound, WalletCards } from "lucide-react";
+import { Activity, Clock3, TrendingUp, UserRound } from "lucide-react";
 import { Link } from "react-router-dom";
+import { OwnerDashboardInsights } from "@/components/owner/dashboard/OwnerDashboardInsights";
 import { PerformanceOverviewChart } from "@/components/owner/PerformanceOverviewChart";
+import {
+  OwnerPage,
+  OwnerPageContent,
+  OwnerPageHeader,
+} from "@/components/owner/layout/OwnerPageLayout";
 import { SetupProgressCard } from "@/components/owner/SetupProgressCard";
 import { getMe, getOwnerPerformance, getSetupStatus } from "@/lib/api";
 import { ME_QUERY_KEY } from "@/lib/authSession";
-
-const quickActions = [
-  { label: "Employees", to: "/owner/employees", icon: UserRound },
-  { label: "Location", to: "/owner/location", icon: MapPin },
-  { label: "Payroll", to: "/owner/payroll", icon: WalletCards },
-  { label: "Productivity", to: "/owner/productivity", icon: TrendingUp },
-];
 
 export function OwnerDashboardPage() {
   const { data: me } = useQuery({
@@ -58,15 +57,13 @@ export function OwnerDashboardPage() {
   ];
 
   return (
-    <div className="min-h-screen bg-[#F7F8FA]">
-      <header className="border-b border-slate-200 bg-white px-5 py-6 sm:px-8">
-        <p className="text-sm font-medium text-[#6B7280]">Welcome back</p>
-        <h1 className="mt-1 text-2xl font-semibold text-[#1F2937]">
-          {businessName} Dashboard
-        </h1>
-      </header>
+    <OwnerPage>
+      <OwnerPageHeader
+        eyebrow="Welcome back"
+        title={`${businessName} Dashboard`}
+      />
 
-      <main className="space-y-6 px-5 py-6 sm:px-8">
+      <OwnerPageContent>
         {setupStatus && !setupStatus.setup_completed_at && (
           <SetupProgressCard status={setupStatus} />
         )}
@@ -99,9 +96,9 @@ export function OwnerDashboardPage() {
           })}
         </section>
 
-        <section className="grid gap-6 xl:grid-cols-[1.4fr_0.8fr]">
-          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-            <div className="mb-6 flex items-center justify-between">
+        <section className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="mb-4 flex items-center justify-between gap-4">
               <div>
                 <h2 className="text-lg font-semibold text-[#1F2937]">
                   Performance Overview
@@ -110,37 +107,16 @@ export function OwnerDashboardPage() {
                   Based on actual attendance and assigned shifts.
                 </p>
               </div>
-              <Link className="text-sm font-medium text-[#1E3A5F]" to="/owner/productivity">
+              <Link className="shrink-0 text-sm font-medium text-[#1E3A5F]" to="/owner/productivity">
                 View insights
               </Link>
             </div>
             <PerformanceOverviewChart isLoading={isLoading} summary={summary} />
           </div>
 
-          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-            <h2 className="text-lg font-semibold text-[#1F2937]">Quick Actions</h2>
-            <div className="mt-5 space-y-3">
-              {quickActions.map((action) => {
-                const Icon = action.icon;
-                return (
-                  <Link
-                    className="flex items-center gap-3 rounded-xl border border-slate-100 p-3 transition hover:bg-[#FAFBFC]"
-                    key={action.label}
-                    to={action.to}
-                  >
-                    <span className="rounded-lg bg-[#F3F6FA] p-2 text-[#1E3A5F]">
-                      <Icon className="h-4 w-4" />
-                    </span>
-                    <span className="text-sm font-medium text-[#1F2937]">
-                      {action.label}
-                    </span>
-                  </Link>
-                );
-              })}
-            </div>
-          </div>
+          <OwnerDashboardInsights />
         </section>
-      </main>
-    </div>
+      </OwnerPageContent>
+    </OwnerPage>
   );
 }

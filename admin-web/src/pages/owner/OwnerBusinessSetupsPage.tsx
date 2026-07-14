@@ -13,6 +13,12 @@ import {
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  OwnerPage,
+  OwnerPageBackLink,
+  OwnerPageContent,
+  OwnerPageHeader,
+} from "@/components/owner/layout/OwnerPageLayout";
 
 const setupSections = [
   {
@@ -67,15 +73,15 @@ const setupSections = [
 
 export function OwnerBusinessSetupsPage() {
   return (
-    <div className="min-h-screen bg-[#F7F8FA]">
-      <header className="border-b border-slate-200 bg-white px-5 py-6 sm:px-8">
-        <h1 className="text-2xl font-semibold text-[#1F2937]">Business Setup</h1>
-        <p className="mt-1 text-sm text-[#6B7280]">
-          Configure your business settings and onboarding requirements.
-        </p>
-      </header>
+    <OwnerPage>
+      <OwnerPageHeader
+        title="Business Setup"
+        description="Configure your business settings and onboarding requirements."
+      />
 
-      <main className="mx-auto max-w-5xl space-y-6 px-5 py-6 sm:px-8">
+      <OwnerPageContent>
+        <OwnerPageBackLink to="/owner/dashboard" label="Back to Dashboard" />
+
         <Card className="rounded-2xl border-slate-200 shadow-sm">
           <CardHeader className="pb-3">
             <div className="flex items-start justify-between gap-4">
@@ -147,7 +153,7 @@ export function OwnerBusinessSetupsPage() {
             </div>
           </CardContent>
         </Card>
-      </main>
-    </div>
+      </OwnerPageContent>
+    </OwnerPage>
   );
 }

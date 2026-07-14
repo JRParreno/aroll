@@ -23,6 +23,9 @@ dependencies:
   pdf: ^3.11.3
   path_provider: ^2.1.5
   share_plus: ^12.0.2
+  geolocator: ^13.0.4
+  google_maps_flutter: ^2.12.1
+  geocoding: ^4.0.0
 
 dev_dependencies:
   flutter_test:

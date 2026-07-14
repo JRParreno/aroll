@@ -54,6 +54,7 @@ class AuthRepositoryImpl implements AuthRepository {
       setupCompletedAt: _parseDateTime(m['setup_completed_at'] as String?),
       mustChangePassword: mustChangePassword,
       branding: _brandingFromJson(m),
+      profileImageUrl: m['profile_image_url'] as String?,
     );
   }
 
@@ -107,7 +108,7 @@ class AuthRepositoryImpl implements AuthRepository {
       final res = await _api.dio.post<Map<String, dynamic>>(
         '/auth/business-owner-login',
         data: {
-          'business_code': businessCode.trim(),
+          'business_code': businessCode.trim().toUpperCase().replaceAll(' ', ''),
           'email': email.trim().toLowerCase(),
           'password': password,
         },

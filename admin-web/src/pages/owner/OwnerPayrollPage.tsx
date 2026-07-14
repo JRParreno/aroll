@@ -12,6 +12,11 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import {
+  OwnerPage,
+  OwnerPageContent,
+  OwnerPageHeader,
+} from "@/components/owner/layout/OwnerPageLayout";
+import {
   getMe,
   getEmployeePayslip,
   getOwnerPayrollReport,
@@ -72,14 +77,13 @@ export function OwnerPayrollPage() {
   const canEditPayslip = me?.role === "owner" || me?.role === "manager";
 
   return (
-    <div className="min-h-screen bg-[#F7F8FA]">
-      <header className="border-b border-slate-200 bg-white px-5 py-6 sm:px-8">
-        <h1 className="text-2xl font-semibold text-[#1F2937]">Payroll</h1>
-        <p className="mt-1 text-sm text-[#6B7280]">
-          Review salary summaries generated from current employee and attendance data.
-        </p>
-      </header>
-      <main className="space-y-6 px-5 py-6 sm:px-8">
+    <OwnerPage>
+      <OwnerPageHeader
+        title="Payroll"
+        //description="Review salary summaries generated from current employee and attendance data."
+      />
+
+      <OwnerPageContent>
         <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <div className="grid gap-3 lg:grid-cols-[1fr_auto]">
             <div className="relative">
@@ -130,7 +134,7 @@ export function OwnerPayrollPage() {
             ))
           )}
         </section>
-      </main>
+      </OwnerPageContent>
 
       <Dialog
         open={Boolean(selectedEmployeeId)}
@@ -194,7 +198,7 @@ export function OwnerPayrollPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </OwnerPage>
   );
 }
 

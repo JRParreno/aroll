@@ -71,6 +71,7 @@ class EmployeeScheduleItem extends Equatable {
     required this.endTime,
     required this.startLabel,
     required this.endLabel,
+    required this.status,
     required this.locationLabel,
     required this.locationAddress,
     required this.holidayName,
@@ -86,6 +87,7 @@ class EmployeeScheduleItem extends Equatable {
   final String endTime;
   final String startLabel;
   final String endLabel;
+  final String status;
   final String? locationLabel;
   final String? locationAddress;
   final String? holidayName;
@@ -102,6 +104,7 @@ class EmployeeScheduleItem extends Equatable {
         endTime,
         startLabel,
         endLabel,
+        status,
         locationLabel,
         locationAddress,
         holidayName,
@@ -241,6 +244,68 @@ class EmployeePayroll extends Equatable {
 
   @override
   List<Object?> get props => [summary, rows];
+}
+
+class EmployeeWorksite extends Equatable {
+  const EmployeeWorksite({
+    required this.label,
+    required this.address,
+    required this.latitude,
+    required this.longitude,
+    required this.geofenceRadiusM,
+  });
+
+  final String label;
+  final String address;
+  final double latitude;
+  final double longitude;
+  final int geofenceRadiusM;
+
+  @override
+  List<Object?> get props => [
+        label,
+        address,
+        latitude,
+        longitude,
+        geofenceRadiusM,
+      ];
+}
+
+class AttendanceClockResult extends Equatable {
+  const AttendanceClockResult({
+    required this.id,
+    required this.status,
+    required this.timeIn,
+    required this.timeOut,
+    required this.insideGeofence,
+    required this.distanceM,
+    required this.allowedRadiusM,
+    required this.shiftName,
+    required this.message,
+  });
+
+  final String id;
+  final String status;
+  final DateTime? timeIn;
+  final DateTime? timeOut;
+  final bool insideGeofence;
+  final double distanceM;
+  final double allowedRadiusM;
+  final String? shiftName;
+  final String message;
+
+  @override
+  List<Object?> get props => [
+        id,
+        status,
+        timeIn,
+        timeOut,
+        insideGeofence,
+        distanceM,
+        allowedRadiusM,
+        shiftName,
+        message,
+      ];
 }
 
 class EmployeeAttendanceStatus extends Equatable {

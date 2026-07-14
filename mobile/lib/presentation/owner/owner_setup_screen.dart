@@ -21,16 +21,13 @@ class OwnerSetupScreen extends StatelessWidget {
         builder: (data) {
           final steps = (data['steps'] as List<dynamic>? ?? const [])
               .whereType<Map<String, dynamic>>();
-          final continueStep = firstIncompleteSetupStepIndex(data);
           return [
             SetupProgressCard(data: data, showContinueButton: false),
             const SizedBox(height: 12),
             SizedBox(
               width: double.infinity,
               child: FilledButton(
-                onPressed: () => context.push(
-                  '/owner/setup-wizard?step=$continueStep',
-                ),
+                onPressed: () => context.push('/owner/setup-wizard?step=menu'),
                 style: FilledButton.styleFrom(
                   backgroundColor: const Color(0xFF1E3A5F),
                 ),

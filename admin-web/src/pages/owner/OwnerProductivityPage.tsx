@@ -2,8 +2,12 @@ import { useQuery } from "@tanstack/react-query";
 import { Star } from "lucide-react";
 import { Link } from "react-router-dom";
 import { PerformanceOverviewChart } from "@/components/owner/PerformanceOverviewChart";
-import { getMe, getOwnerPerformance } from "@/lib/api";
-import { ME_QUERY_KEY } from "@/lib/authSession";
+import {
+  OwnerPage,
+  OwnerPageContent,
+  OwnerPageHeader,
+} from "@/components/owner/layout/OwnerPageLayout";
+import { getOwnerPerformance } from "@/lib/api";
 
 function initials(name: string) {
   return name
@@ -15,36 +19,20 @@ function initials(name: string) {
 }
 
 export function OwnerProductivityPage() {
-  const { data: me } = useQuery({
-    queryKey: ME_QUERY_KEY,
-    queryFn: getMe,
-  });
-
   const { data: performance, isLoading } = useQuery({
     queryKey: ["owner-performance", 30],
     queryFn: () => getOwnerPerformance(30),
   });
 
-  const businessName =
-    me?.business_name ?? localStorage.getItem("aroll_business_name") ?? "Aroll+";
   const summary = performance?.summary;
   const hasPerformanceData = Boolean(summary?.has_performance_data);
   const topEmployee = hasPerformanceData ? performance?.employees[0] ?? null : null;
 
   return (
-    <div className="min-h-screen bg-[#f3f3f3]">
-      <header className="flex h-[72px] items-center justify-between border-b border-[#9f9f9f] bg-white px-5 sm:px-7">
-        <h1 className="text-2xl font-extrabold text-black sm:text-[28px]">
-          Performance Insights
-        </h1>
-        <div className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-full bg-[#f7ead4] p-1 shadow-sm">
-          <div className="flex h-full w-full items-center justify-center rounded-full bg-[#354151] text-sm font-bold text-white">
-            {businessName.slice(0, 1).toUpperCase()}
-          </div>
-        </div>
-      </header>
+    <OwnerPage>
+      <OwnerPageHeader title="Performance Insights" />
 
-      <main className="px-5 py-4 sm:px-7">
+      <OwnerPageContent>
         <section>
           <h2 className="mb-1 text-[22px] font-medium text-[#262626]">
             Performance Overview
@@ -57,7 +45,7 @@ export function OwnerProductivityPage() {
           </div>
         </section>
 
-        <section className="mt-9">
+        <section>
           <div className="mb-5 flex items-center justify-between">
             <h2 className="text-[22px] font-extrabold text-[#202020]">
               Top Performing Employees
@@ -209,7 +197,7 @@ export function OwnerProductivityPage() {
             </div>
           )}
         </section>
-      </main>
-    </div>
+      </OwnerPageContent>
+    </OwnerPage>
   );
 }

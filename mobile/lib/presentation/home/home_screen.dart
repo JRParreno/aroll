@@ -3,7 +3,6 @@ import 'package:aroll_mobile/core/di/injection.dart';
 import 'package:aroll_mobile/domain/entities/employee_portal.dart';
 import 'package:aroll_mobile/domain/entities/user_session.dart';
 import 'package:aroll_mobile/domain/repositories/employee_repository.dart';
-import 'package:aroll_mobile/domain/usecase/auth/logout_usecase.dart';
 import 'package:aroll_mobile/presentation/employee/employee_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -21,25 +20,33 @@ class _HomeScreenState extends State<HomeScreen> {
   late Future<EmployeeDashboard> _future;
 
   static const double _actionCardHeight = 144;
-  static const double _sectionGap = 10.0;
+  static const double _sectionGap = 14.0;
 
   @override
   void initState() {
     super.initState();
-    _future = sl<EmployeeRepository>().getDashboard();
+    _future = sl<EmployeeRepository>().getDashboard().then((dashboard) {
+      sl<AppState>().updateEmployeeProfileImage(
+        dashboard.profile.profileImageUrl,
+      );
+      return dashboard;
+    });
   }
 
   Future<void> _refresh() async {
     setState(() {
-      _future = sl<EmployeeRepository>().getDashboard();
+      _future = sl<EmployeeRepository>().getDashboard().then((dashboard) {
+        sl<AppState>().updateEmployeeProfileImage(
+          dashboard.profile.profileImageUrl,
+        );
+        return dashboard;
+      });
     });
     await _future;
   }
 
-  Future<void> _logout(BuildContext context) async {
-    await sl<LogoutUsecase>()();
-    sl<AppState>().clearSession();
-    if (context.mounted) context.go('/login');
+  Future<void> _confirmLogout(BuildContext context) async {
+    await confirmEmployeeSignOut(context);
   }
 
   @override
@@ -54,7 +61,7 @@ class _HomeScreenState extends State<HomeScreen> {
           actions: [
             IconButton(
               tooltip: 'Log out',
-              onPressed: () => _logout(context),
+              onPressed: () => _confirmLogout(context),
               icon: const Icon(Icons.logout_rounded),
             ),
           ],
@@ -73,7 +80,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       : RefreshIndicator(
                           onRefresh: _refresh,
                           child: ListView(
-                            padding: const EdgeInsets.fromLTRB(16, 6, 16, 20),
+                            padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
                             children: [
                               _DashboardHeader(profile: data.profile),
                               const SizedBox(height: _sectionGap),
@@ -89,10 +96,19 @@ class _HomeScreenState extends State<HomeScreen> {
                                     Expanded(
                                       child: _QuickActionCard(
                                         icon: Icons.center_focus_strong_rounded,
-                                        label: 'Scan for Attendance',
-                                        helper: 'Tap to scan',
-                                        onTap: () =>
-                                            context.go('/scan-attendance'),
+                                        label: 'Clock Attendance',
+                                        helper: 'GPS check',
+                                        onTap: () {
+                                          final assignmentId =
+                                              data.todaySchedule?.assignmentId;
+                                          if (assignmentId != null) {
+                                            context.go(
+                                              '/scan-attendance?shift_assignment_id=$assignmentId',
+                                            );
+                                          } else {
+                                            context.go('/scan-attendance');
+                                          }
+                                        },
                                       ),
                                     ),
                                     const SizedBox(width: 10),
@@ -106,7 +122,14 @@ class _HomeScreenState extends State<HomeScreen> {
                                 ),
                               ),
                               const SizedBox(height: _sectionGap),
-                              _PerformanceCard(performance: data.performance),
+                              EmployeePerformanceChart(
+                                onTime: data.performance.onTime,
+                                late: data.performance.late,
+                                undertime: data.performance.undertime,
+                                overtime: data.performance.overtime,
+                                absent: data.performance.absent,
+                                hasData: data.performance.hasData,
+                              ),
                             ],
                           ),
                         ),
@@ -123,34 +146,50 @@ class _DashboardHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        EmployeeAvatar(
-          imageUrl: profile.profileImageUrl,
-          name: profile.fullName,
-          size: 62,
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Hello, Barista!',
-                style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: const Color(0xFF6B7280),
-                    ),
+    final businessName = profile.businessName.trim();
+    final appState = sl<AppState>();
+
+    return ListenableBuilder(
+      listenable: appState,
+      builder: (context, _) {
+        final avatarUrl = appState.resolveEmployeeAvatarUrl(
+          profile.profileImageUrl,
+        );
+        return Row(
+          children: [
+            EmployeeAvatar(
+              imageUrl: avatarUrl,
+              name: profile.fullName,
+              size: 62,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    businessName.isNotEmpty ? businessName : 'Welcome back',
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: const Color(0xFF6B7280),
+                        ),
+                  ),
+                  Text(
+                    profile.fullName,
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                  ),
+                ],
               ),
-              Text(
-                profile.fullName,
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w700,
-                    ),
-              ),
-            ],
-          ),
-        ),
-      ],
+            ),
+            BusinessLogo(
+              logoUrl: profile.branding?.logoUrl,
+              height: 44,
+              width: 44,
+            ),
+          ],
+        );
+      },
     );
   }
 }
@@ -165,7 +204,7 @@ class _ScheduleHero extends StatelessWidget {
   Widget build(BuildContext context) {
     final primary = employeePrimary(data.profile.branding, context);
     return InkWell(
-      borderRadius: BorderRadius.circular(16),
+      borderRadius: BorderRadius.circular(18),
       onTap: () => context.go('/schedule'),
       child: Container(
         width: double.infinity,
@@ -173,7 +212,7 @@ class _ScheduleHero extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
         decoration: BoxDecoration(
           color: primary.withValues(alpha: 0.72),
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(18),
           boxShadow: [
             BoxShadow(
               color: primary.withValues(alpha: 0.16),
@@ -215,7 +254,7 @@ class _ScheduleHero extends StatelessWidget {
                   const SizedBox(height: 6),
                   Text(
                     item == null
-                        ? 'No assigned shift today'
+                        ? 'No assigned shift today · Tap to view all'
                         : '${item!.shiftName} - ${item!.startLabel} to ${item!.endLabel}',
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
@@ -259,7 +298,7 @@ class _AttendanceStatusCard extends StatelessWidget {
             width: 44,
             decoration: BoxDecoration(
               color: color.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(14),
+              borderRadius: BorderRadius.circular(12),
             ),
             child: Icon(Icons.fact_check_rounded, color: color),
           ),
@@ -309,10 +348,10 @@ class _QuickActionCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return InkWell(
-      borderRadius: BorderRadius.circular(16),
+      borderRadius: BorderRadius.circular(18),
       onTap: onTap,
       child: EmployeeCard(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
@@ -320,22 +359,13 @@ class _QuickActionCard extends StatelessWidget {
               height: 64,
               width: 64,
               decoration: BoxDecoration(
-                color: Theme.of(context)
-                    .colorScheme
-                    .primary
-                    .withValues(alpha: 0.08),
+                color: EmployeeColors.iconWell,
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: Theme.of(context)
-                      .colorScheme
-                      .primary
-                      .withValues(alpha: 0.18),
-                ),
               ),
               child: Icon(
                 icon,
-                size: 36,
-                color: Theme.of(context).colorScheme.primary,
+                size: 32,
+                color: EmployeeColors.primary,
               ),
             ),
             const SizedBox(height: 8),
@@ -374,10 +404,10 @@ class _SalaryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return InkWell(
-      borderRadius: BorderRadius.circular(16),
+      borderRadius: BorderRadius.circular(18),
       onTap: onTap,
       child: EmployeeCard(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
@@ -390,6 +420,7 @@ class _SalaryCard extends StatelessWidget {
                     money(value),
                     style: Theme.of(context).textTheme.titleLarge?.copyWith(
                           fontWeight: FontWeight.w700,
+                          color: EmployeeColors.success,
                         ),
                     textAlign: TextAlign.center,
                   ),
@@ -417,104 +448,6 @@ class _SalaryCard extends StatelessWidget {
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _PerformanceCard extends StatelessWidget {
-  const _PerformanceCard({required this.performance});
-
-  final EmployeePerformanceSummary performance;
-
-  @override
-  Widget build(BuildContext context) {
-    final values = [
-      ('On Time', performance.onTime, const Color(0xFF39D92F)),
-      ('Late', performance.late, const Color(0xFFF7C873)),
-      ('Under', performance.undertime, const Color(0xFFF97316)),
-      ('Over', performance.overtime, const Color(0xFF4D9A21)),
-      ('Absent', performance.absent, const Color(0xFFCC1111)),
-    ];
-    final maxValue = values.map((item) => item.$2).fold<int>(
-        1, (previous, current) => previous > current ? previous : current);
-
-    return EmployeeCard(
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            'Performance Overview',
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w700,
-                ),
-          ),
-          const SizedBox(height: 8),
-          Container(
-            height: 26,
-            decoration: BoxDecoration(
-              color: const Color(0xFFF8D777),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: const Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                Text('Weekly', style: TextStyle(fontSize: 11)),
-                Text('Monthly', style: TextStyle(fontSize: 11)),
-                Text('Yearly', style: TextStyle(fontSize: 11)),
-              ],
-            ),
-          ),
-          const SizedBox(height: 14),
-          if (!performance.hasData)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 24),
-              child: Center(child: Text('No attendance records yet.')),
-            )
-          else
-            SizedBox(
-              height: 150,
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: values
-                    .map(
-                      (item) => Expanded(
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 4),
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.end,
-                            children: [
-                              Flexible(
-                                child: FractionallySizedBox(
-                                  heightFactor:
-                                      (item.$2 / maxValue).clamp(0.06, 1),
-                                  child: Container(
-                                    width: double.infinity,
-                                    decoration: BoxDecoration(
-                                      color: item.$3,
-                                      borderRadius: const BorderRadius.vertical(
-                                        top: Radius.circular(4),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                item.$1,
-                                textAlign: TextAlign.center,
-                                style: const TextStyle(fontSize: 10),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    )
-                    .toList(),
-              ),
-            ),
-        ],
       ),
     );
   }
