@@ -56,6 +56,7 @@ export function OwnerLayout() {
   const { data: me } = useQuery({
     queryKey: ME_QUERY_KEY,
     queryFn: getMe,
+    refetchOnWindowFocus: true,
   });
   const branding = me?.branding;
   const theme = branding?.theme;
@@ -118,21 +119,25 @@ export function OwnerLayout() {
           })}
 
           <div className="mt-auto px-8 pb-7 pt-4">
-            {ownerProfileImage && (
-              <div className="mb-4 flex items-center gap-3 rounded-xl bg-white/10 p-3">
+            <div className="mb-4 flex items-center gap-3 rounded-xl bg-white/10 p-3">
+              {ownerProfileImage ? (
                 <img
                   className="h-9 w-9 rounded-full object-cover"
                   src={ownerProfileImage}
                   alt={me?.full_name ?? "Owner profile"}
                 />
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-white">
-                    {me?.full_name ?? "Owner"}
-                  </p>
-                  <p className="text-xs text-white/60">Account owner</p>
+              ) : (
+                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-white/20 text-sm font-semibold text-white">
+                  {(me?.full_name ?? "O").slice(0, 1).toUpperCase()}
                 </div>
+              )}
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium text-white">
+                  {me?.full_name ?? "Owner"}
+                </p>
+                <p className="text-xs text-white/60">Account owner</p>
               </div>
-            )}
+            </div>
             <button
               className="flex h-11 w-full items-center gap-3 rounded-xl px-2 text-[15px] font-medium text-white/75 transition hover:bg-white/10 hover:text-white"
               onClick={() => setSignOutOpen(true)}

@@ -50,6 +50,21 @@ class EmployeeLocationService {
     }
   }
 
+  Future<EmployeeLocationSnapshot> freshPositionForAttendance({
+    required double geofenceRadiusM,
+    double maxAccuracyM = 50,
+  }) async {
+    final position = await currentPosition();
+    if (position.accuracyM > maxAccuracyM ||
+        position.accuracyM > geofenceRadiusM) {
+      throw LocationAccuracyException(
+        'GPS signal is too weak for attendance (±${position.accuracyM.toStringAsFixed(0)} m). '
+        'Move to an open area and try again.',
+      );
+    }
+    return position;
+  }
+
   Future<EmployeeLocationSnapshot> currentPosition() async {
     await ensurePermission();
     final position = await Geolocator.getCurrentPosition(
@@ -95,6 +110,14 @@ class LocationServiceException implements Exception {
 
 class LocationPermissionException implements Exception {
   const LocationPermissionException(this.message);
+  final String message;
+
+  @override
+  String toString() => message;
+}
+
+class LocationAccuracyException implements Exception {
+  const LocationAccuracyException(this.message);
   final String message;
 
   @override

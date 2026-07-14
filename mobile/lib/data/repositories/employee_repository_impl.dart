@@ -25,8 +25,19 @@ class EmployeeRepositoryImpl implements EmployeeRepository {
   }
 
   @override
-  Future<List<EmployeeScheduleItem>> getSchedule() async {
-    final res = await _api.dio.get<Map<String, dynamic>>('/employee/schedule');
+  Future<List<EmployeeScheduleItem>> getSchedule({
+    DateTime? startDate,
+    DateTime? endDate,
+    bool activeOnly = false,
+  }) async {
+    final res = await _api.dio.get<Map<String, dynamic>>(
+      '/employee/schedule',
+      queryParameters: {
+        if (startDate != null) 'start_date': _apiDate(startDate),
+        if (endDate != null) 'end_date': _apiDate(endDate),
+        if (activeOnly) 'active_only': true,
+      },
+    );
     final items = res.data!['items'] as List<dynamic>? ?? [];
     return items
         .map((item) => _scheduleFromJson(item as Map<String, dynamic>))
@@ -81,6 +92,14 @@ class EmployeeRepositoryImpl implements EmployeeRepository {
     final res = await _api.dio.post<Map<String, dynamic>>(
       '/employee/profile/image',
       data: {'image_data': imageData},
+    );
+    return _profileFromJson(res.data!);
+  }
+
+  @override
+  Future<EmployeeProfile> removeProfileImage() async {
+    final res = await _api.dio.delete<Map<String, dynamic>>(
+      '/employee/profile/image',
     );
     return _profileFromJson(res.data!);
   }
@@ -203,6 +222,7 @@ EmployeeScheduleItem _scheduleFromJson(Map<String, dynamic> json) {
     endTime: json['end_time'] as String? ?? '',
     startLabel: json['start_label'] as String? ?? '',
     endLabel: json['end_label'] as String? ?? '',
+    status: json['status'] as String? ?? 'upcoming',
     locationLabel: json['location_label'] as String?,
     locationAddress: json['location_address'] as String?,
     holidayName: json['holiday_name'] as String?,
@@ -308,6 +328,11 @@ BusinessBrandingSettings? _brandingFromJson(Map<String, dynamic> data) {
 DateTime? _date(String? value) => value == null ? null : DateTime.tryParse(value);
 
 DateTime _requiredDate(String? value) => _date(value) ?? DateTime.now();
+
+String _apiDate(DateTime value) =>
+    '${value.year.toString().padLeft(4, '0')}-'
+    '${value.month.toString().padLeft(2, '0')}-'
+    '${value.day.toString().padLeft(2, '0')}';
 
 DateTime? _dateTime(String? value) {
   if (value == null) return null;

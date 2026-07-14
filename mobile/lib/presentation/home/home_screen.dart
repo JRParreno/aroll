@@ -1,3 +1,4 @@
+import 'package:aroll_mobile/core/app_state.dart';
 import 'package:aroll_mobile/core/di/injection.dart';
 import 'package:aroll_mobile/domain/entities/employee_portal.dart';
 import 'package:aroll_mobile/domain/entities/user_session.dart';
@@ -24,12 +25,22 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    _future = sl<EmployeeRepository>().getDashboard();
+    _future = sl<EmployeeRepository>().getDashboard().then((dashboard) {
+      sl<AppState>().updateEmployeeProfileImage(
+        dashboard.profile.profileImageUrl,
+      );
+      return dashboard;
+    });
   }
 
   Future<void> _refresh() async {
     setState(() {
-      _future = sl<EmployeeRepository>().getDashboard();
+      _future = sl<EmployeeRepository>().getDashboard().then((dashboard) {
+        sl<AppState>().updateEmployeeProfileImage(
+          dashboard.profile.profileImageUrl,
+        );
+        return dashboard;
+      });
     });
     await _future;
   }
@@ -136,39 +147,49 @@ class _DashboardHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final businessName = profile.businessName.trim();
-    return Row(
-      children: [
-        EmployeeAvatar(
-          imageUrl: profile.profileImageUrl,
-          name: profile.fullName,
-          size: 62,
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                businessName.isNotEmpty ? businessName : 'Welcome back',
-                style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: const Color(0xFF6B7280),
-                    ),
+    final appState = sl<AppState>();
+
+    return ListenableBuilder(
+      listenable: appState,
+      builder: (context, _) {
+        final avatarUrl = appState.resolveEmployeeAvatarUrl(
+          profile.profileImageUrl,
+        );
+        return Row(
+          children: [
+            EmployeeAvatar(
+              imageUrl: avatarUrl,
+              name: profile.fullName,
+              size: 62,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    businessName.isNotEmpty ? businessName : 'Welcome back',
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: const Color(0xFF6B7280),
+                        ),
+                  ),
+                  Text(
+                    profile.fullName,
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                  ),
+                ],
               ),
-              Text(
-                profile.fullName,
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w700,
-                    ),
-              ),
-            ],
-          ),
-        ),
-        BusinessLogo(
-          logoUrl: profile.branding?.logoUrl,
-          height: 44,
-          width: 44,
-        ),
-      ],
+            ),
+            BusinessLogo(
+              logoUrl: profile.branding?.logoUrl,
+              height: 44,
+              width: 44,
+            ),
+          ],
+        );
+      },
     );
   }
 }
@@ -184,13 +205,7 @@ class _ScheduleHero extends StatelessWidget {
     final primary = employeePrimary(data.profile.branding, context);
     return InkWell(
       borderRadius: BorderRadius.circular(18),
-      onTap: () {
-        if (item != null) {
-          context.push('/schedule/detail', extra: item);
-          return;
-        }
-        context.go('/schedule');
-      },
+      onTap: () => context.go('/schedule'),
       child: Container(
         width: double.infinity,
         constraints: const BoxConstraints(minHeight: 132),
@@ -239,7 +254,7 @@ class _ScheduleHero extends StatelessWidget {
                   const SizedBox(height: 6),
                   Text(
                     item == null
-                        ? 'No assigned shift today'
+                        ? 'No assigned shift today · Tap to view all'
                         : '${item!.shiftName} - ${item!.startLabel} to ${item!.endLabel}',
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,

@@ -62,3 +62,4 @@ class UserMeResponse(BaseModel):
     business_code: str | None = None
     setup_completed_at: datetime | None = None
     branding: BusinessBrandingSettings | None = None
+    profile_image_url: str | None = None

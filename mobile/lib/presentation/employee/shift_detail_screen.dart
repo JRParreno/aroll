@@ -9,6 +9,7 @@ class ShiftDetailScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final statusStyle = employeeScheduleStatusStyle(item.status);
     return EmployeeScaffold(
       title: 'Shift Details',
       selectedIndex: 0,
@@ -20,11 +21,21 @@ class ShiftDetailScreen extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  item.shiftName,
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.w700,
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        item.shiftName,
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
                       ),
+                    ),
+                    EmployeeStatusChip(
+                      label: statusStyle.label,
+                      color: statusStyle.color,
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 8),
                 EmployeeInfoRow(

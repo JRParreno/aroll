@@ -18,7 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { changePassword, getAccountSettings, updateAccountSettings } from "@/lib/api";
+import { changePassword, getAccountSettings, removeOwnerProfileImage, updateAccountSettings, updateOwnerProfileImage } from "@/lib/api";
 import { canSubmitPasswordChange } from "@/lib/passwordValidation";
 import { ME_QUERY_KEY, setAuthSession } from "@/lib/authSession";
 
@@ -33,6 +33,8 @@ export function OwnerAccountSettingsPage() {
     business_type: "",
   });
   const [ownerProfileImage, setOwnerProfileImage] = useState<string | null>(null);
+  const [photoHydrated, setPhotoHydrated] = useState(false);
+  const [photoUpdating, setPhotoUpdating] = useState(false);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -40,6 +42,7 @@ export function OwnerAccountSettingsPage() {
   const { data, isLoading, isError } = useQuery({
     queryKey: ["account-settings"],
     queryFn: getAccountSettings,
+    refetchOnWindowFocus: true,
   });
 
   useEffect(() => {
@@ -52,10 +55,15 @@ export function OwnerAccountSettingsPage() {
       address: data.address,
       business_type: data.business_type ?? "",
     });
+  }, [data]);
+
+  useEffect(() => {
+    if (!data || photoHydrated || photoUpdating) return;
     setOwnerProfileImage(
       data.branding?.owner_profile_image_url ?? defaultBusinessBranding.owner_profile_image_url
     );
-  }, [data]);
+    setPhotoHydrated(true);
+  }, [data, photoHydrated, photoUpdating]);
 
   const save = useMutation({
     mutationFn: () =>
@@ -97,6 +105,41 @@ export function OwnerAccountSettingsPage() {
     confirmPassword,
   });
 
+  async function handleOwnerProfileImageChange(value: string | null) {
+    const previous = ownerProfileImage;
+    setOwnerProfileImage(value);
+    setPhotoUpdating(true);
+    try {
+      let imageUrl: string | null = null;
+      if (value) {
+        const result = await updateOwnerProfileImage(value);
+        imageUrl = result.owner_profile_image_url;
+        setOwnerProfileImage(imageUrl);
+      } else {
+        await removeOwnerProfileImage();
+        setOwnerProfileImage(null);
+      }
+      toast.success(value ? "Profile picture updated" : "Profile picture removed");
+      qc.setQueryData(ME_QUERY_KEY, (current) => {
+        if (!current?.branding) return current;
+        return {
+          ...current,
+          branding: {
+            ...current.branding,
+            owner_profile_image_url: imageUrl,
+          },
+        };
+      });
+      qc.invalidateQueries({ queryKey: ["account-settings"] });
+      qc.invalidateQueries({ queryKey: ME_QUERY_KEY });
+    } catch {
+      setOwnerProfileImage(previous);
+      toast.error("Failed to update profile picture");
+    } finally {
+      setPhotoUpdating(false);
+    }
+  }
+
   return (
     <OwnerPage>
       <OwnerPageContent className="max-w-3xl">
@@ -128,7 +171,7 @@ export function OwnerAccountSettingsPage() {
                 <ImageUploadField
                   label="Owner Profile Picture"
                   value={ownerProfileImage}
-                  onChange={setOwnerProfileImage}
+                  onChange={handleOwnerProfileImageChange}
                 />
               </CardContent>
             </Card>

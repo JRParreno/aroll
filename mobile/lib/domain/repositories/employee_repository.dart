@@ -5,7 +5,11 @@ abstract class EmployeeRepository {
 
   Future<EmployeeProfile> getProfile();
 
-  Future<List<EmployeeScheduleItem>> getSchedule();
+  Future<List<EmployeeScheduleItem>> getSchedule({
+    DateTime? startDate,
+    DateTime? endDate,
+    bool activeOnly = false,
+  });
 
   Future<List<EmployeeShiftHistoryItem>> getShiftHistory();
 
@@ -16,6 +20,8 @@ abstract class EmployeeRepository {
   Future<EmployeeProfile> updateFaceRegistration(String status);
 
   Future<EmployeeProfile> updateProfileImage(String imageData);
+
+  Future<EmployeeProfile> removeProfileImage();
 
   Future<String> downloadPayslipPdf();
 

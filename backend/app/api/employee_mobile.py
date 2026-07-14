@@ -5,10 +5,15 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel
+
+from app.schemas.profile_image import ProfileImageRequest
+from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
 from app.api.owner_reports import _calculate_employee_payslip
 from app.core.deps import get_current_user
+from app.core.profile_image import validate_profile_image_data
+from app.core.timezone import business_today
 from app.db.session import get_db
 from app.models.attendance import AttendanceRecord
 from app.models.business import Business, BusinessLocation, BusinessRegistration
@@ -33,10 +38,6 @@ router = APIRouter(prefix="/employee", tags=["employee-mobile"])
 
 class FaceRegistrationRequest(BaseModel):
     status: Literal["completed", "skipped"]
-
-
-class ProfileImageRequest(BaseModel):
-    image_data: str
 
 
 def _current_employee(
@@ -160,6 +161,30 @@ def _holiday_map(db: Session, business_id: uuid.UUID) -> dict[date, Holiday]:
     return {holiday.holiday_date: holiday for holiday in holidays}
 
 
+def _schedule_status(
+    db: Session,
+    employee: Employee,
+    assignment: ShiftAssignment,
+    today: date,
+) -> str:
+    if assignment.work_date > today:
+        return "upcoming"
+    if assignment.work_date < today:
+        return "completed"
+    record = (
+        db.query(AttendanceRecord)
+        .filter(
+            AttendanceRecord.shift_assignment_id == assignment.id,
+            AttendanceRecord.employee_id == employee.id,
+        )
+        .order_by(AttendanceRecord.created_at.desc())
+        .first()
+    )
+    if record is not None and record.status == AttendanceStatus.complete:
+        return "completed"
+    return "today"
+
+
 def _schedule_item(
     db: Session,
     assignment: ShiftAssignment,
@@ -207,25 +232,36 @@ def _schedule_item(
 def _employee_schedule(
     db: Session,
     employee: Employee,
-    start_date: date,
-    end_date: date,
+    *,
+    start_date: date | None = None,
+    end_date: date | None = None,
+    today: date | None = None,
 ) -> list[dict]:
     location = _primary_location(db, employee.business_id)
     holidays = _holiday_map(db, employee.business_id)
-    rows = (
+    work_today = today or date.today()
+    query = (
         db.query(ShiftAssignment, Shift)
         .join(Shift, ShiftAssignment.shift_id == Shift.id)
         .filter(
             ShiftAssignment.employee_id == employee.id,
             Shift.business_id == employee.business_id,
-            ShiftAssignment.work_date >= start_date,
-            ShiftAssignment.work_date <= end_date,
         )
-        .order_by(ShiftAssignment.work_date.asc(), Shift.start_time.asc())
-        .all()
     )
+    if start_date is not None:
+        query = query.filter(ShiftAssignment.work_date >= start_date)
+    if end_date is not None:
+        query = query.filter(ShiftAssignment.work_date <= end_date)
+    rows = query.order_by(
+        ShiftAssignment.work_date.asc(), Shift.start_time.asc()
+    ).all()
     return [
-        _schedule_item(db, assignment, shift, location, holidays.get(assignment.work_date))
+        {
+            **_schedule_item(
+                db, assignment, shift, location, holidays.get(assignment.work_date)
+            ),
+            "status": _schedule_status(db, employee, assignment, work_today),
+        }
         for assignment, shift in rows
     ]
 
@@ -249,36 +285,68 @@ def _overtime_minutes(
     return round(max(overtime / 60, 0), 2)
 
 
-def _shift_history_rows(db: Session, employee: Employee, limit: int = 100) -> list[dict]:
+def _shift_history_rows(
+    db: Session,
+    employee: Employee,
+    *,
+    today: date | None = None,
+    limit: int = 100,
+) -> list[dict]:
+    """Past and completed shift assignments with linked attendance when available."""
+    work_today = today or date.today()
     holidays = _holiday_map(db, employee.business_id)
     rows = (
-        db.query(AttendanceRecord, ShiftAssignment, Shift)
-        .outerjoin(ShiftAssignment, AttendanceRecord.shift_assignment_id == ShiftAssignment.id)
-        .outerjoin(Shift, ShiftAssignment.shift_id == Shift.id)
-        .filter(
-            AttendanceRecord.business_id == employee.business_id,
-            AttendanceRecord.employee_id == employee.id,
+        db.query(ShiftAssignment, Shift, AttendanceRecord)
+        .join(Shift, ShiftAssignment.shift_id == Shift.id)
+        .outerjoin(
+            AttendanceRecord,
+            and_(
+                AttendanceRecord.shift_assignment_id == ShiftAssignment.id,
+                AttendanceRecord.employee_id == employee.id,
+            ),
         )
-        .order_by(AttendanceRecord.created_at.desc())
+        .filter(
+            ShiftAssignment.employee_id == employee.id,
+            Shift.business_id == employee.business_id,
+            or_(
+                ShiftAssignment.work_date < work_today,
+                AttendanceRecord.status == AttendanceStatus.complete,
+            ),
+        )
+        .order_by(ShiftAssignment.work_date.desc(), Shift.start_time.desc())
         .limit(limit)
         .all()
     )
 
     items = []
-    for record, assignment, shift in rows:
-        work_date = assignment.work_date if assignment else record.created_at.date()
+    for assignment, shift, record in rows:
+        work_date = assignment.work_date
         holiday = holidays.get(work_date)
+        if record is None:
+            attendance_status = AttendanceStatus.absent.value
+            record_id = str(assignment.id)
+            time_in = None
+            time_out = None
+            overtime = 0.0
+        else:
+            attendance_status = record.status.value
+            record_id = str(record.id)
+            time_in = _dt_label(record.time_in)
+            time_out = _dt_label(record.time_out)
+            overtime = _overtime_minutes(record, assignment, shift)
+
         items.append(
             {
-                "id": str(record.id),
+                "id": record_id,
+                "assignment_id": str(assignment.id),
                 "date": work_date.isoformat(),
-                "shift_name": shift.name if shift else None,
-                "shift_start": _time_label(shift.start_time) if shift else None,
-                "shift_end": _time_label(shift.end_time) if shift else None,
-                "time_in": _dt_label(record.time_in),
-                "time_out": _dt_label(record.time_out),
-                "status": record.status.value,
-                "overtime_minutes": _overtime_minutes(record, assignment, shift),
+                "shift_name": shift.name,
+                "shift_start": _time_label(shift.start_time),
+                "shift_end": _time_label(shift.end_time),
+                "time_in": time_in,
+                "time_out": time_out,
+                "status": attendance_status,
+                "overtime_minutes": overtime,
                 "holiday_name": holiday.name if holiday else None,
             }
         )
@@ -401,13 +469,21 @@ def update_profile_image(
     user: Annotated[User, Depends(get_current_user)],
 ):
     employee, business = _current_employee(db, user)
-    image_data = body.image_data.strip()
-    if not image_data.startswith("data:image/") or "," not in image_data:
-        raise HTTPException(400, "Invalid image data")
-    if len(image_data) > 2_500_000:
-        raise HTTPException(400, "Image is too large")
+    image_data = validate_profile_image_data(body.image_data)
 
     employee.profile_image_url = image_data
+    db.commit()
+    db.refresh(employee)
+    return _employee_profile_response(db, employee, business)
+
+
+@router.delete("/profile/image")
+def remove_profile_image(
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+):
+    employee, business = _current_employee(db, user)
+    employee.profile_image_url = None
     db.commit()
     db.refresh(employee)
     return _employee_profile_response(db, employee, business)
@@ -419,8 +495,14 @@ def dashboard(
     user: Annotated[User, Depends(get_current_user)],
 ):
     employee, business = _current_employee(db, user)
-    today = date.today()
-    schedule = _employee_schedule(db, employee, today, today + timedelta(days=7))
+    today = business_today(business.timezone)
+    schedule = _employee_schedule(
+        db,
+        employee,
+        start_date=today,
+        end_date=today + timedelta(days=7),
+        today=today,
+    )
     payroll = _payroll_response(db, employee, business)
     return {
         "profile": _employee_profile_response(db, employee, business),
@@ -438,12 +520,25 @@ def schedule(
     user: Annotated[User, Depends(get_current_user)],
     start_date: date | None = None,
     end_date: date | None = None,
+    active_only: bool = False,
 ):
-    employee, _business = _current_employee(db, user)
-    today = date.today()
-    start = start_date or today - timedelta(days=30)
-    end = end_date or today + timedelta(days=90)
-    return {"items": _employee_schedule(db, employee, start, end)}
+    """Return shift assignments for the logged-in employee.
+
+    When active_only=true, only today and upcoming shifts are returned.
+    Completed and past assignments belong in shift-history.
+    """
+    employee, business = _current_employee(db, user)
+    today = business_today(business.timezone)
+    items = _employee_schedule(
+        db,
+        employee,
+        start_date=start_date,
+        end_date=end_date,
+        today=today,
+    )
+    if active_only:
+        items = [item for item in items if item["status"] in ("today", "upcoming")]
+    return {"items": items}
 
 
 @router.get("/shift-history")
@@ -451,8 +546,9 @@ def shift_history(
     db: Annotated[Session, Depends(get_db)],
     user: Annotated[User, Depends(get_current_user)],
 ):
-    employee, _business = _current_employee(db, user)
-    return {"items": _shift_history_rows(db, employee)}
+    employee, business = _current_employee(db, user)
+    today = business_today(business.timezone)
+    return {"items": _shift_history_rows(db, employee, today=today)}
 
 
 @router.get("/payroll")
@@ -483,6 +579,7 @@ def worksite(
     db: Annotated[Session, Depends(get_db)],
     user: Annotated[User, Depends(get_current_user)],
 ):
+    """Return the primary work-site coordinates and geofence radius for display."""
     _employee, business = _current_employee(db, user)
     return worksite_for_business(db, business.id)
 
@@ -493,16 +590,15 @@ def clock_in(
     db: Annotated[Session, Depends(get_db)],
     user: Annotated[User, Depends(get_current_user)],
 ):
-    employee, _business = _current_employee(db, user)
-    assignment_id = (
-        uuid.UUID(body.shift_assignment_id) if body.shift_assignment_id else None
-    )
+    """Clock in using device GPS; server validates geofence and shift window."""
+    employee, business = _current_employee(db, user)
     return clock_in_employee(
         db,
         employee,
         latitude=body.latitude,
         longitude=body.longitude,
-        shift_assignment_id=assignment_id,
+        shift_assignment_id=body.shift_assignment_id,
+        business_timezone=business.timezone,
     )
 
 
@@ -512,12 +608,14 @@ def clock_out(
     db: Annotated[Session, Depends(get_db)],
     user: Annotated[User, Depends(get_current_user)],
 ):
-    employee, _business = _current_employee(db, user)
+    """Clock out using device GPS; server validates geofence before closing the record."""
+    employee, business = _current_employee(db, user)
     return clock_out_employee(
         db,
         employee,
         latitude=body.latitude,
         longitude=body.longitude,
+        business_timezone=business.timezone,
     )
 
 

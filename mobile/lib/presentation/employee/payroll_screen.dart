@@ -1,3 +1,4 @@
+import 'package:aroll_mobile/core/app_state.dart';
 import 'package:aroll_mobile/core/di/injection.dart';
 import 'package:aroll_mobile/domain/entities/employee_portal.dart';
 import 'package:aroll_mobile/domain/repositories/employee_repository.dart';
@@ -27,8 +28,10 @@ class _EmployeePayrollScreenState extends State<EmployeePayrollScreen> {
       repo.getProfile(),
       repo.getPayroll(),
     ]);
+    final profile = results[0] as EmployeeProfile;
+    sl<AppState>().updateEmployeeProfileImage(profile.profileImageUrl);
     return _PayrollData(
-      profile: results[0] as EmployeeProfile,
+      profile: profile,
       payroll: results[1] as EmployeePayroll,
     );
   }
@@ -85,27 +88,37 @@ class _PayrollHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        EmployeeAvatar(
-          imageUrl: profile.profileImageUrl,
-          name: profile.fullName,
-          size: 78,
-        ),
-        const SizedBox(height: 6),
-        Text(
-          'Welcome back!',
-          style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                color: const Color(0xFF6B7280),
-              ),
-        ),
-        Text(
-          profile.fullName,
-          style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                fontWeight: FontWeight.w700,
-              ),
-        ),
-      ],
+    final appState = sl<AppState>();
+
+    return ListenableBuilder(
+      listenable: appState,
+      builder: (context, _) {
+        final avatarUrl = appState.resolveEmployeeAvatarUrl(
+          profile.profileImageUrl,
+        );
+        return Column(
+          children: [
+            EmployeeAvatar(
+              imageUrl: avatarUrl,
+              name: profile.fullName,
+              size: 78,
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Welcome back!',
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: const Color(0xFF6B7280),
+                  ),
+            ),
+            Text(
+              profile.fullName,
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+            ),
+          ],
+        );
+      },
     );
   }
 }

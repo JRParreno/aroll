@@ -111,17 +111,56 @@ class _ScanAttendanceScreenState extends State<ScanAttendanceScreen> {
     return widget.shiftAssignmentId ?? _todaySchedule?.assignmentId;
   }
 
-  Future<void> _clockIn() async {
-    final location = _deviceLocation;
-    if (location == null) {
-      setState(() => _actionError = 'Refresh your location before clocking in.');
-      return;
+  Future<EmployeeLocationSnapshot?> _captureFreshLocation() async {
+    if (_worksite == null) return null;
+    try {
+      final position = await _locationService.freshPositionForAttendance(
+        geofenceRadiusM: _worksite!.geofenceRadiusM.toDouble(),
+      );
+      final preview = _locationService.preview(
+        device: position,
+        centerLatitude: _worksite!.latitude,
+        centerLongitude: _worksite!.longitude,
+        radiusM: _worksite!.geofenceRadiusM.toDouble(),
+      );
+      if (!mounted) return null;
+      setState(() {
+        _deviceLocation = position;
+        _geofencePreview = preview;
+        _actionError = null;
+      });
+      return position;
+    } catch (error) {
+      if (!mounted) return null;
+      setState(() {
+        _actionError = _messageFromError(
+          error,
+          fallback: 'Unable to read your GPS location.',
+        );
+      });
+      return null;
     }
+  }
+
+  Future<void> _clockIn() async {
     setState(() {
       _submitting = true;
       _actionError = null;
       _successMessage = null;
     });
+    final location = await _captureFreshLocation();
+    if (location == null) {
+      if (mounted) setState(() => _submitting = false);
+      return;
+    }
+    if (_geofencePreview?.insideGeofence != true) {
+      setState(() {
+        _submitting = false;
+        _actionError =
+            'You must be inside the work-site geofence to clock in.';
+      });
+      return;
+    }
     try {
       final result = await _repo.clockIn(
         latitude: location.latitude,
@@ -153,16 +192,24 @@ class _ScanAttendanceScreenState extends State<ScanAttendanceScreen> {
   }
 
   Future<void> _clockOut() async {
-    final location = _deviceLocation;
-    if (location == null) {
-      setState(() => _actionError = 'Refresh your location before clocking out.');
-      return;
-    }
     setState(() {
       _submitting = true;
       _actionError = null;
       _successMessage = null;
     });
+    final location = await _captureFreshLocation();
+    if (location == null) {
+      if (mounted) setState(() => _submitting = false);
+      return;
+    }
+    if (_geofencePreview?.insideGeofence != true) {
+      setState(() {
+        _submitting = false;
+        _actionError =
+            'You must be inside the work-site geofence to clock out.';
+      });
+      return;
+    }
     try {
       final result = await _repo.clockOut(
         latitude: location.latitude,
@@ -194,7 +241,8 @@ class _ScanAttendanceScreenState extends State<ScanAttendanceScreen> {
 
   String _messageFromError(Object error, {required String fallback}) {
     if (error is LocationServiceException ||
-        error is LocationPermissionException) {
+        error is LocationPermissionException ||
+        error is LocationAccuracyException) {
       return error.toString();
     }
     if (error is DioException) {

@@ -14,6 +14,7 @@ class UserSession extends Equatable {
     this.setupCompletedAt,
     this.mustChangePassword = false,
     this.branding,
+    this.profileImageUrl,
   });
 
   final String userId;
@@ -28,6 +29,7 @@ class UserSession extends Equatable {
   final DateTime? setupCompletedAt;
   final bool mustChangePassword;
   final BusinessBrandingSettings? branding;
+  final String? profileImageUrl;
 
   bool get isOwner => role == 'owner' || role == 'manager';
   bool get isEmployee => role == 'employee';
@@ -35,6 +37,8 @@ class UserSession extends Equatable {
   UserSession copyWith({
     bool? mustChangePassword,
     DateTime? setupCompletedAt,
+    BusinessBrandingSettings? branding,
+    String? profileImageUrl,
   }) {
     return UserSession(
       userId: userId,
@@ -48,7 +52,8 @@ class UserSession extends Equatable {
       businessCode: businessCode,
       setupCompletedAt: setupCompletedAt ?? this.setupCompletedAt,
       mustChangePassword: mustChangePassword ?? this.mustChangePassword,
-      branding: branding,
+      branding: branding ?? this.branding,
+      profileImageUrl: profileImageUrl ?? this.profileImageUrl,
     );
   }
 
@@ -66,6 +71,7 @@ class UserSession extends Equatable {
         setupCompletedAt,
         mustChangePassword,
         branding,
+        profileImageUrl,
       ];
 }
 

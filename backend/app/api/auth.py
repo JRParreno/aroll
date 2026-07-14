@@ -47,6 +47,7 @@ def _employee_auth_context(
     full_name = None
     position = None
     business_name = None
+    profile_image_url = None
 
     if user.business_id:
         biz = db.get(Business, user.business_id)
@@ -58,6 +59,7 @@ def _employee_auth_context(
         employee_id = str(emp.id)
         full_name = emp.full_name
         position = emp.position_title
+        profile_image_url = emp.profile_image_url
 
     return {
         "employee_id": employee_id,
@@ -66,6 +68,7 @@ def _employee_auth_context(
         "position": position,
         "role": user.role.value,
         "business_name": business_name,
+        "profile_image_url": profile_image_url,
     }
 
 
@@ -91,6 +94,57 @@ def _resolve_login_user(db: Session, login_id: str) -> User | None:
         .filter(func.lower(User.email) == normalized)
         .first()
     )
+
+
+def _normalize_business_code(value: str) -> str:
+    return value.strip().upper().replace(" ", "")
+
+
+def _resolve_business_owner(
+    db: Session,
+    email: str,
+    business_code: str,
+) -> tuple[User, Business] | None:
+    normalized_email = str(email).lower().strip()
+    normalized_code = _normalize_business_code(business_code)
+
+    business = (
+        db.query(Business)
+        .filter(func.upper(Business.business_code) == normalized_code)
+        .first()
+    )
+    if business is None:
+        return None
+
+    user = (
+        db.query(User)
+        .filter(
+            User.business_id == business.id,
+            func.lower(User.email) == normalized_email,
+            User.role.in_((UserRole.owner, UserRole.manager)),
+        )
+        .first()
+    )
+    if user is None:
+        return None
+    return user, business
+
+
+def _authenticate_owner_password(
+    user: User,
+    password: str,
+    *,
+    business_code: str,
+) -> bool:
+    if _authenticate_password(user, password):
+        return True
+
+    # First-time owners are provisioned with the business code as their password.
+    # Accept the code from the business-code field when a custom password fails.
+    if user.must_change_password:
+        return _authenticate_password(user, _normalize_business_code(business_code))
+
+    return False
 
 
 def _authenticate_password(user: User, password: str) -> bool:
@@ -150,31 +204,26 @@ def business_owner_login(
     body: BusinessOwnerLoginRequest,
     db: Annotated[Session, Depends(get_db)],
 ):
-    user = (
-        db.query(User)
-        .filter(User.email == body.email.lower().strip())
-        .first()
-    )
-    if user is None or user.role != UserRole.owner:
+    resolved = _resolve_business_owner(db, str(body.email), body.business_code)
+    if resolved is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid business code, email, or password",
         )
 
-    if user.business_id is None:
+    user, business = resolved
+
+    if not user.is_active:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid business code, email, or password",
         )
 
-    business = db.get(Business, user.business_id)
-    if business is None or business.business_code != body.business_code.strip():
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid business code, email, or password",
-        )
-
-    if not verify_password(body.password, user.password_hash):
+    if not _authenticate_owner_password(
+        user,
+        body.password,
+        business_code=business.business_code,
+    ):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid business code, email, or password",
@@ -233,4 +282,5 @@ def me(
         business_code=business_code,
         setup_completed_at=setup_completed_at,
         branding=_business_branding_response(business),
+        profile_image_url=ctx["profile_image_url"],
     )

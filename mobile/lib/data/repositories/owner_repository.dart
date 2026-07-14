@@ -107,6 +107,18 @@ class OwnerRepository {
               .get<Map<String, dynamic>>('/businesses/me/account-settings'))
           .data!;
 
+  Future<String> updateProfileImage(String imageData) async {
+    final response = await _api.dio.post<Map<String, dynamic>>(
+      '/businesses/me/profile/image',
+      data: {'image_data': imageData},
+    );
+    return response.data!['owner_profile_image_url'] as String;
+  }
+
+  Future<void> removeProfileImage() async {
+    await _api.dio.delete<void>('/businesses/me/profile/image');
+  }
+
   Future<Map<String, dynamic>> businessSettings() async =>
       (await _api.dio
               .get<Map<String, dynamic>>('/businesses/me/business-settings'))

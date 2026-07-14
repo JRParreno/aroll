@@ -117,6 +117,7 @@ export function OwnerEmployeesPage() {
   const { data: employees = [], isLoading } = useQuery({
     queryKey: ["employees", "all"],
     queryFn: () => listEmployees(true),
+    refetchOnWindowFocus: true,
   });
 
   const { data: positions = [] } = useQuery({

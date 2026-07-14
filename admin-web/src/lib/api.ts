@@ -60,6 +60,7 @@ export type UserMe = {
   business_code: string | null;
   setup_completed_at: string | null;
   branding?: BusinessBrandingSettings | null;
+  profile_image_url?: string | null;
 };
 
 export type Registration = {
@@ -150,6 +151,7 @@ export type Employee = {
   status: "invited" | "active" | "inactive";
   must_change_password: boolean;
   temporary_password: string | null;
+  profile_image_url: string | null;
 };
 
 export type OwnerPerformanceSummary = {
@@ -850,6 +852,21 @@ export async function getAccountSettings() {
 
 export async function updateAccountSettings(payload: AccountSettingsUpdate) {
   const { data } = await api.put("/businesses/me/account-settings", payload);
+  return data;
+}
+
+export async function updateOwnerProfileImage(imageData: string) {
+  const { data } = await api.post<{ owner_profile_image_url: string }>(
+    "/businesses/me/profile/image",
+    { image_data: imageData }
+  );
+  return data;
+}
+
+export async function removeOwnerProfileImage() {
+  const { data } = await api.delete<{ owner_profile_image_url: null }>(
+    "/businesses/me/profile/image"
+  );
   return data;
 }
 

@@ -1,8 +1,8 @@
-import 'dart:convert';
 import 'dart:math' as math;
-import 'dart:typed_data';
 
+import 'package:aroll_mobile/core/utils/data_uri_image.dart';
 import 'package:aroll_mobile/core/utils/format.dart';
+import 'package:aroll_mobile/domain/entities/employee_portal.dart';
 import 'package:aroll_mobile/domain/entities/user_session.dart';
 import 'package:aroll_mobile/presentation/auth/sign_out_dialog.dart';
 import 'package:flutter/material.dart';
@@ -121,8 +121,7 @@ class EmployeeBottomNav extends StatelessWidget {
   Widget build(BuildContext context) {
     final items = [
       const _NavItem(Icons.home_rounded, 'Home', '/home'),
-      const _NavItem(
-          Icons.assignment_rounded, 'Shift History', '/shift-history'),
+      const _NavItem(Icons.calendar_month_rounded, 'Schedule', '/schedule'),
       const _NavItem(Icons.face_retouching_natural, 'Scan', '/scan-attendance'),
       const _NavItem(Icons.payments_rounded, 'Payroll', '/payroll'),
       const _NavItem(Icons.person_rounded, 'Profile', '/profile'),
@@ -452,6 +451,220 @@ class EmployeeStatusChip extends StatelessWidget {
           fontSize: 12,
           fontWeight: FontWeight.w700,
         ),
+      ),
+    );
+  }
+}
+
+({String label, Color color}) employeeScheduleStatusStyle(String status) {
+  switch (status) {
+    case 'today':
+      return (label: 'Today', color: const Color(0xFF2563EB));
+    case 'completed':
+      return (label: 'Completed', color: const Color(0xFF16A34A));
+    default:
+      return (label: 'Upcoming', color: const Color(0xFF6B7280));
+  }
+}
+
+String employeeAttendanceHistoryLabel(String status) {
+  switch (status.toLowerCase()) {
+    case 'complete':
+      return 'Present';
+    case 'late':
+      return 'Late';
+    case 'absent':
+      return 'Absent';
+    case 'in_progress':
+      return 'In Progress';
+    case 'incomplete':
+      return 'Incomplete';
+    default:
+      return titleCase(status);
+  }
+}
+
+class EmployeeCoworkerStrip extends StatelessWidget {
+  const EmployeeCoworkerStrip({
+    super.key,
+    required this.coworkers,
+    this.maxVisible = 4,
+    this.onShowAll,
+  });
+
+  final List<EmployeeCoworker> coworkers;
+  final int maxVisible;
+  final VoidCallback? onShowAll;
+
+  List<EmployeeCoworker> get _others =>
+      coworkers.where((coworker) => !coworker.isCurrentEmployee).toList();
+
+  @override
+  Widget build(BuildContext context) {
+    final others = _others;
+    if (others.isEmpty) {
+      return const Text(
+        'No coworkers assigned for this shift yet.',
+        style: TextStyle(
+          color: EmployeeColors.textMuted,
+          fontSize: 12,
+          height: 1.35,
+        ),
+      );
+    }
+
+    final visible = others.take(maxVisible).toList();
+    final remaining = others.length - visible.length;
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: onShowAll ?? () => _showCoworkerSheet(context, others),
+      child: Row(
+        children: [
+          for (var i = 0; i < visible.length; i++)
+            Transform.translate(
+              offset: Offset(i == 0 ? 0 : -10.0 * i, 0),
+              child: EmployeeAvatar(
+                imageUrl: visible[i].profileImageUrl,
+                name: visible[i].fullName,
+                size: 34,
+              ),
+            ),
+          if (remaining > 0) ...[
+            const SizedBox(width: 6),
+            Container(
+              height: 34,
+              width: 34,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: EmployeeColors.chipFill,
+                shape: BoxShape.circle,
+                border: Border.all(color: EmployeeColors.border),
+              ),
+              child: Text(
+                '+$remaining',
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: EmployeeColors.textBody,
+                ),
+              ),
+            ),
+          ],
+          const Spacer(),
+          Text(
+            '${others.length} coworker${others.length == 1 ? '' : 's'}',
+            style: const TextStyle(
+              fontSize: 12,
+              color: EmployeeColors.textMuted,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const Icon(
+            Icons.chevron_right_rounded,
+            size: 18,
+            color: EmployeeColors.textMuted,
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showCoworkerSheet(
+    BuildContext context,
+    List<EmployeeCoworker> coworkers,
+  ) {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Working with',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                ),
+                const SizedBox(height: 12),
+                ...coworkers.map(
+                  (coworker) => Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: Row(
+                      children: [
+                        EmployeeAvatar(
+                          imageUrl: coworker.profileImageUrl,
+                          name: coworker.fullName,
+                          size: 40,
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            coworker.fullName,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 15,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class EmployeeSectionHeader extends StatelessWidget {
+  const EmployeeSectionHeader({
+    super.key,
+    required this.title,
+    this.subtitle,
+  });
+
+  final String title;
+  final String? subtitle;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(2, 4, 2, 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+              color: EmployeeColors.textPrimary,
+            ),
+          ),
+          if (subtitle != null) ...[
+            const SizedBox(height: 2),
+            Text(
+              subtitle!,
+              style: const TextStyle(
+                fontSize: 12,
+                color: EmployeeColors.textMuted,
+                height: 1.35,
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }
@@ -846,15 +1059,4 @@ Color? _hexColor(String? value) {
   final parsed = int.tryParse('FF$normalized', radix: 16);
   if (parsed == null) return null;
   return Color(parsed);
-}
-
-Uint8List? dataUriBytes(String? value) {
-  if (value == null || !value.startsWith('data:image/')) return null;
-  final commaIndex = value.indexOf(',');
-  if (commaIndex < 0 || commaIndex == value.length - 1) return null;
-  try {
-    return base64Decode(value.substring(commaIndex + 1));
-  } on FormatException {
-    return null;
-  }
 }

@@ -1,11 +1,16 @@
 import 'package:aroll_mobile/core/app_state.dart';
 import 'package:aroll_mobile/core/di/injection.dart';
+import 'package:aroll_mobile/core/location/business_location_defaults.dart';
+import 'package:aroll_mobile/core/location/business_location_geocoding.dart';
+import 'package:aroll_mobile/core/location/employee_location_service.dart';
 import 'package:aroll_mobile/data/repositories/owner_repository.dart';
 import 'package:aroll_mobile/presentation/owner/setup/holiday_setup_section.dart';
 import 'package:aroll_mobile/presentation/owner/setup/setup_wizard_constants.dart';
+import 'package:aroll_mobile/presentation/owner/widgets/business_location_map_picker.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 class OwnerSetupWizardScreen extends StatefulWidget {
   const OwnerSetupWizardScreen({super.key, this.initialStep = -1});
@@ -74,7 +79,10 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
   final _locationAddress = TextEditingController();
   final _locationLatitude = TextEditingController();
   final _locationLongitude = TextEditingController();
-  double _locationGeofence = 75;
+  double _locationGeofence = kDefaultGeofenceRadiusM.toDouble();
+  bool _locationLocating = false;
+
+  final _locationService = EmployeeLocationService();
 
   @override
   void initState() {
@@ -426,6 +434,44 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  Future<void> _useWizardCurrentLocation() async {
+    setState(() => _locationLocating = true);
+    try {
+      final position = await _locationService.currentPosition();
+      final address = await reverseGeocodeAddress(
+        position.latitude,
+        position.longitude,
+      );
+      if (!mounted) return;
+      setState(() {
+        _locationLatitude.text = position.latitude.toStringAsFixed(6);
+        _locationLongitude.text = position.longitude.toStringAsFixed(6);
+        if (address != null && address.trim().isNotEmpty) {
+          _locationAddress.text = address;
+        }
+      });
+      _showSnack('Current location set');
+    } catch (error) {
+      if (!mounted) return;
+      _showSnack('$error');
+    } finally {
+      if (mounted) setState(() => _locationLocating = false);
+    }
+  }
+
+  Future<void> _onWizardMapPositionChanged(LatLng position) async {
+    setState(() {
+      _locationLatitude.text = position.latitude.toStringAsFixed(6);
+      _locationLongitude.text = position.longitude.toStringAsFixed(6);
+    });
+    final address = await reverseGeocodeAddress(
+      position.latitude,
+      position.longitude,
+    );
+    if (!mounted || address == null || address.trim().isEmpty) return;
+    setState(() => _locationAddress.text = address);
   }
 
   Future<void> _finishSetup() async {
@@ -1319,45 +1365,50 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
   }
 
   Widget _buildLocationStep() {
+    final latitude = double.tryParse(_locationLatitude.text.trim());
+    final longitude = double.tryParse(_locationLongitude.text.trim());
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _infoBox(
-          'Set your work site and geofence so employees can clock in.',
+          'Set your work site on the map and choose a geofence radius so '
+          'employees can clock in.',
         ),
+        const SizedBox(height: _fieldGap),
+        OutlinedButton.icon(
+          onPressed: _locationLocating || _busy ? null : _useWizardCurrentLocation,
+          icon: _locationLocating
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.my_location_rounded, size: 18),
+          label: const Text('Use my current location'),
+        ),
+        const SizedBox(height: _fieldGap),
+        BusinessLocationMapPicker(
+          latitude: latitude,
+          longitude: longitude,
+          geofenceRadiusM: _locationGeofence.round(),
+          onPositionChanged: _onWizardMapPositionChanged,
+          height: 220,
+        ),
+        if (latitude != null && longitude != null) ...[
+          const SizedBox(height: 6),
+          Text(
+            'Coordinates: ${latitude.toStringAsFixed(6)}, '
+            '${longitude.toStringAsFixed(6)}',
+            style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+          ),
+        ],
         const SizedBox(height: _fieldGap),
         TextField(
           controller: _locationAddress,
           style: const TextStyle(fontSize: 14),
           decoration: _compactInput('Address', hint: '123 Main St, Manila'),
-        ),
-        const SizedBox(height: _fieldGap),
-        Row(
-          children: [
-            Expanded(
-              child: TextField(
-                controller: _locationLatitude,
-                style: const TextStyle(fontSize: 14),
-                decoration: _compactInput('Latitude', hint: '14.5995'),
-                keyboardType: const TextInputType.numberWithOptions(
-                  decimal: true,
-                  signed: true,
-                ),
-              ),
-            ),
-            const SizedBox(width: 6),
-            Expanded(
-              child: TextField(
-                controller: _locationLongitude,
-                style: const TextStyle(fontSize: 14),
-                decoration: _compactInput('Longitude', hint: '120.9842'),
-                keyboardType: const TextInputType.numberWithOptions(
-                  decimal: true,
-                  signed: true,
-                ),
-              ),
-            ),
-          ],
+          onChanged: (_) => setState(() {}),
         ),
         const SizedBox(height: 6),
         Text(
@@ -1366,14 +1417,14 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
         ),
         Slider(
           value: _locationGeofence,
-          min: 20,
-          max: 200,
-          divisions: 36,
+          min: kMinGeofenceRadiusM.toDouble(),
+          max: kMaxGeofenceRadiusM.toDouble(),
+          divisions: kMaxGeofenceRadiusM - kMinGeofenceRadiusM,
           label: '${_locationGeofence.round()}m',
           onChanged: (value) => setState(() => _locationGeofence = value),
         ),
         Text(
-          'Range: 20m – 200m',
+          'Range: ${kMinGeofenceRadiusM}m – ${kMaxGeofenceRadiusM}m',
           style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
         ),
         const SizedBox(height: 10),

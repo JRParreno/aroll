@@ -32,6 +32,9 @@ mobile/.flutter-plugins-dependencies
 .DS_Store
 Thumbs.db
 
+# Uploaded registration documents (local dev only)
+backend/uploads/
+
 # PlantUML export (optional; keep sources in repo)
 # docs/diagrams/**/*.png
 # docs/diagrams/**/*.svg

@@ -1,3 +1,7 @@
+"""Employee attendance clock-in/out request and response schemas."""
+
+from uuid import UUID
+
 from pydantic import BaseModel, Field
 
 
@@ -12,7 +16,7 @@ class WorksiteResponse(BaseModel):
 class ClockLocationRequest(BaseModel):
     latitude: float = Field(..., ge=-90, le=90)
     longitude: float = Field(..., ge=-180, le=180)
-    shift_assignment_id: str | None = None
+    shift_assignment_id: UUID | None = None
 
 
 class GeofenceStatusResponse(BaseModel):

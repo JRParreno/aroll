@@ -71,6 +71,7 @@ class EmployeeScheduleItem extends Equatable {
     required this.endTime,
     required this.startLabel,
     required this.endLabel,
+    required this.status,
     required this.locationLabel,
     required this.locationAddress,
     required this.holidayName,
@@ -86,6 +87,7 @@ class EmployeeScheduleItem extends Equatable {
   final String endTime;
   final String startLabel;
   final String endLabel;
+  final String status;
   final String? locationLabel;
   final String? locationAddress;
   final String? holidayName;
@@ -102,6 +104,7 @@ class EmployeeScheduleItem extends Equatable {
         endTime,
         startLabel,
         endLabel,
+        status,
         locationLabel,
         locationAddress,
         holidayName,

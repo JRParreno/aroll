@@ -6,6 +6,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.core.deps import require_roles
+from app.core.profile_image import validate_profile_image_data
 from app.db.session import get_db
 from app.models.attendance_policy import BusinessAttendancePolicy
 from app.models.business import Business, BusinessLocation, BusinessRegistration
@@ -23,6 +24,10 @@ from app.schemas.business import (
     BusinessSettingsUpdate,
     LocationResponse,
     LocationUpdate,
+)
+from app.schemas.profile_image import (
+    OwnerProfileImageResponse,
+    ProfileImageRequest,
 )
 from app.schemas.owner_setup import (
     AttendancePolicyResponse,
@@ -477,10 +482,46 @@ def download_owner_registration_document(
     )
 
 
+@router.post("/me/profile/image", response_model=OwnerProfileImageResponse)
+def update_owner_profile_image(
+    body: ProfileImageRequest,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(require_roles(UserRole.owner, UserRole.manager))],
+):
+    if user.business_id is None:
+        raise HTTPException(400, "No business context")
+    business = db.get(Business, user.business_id)
+    if business is None:
+        raise HTTPException(404, "Business not found")
+
+    image_data = validate_profile_image_data(body.image_data)
+    business.owner_profile_image_url = image_data
+    db.commit()
+    db.refresh(business)
+    return OwnerProfileImageResponse(owner_profile_image_url=image_data)
+
+
+@router.delete("/me/profile/image", response_model=OwnerProfileImageResponse)
+def remove_owner_profile_image(
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(require_roles(UserRole.owner, UserRole.manager))],
+):
+    if user.business_id is None:
+        raise HTTPException(400, "No business context")
+    business = db.get(Business, user.business_id)
+    if business is None:
+        raise HTTPException(404, "Business not found")
+
+    business.owner_profile_image_url = None
+    db.commit()
+    db.refresh(business)
+    return OwnerProfileImageResponse(owner_profile_image_url=None)
+
+
 @router.get("/me/account-settings", response_model=AccountSettingsResponse)
 def get_account_settings(
     db: Annotated[Session, Depends(get_db)],
-    user: Annotated[User, Depends(require_roles(UserRole.owner))],
+    user: Annotated[User, Depends(require_roles(UserRole.owner, UserRole.manager))],
 ):
     if user.business_id is None:
         raise HTTPException(400, "No business context")
@@ -494,7 +535,7 @@ def get_account_settings(
 def update_account_settings(
     body: AccountSettingsUpdate,
     db: Annotated[Session, Depends(get_db)],
-    user: Annotated[User, Depends(require_roles(UserRole.owner))],
+    user: Annotated[User, Depends(require_roles(UserRole.owner, UserRole.manager))],
 ):
     if user.business_id is None:
         raise HTTPException(400, "No business context")
@@ -505,7 +546,10 @@ def update_account_settings(
     business.name = body.business_name
     business.business_type = body.business_type
     if body.branding is not None:
-        business.owner_profile_image_url = body.branding.owner_profile_image_url
+        owner_image = body.branding.owner_profile_image_url
+        if owner_image:
+            owner_image = validate_profile_image_data(owner_image)
+        business.owner_profile_image_url = owner_image
 
     if business.registration_id:
         reg = db.get(BusinessRegistration, business.registration_id)

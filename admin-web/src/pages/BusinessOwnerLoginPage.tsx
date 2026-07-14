@@ -29,7 +29,7 @@ export function BusinessOwnerLoginPage() {
     setLoading(true);
     try {
       const res = await businessOwnerLogin(
-        businessCode.trim(),
+        businessCode.trim().toUpperCase().replace(/\s+/g, ""),
         email,
         password
       );
