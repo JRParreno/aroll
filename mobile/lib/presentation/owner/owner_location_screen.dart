@@ -1,3 +1,4 @@
+import 'package:aroll_mobile/core/app_state.dart';
 import 'package:aroll_mobile/core/di/injection.dart';
 import 'package:aroll_mobile/core/location/business_location_defaults.dart';
 import 'package:aroll_mobile/core/location/business_location_geocoding.dart';
@@ -7,6 +8,10 @@ import 'package:aroll_mobile/presentation/owner/owner_shell.dart';
 import 'package:aroll_mobile/presentation/owner/widgets/business_location_map_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+
+const _googleMapsSetupMessage =
+    'Google Maps is not configured. Add GOOGLE_MAPS_API_KEY to '
+    'android/local.properties and rebuild the app.';
 
 class OwnerLocationScreen extends StatefulWidget {
   const OwnerLocationScreen({super.key});
@@ -24,11 +29,15 @@ class _OwnerLocationScreenState extends State<OwnerLocationScreen> {
   bool _loading = true;
   bool _saving = false;
   bool _locating = false;
+  bool _addressEditedManually = false;
+  bool _showMapsSetupBanner = true;
   String? _loadError;
 
   double? _latitude;
   double? _longitude;
   double _geofenceRadiusM = kDefaultGeofenceRadiusM.toDouble();
+
+  bool get _isManager => sl<AppState>().session?.role == 'manager';
 
   @override
   void initState() {
@@ -59,6 +68,7 @@ class _OwnerLocationScreenState extends State<OwnerLocationScreen> {
         _geofenceRadiusM =
             (data['geofence_radius_m'] as num?)?.toDouble() ??
                 kDefaultGeofenceRadiusM.toDouble();
+        _addressEditedManually = false;
         _loading = false;
       });
     } catch (_) {
@@ -71,6 +81,7 @@ class _OwnerLocationScreenState extends State<OwnerLocationScreen> {
   }
 
   bool get _canSave =>
+      !_isManager &&
       !_saving &&
       _addressController.text.trim().length >= 5 &&
       _latitude != null &&
@@ -78,22 +89,29 @@ class _OwnerLocationScreenState extends State<OwnerLocationScreen> {
       _geofenceRadiusM >= kMinGeofenceRadiusM &&
       _geofenceRadiusM <= kMaxGeofenceRadiusM;
 
+  Future<void> _applyReverseGeocodedAddress(
+    double latitude,
+    double longitude,
+  ) async {
+    if (_addressEditedManually) return;
+    final address = await reverseGeocodeAddress(latitude, longitude);
+    if (!mounted || address == null || address.trim().isEmpty) return;
+    setState(() => _addressController.text = address);
+  }
+
   Future<void> _useCurrentLocation() async {
     setState(() => _locating = true);
     try {
       final position = await _locationService.currentPosition();
-      final address = await reverseGeocodeAddress(
-        position.latitude,
-        position.longitude,
-      );
       if (!mounted) return;
       setState(() {
         _latitude = position.latitude;
         _longitude = position.longitude;
-        if (address != null && address.trim().isNotEmpty) {
-          _addressController.text = address;
-        }
       });
+      await _applyReverseGeocodedAddress(
+        position.latitude,
+        position.longitude,
+      );
       _showSnack(
         'Current location set (±${position.accuracyM.toStringAsFixed(0)} m)',
       );
@@ -110,12 +128,7 @@ class _OwnerLocationScreenState extends State<OwnerLocationScreen> {
       _latitude = position.latitude;
       _longitude = position.longitude;
     });
-    final address = await reverseGeocodeAddress(
-      position.latitude,
-      position.longitude,
-    );
-    if (!mounted || address == null || address.trim().isEmpty) return;
-    setState(() => _addressController.text = address);
+    await _applyReverseGeocodedAddress(position.latitude, position.longitude);
   }
 
   Future<void> _save() async {
@@ -146,6 +159,73 @@ class _OwnerLocationScreenState extends State<OwnerLocationScreen> {
       SnackBar(
         content: Text(message),
         backgroundColor: isError ? Colors.red.shade700 : null,
+      ),
+    );
+  }
+
+  Widget _mapsSetupBanner() {
+    if (!_showMapsSetupBanner) return const SizedBox.shrink();
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF8E1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFFFE082)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.map_outlined, color: Color(0xFFF57F17), size: 20),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              _googleMapsSetupMessage,
+              style: TextStyle(
+                fontSize: 13,
+                color: Colors.grey.shade800,
+                height: 1.35,
+              ),
+            ),
+          ),
+          IconButton(
+            tooltip: 'Dismiss',
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+            onPressed: () => setState(() => _showMapsSetupBanner = false),
+            icon: const Icon(Icons.close_rounded, size: 18),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _managerReadOnlyBanner() {
+    if (!_isManager) return const SizedBox.shrink();
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFEFF6FF),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFBFDBFE)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.info_outline_rounded, color: Color(0xFF1E466E)),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'Only the business owner can update the business location.',
+              style: TextStyle(
+                fontSize: 13,
+                color: Colors.grey.shade800,
+                height: 1.35,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -187,6 +267,7 @@ class _OwnerLocationScreenState extends State<OwnerLocationScreen> {
               : ListView(
                   padding: const EdgeInsets.all(16),
                   children: [
+                    _managerReadOnlyBanner(),
                     OwnerCard(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -210,6 +291,7 @@ class _OwnerLocationScreenState extends State<OwnerLocationScreen> {
                             ),
                           ),
                           const SizedBox(height: 12),
+                          _mapsSetupBanner(),
                           OutlinedButton.icon(
                             onPressed: _locating ? null : _useCurrentLocation,
                             icon: _locating
@@ -258,7 +340,11 @@ class _OwnerLocationScreenState extends State<OwnerLocationScreen> {
                               hintText: '123 Main St, Manila',
                               border: OutlineInputBorder(),
                             ),
-                            onChanged: (_) => setState(() {}),
+                            onChanged: (_) {
+                              setState(() {
+                                _addressEditedManually = true;
+                              });
+                            },
                           ),
                           const SizedBox(height: 16),
                           Text(

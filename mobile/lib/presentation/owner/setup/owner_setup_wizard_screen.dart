@@ -81,6 +81,7 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
   final _locationLongitude = TextEditingController();
   double _locationGeofence = kDefaultGeofenceRadiusM.toDouble();
   bool _locationLocating = false;
+  bool _locationAddressEditedManually = false;
 
   final _locationService = EmployeeLocationService();
 
@@ -199,6 +200,7 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
     _locationLongitude.text = location['longitude']?.toString() ?? '';
     _locationGeofence =
         (location['geofence_radius_m'] as num?)?.toDouble() ?? 75;
+    _locationAddressEditedManually = false;
   }
 
   void _applyRestDay(Map<String, dynamic> restDay) {
@@ -440,18 +442,21 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
     setState(() => _locationLocating = true);
     try {
       final position = await _locationService.currentPosition();
-      final address = await reverseGeocodeAddress(
-        position.latitude,
-        position.longitude,
-      );
       if (!mounted) return;
       setState(() {
         _locationLatitude.text = position.latitude.toStringAsFixed(6);
         _locationLongitude.text = position.longitude.toStringAsFixed(6);
-        if (address != null && address.trim().isNotEmpty) {
-          _locationAddress.text = address;
-        }
       });
+      if (!_locationAddressEditedManually) {
+        final address = await reverseGeocodeAddress(
+          position.latitude,
+          position.longitude,
+        );
+        if (!mounted) return;
+        if (address != null && address.trim().isNotEmpty) {
+          setState(() => _locationAddress.text = address);
+        }
+      }
       _showSnack('Current location set');
     } catch (error) {
       if (!mounted) return;
@@ -466,6 +471,7 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
       _locationLatitude.text = position.latitude.toStringAsFixed(6);
       _locationLongitude.text = position.longitude.toStringAsFixed(6);
     });
+    if (_locationAddressEditedManually) return;
     final address = await reverseGeocodeAddress(
       position.latitude,
       position.longitude,
@@ -1408,7 +1414,9 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
           controller: _locationAddress,
           style: const TextStyle(fontSize: 14),
           decoration: _compactInput('Address', hint: '123 Main St, Manila'),
-          onChanged: (_) => setState(() {}),
+          onChanged: (_) => setState(() {
+            _locationAddressEditedManually = true;
+          }),
         ),
         const SizedBox(height: 6),
         Text(

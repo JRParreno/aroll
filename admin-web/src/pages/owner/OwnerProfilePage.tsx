@@ -104,7 +104,13 @@ export function OwnerProfilePage() {
       invalidateProfileQueries();
       toast.success("Profile picture updated");
     },
-    onError: (error) => toast.error(profileImageErrorMessage(error, "update")),
+    onError: (error) => {
+      setPhoto(
+        data?.branding?.owner_profile_image_url ??
+          defaultBusinessBranding.owner_profile_image_url
+      );
+      toast.error(profileImageErrorMessage(error, "update"));
+    },
   });
 
   const removePhoto = useMutation({
@@ -154,9 +160,7 @@ export function OwnerProfilePage() {
     if (!file) return;
     const reader = new FileReader();
     reader.onload = () => {
-      const value = String(reader.result);
-      setPhoto(value);
-      uploadPhoto.mutate(value);
+      uploadPhoto.mutate(String(reader.result));
     };
     reader.readAsDataURL(file);
   }

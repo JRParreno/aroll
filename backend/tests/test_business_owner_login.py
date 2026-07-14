@@ -38,7 +38,7 @@ def test_business_owner_login_accepts_lowercase_business_code():
         response = client.post(
             "/api/v1/auth/business-owner-login",
             json={
-                "business_code": "mb-test01",
+                "business_code": business.business_code.lower(),
                 "email": owner.email,
                 "password": "OwnerPass123!",
             },
