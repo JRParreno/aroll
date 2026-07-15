@@ -18,6 +18,11 @@ class Settings(BaseSettings):
     # Set to false in production and list explicit origins in CORS_ORIGINS instead.
     cors_allow_localhost_regex: bool = True
     registration_upload_dir: str = "uploads/registrations"
+    # Cosine similarity threshold for face match (0–1). Higher = stricter.
+    face_match_threshold: float = 0.72
+    face_model_version: str = "opencv_hist_v1"
+    face_min_enrollment_samples: int = 3
+    face_max_enrollment_samples: int = 5
 
     @property
     def cors_origin_list(self) -> list[str]:

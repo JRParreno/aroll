@@ -11,6 +11,7 @@ from app.db.session import get_db
 from app.models.employee import Employee
 from app.models.enums import EmployeeStatus, UserRole
 from app.models.attendance import AttendanceRecord
+from app.models.face_embedding import EmployeeFaceEmbedding
 from app.models.payroll import Position
 from app.models.payroll import Payslip
 from app.models.scheduling import ShiftAssignment
@@ -215,6 +216,9 @@ def delete_employee(
     db.query(AttendanceRecord).filter(
         AttendanceRecord.business_id == user.business_id,
         AttendanceRecord.employee_id == emp.id,
+    ).delete(synchronize_session=False)
+    db.query(EmployeeFaceEmbedding).filter(
+        EmployeeFaceEmbedding.employee_id == emp.id,
     ).delete(synchronize_session=False)
     db.query(ShiftAssignment).filter(
         ShiftAssignment.employee_id == emp.id,

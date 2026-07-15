@@ -189,6 +189,52 @@ def _clock_in_status(
     return AttendanceStatus.in_progress
 
 
+def _verify_face_for_employee(
+    db: Session,
+    employee: Employee,
+    face_image_bytes: bytes,
+) -> float:
+    """Match probe image against enrolled samples; raise on failure."""
+    from app.core.config import settings
+    from app.models.face_embedding import EmployeeFaceEmbedding
+    from app.services.face_embedding import (
+        best_match_score,
+        detect_and_embed,
+        match_passed,
+    )
+
+    samples = (
+        db.query(EmployeeFaceEmbedding)
+        .filter(EmployeeFaceEmbedding.employee_id == employee.id)
+        .all()
+    )
+    if not samples:
+        raise HTTPException(
+            400,
+            detail={
+                "code": "not_enrolled",
+                "message": "Face is not enrolled. Complete face registration first.",
+            },
+        )
+
+    probe = detect_and_embed(face_image_bytes)
+    score = best_match_score(probe, [list(row.embedding) for row in samples])
+    if not match_passed(score):
+        raise HTTPException(
+            403,
+            detail={
+                "code": "face_mismatch",
+                "message": (
+                    f"Face did not match enrolled samples "
+                    f"(score {score:.3f} < {settings.face_match_threshold:.3f})."
+                ),
+                "match_score": round(score, 4),
+                "threshold": settings.face_match_threshold,
+            },
+        )
+    return score
+
+
 def clock_in_employee(
     db: Session,
     employee: Employee,
@@ -197,9 +243,15 @@ def clock_in_employee(
     longitude: float,
     shift_assignment_id: uuid.UUID | None = None,
     business_timezone: str | None = "Asia/Manila",
+    face_image_bytes: bytes | None = None,
+    liveness_passed: bool | None = None,
 ) -> dict:
     location = _primary_location(db, employee.business_id)
     geofence = _validate_geofence(location, latitude, longitude)
+
+    face_match_score: float | None = None
+    if face_image_bytes is not None:
+        face_match_score = _verify_face_for_employee(db, employee, face_image_bytes)
 
     today = business_today(business_timezone)
     assignment, shift = _resolve_assignment(
@@ -244,6 +296,8 @@ def clock_in_employee(
         status=status,
         latitude_in=latitude,
         longitude_in=longitude,
+        face_match_score=face_match_score,
+        liveness_passed=liveness_passed if face_image_bytes is not None else None,
     )
     db.add(record)
     db.commit()
@@ -254,6 +308,8 @@ def clock_in_employee(
         if status == AttendanceStatus.in_progress
         else "Clocked in successfully. You were marked late."
     )
+    if face_match_score is not None:
+        message = f"{message} Face match score: {face_match_score:.3f}."
     return {
         "id": str(record.id),
         "status": record.status.value,
@@ -262,6 +318,10 @@ def clock_in_employee(
         "geofence": geofence,
         "shift_name": shift.name,
         "message": message,
+        "face_match_score": (
+            round(face_match_score, 4) if face_match_score is not None else None
+        ),
+        "liveness_passed": record.liveness_passed,
     }
 
 
@@ -308,6 +368,12 @@ def clock_out_employee(
         "geofence": geofence,
         "shift_name": shift_name,
         "message": "Clocked out successfully.",
+        "face_match_score": (
+            float(record.face_match_score)
+            if record.face_match_score is not None
+            else None
+        ),
+        "liveness_passed": record.liveness_passed,
     }
 
 

@@ -580,11 +580,13 @@ API --> Web : done
 | **Liveness** | Lightweight challenge on device (e.g. blink or head turn) or frame-variance check before API call. |
 | **Geolocation** | Haversine distance from `business_location` `latitude`/`longitude` center; reject if outside `geofence_radius_m`. `address` is display-only and does not affect the check. |
 
-**Design parameters (to tune during July build):**
+**Implementation (sample):** See **[FACE-RECOGNITION.md](./FACE-RECOGNITION.md)** — OpenCV `opencv_hist_v1` embeddings in FastAPI, owner admin-web enroll/verify demo at `/owner/face-demo`, and Flutter wiring guide for `clock-in-face`.
+
+**Design parameters (to tune during build):**
 
 - Minimum enrollment samples: e.g. 3–5 images
 - Similarity metric: cosine distance via pgvector
-- Threshold: configurable per environment (e.g. 0.6–0.75 cosine similarity)
+- Threshold: configurable per environment (e.g. 0.6–0.75 cosine similarity; default `0.72`)
 
 ### 9.2 Payroll
 

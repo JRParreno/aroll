@@ -33,3 +33,5 @@ class AttendanceActionResponse(BaseModel):
     geofence: GeofenceStatusResponse
     shift_name: str | None = None
     message: str
+    face_match_score: float | None = None
+    liveness_passed: bool | None = None

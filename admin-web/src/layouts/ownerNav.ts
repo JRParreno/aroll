@@ -8,6 +8,7 @@ export type OwnerNavItem = {
 export const ownerNavItems: OwnerNavItem[] = [
   { to: "/owner/dashboard", label: "Dashboard" },
   { to: "/owner/employees", label: "Employees" },
+  { to: "/owner/face-demo", label: "Face demo" },
   { to: "/owner/schedule", label: "Schedule" },
   { to: "/owner/attendance", label: "Attendance" },
   { to: "/owner/payroll", label: "Payroll" },
