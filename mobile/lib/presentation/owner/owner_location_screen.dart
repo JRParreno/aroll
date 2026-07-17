@@ -9,10 +9,6 @@ import 'package:aroll_mobile/presentation/owner/widgets/business_location_map_pi
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
-const _googleMapsSetupMessage =
-    'Google Maps is not configured. Add GOOGLE_MAPS_API_KEY to '
-    'android/local.properties and rebuild the app.';
-
 class OwnerLocationScreen extends StatefulWidget {
   const OwnerLocationScreen({super.key});
 
@@ -30,7 +26,6 @@ class _OwnerLocationScreenState extends State<OwnerLocationScreen> {
   bool _saving = false;
   bool _locating = false;
   bool _addressEditedManually = false;
-  bool _showMapsSetupBanner = true;
   String? _loadError;
 
   double? _latitude;
@@ -163,43 +158,6 @@ class _OwnerLocationScreenState extends State<OwnerLocationScreen> {
     );
   }
 
-  Widget _mapsSetupBanner() {
-    if (!_showMapsSetupBanner) return const SizedBox.shrink();
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFFF8E1),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFFFE082)),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Icon(Icons.map_outlined, color: Color(0xFFF57F17), size: 20),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              _googleMapsSetupMessage,
-              style: TextStyle(
-                fontSize: 13,
-                color: Colors.grey.shade800,
-                height: 1.35,
-              ),
-            ),
-          ),
-          IconButton(
-            tooltip: 'Dismiss',
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-            onPressed: () => setState(() => _showMapsSetupBanner = false),
-            icon: const Icon(Icons.close_rounded, size: 18),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _managerReadOnlyBanner() {
     if (!_isManager) return const SizedBox.shrink();
     return Container(
@@ -290,8 +248,6 @@ class _OwnerLocationScreenState extends State<OwnerLocationScreen> {
                               height: 1.35,
                             ),
                           ),
-                          const SizedBox(height: 12),
-                          _mapsSetupBanner(),
                           OutlinedButton.icon(
                             onPressed: _locating ? null : _useCurrentLocation,
                             icon: _locating
