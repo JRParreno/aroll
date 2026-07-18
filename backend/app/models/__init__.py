@@ -3,6 +3,7 @@ from app.models.attendance_policy import BusinessAttendancePolicy
 from app.models.business import Business, BusinessLocation, BusinessRegistration
 from app.models.employee import Employee
 from app.models.face_embedding import EmployeeFaceEmbedding
+from app.models.face_liveness import FaceLivenessChallenge
 from app.models.holiday import Holiday
 from app.models.payroll import BusinessPayrollConfig, Payslip, PayrollRun, Position
 from app.models.rest_day_policy import BusinessRestDayPolicy
@@ -18,6 +19,7 @@ __all__ = [
     "BusinessLocation",
     "Employee",
     "EmployeeFaceEmbedding",
+    "FaceLivenessChallenge",
     "Position",
     "BusinessPayrollConfig",
     "BusinessAttendancePolicy",

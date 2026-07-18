@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 import threading
+from dataclasses import dataclass
 from pathlib import Path
 
 import cv2
@@ -45,6 +46,22 @@ class FacePipelineError(HTTPException):
             status_code=status_code,
             detail={"code": code, "message": message},
         )
+
+
+@dataclass(frozen=True)
+class FaceObservation:
+    """Structured face observation for recognition and liveness checks."""
+
+    embedding: list[float]
+    score: float
+    # Normalized yaw proxy: nose_x offset from eye midpoint / inter-eye distance.
+    # Negative ≈ looking left (subject's left / camera-right), positive ≈ looking right.
+    yaw: float
+    left_eye: tuple[float, float]
+    right_eye: tuple[float, float]
+    nose: tuple[float, float]
+    box: tuple[float, float, float, float]
+    face_count: int = 1
 
 
 def _load_models() -> tuple[cv2.FaceDetectorYN, cv2.FaceRecognizerSF]:
@@ -111,8 +128,25 @@ def _largest_face(faces: np.ndarray) -> np.ndarray:
     return faces[int(np.argmax(areas))]
 
 
-def detect_and_embed(image_bytes: bytes) -> list[float]:
-    """Detect the most prominent face and return a 128-d SFace embedding."""
+def _yaw_from_landmarks(
+    left_eye: tuple[float, float],
+    right_eye: tuple[float, float],
+    nose: tuple[float, float],
+) -> float:
+    """Approximate yaw from YuNet landmarks.
+
+    Positive values mean the nose is shifted toward the subject's right
+    (image-left for a mirrored webcam feed, but we use landmark coords as-is).
+    """
+    eye_mid_x = (left_eye[0] + right_eye[0]) / 2.0
+    inter_eye = abs(right_eye[0] - left_eye[0])
+    if inter_eye < 1e-3:
+        return 0.0
+    return float((nose[0] - eye_mid_x) / inter_eye)
+
+
+def detect_and_observe(image_bytes: bytes) -> FaceObservation:
+    """Detect the most prominent face and return embedding + landmarks."""
     image = _decode_image(image_bytes)
     faces = _detect_faces(image)
 
@@ -125,6 +159,14 @@ def detect_and_embed(image_bytes: bytes) -> list[float]:
         logger.info("Multiple faces detected (%s); using largest.", faces.shape[0])
 
     face = _largest_face(faces)
+    # YuNet face row: x, y, w, h, right_eye_x, right_eye_y, left_eye_x, left_eye_y,
+    # nose_x, nose_y, right_mouth_x, right_mouth_y, left_mouth_x, left_mouth_y, score
+    right_eye = (float(face[4]), float(face[5]))
+    left_eye = (float(face[6]), float(face[7]))
+    nose = (float(face[8]), float(face[9]))
+    score = float(face[14])
+    box = (float(face[0]), float(face[1]), float(face[2]), float(face[3]))
+
     _, recognizer = _load_models()
     with _lock:
         aligned = recognizer.alignCrop(image, face)
@@ -144,7 +186,22 @@ def detect_and_embed(image_bytes: bytes) -> list[float]:
             "weak_face",
             "Could not build a face embedding from this image. Try better lighting.",
         )
-    return (vec / norm).tolist()
+
+    return FaceObservation(
+        embedding=(vec / norm).tolist(),
+        score=score,
+        yaw=_yaw_from_landmarks(left_eye, right_eye, nose),
+        left_eye=left_eye,
+        right_eye=right_eye,
+        nose=nose,
+        box=box,
+        face_count=int(faces.shape[0]),
+    )
+
+
+def detect_and_embed(image_bytes: bytes) -> list[float]:
+    """Detect the most prominent face and return a 128-d SFace embedding."""
+    return detect_and_observe(image_bytes).embedding
 
 
 def cosine_similarity(a: list[float] | np.ndarray, b: list[float] | np.ndarray) -> float:

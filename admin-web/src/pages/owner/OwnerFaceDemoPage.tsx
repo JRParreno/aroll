@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Camera, ScanFace, Trash2, Upload } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -12,17 +12,42 @@ import {
 } from "@/components/owner/layout/OwnerPageLayout";
 import { Label } from "@/components/ui/label";
 import {
+  createFaceLivenessChallenge,
   deleteEmployeeFaceSamples,
   enrollEmployeeFaceSamples,
   getEmployeeFaceStatus,
   listEmployees,
+  observeFaceLivenessPose,
   verifyEmployeeFace,
+  verifyEmployeeFaceLiveness,
+  type FaceLivenessVerifyResult,
   type FaceVerifyResult,
+  type LivenessChallenge,
+  type LivenessPoseObserveResult,
 } from "@/lib/api";
+import {
+  GestureLivenessDetector,
+  type GestureKind,
+  type GestureReading,
+} from "@/lib/faceGesture";
 
 const TARGET_SAMPLES = 3;
+const OBSERVE_INTERVAL_MS = 500;
+const STABILITY_REQUIRED = 2;
+const OBSERVE_JPEG_QUALITY = 0.72;
 
-function blobFromCanvas(canvas: HTMLCanvasElement): Promise<Blob> {
+type LivenessMode = "quick" | "strong";
+
+function gestureLabel(kind: GestureKind): string {
+  return kind === "blink" ? "Blink" : "Smile";
+}
+
+type LivenessStep = "idle" | "center" | "turn" | "return" | "ready" | "verifying";
+
+function blobFromCanvas(
+  canvas: HTMLCanvasElement,
+  quality = 0.92
+): Promise<Blob> {
   return new Promise((resolve, reject) => {
     canvas.toBlob(
       (blob) => {
@@ -30,7 +55,7 @@ function blobFromCanvas(canvas: HTMLCanvasElement): Promise<Blob> {
         else reject(new Error("Could not capture frame"));
       },
       "image/jpeg",
-      0.92
+      quality
     );
   });
 }
@@ -58,22 +83,54 @@ function apiErrorMessage(error: unknown, fallback: string): string {
   return fallback;
 }
 
+function directionLabel(direction: string) {
+  return direction === "turn_left" ? "LEFT" : "RIGHT";
+}
+
 export function OwnerFaceDemoPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const observeAbortRef = useRef<AbortController | null>(null);
+  const stabilityRef = useRef(0);
+  const autoVerifyLockRef = useRef(false);
+  const gestureDetectorRef = useRef<GestureLivenessDetector | null>(null);
+  const gestureRafRef = useRef<number | null>(null);
+  const gestureLockRef = useRef(false);
 
   const [employeeId, setEmployeeId] = useState(
     searchParams.get("employeeId") ?? ""
   );
   const [cameraOn, setCameraOn] = useState(false);
   const [samples, setSamples] = useState<string[]>([]);
-  const [verifyPreview, setVerifyPreview] = useState<string | null>(null);
-  const [verifyResult, setVerifyResult] = useState<FaceVerifyResult | null>(
+  const [autoMode, setAutoMode] = useState(true);
+  const [livenessMode, setLivenessMode] = useState<LivenessMode>("quick");
+
+  const [gestureRunning, setGestureRunning] = useState(false);
+  const [gestureLoading, setGestureLoading] = useState(false);
+  const [gestureReading, setGestureReading] = useState<GestureReading | null>(
     null
   );
+  const [quickResult, setQuickResult] = useState<FaceVerifyResult | null>(null);
+  const [quickGesture, setQuickGesture] = useState<GestureKind | null>(null);
+
+  const [challenge, setChallenge] = useState<LivenessChallenge | null>(null);
+  const [livenessStep, setLivenessStep] = useState<LivenessStep>("idle");
+  const [centerPreview, setCenterPreview] = useState<string | null>(null);
+  const [turnPreview, setTurnPreview] = useState<string | null>(null);
+  const [returnPreview, setReturnPreview] = useState<string | null>(null);
+  const [centerBlob, setCenterBlob] = useState<Blob | null>(null);
+  const [turnBlob, setTurnBlob] = useState<Blob | null>(null);
+  const [returnBlob, setReturnBlob] = useState<Blob | null>(null);
+  const [verifyResult, setVerifyResult] =
+    useState<FaceLivenessVerifyResult | null>(null);
+  const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
+  const [liveObserve, setLiveObserve] =
+    useState<LivenessPoseObserveResult | null>(null);
+  const [stabilityCount, setStabilityCount] = useState(0);
+  const [observing, setObserving] = useState(false);
 
   const employeesQuery = useQuery({
     queryKey: ["employees"],
@@ -100,14 +157,84 @@ export function OwnerFaceDemoPage() {
 
   useEffect(() => {
     return () => {
+      observeAbortRef.current?.abort();
+      if (gestureRafRef.current !== null) {
+        cancelAnimationFrame(gestureRafRef.current);
+      }
+      gestureDetectorRef.current?.close();
+      gestureDetectorRef.current = null;
       streamRef.current?.getTracks().forEach((t) => t.stop());
     };
   }, []);
 
+  useEffect(() => {
+    if (!challenge) {
+      setSecondsLeft(null);
+      return;
+    }
+    const tick = () => {
+      const ms = new Date(challenge.expires_at).getTime() - Date.now();
+      setSecondsLeft(Math.max(0, Math.ceil(ms / 1000)));
+    };
+    tick();
+    const id = window.setInterval(tick, 500);
+    return () => window.clearInterval(id);
+  }, [challenge]);
+
+  const stopObserving = useCallback(() => {
+    observeAbortRef.current?.abort();
+    observeAbortRef.current = null;
+    setObserving(false);
+    stabilityRef.current = 0;
+    setStabilityCount(0);
+  }, []);
+
+  const stopGestureLiveness = useCallback(() => {
+    if (gestureRafRef.current !== null) {
+      cancelAnimationFrame(gestureRafRef.current);
+      gestureRafRef.current = null;
+    }
+    gestureLockRef.current = false;
+    setGestureRunning(false);
+  }, []);
+
+  function clearLivenessCaptures() {
+    if (centerPreview) URL.revokeObjectURL(centerPreview);
+    if (turnPreview) URL.revokeObjectURL(turnPreview);
+    if (returnPreview) URL.revokeObjectURL(returnPreview);
+    setCenterPreview(null);
+    setTurnPreview(null);
+    setReturnPreview(null);
+    setCenterBlob(null);
+    setTurnBlob(null);
+    setReturnBlob(null);
+    setVerifyResult(null);
+    setLiveObserve(null);
+    autoVerifyLockRef.current = false;
+  }
+
+  function resetLiveness() {
+    stopObserving();
+    clearLivenessCaptures();
+    setChallenge(null);
+    setLivenessStep("idle");
+  }
+
+  function resetQuickLiveness() {
+    stopGestureLiveness();
+    setGestureReading(null);
+    setQuickResult(null);
+    setQuickGesture(null);
+  }
+
   async function startCamera() {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } },
+        video: {
+          facingMode: "user",
+          width: { ideal: 640 },
+          height: { ideal: 480 },
+        },
         audio: false,
       });
       streamRef.current?.getTracks().forEach((t) => t.stop());
@@ -118,18 +245,22 @@ export function OwnerFaceDemoPage() {
       }
       setCameraOn(true);
     } catch {
-      toast.error("Could not access webcam. Allow camera permission or use file upload.");
+      toast.error(
+        "Could not access webcam. Allow camera permission to run liveness."
+      );
     }
   }
 
   function stopCamera() {
+    stopObserving();
+    stopGestureLiveness();
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
     if (videoRef.current) videoRef.current.srcObject = null;
     setCameraOn(false);
   }
 
-  async function captureFrame(): Promise<Blob> {
+  async function captureFrame(quality = 0.92): Promise<Blob> {
     const video = videoRef.current;
     const canvas = canvasRef.current;
     if (!video || !canvas) throw new Error("Camera is not ready");
@@ -138,7 +269,7 @@ export function OwnerFaceDemoPage() {
     const ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("Canvas unavailable");
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    return blobFromCanvas(canvas);
+    return blobFromCanvas(canvas, quality);
   }
 
   async function addEnrollmentSample() {
@@ -155,31 +286,12 @@ export function OwnerFaceDemoPage() {
     }
   }
 
-  async function captureVerifyFrame() {
-    try {
-      const blob = await captureFrame();
-      if (verifyPreview) URL.revokeObjectURL(verifyPreview);
-      setVerifyPreview(URL.createObjectURL(blob));
-      setVerifyResult(null);
-    } catch (error) {
-      toast.error(apiErrorMessage(error, "Capture failed"));
-    }
-  }
-
   function onFileEnroll(files: FileList | null) {
     if (!files?.length) return;
     const next = Array.from(files)
       .slice(0, TARGET_SAMPLES - samples.length)
       .map((f) => URL.createObjectURL(f));
     setSamples((prev) => [...prev, ...next].slice(0, TARGET_SAMPLES));
-  }
-
-  function onFileVerify(files: FileList | null) {
-    const file = files?.[0];
-    if (!file) return;
-    if (verifyPreview) URL.revokeObjectURL(verifyPreview);
-    setVerifyPreview(URL.createObjectURL(file));
-    setVerifyResult(null);
   }
 
   async function blobsFromObjectUrls(urls: string[]): Promise<Blob[]> {
@@ -195,7 +307,9 @@ export function OwnerFaceDemoPage() {
     mutationFn: async () => {
       if (!employeeId) throw new Error("Select an employee first");
       if (samples.length < TARGET_SAMPLES) {
-        throw new Error(`Capture ${TARGET_SAMPLES} face samples before enrolling`);
+        throw new Error(
+          `Capture ${TARGET_SAMPLES} face samples before enrolling`
+        );
       }
       const files = await blobsFromObjectUrls(samples);
       return enrollEmployeeFaceSamples(employeeId, files);
@@ -211,22 +325,372 @@ export function OwnerFaceDemoPage() {
     },
   });
 
-  const verify = useMutation({
-    mutationFn: async () => {
+  const verifyLiveness = useMutation({
+    mutationFn: async (frames: {
+      challengeId: string;
+      center: Blob;
+      turn: Blob;
+      returnFrame: Blob;
+    }) => {
       if (!employeeId) throw new Error("Select an employee first");
-      if (!verifyPreview) throw new Error("Capture or upload a verify photo");
-      const blob = await (await fetch(verifyPreview)).blob();
-      return verifyEmployeeFace(employeeId, blob);
+      return verifyEmployeeFaceLiveness({
+        employeeId,
+        challengeId: frames.challengeId,
+        centerFrame: frames.center,
+        turnFrame: frames.turn,
+        returnFrame: frames.returnFrame,
+      });
     },
     onSuccess: (data) => {
+      stopObserving();
       setVerifyResult(data);
-      if (data.passed) toast.success(data.message);
-      else toast.error(data.message);
+      setChallenge(null);
+      setLivenessStep("idle");
+      toast.success(data.message);
     },
     onError: (error) => {
-      toast.error(apiErrorMessage(error, "Verify failed"));
+      stopObserving();
+      setLivenessStep("idle");
+      toast.error(apiErrorMessage(error, "Liveness verify failed"));
+      const msg = apiErrorMessage(error, "");
+      if (msg.includes("expired") || msg.includes("already used")) {
+        resetLiveness();
+      }
     },
   });
+
+  const verifyQuickIdentity = useMutation({
+    mutationFn: async (frame: Blob) => {
+      if (!employeeId) throw new Error("Select an employee first");
+      return verifyEmployeeFace(employeeId, frame);
+    },
+    onSuccess: (data) => {
+      setQuickResult(data);
+      if (data.passed) {
+        toast.success("Blink/smile liveness + identity match passed");
+      } else {
+        toast.error("Face did not match — try again");
+      }
+    },
+    onError: (error) => {
+      toast.error(apiErrorMessage(error, "Identity verify failed"));
+    },
+    onSettled: () => {
+      // Allow another attempt after this capture resolves.
+      gestureLockRef.current = false;
+    },
+  });
+
+  const stopGestureRef = useRef(stopGestureLiveness);
+  stopGestureRef.current = stopGestureLiveness;
+  const verifyQuickRef = useRef(verifyQuickIdentity);
+  verifyQuickRef.current = verifyQuickIdentity;
+
+  const startGestureLiveness = useCallback(async () => {
+    if (!cameraOn) {
+      toast.error("Start the webcam first");
+      return;
+    }
+    if (!employeeId) {
+      toast.error("Select an employee first");
+      return;
+    }
+    setQuickResult(null);
+    setQuickGesture(null);
+    gestureLockRef.current = false;
+
+    if (!gestureDetectorRef.current) {
+      try {
+        setGestureLoading(true);
+        gestureDetectorRef.current = await GestureLivenessDetector.create();
+      } catch {
+        setGestureLoading(false);
+        toast.error(
+          "Could not load the on-device face model. Check your connection and retry."
+        );
+        return;
+      }
+      setGestureLoading(false);
+    }
+
+    gestureDetectorRef.current.reset();
+    setGestureRunning(true);
+
+    const loop = () => {
+      const detector = gestureDetectorRef.current;
+      const video = videoRef.current;
+      if (!detector || !video) {
+        stopGestureRef.current();
+        return;
+      }
+      try {
+        const reading = detector.detect(video, performance.now());
+        setGestureReading(reading);
+        if (reading.gesture && !gestureLockRef.current) {
+          gestureLockRef.current = true;
+          setQuickGesture(reading.gesture);
+          // Capture a high-quality frame and verify identity server-side.
+          void captureFrame(0.92)
+            .then((blob) => verifyQuickRef.current.mutate(blob))
+            .catch(() => {
+              gestureLockRef.current = false;
+            });
+        }
+      } catch {
+        // transient detector error — keep looping
+      }
+      gestureRafRef.current = requestAnimationFrame(loop);
+    };
+    gestureRafRef.current = requestAnimationFrame(loop);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cameraOn, employeeId]);
+
+  const saveStepFrame = useCallback(
+    async (step: "center" | "turn" | "return", blob: Blob) => {
+      const url = URL.createObjectURL(blob);
+      if (step === "center") {
+        setCenterPreview((prev) => {
+          if (prev) URL.revokeObjectURL(prev);
+          return url;
+        });
+        setCenterBlob(blob);
+        setLivenessStep("turn");
+        toast.message("Center captured — now turn as instructed");
+      } else if (step === "turn") {
+        setTurnPreview((prev) => {
+          if (prev) URL.revokeObjectURL(prev);
+          return url;
+        });
+        setTurnBlob(blob);
+        setLivenessStep("return");
+        toast.message("Turn captured — look straight again");
+      } else {
+        setReturnPreview((prev) => {
+          if (prev) URL.revokeObjectURL(prev);
+          return url;
+        });
+        setReturnBlob(blob);
+        setLivenessStep("ready");
+        toast.success("All frames captured");
+      }
+      stabilityRef.current = 0;
+      setStabilityCount(0);
+      setLiveObserve(null);
+    },
+    []
+  );
+
+  const startObserving = useCallback(
+    (activeChallenge: LivenessChallenge, step: "center" | "turn" | "return") => {
+      stopObserving();
+      if (!cameraOn || !employeeId) return;
+
+      const controller = new AbortController();
+      observeAbortRef.current = controller;
+      setObserving(true);
+      stabilityRef.current = 0;
+      setStabilityCount(0);
+
+      const loop = async () => {
+        while (!controller.signal.aborted) {
+          if (new Date(activeChallenge.expires_at).getTime() <= Date.now()) {
+            toast.error("Challenge expired — start a new one");
+            controller.abort();
+            setObserving(false);
+            setChallenge(null);
+            setLivenessStep("idle");
+            setLiveObserve(null);
+            return;
+          }
+          try {
+            const frame = await captureFrame(OBSERVE_JPEG_QUALITY);
+            if (controller.signal.aborted) return;
+            const result = await observeFaceLivenessPose({
+              employeeId,
+              challengeId: activeChallenge.challenge_id,
+              step,
+              frame,
+            });
+            if (controller.signal.aborted) return;
+            setLiveObserve(result);
+            if (result.ready) {
+              stabilityRef.current += 1;
+              setStabilityCount(stabilityRef.current);
+              if (stabilityRef.current >= STABILITY_REQUIRED) {
+                // Use a higher-quality capture for the saved frame.
+                const saved = await captureFrame(0.92);
+                if (controller.signal.aborted) return;
+                await saveStepFrame(step, saved);
+                return;
+              }
+            } else {
+              stabilityRef.current = 0;
+              setStabilityCount(0);
+            }
+          } catch (error) {
+            if (controller.signal.aborted) return;
+            const msg = apiErrorMessage(error, "Pose check failed");
+            if (
+              msg.includes("expired") ||
+              msg.includes("already used") ||
+              msg.includes("not found")
+            ) {
+              toast.error(msg);
+              controller.abort();
+              setObserving(false);
+              setChallenge(null);
+              setLivenessStep("idle");
+              setLiveObserve(null);
+              return;
+            }
+            // Soft transient errors (e.g. no_face): show guidance and keep polling.
+            setLiveObserve({
+              challenge_id: activeChallenge.challenge_id,
+              employee_id: employeeId,
+              step,
+              direction: activeChallenge.direction,
+              ready: false,
+              face_detected: false,
+              face_count: 0,
+              yaw: null,
+              detection_score: null,
+              guidance: msg.includes("No face")
+                ? "No face detected — face the camera."
+                : msg,
+              reason_code: msg.includes("No face") ? "no_face" : "observe_error",
+              expires_at: activeChallenge.expires_at,
+            });
+            stabilityRef.current = 0;
+            setStabilityCount(0);
+          }
+          await new Promise((r) => setTimeout(r, OBSERVE_INTERVAL_MS));
+        }
+      };
+
+      void loop();
+    },
+    [cameraOn, employeeId, saveStepFrame, stopObserving]
+  );
+
+  // Drive auto observation when step changes.
+  useEffect(() => {
+    if (!autoMode || !challenge || !cameraOn) return;
+    if (
+      livenessStep === "center" ||
+      livenessStep === "turn" ||
+      livenessStep === "return"
+    ) {
+      startObserving(challenge, livenessStep);
+      return () => stopObserving();
+    }
+    stopObserving();
+  }, [
+    autoMode,
+    challenge,
+    cameraOn,
+    livenessStep,
+    startObserving,
+    stopObserving,
+  ]);
+
+  // Auto-submit when all three frames are ready.
+  useEffect(() => {
+    if (
+      livenessStep !== "ready" ||
+      !challenge ||
+      !centerBlob ||
+      !turnBlob ||
+      !returnBlob ||
+      autoVerifyLockRef.current ||
+      verifyLiveness.isPending
+    ) {
+      return;
+    }
+    autoVerifyLockRef.current = true;
+    setLivenessStep("verifying");
+    verifyLiveness.mutate({
+      challengeId: challenge.challenge_id,
+      center: centerBlob,
+      turn: turnBlob,
+      returnFrame: returnBlob,
+    });
+  }, [
+    livenessStep,
+    challenge,
+    centerBlob,
+    turnBlob,
+    returnBlob,
+    verifyLiveness,
+  ]);
+
+  // Switching modes tears down whichever flow is not active.
+  useEffect(() => {
+    if (livenessMode === "quick") {
+      stopObserving();
+      resetLiveness();
+    } else {
+      stopGestureLiveness();
+      setGestureReading(null);
+      setQuickResult(null);
+      setQuickGesture(null);
+    }
+    // resetLiveness is stable enough for this teardown; deps kept minimal.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [livenessMode, stopObserving, stopGestureLiveness]);
+
+  const startChallenge = useMutation({
+    mutationFn: async () => {
+      if (!employeeId) throw new Error("Select an employee first");
+      if (!cameraOn) throw new Error("Start the webcam before liveness");
+      return createFaceLivenessChallenge(employeeId);
+    },
+    onSuccess: (data) => {
+      stopObserving();
+      clearLivenessCaptures();
+      setChallenge(data);
+      setLivenessStep("center");
+      toast.message(
+        autoMode
+          ? `Auto mode: ${data.instruction}`
+          : data.instruction
+      );
+    },
+    onError: (error) => {
+      toast.error(apiErrorMessage(error, "Could not start challenge"));
+    },
+  });
+
+  async function captureLivenessStep() {
+    if (!challenge) {
+      toast.error("Start a liveness challenge first");
+      return;
+    }
+    if (!cameraOn) {
+      toast.error("Webcam is required for liveness");
+      return;
+    }
+    if (secondsLeft === 0) {
+      toast.error("Challenge expired — start a new one");
+      resetLiveness();
+      return;
+    }
+    if (
+      livenessStep !== "center" &&
+      livenessStep !== "turn" &&
+      livenessStep !== "return" &&
+      livenessStep !== "ready"
+    ) {
+      return;
+    }
+    try {
+      const blob = await captureFrame();
+      const step =
+        livenessStep === "ready" ? "return" : (livenessStep as "center" | "turn" | "return");
+      await saveStepFrame(step, blob);
+    } catch (error) {
+      toast.error(apiErrorMessage(error, "Capture failed"));
+    }
+  }
 
   const clearSamples = useMutation({
     mutationFn: async () => {
@@ -236,7 +700,7 @@ export function OwnerFaceDemoPage() {
     onSuccess: () => {
       toast.success("Face samples cleared");
       queryClient.invalidateQueries({ queryKey: ["face-status", employeeId] });
-      setVerifyResult(null);
+      resetLiveness();
     },
     onError: (error) => {
       toast.error(apiErrorMessage(error, "Could not clear samples"));
@@ -245,18 +709,31 @@ export function OwnerFaceDemoPage() {
 
   function selectEmployee(id: string) {
     setEmployeeId(id);
-    setVerifyResult(null);
+    resetLiveness();
+    resetQuickLiveness();
     if (id) setSearchParams({ employeeId: id });
     else setSearchParams({});
   }
 
   const status = faceStatusQuery.data;
+  const captureHint =
+    livenessStep === "center"
+      ? "1/3 Look straight"
+      : livenessStep === "turn" && challenge
+        ? `2/3 Turn ${directionLabel(challenge.direction)}`
+        : livenessStep === "return"
+          ? "3/3 Look straight again"
+          : livenessStep === "ready"
+            ? "Frames ready — verifying…"
+            : livenessStep === "verifying"
+              ? "Submitting liveness verify…"
+              : "Start challenge to begin";
 
   return (
     <OwnerPage>
       <OwnerPageHeader
         title="Face recognition demo"
-        description="Sample owner flow: enroll 3 face photos for an employee, then verify a live capture against those embeddings."
+        description="Enroll face samples, then prove liveness. Quick mode auto-captures on a blink or smile (on-device); Strong mode uses a server-verified randomized head-turn."
       />
       <OwnerPageContent>
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
@@ -340,15 +817,6 @@ export function OwnerFaceDemoPage() {
               >
                 Capture enroll sample ({samples.length}/{TARGET_SAMPLES})
               </Button>
-              <Button
-                type="button"
-                variant="outline"
-                disabled={!cameraOn}
-                onClick={captureVerifyFrame}
-              >
-                <ScanFace className="mr-2 h-4 w-4" />
-                Capture verify photo
-              </Button>
             </div>
 
             <div className="flex flex-wrap gap-3 text-sm">
@@ -366,19 +834,9 @@ export function OwnerFaceDemoPage() {
                   }}
                 />
               </label>
-              <label className="inline-flex cursor-pointer items-center gap-2 text-muted-foreground hover:text-foreground">
-                <Upload className="h-4 w-4" />
-                Upload verify photo
-                <input
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={(e) => {
-                    onFileVerify(e.target.files);
-                    e.target.value = "";
-                  }}
-                />
-              </label>
+              <span className="text-xs text-muted-foreground">
+                File upload is for enrollment only — liveness requires live webcam.
+              </span>
             </div>
           </section>
 
@@ -445,55 +903,290 @@ export function OwnerFaceDemoPage() {
             </div>
 
             <div className="rounded-xl border border-slate-200 bg-white p-5">
-              <h2 className="text-base font-semibold">2. Verify</h2>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Capture one live photo and compare it to enrolled embeddings
-                (same API Flutter will use for attendance).
-              </p>
-              <div className="mt-4 flex flex-wrap items-start gap-4">
-                <div className="h-40 w-40 overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
-                  {verifyPreview ? (
-                    <img
-                      src={verifyPreview}
-                      alt="Verify"
-                      className="h-full w-full object-cover"
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h2 className="text-base font-semibold">2. Liveness verify</h2>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {livenessMode === "quick"
+                      ? "Quick mode: just look at the camera and blink (or smile). The face model captures automatically, then the server checks identity."
+                      : "Strong mode: server issues a one-time random head-turn. Auto mode polls YuNet pose guidance and captures when stable."}
+                  </p>
+                </div>
+                {livenessMode === "strong" && (
+                  <label className="inline-flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={autoMode}
+                      onChange={(e) => {
+                        setAutoMode(e.target.checked);
+                        if (!e.target.checked) stopObserving();
+                      }}
                     />
-                  ) : (
-                    <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
-                      No photo
+                    Auto capture
+                  </label>
+                )}
+              </div>
+
+              <div className="mt-3 inline-flex rounded-lg border border-slate-200 p-0.5 text-sm">
+                <button
+                  type="button"
+                  className={`rounded-md px-3 py-1.5 font-medium transition ${
+                    livenessMode === "quick"
+                      ? "bg-slate-900 text-white"
+                      : "text-slate-600 hover:text-slate-900"
+                  }`}
+                  onClick={() => setLivenessMode("quick")}
+                >
+                  Quick · blink/smile
+                </button>
+                <button
+                  type="button"
+                  className={`rounded-md px-3 py-1.5 font-medium transition ${
+                    livenessMode === "strong"
+                      ? "bg-slate-900 text-white"
+                      : "text-slate-600 hover:text-slate-900"
+                  }`}
+                  onClick={() => setLivenessMode("strong")}
+                >
+                  Strong · head turn
+                </button>
+              </div>
+
+              {livenessMode === "quick" && (
+                <div className="mt-4 space-y-4">
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                    Blink/smile detection runs on-device (MediaPipe) and only
+                    decides <em>when</em> to capture. The server still verifies
+                    identity, but it cannot independently prove the blink — use
+                    Strong mode when you need spoof-resistant liveness.
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    {!gestureRunning ? (
+                      <Button
+                        type="button"
+                        disabled={
+                          !employeeId || !cameraOn || gestureLoading
+                        }
+                        onClick={() => void startGestureLiveness()}
+                      >
+                        <ScanFace className="mr-2 h-4 w-4" />
+                        {gestureLoading
+                          ? "Loading face model…"
+                          : "Start blink/smile liveness"}
+                      </Button>
+                    ) : (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={stopGestureLiveness}
+                      >
+                        Stop
+                      </Button>
+                    )}
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      disabled={!gestureReading && !quickResult}
+                      onClick={resetQuickLiveness}
+                    >
+                      Reset
+                    </Button>
+                  </div>
+
+                  {gestureRunning && (
+                    <div className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-950">
+                      <p className="font-medium">
+                        Watching… blink or smile to capture
+                        {verifyQuickIdentity.isPending ? " · verifying…" : ""}
+                      </p>
+                      {gestureReading && (
+                        <p className="mt-1 text-xs">
+                          {gestureReading.faceDetected
+                            ? `Face detected · blink ${gestureReading.blinkScore.toFixed(
+                                2
+                              )} · smile ${gestureReading.smileScore.toFixed(2)}`
+                            : "No face — center your face in the frame"}
+                        </p>
+                      )}
                     </div>
                   )}
-                </div>
-                <div className="min-w-[12rem] flex-1 space-y-3">
-                  <Button
-                    type="button"
-                    disabled={!employeeId || verify.isPending}
-                    onClick={() => verify.mutate()}
-                  >
-                    {verify.isPending ? "Verifying…" : "Run face verify"}
-                  </Button>
-                  {verifyResult && (
+
+                  {quickResult && (
                     <div
                       className={`rounded-lg border px-3 py-2 text-sm ${
-                        verifyResult.passed
+                        quickResult.passed
                           ? "border-emerald-200 bg-emerald-50 text-emerald-900"
                           : "border-red-200 bg-red-50 text-red-900"
                       }`}
                     >
                       <p className="font-medium">
-                        {verifyResult.passed ? "Match passed" : "Match failed"}
+                        {quickResult.passed
+                          ? `${quickGesture ? gestureLabel(quickGesture) : "Gesture"} liveness + identity match passed`
+                          : "Identity did not match"}
                       </p>
                       <p className="mt-1">
-                        Score {verifyResult.match_score.toFixed(3)} / threshold{" "}
-                        {verifyResult.threshold.toFixed(3)}
+                        Score {quickResult.match_score.toFixed(3)} / threshold{" "}
+                        {quickResult.threshold.toFixed(3)}
                       </p>
                       <p className="mt-1 text-xs opacity-80">
-                        {verifyResult.message}
+                        {quickResult.message}
                       </p>
                     </div>
                   )}
                 </div>
+              )}
+
+              {livenessMode === "strong" && (
+              <>
+              
+
+              {challenge && (
+                <div className="mt-3 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-950">
+                  <p className="font-medium">
+                    Challenge: turn {directionLabel(challenge.direction)}
+                    {secondsLeft !== null ? ` · ${secondsLeft}s left` : ""}
+                    {observing ? " · watching…" : ""}
+                  </p>
+                  <p className="mt-1 text-xs opacity-90">{challenge.instruction}</p>
+                  <p className="mt-1 text-xs font-medium">{captureHint}</p>
+                  {liveObserve && (
+                    <p className="mt-2 text-xs">
+                      {liveObserve.face_detected
+                        ? `Face detected · yaw ${(liveObserve.yaw ?? 0).toFixed(3)}`
+                        : "No face"}
+                      {" · "}
+                      {liveObserve.guidance}
+                      {liveObserve.ready
+                        ? ` · stability ${stabilityCount}/${STABILITY_REQUIRED}`
+                        : ""}
+                    </p>
+                  )}
+                </div>
+              )}
+
+              <div className="mt-4 grid grid-cols-3 gap-3">
+                {(
+                  [
+                    ["Center", centerPreview],
+                    ["Turn", turnPreview],
+                    ["Return", returnPreview],
+                  ] as const
+                ).map(([label, preview]) => (
+                  <div key={label} className="space-y-1">
+                    <p className="text-xs font-medium text-muted-foreground">
+                      {label}
+                    </p>
+                    <div className="aspect-square overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
+                      {preview ? (
+                        <img
+                          src={preview}
+                          alt={label}
+                          className="h-full w-full object-cover"
+                        />
+                      ) : (
+                        <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
+                          —
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
               </div>
+
+              <div className="mt-4 flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={
+                    !employeeId || !cameraOn || startChallenge.isPending
+                  }
+                  onClick={() => startChallenge.mutate()}
+                >
+                  <ScanFace className="mr-2 h-4 w-4" />
+                  {startChallenge.isPending
+                    ? "Starting…"
+                    : challenge
+                      ? "New challenge"
+                      : "Start liveness challenge"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={
+                    autoMode ||
+                    !challenge ||
+                    !cameraOn ||
+                    livenessStep === "idle" ||
+                    livenessStep === "verifying" ||
+                    secondsLeft === 0
+                  }
+                  onClick={captureLivenessStep}
+                >
+                  Manual capture
+                </Button>
+                <Button
+                  type="button"
+                  disabled={
+                    autoMode ||
+                    !challenge ||
+                    livenessStep !== "ready" ||
+                    verifyLiveness.isPending
+                  }
+                  onClick={() => {
+                    if (!challenge || !centerBlob || !turnBlob || !returnBlob)
+                      return;
+                    setLivenessStep("verifying");
+                    verifyLiveness.mutate({
+                      challengeId: challenge.challenge_id,
+                      center: centerBlob,
+                      turn: turnBlob,
+                      returnFrame: returnBlob,
+                    });
+                  }}
+                >
+                  {verifyLiveness.isPending
+                    ? "Verifying…"
+                    : "Run liveness verify"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  disabled={!challenge && !centerBlob}
+                  onClick={resetLiveness}
+                >
+                  Reset
+                </Button>
+              </div>
+
+              {verifyResult && (
+                <div
+                  className={`mt-4 rounded-lg border px-3 py-2 text-sm ${
+                    verifyResult.passed && verifyResult.liveness_passed
+                      ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+                      : "border-red-200 bg-red-50 text-red-900"
+                  }`}
+                >
+                  <p className="font-medium">
+                    {verifyResult.liveness_passed
+                      ? "Liveness + match passed"
+                      : "Failed"}
+                  </p>
+                  <p className="mt-1">
+                    Score {verifyResult.match_score.toFixed(3)} / threshold{" "}
+                    {verifyResult.threshold.toFixed(3)} ·{" "}
+                    {verifyResult.direction.replace("_", " ")}
+                  </p>
+                  <p className="mt-1 text-xs opacity-80">
+                    yaw center {verifyResult.pose.center_yaw.toFixed(3)}, turn{" "}
+                    {verifyResult.pose.turn_yaw.toFixed(3)}, return{" "}
+                    {verifyResult.pose.return_yaw.toFixed(3)}
+                  </p>
+                  <p className="mt-1 text-xs opacity-80">{verifyResult.message}</p>
+                </div>
+              )}
+              </>
+              )}
             </div>
           </section>
         </div>

@@ -12,6 +12,7 @@ from app.models.employee import Employee
 from app.models.enums import EmployeeStatus, UserRole
 from app.models.attendance import AttendanceRecord
 from app.models.face_embedding import EmployeeFaceEmbedding
+from app.models.face_liveness import FaceLivenessChallenge
 from app.models.payroll import Position
 from app.models.payroll import Payslip
 from app.models.scheduling import ShiftAssignment
@@ -219,6 +220,9 @@ def delete_employee(
     ).delete(synchronize_session=False)
     db.query(EmployeeFaceEmbedding).filter(
         EmployeeFaceEmbedding.employee_id == emp.id,
+    ).delete(synchronize_session=False)
+    db.query(FaceLivenessChallenge).filter(
+        FaceLivenessChallenge.employee_id == emp.id,
     ).delete(synchronize_session=False)
     db.query(ShiftAssignment).filter(
         ShiftAssignment.employee_id == emp.id,

@@ -245,13 +245,14 @@ def clock_in_employee(
     business_timezone: str | None = "Asia/Manila",
     face_image_bytes: bytes | None = None,
     liveness_passed: bool | None = None,
+    face_match_score: float | None = None,
 ) -> dict:
     location = _primary_location(db, employee.business_id)
     geofence = _validate_geofence(location, latitude, longitude)
 
-    face_match_score: float | None = None
-    if face_image_bytes is not None:
-        face_match_score = _verify_face_for_employee(db, employee, face_image_bytes)
+    resolved_score = face_match_score
+    if face_image_bytes is not None and resolved_score is None:
+        resolved_score = _verify_face_for_employee(db, employee, face_image_bytes)
 
     today = business_today(business_timezone)
     assignment, shift = _resolve_assignment(
@@ -296,8 +297,8 @@ def clock_in_employee(
         status=status,
         latitude_in=latitude,
         longitude_in=longitude,
-        face_match_score=face_match_score,
-        liveness_passed=liveness_passed if face_image_bytes is not None else None,
+        face_match_score=resolved_score,
+        liveness_passed=liveness_passed,
     )
     db.add(record)
     db.commit()
@@ -308,8 +309,10 @@ def clock_in_employee(
         if status == AttendanceStatus.in_progress
         else "Clocked in successfully. You were marked late."
     )
-    if face_match_score is not None:
-        message = f"{message} Face match score: {face_match_score:.3f}."
+    if resolved_score is not None:
+        message = f"{message} Face match score: {resolved_score:.3f}."
+    if liveness_passed is True:
+        message = f"{message} Liveness passed."
     return {
         "id": str(record.id),
         "status": record.status.value,
@@ -319,7 +322,7 @@ def clock_in_employee(
         "shift_name": shift.name,
         "message": message,
         "face_match_score": (
-            round(face_match_score, 4) if face_match_score is not None else None
+            round(resolved_score, 4) if resolved_score is not None else None
         ),
         "liveness_passed": record.liveness_passed,
     }
