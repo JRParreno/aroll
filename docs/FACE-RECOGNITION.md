@@ -11,16 +11,34 @@
 ```
 Client (admin-web / Flutter)
   → FastAPI multipart upload
-  → OpenCV Haar detect + 128-d L2 embedding (opencv_hist_v1)
+  → YuNet ONNX face detection + SFace ONNX 128-d embedding (sface_v3)
   → PostgreSQL pgvector (employee_face_embedding)
   → Cosine similarity vs enrolled samples
 ```
 
 | Setting | Env / config | Default |
 |---------|--------------|---------|
-| Match threshold | `FACE_MATCH_THRESHOLD` | `0.72` |
-| Model version | `FACE_MODEL_VERSION` | `opencv_hist_v1` |
+| Match threshold | `FACE_MATCH_THRESHOLD` | `0.363` |
+| Model version | `FACE_MODEL_VERSION` | `sface_v3` |
 | Enrollment samples | min / max | `3` / `5` |
+
+`sface_v3` uses real face-recognition models from the OpenCV zoo, run natively
+by OpenCV (no extra Python deps):
+
+- **YuNet** (`face_detection_yunet_2023mar.onnx`) — face detection + landmarks
+- **SFace** (`face_recognition_sface_2021dec.onnx`) — aligned crop → 128-d embedding
+
+The ONNX files live in `backend/models/`. If missing, download them:
+
+```powershell
+cd backend; mkdir models -Force
+curl.exe -L -o models\face_detection_yunet_2023mar.onnx https://github.com/opencv/opencv_zoo/raw/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx
+curl.exe -L -o models\face_recognition_sface_2021dec.onnx https://github.com/opencv/opencv_zoo/raw/main/models/face_recognition_sface/face_recognition_sface_2021dec.onnx
+```
+
+The default threshold `0.363` is SFace's published same-identity cosine
+threshold. Embeddings are model-specific — re-enroll everyone after any model
+change.
 
 Raw enrollment images are **not** stored long-term — only embeddings.
 
@@ -39,9 +57,9 @@ Base path: `/api/v1` (Bearer JWT).
   "employee_id": "…",
   "face_registration_status": "completed",
   "sample_count": 3,
-  "model_version": "opencv_hist_v1",
+  "model_version": "sface_v3",
   "face_registered_at": "2026-07-14T…",
-  "threshold": 0.72
+  "threshold": 0.363
 }
 ```
 
@@ -67,10 +85,10 @@ Response:
 ```json
 {
   "employee_id": "…",
-  "match_score": 0.8512,
+  "match_score": 0.6212,
   "passed": true,
-  "threshold": 0.72,
-  "model_version": "opencv_hist_v1",
+  "threshold": 0.363,
+  "model_version": "sface_v3",
   "message": "Face match passed."
 }
 ```
