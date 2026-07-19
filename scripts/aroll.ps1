@@ -15,8 +15,13 @@ function Show-Menu {
     Write-Host "  6. Start all (DB + migrate + backend + admin-web)"
     Write-Host "  7. Build all"
     Write-Host "  8. Clean all"
-    Write-Host "  9. Exit"
+    Write-Host "  9. Download face models (YuNet + ArcFace)"
+    Write-Host " 10. Exit"
     Write-Host ""
+}
+
+function Ensure-FaceModels {
+    & "$Root\scripts\download-face-models.ps1"
 }
 
 function Start-Database {
@@ -47,6 +52,7 @@ function Invoke-Migrate {
 }
 
 function Start-Backend {
+    Ensure-FaceModels
     Push-Location "$Root\backend"
     if (-not (Test-Path ".venv")) { python -m venv .venv; & .\.venv\Scripts\pip install -q -r requirements.txt }
     Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$Root\backend'; .\.venv\Scripts\uvicorn app.main:app --reload --host 0.0.0.0 --port 8000"
@@ -90,7 +96,8 @@ while ($true) {
         "6" { Start-All }
         "7" { & "$Root\scripts\build.ps1" }
         "8" { & "$Root\scripts\clean.ps1" }
-        "9" { exit 0 }
+        "9" { Ensure-FaceModels }
+        "10" { exit 0 }
         default { Write-Host "Invalid option" -ForegroundColor Red }
     }
 }

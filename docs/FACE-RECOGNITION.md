@@ -43,13 +43,21 @@ genuine matches and lookalikes.
 > **non-commercial / academic research** use (fine for this thesis). Commercial
 > deployment needs an InsightFace license or a commercially-licensed model.
 
-The ONNX files live in `backend/models/`. If missing, download them:
+The ONNX files live in `backend/models/`. If missing, download them via the
+project menu (**option 9**) or:
 
 ```powershell
+# From repo root — skips files that already exist
+.\scripts\download-face-models.ps1
+
+# Or manually:
 cd backend; mkdir models -Force
 curl.exe -L -o models\face_detection_yunet_2023mar.onnx https://github.com/opencv/opencv_zoo/raw/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx
 curl.exe -L -o models\arcface_w600k_r50.onnx https://huggingface.co/immich-app/buffalo_l/resolve/main/recognition/model.onnx
 ```
+
+`.\scripts\setup.ps1` (menu option **0**) and starting the backend (options **3** / **6**)
+also ensure the models are present automatically.
 
 The ArcFace model is ~175 MB. It loads once at first use (~400 MB RAM) and runs
 at ~100–200 ms per face on CPU — only on the few frames per clock-in, so it is

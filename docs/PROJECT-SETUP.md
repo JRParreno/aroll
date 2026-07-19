@@ -122,9 +122,17 @@ Use the dev menu:
 
 | Option | When to use |
 |--------|-------------|
-| **0** | First-time setup (same as `setup.ps1`) |
+| **0** | First-time setup (same as `setup.ps1`) — also downloads face models |
 | **2** | After DB is running — migrate + seed |
-| **6** | Daily dev — DB + API + admin web |
+| **3** / **6** | Start backend / full stack — ensures face models are present |
+| **9** | Download / re-check face models only (YuNet + ArcFace) |
+
+Face recognition needs `backend/models/arcface_w600k_r50.onnx` (~166 MB, not in git).
+Setup and backend start fetch it automatically; or run:
+
+```powershell
+.\scripts\download-face-models.ps1
+```
 
 ---
 
@@ -152,6 +160,7 @@ Use the dev menu:
 |---------|-----|
 | `docker` not found | Install Docker Desktop or use local Postgres + update `DATABASE_URL` |
 | Alembic connection refused | Start database first (menu **1** or `docker compose up -d`) |
+| `face_models_missing` / face enroll fails | Run menu **9** or `.\scripts\download-face-models.ps1` (needs internet once) |
 | Mobile cannot reach API | Use `10.0.2.2` on Android emulator; LAN IP on real device |
 | `bcrypt` / login errors | Use backend venv Python; password max 72 bytes for bcrypt |
 | Port 8000 / 5173 in use | Stop other apps or change ports in uvicorn / `vite.config.ts` |
