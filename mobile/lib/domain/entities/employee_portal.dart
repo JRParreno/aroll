@@ -170,6 +170,11 @@ class EmployeePayslip extends Equatable {
     required this.overtimeHours,
     required this.overtimePay,
     required this.holidayPay,
+    required this.restDayPay,
+    required this.restDayDays,
+    required this.restDayPremiumPercent,
+    required this.restDayName,
+    required this.restDayRecords,
     required this.deductions,
     required this.absentDays,
     required this.grossPay,
@@ -188,6 +193,11 @@ class EmployeePayslip extends Equatable {
   final double overtimeHours;
   final double overtimePay;
   final double holidayPay;
+  final double restDayPay;
+  final int restDayDays;
+  final double restDayPremiumPercent;
+  final String? restDayName;
+  final List<EmployeeRestDayRecord> restDayRecords;
   final double deductions;
   final int absentDays;
   final double grossPay;
@@ -207,10 +217,49 @@ class EmployeePayslip extends Equatable {
         overtimeHours,
         overtimePay,
         holidayPay,
+        restDayPay,
+        restDayDays,
+        restDayPremiumPercent,
+        restDayName,
+        restDayRecords,
         deductions,
         absentDays,
         grossPay,
         netPay,
+      ];
+}
+
+class EmployeeRestDayRecord extends Equatable {
+  const EmployeeRestDayRecord({
+    required this.date,
+    required this.weekday,
+    required this.status,
+    required this.timeIn,
+    required this.timeOut,
+    required this.shiftName,
+    required this.premiumPercent,
+    required this.premiumPay,
+  });
+
+  final DateTime date;
+  final String weekday;
+  final String status;
+  final DateTime? timeIn;
+  final DateTime? timeOut;
+  final String? shiftName;
+  final double premiumPercent;
+  final double premiumPay;
+
+  @override
+  List<Object?> get props => [
+        date,
+        weekday,
+        status,
+        timeIn,
+        timeOut,
+        shiftName,
+        premiumPercent,
+        premiumPay,
       ];
 }
 

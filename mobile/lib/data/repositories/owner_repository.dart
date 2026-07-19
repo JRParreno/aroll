@@ -134,6 +134,7 @@ class OwnerRepository {
     required String shiftId,
     required String workDate,
     required List<String> employeeIds,
+    bool isRestDayWork = false,
   }) async =>
       (await _api.dio.post<Map<String, dynamic>>(
         '/schedules/assign',
@@ -141,6 +142,7 @@ class OwnerRepository {
           'shift_id': shiftId,
           'work_date': workDate,
           'employee_ids': employeeIds,
+          'is_rest_day_work': isRestDayWork,
         },
       ))
           .data!;
@@ -149,12 +151,14 @@ class OwnerRepository {
     required String assignmentId,
     required String shiftId,
     required String workDate,
+    bool? isRestDayWork,
   }) async =>
       (await _api.dio.put<Map<String, dynamic>>(
         '/schedules/assignments/$assignmentId',
         data: {
           'shift_id': shiftId,
           'work_date': workDate,
+          if (isRestDayWork != null) 'is_rest_day_work': isRestDayWork,
         },
       ))
           .data!;

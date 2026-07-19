@@ -141,6 +141,12 @@ class _OwnerAttendanceScreenState extends State<OwnerAttendanceScreen> {
     }).toList();
   }
 
+  List<Map<String, dynamic>> get _restDayRecords {
+    return _visibleRecords
+        .where((record) => record['is_rest_day'] == true)
+        .toList();
+  }
+
   Future<void> _pickDate() async {
     final picked = await showDatePicker(
       context: context,
@@ -199,6 +205,13 @@ class _OwnerAttendanceScreenState extends State<OwnerAttendanceScreen> {
                       ),
                       const SizedBox(height: 16),
                       _AttendanceChart(metrics: _chartMetrics),
+                      if (_restDayRecords.isNotEmpty) ...[
+                        const SizedBox(height: 16),
+                        _RestDayWorkSection(
+                          records: _restDayRecords,
+                          profileImages: _profileImages,
+                        ),
+                      ],
                       const SizedBox(height: 16),
                       if (_visibleRecords.isEmpty)
                         _AttendanceEmptyState(isToday: _isToday)
@@ -355,6 +368,136 @@ class _AttendanceChart extends StatelessWidget {
                   .toList(),
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RestDayWorkSection extends StatelessWidget {
+  const _RestDayWorkSection({
+    required this.records,
+    required this.profileImages,
+  });
+
+  final List<Map<String, dynamic>> records;
+  final Map<String, String?> profileImages;
+
+  @override
+  Widget build(BuildContext context) {
+    return _AttendanceCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Rest Day Work',
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                ),
+              ),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE0F2FE),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  '${records.length}',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF075985),
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'Employees who clocked in or out on the configured rest day.',
+            style: TextStyle(fontSize: 12, color: Color(0xFF6B7280)),
+          ),
+          const SizedBox(height: 12),
+          ...records.map((record) {
+            final name = '${record['employee_name'] ?? 'Employee'}';
+            final timeIn = _formatTime(record['time_in'] as String?);
+            final timeOut = _formatTime(record['time_out'] as String?);
+            final shift = record['shift_name'] ?? record['position_title'];
+            final unauthorized = record['rest_day_authorized'] == false;
+            final accent = unauthorized
+                ? const Color(0xFFFEF3C7)
+                : const Color(0xFFE0F2FE);
+            final accentBorder = unauthorized
+                ? const Color(0xFFFDE68A)
+                : const Color(0xFFBAE6FD);
+            final accentText = unauthorized
+                ? const Color(0xFF92400E)
+                : const Color(0xFF075985);
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: unauthorized
+                      ? const Color(0xFFFFFBEB)
+                      : const Color(0xFFF0F9FF),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: accentBorder),
+                ),
+                child: Row(
+                  children: [
+                    EmployeeAvatar(
+                      imageUrl: profileImages[name.trim()],
+                      name: name,
+                      size: 42,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            name,
+                            style: const TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                          Text(
+                            '${shift ?? 'Attendance'} · In $timeIn · Out $timeOut',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Color(0xFF6B7280),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: accent,
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text(
+                        unauthorized ? 'Not permitted' : 'Rest day',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: accentText,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }),
         ],
       ),
     );

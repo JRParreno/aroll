@@ -711,6 +711,7 @@ def _simple_payslip_pdf(data: dict) -> bytes:
         f"Basic salary: PHP {_money(data['daily_rate'] * data['worked_days']):,.2f}",
         f"Overtime pay: PHP {_money(data['overtime_pay']):,.2f}",
         f"Holiday pay: PHP {_money(data['holiday_pay']):,.2f}",
+        f"Rest day premium: PHP {_money(data.get('rest_day_pay', 0)):,.2f}",
         f"Gross pay: PHP {_money(data['gross_pay']):,.2f}",
         f"Deductions: PHP {_money(data['deductions']):,.2f}",
         f"Net pay: PHP {_money(data['net_pay']):,.2f}",

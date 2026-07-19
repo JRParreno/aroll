@@ -219,6 +219,24 @@ class _OwnerPayrollDetailScreenState extends State<OwnerPayrollDetailScreen> {
                               ),
                             ),
                             _DetailRow(
+                              'Holiday Pay',
+                              ownerPayrollMoney(
+                                parsePayrollAmount(payslip['holiday_pay']),
+                              ),
+                            ),
+                            _DetailRow(
+                              payslip['rest_day_premium_percent'] != null &&
+                                      parsePayrollAmount(
+                                            payslip['rest_day_premium_percent'],
+                                          ) >
+                                          0
+                                  ? 'Rest Day Premium (${parsePayrollAmount(payslip['rest_day_premium_percent']).toStringAsFixed(0)}%)'
+                                  : 'Rest Day Premium',
+                              ownerPayrollMoney(
+                                parsePayrollAmount(payslip['rest_day_pay']),
+                              ),
+                            ),
+                            _DetailRow(
                               'Gross Salary',
                               ownerPayrollMoney(
                                 parsePayrollAmount(payslip['gross_pay']),
@@ -249,6 +267,15 @@ class _OwnerPayrollDetailScreenState extends State<OwnerPayrollDetailScreen> {
                             ),
                           ],
                         ),
+                        if (((payslip['rest_day_records'] as List<dynamic>?) ??
+                                const [])
+                            .isNotEmpty) ...[
+                          const SizedBox(height: 12),
+                          _SectionCard(
+                            title: 'Rest Day Work',
+                            children: _restDayRows(payslip),
+                          ),
+                        ],
                         const SizedBox(height: 12),
                         _SectionCard(
                           title: 'Daily Attendance Log',
@@ -283,6 +310,83 @@ class _OwnerPayrollDetailScreenState extends State<OwnerPayrollDetailScreen> {
                       ],
                     ),
     );
+  }
+
+  List<Widget> _restDayRows(Map<String, dynamic> payslip) {
+    final records = (payslip['rest_day_records'] as List<dynamic>? ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .toList();
+    final restDayName = '${payslip['rest_day_name'] ?? ''}';
+    return [
+      _DetailRow(
+        'Rest day type',
+        restDayName.isEmpty ? 'Owner-approved rest day work' : titleCase(restDayName),
+      ),
+      _DetailRow('Days worked', '${payslip['rest_day_days'] ?? records.length}'),
+      ...records.map((record) {
+        final weekday = '${record['weekday'] ?? ''}';
+        final unauthorized = record['authorized'] == false;
+        return Container(
+          margin: const EdgeInsets.only(top: 8),
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: unauthorized
+                ? const Color(0xFFFFFBEB)
+                : const Color(0xFFF0F9FF),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: unauthorized
+                  ? const Color(0xFFFDE68A)
+                  : const Color(0xFFBAE6FD),
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (unauthorized)
+                Container(
+                  margin: const EdgeInsets.only(bottom: 6),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 3,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFEF3C7),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: const Text(
+                    'Not permitted',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF92400E),
+                    ),
+                  ),
+                ),
+              _DetailRow(
+                'Date',
+                '${ownerPayrollDisplayDate('${record['date']}')}${weekday.isEmpty ? '' : ' · ${titleCase(weekday)}'}',
+              ),
+              _DetailRow(
+                'Time In',
+                _shortTime('${record['time_in'] ?? ''}'),
+              ),
+              _DetailRow(
+                'Time Out',
+                _shortTime('${record['time_out'] ?? ''}'),
+              ),
+              if ('${record['shift_name'] ?? ''}'.isNotEmpty)
+                _DetailRow('Shift', '${record['shift_name']}'),
+              _DetailRow(
+                'Premium',
+                ownerPayrollMoney(parsePayrollAmount(record['premium_pay'])),
+                highlight: true,
+              ),
+            ],
+          ),
+        );
+      }),
+    ];
   }
 
   List<Widget> _attendanceRows(
@@ -343,6 +447,9 @@ class _OwnerPayrollDetailScreenState extends State<OwnerPayrollDetailScreen> {
     if (holiday != null && holiday.isNotEmpty) {
       parts.add(holiday);
     }
+    if (record['is_rest_day'] == true) {
+      parts.add('Rest day');
+    }
     final timeIn = record['time_in'] as String?;
     final timeOut = record['time_out'] as String?;
     if (timeIn != null) parts.add('In: ${_shortTime(timeIn)}');
@@ -351,6 +458,7 @@ class _OwnerPayrollDetailScreenState extends State<OwnerPayrollDetailScreen> {
   }
 
   String _shortTime(String iso) {
+    if (iso.isEmpty) return '--:--';
     final parsed = DateTime.tryParse(iso);
     if (parsed == null) return iso;
     return '${parsed.hour.toString().padLeft(2, '0')}:'

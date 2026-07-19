@@ -37,6 +37,7 @@ def _assignment_response(
         shift_start_time=shift.start_time,
         shift_end_time=shift.end_time,
         shift_color=shift.color,
+        is_rest_day_work=bool(assignment.is_rest_day_work),
     )
 
 
@@ -175,6 +176,7 @@ def assign_schedule(
             shift_id=shift.id,
             employee_id=employee_id,
             work_date=body.work_date,
+            is_rest_day_work=body.is_rest_day_work,
         )
         db.add(assignment)
         created_assignments.append(assignment)
@@ -247,6 +249,8 @@ def update_schedule_assignment(
 
     assignment.shift_id = shift.id
     assignment.work_date = body.work_date
+    if body.is_rest_day_work is not None:
+        assignment.is_rest_day_work = body.is_rest_day_work
     db.commit()
     db.refresh(assignment)
     return _assignment_response(assignment, employee, shift)

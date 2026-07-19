@@ -1,12 +1,23 @@
 import uuid
 from datetime import date, datetime
 
-from sqlalchemy import Boolean, Date, DateTime, Enum, ForeignKey, Numeric, String, Text, func
+from sqlalchemy import (
+    Boolean,
+    Date,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Integer,
+    Numeric,
+    String,
+    Text,
+    func,
+)
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
-from app.models.enums import PayPeriodType, PayrollRunStatus
+from app.models.enums import PayPeriodType, PayrollRunStatus, Weekday
 
 
 class Position(Base):
@@ -41,6 +52,14 @@ class BusinessPayrollConfig(Base):
     overtime_per_minute: Mapped[float] = mapped_column(Numeric(10, 2), default=1.0)
     next_payday_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     auto_reset_payroll_cycle: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Payday schedule, interpreted per pay_period_type. Day values 29-31 are
+    # clamped to the last day of shorter months.
+    weekly_payday_weekday: Mapped[Weekday | None] = mapped_column(
+        Enum(Weekday), nullable=True
+    )
+    semi_monthly_payday_1: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    semi_monthly_payday_2: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    monthly_payday_day: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class PayrollRun(Base):

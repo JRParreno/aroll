@@ -17,7 +17,6 @@ SETUP_STEPS = [
     ("payroll", "Payroll Configuration"),
     ("attendance_policy", "Attendance Policy"),
     ("holidays", "Holiday Management"),
-    ("rest_day", "Rest Day Policy"),
     ("location", "Business Location"),
     ("review", "Review & Complete"),
 ]
@@ -48,7 +47,12 @@ def _step_complete(db: Session, business_id, key: str, business: Business) -> bo
         )
     if key == "payroll":
         cfg = db.get(BusinessPayrollConfig, business_id)
-        return cfg is not None and cfg.next_payday_date is not None
+        rest_day = db.get(BusinessRestDayPolicy, business_id)
+        return (
+            cfg is not None
+            and cfg.next_payday_date is not None
+            and rest_day is not None
+        )
     if key == "attendance_policy":
         return db.get(BusinessAttendancePolicy, business_id) is not None
     if key == "holidays":
@@ -58,8 +62,6 @@ def _step_complete(db: Session, business_id, key: str, business: Business) -> bo
             .count()
             >= 1
         )
-    if key == "rest_day":
-        return db.get(BusinessRestDayPolicy, business_id) is not None
     if key == "location":
         loc = (
             db.query(BusinessLocation)

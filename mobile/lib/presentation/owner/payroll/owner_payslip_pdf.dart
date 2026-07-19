@@ -16,11 +16,16 @@ Future<String> generateOwnerPayslipPdf({
   final basicSalary = dailyRate * workedDays;
   final overtimePay = parsePayrollAmount(payslip['overtime_pay']);
   final holidayPay = parsePayrollAmount(payslip['holiday_pay']);
+  final restDayPay = parsePayrollAmount(payslip['rest_day_pay']);
   final grossPay = parsePayrollAmount(payslip['gross_pay']);
   final deductions = parsePayrollAmount(payslip['deductions']);
   final netPay = parsePayrollAmount(payslip['net_pay']);
   final periodStart = '${payslip['period_start'] ?? ''}';
   final periodEnd = '${payslip['period_end'] ?? ''}';
+  final restDayRecords =
+      (payslip['rest_day_records'] as List<dynamic>? ?? const [])
+          .whereType<Map<String, dynamic>>()
+          .toList();
 
   doc.addPage(
     pw.MultiPage(
@@ -51,7 +56,23 @@ Future<String> generateOwnerPayslipPdf({
         _pdfRow('Basic Salary', ownerPayrollMoney(basicSalary)),
         _pdfRow('Overtime Pay', ownerPayrollMoney(overtimePay)),
         _pdfRow('Holiday Pay', ownerPayrollMoney(holidayPay)),
+        _pdfRow('Rest Day Premium', ownerPayrollMoney(restDayPay)),
         _pdfRow('Gross Salary', ownerPayrollMoney(grossPay)),
+        if (restDayRecords.isNotEmpty) ...[
+          pw.SizedBox(height: 12),
+          pw.Text('Rest Day Work',
+              style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+          pw.SizedBox(height: 6),
+          ...restDayRecords.map((record) {
+            final date = '${record['date'] ?? ''}';
+            final weekday = '${record['weekday'] ?? ''}';
+            final label = weekday.isEmpty ? date : '$date ($weekday)';
+            return _pdfRow(
+              label,
+              ownerPayrollMoney(parsePayrollAmount(record['premium_pay'])),
+            );
+          }),
+        ],
         pw.SizedBox(height: 12),
         pw.Text('Deductions', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
         pw.SizedBox(height: 6),

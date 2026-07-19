@@ -1,6 +1,6 @@
 from datetime import date, datetime, time
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.models.enums import (
     HolidayType,
@@ -79,6 +79,10 @@ class PayrollConfigResponse(BaseModel):
     late_deduction_per_minute: float
     overtime_enabled: bool
     overtime_per_minute: float
+    weekly_payday_weekday: str | None
+    semi_monthly_payday_1: int | None
+    semi_monthly_payday_2: int | None
+    monthly_payday_day: int | None
 
 
 class PayrollConfigUpdate(BaseModel):
@@ -89,6 +93,28 @@ class PayrollConfigUpdate(BaseModel):
     late_deduction_per_minute: float = 1.0
     overtime_enabled: bool = True
     overtime_per_minute: float = 1.0
+    weekly_payday_weekday: Weekday | None = None
+    semi_monthly_payday_1: int | None = Field(default=None, ge=1, le=31)
+    semi_monthly_payday_2: int | None = Field(default=None, ge=1, le=31)
+    monthly_payday_day: int | None = Field(default=None, ge=1, le=31)
+
+    @model_validator(mode="after")
+    def _validate_schedule(self) -> "PayrollConfigUpdate":
+        if self.pay_period_type == PayPeriodType.semi_monthly:
+            # Clients that don't send a schedule (e.g. the mobile wizard)
+            # fall back to the common 15th/30th scheme.
+            if self.semi_monthly_payday_1 is None and self.semi_monthly_payday_2 is None:
+                self.semi_monthly_payday_1 = 15
+                self.semi_monthly_payday_2 = 30
+            if self.semi_monthly_payday_1 is None or self.semi_monthly_payday_2 is None:
+                raise ValueError(
+                    "Semi-monthly pay periods require both payday days."
+                )
+            if self.semi_monthly_payday_2 <= self.semi_monthly_payday_1:
+                raise ValueError(
+                    "The second semi-monthly payday must come after the first."
+                )
+        return self
 
 
 class AttendancePolicyResponse(BaseModel):
@@ -122,19 +148,11 @@ class AttendancePolicyUpdate(BaseModel):
 
 
 class RestDayPolicyResponse(BaseModel):
-    weekly_rest_day: str
-    work_on_rest_day_allowed: bool
     rest_day_premium_percent: float
-    use_custom_premium: bool
-    custom_premium_percent: float | None
 
 
 class RestDayPolicyUpdate(BaseModel):
-    weekly_rest_day: Weekday = Weekday.sunday
-    work_on_rest_day_allowed: bool = False
     rest_day_premium_percent: float = 30.0
-    use_custom_premium: bool = False
-    custom_premium_percent: float | None = None
 
 
 class HolidayCreate(BaseModel):
