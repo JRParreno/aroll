@@ -1,5 +1,7 @@
 import 'package:aroll_mobile/core/app_state.dart';
 import 'package:aroll_mobile/core/di/injection.dart';
+import 'package:aroll_mobile/core/router/app_router.dart';
+import 'package:aroll_mobile/domain/repositories/employee_repository.dart';
 import 'package:aroll_mobile/presentation/auth/bloc/login_bloc/login_bloc.dart';
 import 'package:aroll_mobile/presentation/auth/bloc/login_bloc/login_event.dart';
 import 'package:aroll_mobile/presentation/auth/bloc/login_bloc/login_state.dart';
@@ -26,6 +28,27 @@ class _EmployeeLoginScreenState extends State<EmployeeLoginScreen> {
     super.dispose();
   }
 
+  Future<void> _onLoginSuccess(
+    BuildContext context,
+    SuccessLoginState state,
+  ) async {
+    final appState = sl<AppState>();
+    appState.setSession(
+      state.session,
+      mustChange: state.session.mustChangePassword,
+    );
+    if (!state.session.mustChangePassword) {
+      try {
+        final face = await sl<EmployeeRepository>().getFaceStatus();
+        appState.setFaceEnrolled(face.isCompleted);
+      } catch (_) {
+        appState.setFaceEnrolled(false);
+      }
+    }
+    if (!context.mounted) return;
+    context.go(resolveAuthenticatedRoute(appState));
+  }
+
   @override
   Widget build(BuildContext context) {
     return BlocProvider(
@@ -33,15 +56,7 @@ class _EmployeeLoginScreenState extends State<EmployeeLoginScreen> {
       child: BlocConsumer<LoginBloc, LoginState>(
         listener: (context, state) {
           if (state is SuccessLoginState) {
-            sl<AppState>().setSession(
-              state.session,
-              mustChange: state.session.mustChangePassword,
-            );
-            if (state.session.mustChangePassword) {
-              context.go('/change-password');
-            } else {
-              context.go('/home');
-            }
+            _onLoginSuccess(context, state);
           }
           if (state is ErrorLoginState) {
             ScaffoldMessenger.of(context).showSnackBar(

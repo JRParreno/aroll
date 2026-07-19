@@ -34,6 +34,9 @@ class AttendanceActionResponse(BaseModel):
     shift_name: str | None = None
     message: str
     face_match_score: float | None = None
+    face_match_score_out: float | None = None
     liveness_passed: bool | None = None
     is_rest_day: bool = False
     rest_day_work_authorized: bool | None = None
+    early_out_minutes: float | None = None
+    worked_minutes: float | None = None

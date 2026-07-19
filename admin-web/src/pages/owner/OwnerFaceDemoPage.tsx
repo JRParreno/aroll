@@ -42,7 +42,14 @@ function gestureLabel(kind: GestureKind): string {
   return kind === "blink" ? "Blink" : "Smile";
 }
 
-type LivenessStep = "idle" | "center" | "turn" | "return" | "ready" | "verifying";
+type LivenessStep =
+  | "idle"
+  | "center"
+  | "turn"
+  | "return"
+  | "blink"
+  | "ready"
+  | "verifying";
 
 function blobFromCanvas(
   canvas: HTMLCanvasElement,
@@ -105,8 +112,14 @@ export function OwnerFaceDemoPage() {
   );
   const [cameraOn, setCameraOn] = useState(false);
   const [samples, setSamples] = useState<string[]>([]);
+  const [enrollBlinkDone, setEnrollBlinkDone] = useState(false);
+  const [enrollBlinkWatching, setEnrollBlinkWatching] = useState(false);
   const [autoMode, setAutoMode] = useState(true);
   const [livenessMode, setLivenessMode] = useState<LivenessMode>("quick");
+  const enrollBlinkLockRef = useRef(false);
+  const strongBlinkLockRef = useRef(false);
+  const enrollBlinkRafRef = useRef<number | null>(null);
+  const strongBlinkRafRef = useRef<number | null>(null);
 
   const [gestureRunning, setGestureRunning] = useState(false);
   const [gestureLoading, setGestureLoading] = useState(false);
@@ -160,6 +173,12 @@ export function OwnerFaceDemoPage() {
       observeAbortRef.current?.abort();
       if (gestureRafRef.current !== null) {
         cancelAnimationFrame(gestureRafRef.current);
+      }
+      if (enrollBlinkRafRef.current !== null) {
+        cancelAnimationFrame(enrollBlinkRafRef.current);
+      }
+      if (strongBlinkRafRef.current !== null) {
+        cancelAnimationFrame(strongBlinkRafRef.current);
       }
       gestureDetectorRef.current?.close();
       gestureDetectorRef.current = null;
@@ -280,7 +299,14 @@ export function OwnerFaceDemoPage() {
     try {
       const blob = await captureFrame();
       const url = URL.createObjectURL(blob);
-      setSamples((prev) => [...prev, url]);
+      setSamples((prev) => {
+        const next = [...prev, url];
+        if (next.length >= TARGET_SAMPLES) {
+          setEnrollBlinkDone(false);
+          enrollBlinkLockRef.current = false;
+        }
+        return next;
+      });
     } catch (error) {
       toast.error(apiErrorMessage(error, "Capture failed"));
     }
@@ -291,8 +317,137 @@ export function OwnerFaceDemoPage() {
     const next = Array.from(files)
       .slice(0, TARGET_SAMPLES - samples.length)
       .map((f) => URL.createObjectURL(f));
-    setSamples((prev) => [...prev, ...next].slice(0, TARGET_SAMPLES));
+    setSamples((prev) => {
+      const merged = [...prev, ...next].slice(0, TARGET_SAMPLES);
+      if (merged.length >= TARGET_SAMPLES) {
+        setEnrollBlinkDone(false);
+        enrollBlinkLockRef.current = false;
+      }
+      return merged;
+    });
   }
+
+  async function ensureGestureDetector(): Promise<GestureLivenessDetector> {
+    if (!gestureDetectorRef.current) {
+      gestureDetectorRef.current = await GestureLivenessDetector.create();
+    }
+    return gestureDetectorRef.current;
+  }
+
+  // Enroll last step: require a blink before samples can be submitted.
+  useEffect(() => {
+    const shouldWatch =
+      cameraOn &&
+      samples.length >= TARGET_SAMPLES &&
+      !enrollBlinkDone &&
+      livenessStep === "idle" &&
+      !gestureRunning;
+
+    if (!shouldWatch) {
+      setEnrollBlinkWatching(false);
+      if (enrollBlinkRafRef.current !== null) {
+        cancelAnimationFrame(enrollBlinkRafRef.current);
+        enrollBlinkRafRef.current = null;
+      }
+      return;
+    }
+
+    let cancelled = false;
+    setEnrollBlinkWatching(true);
+
+    const run = async () => {
+      try {
+        const detector = await ensureGestureDetector();
+        if (cancelled) return;
+        detector.reset();
+        const loop = () => {
+          if (cancelled || enrollBlinkLockRef.current) return;
+          const video = videoRef.current;
+          if (video && video.readyState >= 2) {
+            const reading = detector.detect(video, performance.now());
+            if (reading.gesture === "blink") {
+              enrollBlinkLockRef.current = true;
+              setEnrollBlinkDone(true);
+              setEnrollBlinkWatching(false);
+              toast.success("Blink confirmed — you can enroll face samples");
+              return;
+            }
+          }
+          enrollBlinkRafRef.current = requestAnimationFrame(loop);
+        };
+        enrollBlinkRafRef.current = requestAnimationFrame(loop);
+      } catch {
+        setEnrollBlinkWatching(false);
+      }
+    };
+    void run();
+
+    return () => {
+      cancelled = true;
+      if (enrollBlinkRafRef.current !== null) {
+        cancelAnimationFrame(enrollBlinkRafRef.current);
+        enrollBlinkRafRef.current = null;
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    cameraOn,
+    samples.length,
+    enrollBlinkDone,
+    livenessStep,
+    livenessMode,
+    gestureRunning,
+  ]);
+
+  // Strong mode last step: blink after center/turn/return before verify.
+  useEffect(() => {
+    if (livenessStep !== "blink" || !cameraOn || livenessMode !== "strong") {
+      if (strongBlinkRafRef.current !== null) {
+        cancelAnimationFrame(strongBlinkRafRef.current);
+        strongBlinkRafRef.current = null;
+      }
+      return;
+    }
+
+    let cancelled = false;
+    strongBlinkLockRef.current = false;
+
+    const run = async () => {
+      try {
+        const detector = await ensureGestureDetector();
+        if (cancelled) return;
+        detector.reset();
+        const loop = () => {
+          if (cancelled || strongBlinkLockRef.current) return;
+          const video = videoRef.current;
+          if (video && video.readyState >= 2) {
+            const reading = detector.detect(video, performance.now());
+            if (reading.gesture === "blink") {
+              strongBlinkLockRef.current = true;
+              setLivenessStep("ready");
+              toast.success("Blink confirmed — verifying…");
+              return;
+            }
+          }
+          strongBlinkRafRef.current = requestAnimationFrame(loop);
+        };
+        strongBlinkRafRef.current = requestAnimationFrame(loop);
+      } catch {
+        toast.error("Could not start blink detection");
+        setLivenessStep("idle");
+      }
+    };
+    void run();
+
+    return () => {
+      cancelled = true;
+      if (strongBlinkRafRef.current !== null) {
+        cancelAnimationFrame(strongBlinkRafRef.current);
+        strongBlinkRafRef.current = null;
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [livenessStep, cameraOn, livenessMode]);
 
   async function blobsFromObjectUrls(urls: string[]): Promise<Blob[]> {
     const blobs: Blob[] = [];
@@ -311,6 +466,9 @@ export function OwnerFaceDemoPage() {
           `Capture ${TARGET_SAMPLES} face samples before enrolling`
         );
       }
+      if (!enrollBlinkDone) {
+        throw new Error("Blink once to confirm liveness before enrolling");
+      }
       const files = await blobsFromObjectUrls(samples);
       return enrollEmployeeFaceSamples(employeeId, files);
     },
@@ -319,6 +477,9 @@ export function OwnerFaceDemoPage() {
       queryClient.invalidateQueries({ queryKey: ["face-status", employeeId] });
       samples.forEach((url) => URL.revokeObjectURL(url));
       setSamples([]);
+      setEnrollBlinkDone(false);
+      setEnrollBlinkWatching(false);
+      enrollBlinkLockRef.current = false;
     },
     onError: (error) => {
       toast.error(apiErrorMessage(error, "Enrollment failed"));
@@ -472,8 +633,9 @@ export function OwnerFaceDemoPage() {
           return url;
         });
         setReturnBlob(blob);
-        setLivenessStep("ready");
-        toast.success("All frames captured");
+        setLivenessStep("blink");
+        strongBlinkLockRef.current = false;
+        toast.message("Last step — blink once to confirm");
       }
       stabilityRef.current = 0;
       setStabilityCount(0);
@@ -676,6 +838,11 @@ export function OwnerFaceDemoPage() {
       resetLiveness();
       return;
     }
+    if (livenessStep === "blink") {
+      setLivenessStep("ready");
+      toast.success("Blink confirmed — verifying…");
+      return;
+    }
     if (
       livenessStep !== "center" &&
       livenessStep !== "turn" &&
@@ -720,22 +887,24 @@ export function OwnerFaceDemoPage() {
   const status = faceStatusQuery.data;
   const captureHint =
     livenessStep === "center"
-      ? "1/3 Look straight"
+      ? "1/4 Look straight"
       : livenessStep === "turn" && challenge
-        ? `2/3 Turn ${directionLabel(challenge.direction)}`
+        ? `2/4 Turn ${directionLabel(challenge.direction)}`
         : livenessStep === "return"
-          ? "3/3 Look straight again"
-          : livenessStep === "ready"
-            ? "Frames ready — verifying…"
-            : livenessStep === "verifying"
-              ? "Submitting liveness verify…"
-              : "Start challenge to begin";
+          ? "3/4 Look straight again"
+          : livenessStep === "blink"
+            ? "4/4 Blink once to confirm"
+            : livenessStep === "ready"
+              ? "Frames ready — verifying…"
+              : livenessStep === "verifying"
+                ? "Submitting liveness verify…"
+                : "Start challenge to begin";
 
   return (
     <OwnerPage>
       <OwnerPageHeader
         title="Face recognition demo"
-        description="Enroll face samples, then prove liveness. Quick mode auto-captures on a blink or smile (on-device); Strong mode uses a server-verified randomized head-turn."
+        description="Enroll face samples (ending with a blink), then prove liveness. Strong mode: head-turn sequence + final blink; Quick mode: blink/smile then identity check."
       />
       <OwnerPageContent>
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
@@ -846,8 +1015,8 @@ export function OwnerFaceDemoPage() {
             <div className="rounded-xl border border-slate-200 bg-white p-5">
               <h2 className="text-base font-semibold">1. Enroll</h2>
               <p className="mt-1 text-sm text-muted-foreground">
-                Capture {TARGET_SAMPLES} clear face photos (different angles help).
-                Raw images are not stored — only 128-d embeddings.
+                Capture {TARGET_SAMPLES} clear face photos, then blink once to
+                confirm you are live. Raw images are not stored — only embeddings.
               </p>
               <div className="mt-4 grid grid-cols-3 gap-3">
                 {Array.from({ length: TARGET_SAMPLES }).map((_, i) => (
@@ -869,10 +1038,28 @@ export function OwnerFaceDemoPage() {
                   </div>
                 ))}
               </div>
+              {samples.length >= TARGET_SAMPLES && (
+                <p
+                  className={`mt-3 text-sm font-medium ${
+                    enrollBlinkDone ? "text-emerald-700" : "text-amber-700"
+                  }`}
+                >
+                  {enrollBlinkDone
+                    ? "Blink confirmed — ready to enroll."
+                    : enrollBlinkWatching
+                      ? "Last step: look at the camera and blink once."
+                      : "Start the camera, then blink once to finish enrollment."}
+                </p>
+              )}
               <div className="mt-4 flex flex-wrap gap-2">
                 <Button
                   type="button"
-                  disabled={!employeeId || enroll.isPending}
+                  disabled={
+                    !employeeId ||
+                    enroll.isPending ||
+                    samples.length < TARGET_SAMPLES ||
+                    !enrollBlinkDone
+                  }
                   onClick={() => enroll.mutate()}
                 >
                   {enroll.isPending ? "Enrolling…" : "Enroll face samples"}
@@ -884,6 +1071,9 @@ export function OwnerFaceDemoPage() {
                   onClick={() => {
                     samples.forEach((url) => URL.revokeObjectURL(url));
                     setSamples([]);
+                    setEnrollBlinkDone(false);
+                    setEnrollBlinkWatching(false);
+                    enrollBlinkLockRef.current = false;
                   }}
                 >
                   Clear captures
@@ -911,7 +1101,7 @@ export function OwnerFaceDemoPage() {
                   <p className="mt-1 text-sm text-muted-foreground">
                     {livenessMode === "quick"
                       ? "Quick mode: just look at the camera and blink (or smile). The face model captures automatically, then the server checks identity."
-                      : "Strong mode: server issues a one-time random head-turn. Auto mode polls YuNet pose guidance and captures when stable."}
+                      : "Strong mode: center → turn → return, then blink once. Auto mode polls YuNet pose guidance and captures when stable."}
                   </p>
                 </div>
                 {livenessMode === "strong" && (

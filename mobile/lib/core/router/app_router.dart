@@ -5,6 +5,7 @@ import 'package:aroll_mobile/presentation/auth/change_password_screen.dart';
 import 'package:aroll_mobile/presentation/auth/employee_login_screen.dart';
 import 'package:aroll_mobile/presentation/auth/owner_login_screen.dart';
 import 'package:aroll_mobile/presentation/auth/role_landing_screen.dart';
+import 'package:aroll_mobile/presentation/employee/attendance_correction_screen.dart';
 import 'package:aroll_mobile/presentation/employee/face_registration_screen.dart';
 import 'package:aroll_mobile/presentation/employee/payroll_screen.dart';
 import 'package:aroll_mobile/presentation/employee/payslip_screen.dart';
@@ -53,6 +54,9 @@ String resolveAuthenticatedRoute(AppState appState) {
         ? '/owner/setup-wizard'
         : '/owner/home';
   }
+  if (appState.faceEnrolled != true) {
+    return '/face-registration';
+  }
   return '/home';
 }
 
@@ -72,9 +76,7 @@ GoRouter createAppRouter(AppState appState) {
       } else if (appState.mustChangePassword && loc != '/change-password') {
         redirect = '/change-password';
       } else if (!appState.mustChangePassword && loc == '/change-password') {
-        redirect = session?.isOwner == true
-            ? '/owner/home'
-            : '/face-registration';
+        redirect = resolveAuthenticatedRoute(appState);
       } else if (loc == '/login' ||
           loc.startsWith('/login/') ||
           loc == '/register-business' ||
@@ -87,6 +89,18 @@ GoRouter createAppRouter(AppState appState) {
             ? '/owner/setup-wizard'
             : '/owner/home';
       } else if (session?.isEmployee == true && loc.startsWith('/owner/')) {
+        redirect = resolveAuthenticatedRoute(appState);
+      } else if (session?.isEmployee == true &&
+          !appState.mustChangePassword &&
+          appState.faceEnrolled != true &&
+          loc != '/face-registration' &&
+          loc != '/change-password') {
+        // Force face enrollment on every session until completed — including
+        // after app close/reopen (restore sets faceEnrolled from server).
+        redirect = '/face-registration';
+      } else if (session?.isEmployee == true &&
+          appState.faceEnrolled == true &&
+          loc == '/face-registration') {
         redirect = '/home';
       }
 
@@ -162,6 +176,18 @@ GoRouter createAppRouter(AppState appState) {
       GoRoute(
         path: '/shift-history',
         builder: (_, __) => const ShiftHistoryScreen(),
+        routes: [
+          GoRoute(
+            path: 'correction',
+            builder: (context, state) {
+              final item = state.extra;
+              if (item is! EmployeeShiftHistoryItem) {
+                return const ShiftHistoryScreen();
+              }
+              return AttendanceCorrectionScreen(item: item);
+            },
+          ),
+        ],
       ),
       GoRoute(
         path: '/payroll',

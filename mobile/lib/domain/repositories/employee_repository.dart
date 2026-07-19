@@ -1,4 +1,7 @@
+import 'dart:io';
+
 import 'package:aroll_mobile/domain/entities/employee_portal.dart';
+import 'package:aroll_mobile/domain/entities/face_liveness.dart';
 
 abstract class EmployeeRepository {
   Future<EmployeeDashboard> getDashboard();
@@ -13,11 +16,22 @@ abstract class EmployeeRepository {
 
   Future<List<EmployeeShiftHistoryItem>> getShiftHistory();
 
+  Future<AttendanceCorrectionRequest> submitAttendanceCorrection({
+    required String shiftAssignmentId,
+    DateTime? requestedTimeIn,
+    DateTime? requestedTimeOut,
+    required String reason,
+  });
+
+  Future<List<AttendanceCorrectionRequest>> getAttendanceCorrections();
+
   Future<EmployeePayroll> getPayroll();
 
   Future<EmployeePayslip> getPayslip();
 
-  Future<EmployeeProfile> updateFaceRegistration(String status);
+  Future<FaceStatus> getFaceStatus();
+
+  Future<FaceStatus> enrollFaceSamples(List<File> images);
 
   Future<EmployeeProfile> updateProfileImage(String imageData);
 
@@ -27,14 +41,16 @@ abstract class EmployeeRepository {
 
   Future<EmployeeWorksite> getWorksite();
 
-  Future<AttendanceClockResult> clockIn({
+  Future<AttendanceClockResult> clockInWithFace({
     required double latitude,
     required double longitude,
+    required FaceQuickCapture capture,
     String? shiftAssignmentId,
   });
 
-  Future<AttendanceClockResult> clockOut({
+  Future<AttendanceClockResult> clockOutWithFace({
     required double latitude,
     required double longitude,
+    required FaceQuickCapture capture,
   });
 }

@@ -6,6 +6,8 @@ class AppState extends ChangeNotifier {
   bool mustChangePassword = false;
   UserSession? session;
   String? employeeProfileImageUrl;
+  /// null = unknown / not loaded yet; false = must enroll; true = completed.
+  bool? faceEnrolled;
 
   void setSession(UserSession s, {required bool mustChange}) {
     session = s;
@@ -13,6 +15,10 @@ class AppState extends ChangeNotifier {
     mustChangePassword = mustChange;
     if (s.isEmployee) {
       employeeProfileImageUrl = s.profileImageUrl;
+      // Locked until server confirms enrollment (login, restore, or resume).
+      faceEnrolled = false;
+    } else {
+      faceEnrolled = null;
     }
     debugPrint(
       '[AppState] setSession must_change_password=$mustChangePassword '
@@ -21,11 +27,17 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  void setFaceEnrolled(bool enrolled) {
+    faceEnrolled = enrolled;
+    notifyListeners();
+  }
+
   void clearSession() {
     session = null;
     isLoggedIn = false;
     mustChangePassword = false;
     employeeProfileImageUrl = null;
+    faceEnrolled = null;
     notifyListeners();
   }
 

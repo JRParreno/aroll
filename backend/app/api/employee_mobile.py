@@ -30,14 +30,19 @@ from app.schemas.employee_attendance import (
 from app.services.attendance_clock import (
     clock_in_employee,
     clock_out_employee,
+    verify_employee_face_match,
     worksite_for_business,
 )
+from app.services.face_enrollment import enroll_face_sample_bytes, face_status_for_employee
+from app.services.pay_period import resolve_pay_period
+from app.models.payroll import BusinessPayrollConfig
+from app.schemas.face import FaceEnrollResponse, FaceStatusResponse
 
 router = APIRouter(prefix="/employee", tags=["employee-mobile"])
 
 
 class FaceRegistrationRequest(BaseModel):
-    status: Literal["completed", "skipped"]
+    status: Literal["completed"]
 
 
 def _current_employee(
@@ -293,6 +298,8 @@ def _shift_history_rows(
     limit: int = 100,
 ) -> list[dict]:
     """Past and completed shift assignments with linked attendance when available."""
+    from app.services.attendance_correction import latest_corrections_by_assignment
+
     work_today = today or date.today()
     holidays = _holiday_map(db, employee.business_id)
     rows = (
@@ -318,27 +325,38 @@ def _shift_history_rows(
         .all()
     )
 
+    assignment_ids = [assignment.id for assignment, _shift, _record in rows]
+    corrections = latest_corrections_by_assignment(
+        db,
+        employee_id=employee.id,
+        assignment_ids=assignment_ids,
+    )
+
     items = []
     for assignment, shift, record in rows:
         work_date = assignment.work_date
         holiday = holidays.get(work_date)
         if record is None:
             attendance_status = AttendanceStatus.absent.value
-            record_id = str(assignment.id)
+            attendance_record_id = None
             time_in = None
             time_out = None
             overtime = 0.0
+            can_correct = True
         else:
             attendance_status = record.status.value
-            record_id = str(record.id)
+            attendance_record_id = str(record.id)
             time_in = _dt_label(record.time_in)
             time_out = _dt_label(record.time_out)
             overtime = _overtime_minutes(record, assignment, shift)
+            can_correct = record.time_in is None or record.time_out is None
 
+        correction = corrections.get(assignment.id)
         items.append(
             {
-                "id": record_id,
+                "id": attendance_record_id or str(assignment.id),
                 "assignment_id": str(assignment.id),
+                "attendance_record_id": attendance_record_id,
                 "date": work_date.isoformat(),
                 "shift_name": shift.name,
                 "shift_start": _time_label(shift.start_time),
@@ -348,6 +366,16 @@ def _shift_history_rows(
                 "status": attendance_status,
                 "overtime_minutes": overtime,
                 "holiday_name": holiday.name if holiday else None,
+                "can_request_correction": can_correct
+                and (
+                    correction is None
+                    or correction.status.value != "pending"
+                ),
+                "correction_status": correction.status.value if correction else None,
+                "correction_id": str(correction.id) if correction else None,
+                "correction_review_note": (
+                    correction.review_note if correction else None
+                ),
             }
         )
     return items
@@ -420,13 +448,13 @@ def _today_attendance_status(db: Session, employee: Employee, today: date) -> di
     }
 
 
-def _current_period() -> tuple[date, date]:
-    period_end = date.today()
-    return period_end - timedelta(days=14), period_end
+def _current_period(db: Session, business_id: uuid.UUID) -> tuple[date, date]:
+    config = db.get(BusinessPayrollConfig, business_id)
+    return resolve_pay_period(config)
 
 
 def _payroll_response(db: Session, employee: Employee, business: Business) -> dict:
-    period_start, period_end = _current_period()
+    period_start, period_end = _current_period(db, business.id)
     payslip = _calculate_employee_payslip(db, employee, period_start, period_end)
     rows = []
     for record in payslip["attendance_records"]:
@@ -566,7 +594,7 @@ def payslip(
     user: Annotated[User, Depends(get_current_user)],
 ):
     employee, business = _current_employee(db, user)
-    period_start, period_end = _current_period()
+    period_start, period_end = _current_period(db, business.id)
     return {
         "business_name": business.name,
         "business_branding": _branding_response(business),
@@ -584,22 +612,28 @@ def worksite(
     return worksite_for_business(db, business.id)
 
 
+def _face_required() -> None:
+    raise HTTPException(
+        status_code=403,
+        detail={
+            "code": "face_required",
+            "message": (
+                "Face recognition is required for attendance. "
+                "Use the face clock-in/out flow."
+            ),
+        },
+    )
+
+
 @router.post("/attendance/clock-in", response_model=AttendanceActionResponse)
 def clock_in(
     body: ClockLocationRequest,
     db: Annotated[Session, Depends(get_db)],
     user: Annotated[User, Depends(get_current_user)],
 ):
-    """Clock in using device GPS; server validates geofence and shift window."""
-    employee, business = _current_employee(db, user)
-    return clock_in_employee(
-        db,
-        employee,
-        latitude=body.latitude,
-        longitude=body.longitude,
-        shift_assignment_id=body.shift_assignment_id,
-        business_timezone=business.timezone,
-    )
+    """GPS-only clock-in is disabled — face + GPS is required."""
+    _current_employee(db, user)
+    _face_required()
 
 
 @router.post("/attendance/clock-in-face", response_model=AttendanceActionResponse)
@@ -608,25 +642,13 @@ async def clock_in_with_face(
     user: Annotated[User, Depends(get_current_user)],
     latitude: Annotated[float, Form(...)],
     longitude: Annotated[float, Form(...)],
-    challenge_id: Annotated[uuid.UUID, Form(...)],
-    center_frame: Annotated[UploadFile, File(...)],
-    turn_frame: Annotated[UploadFile, File(...)],
-    return_frame: Annotated[UploadFile, File(...)],
+    file: Annotated[UploadFile, File(..., description="Face image after blink/smile")],
     shift_assignment_id: Annotated[uuid.UUID | None, Form()] = None,
+    liveness_gesture: Annotated[str | None, Form()] = None,
 ):
-    """Clock in with GPS + server-validated head-turn liveness + face match."""
-    from app.services.face_liveness import validate_liveness_sequence
-
+    """Clock in with GPS + client blink/smile gesture + server face match."""
     employee, business = _current_employee(db, user)
-    liveness = validate_liveness_sequence(
-        db,
-        challenge_id=challenge_id,
-        employee=employee,
-        center_bytes=await center_frame.read(),
-        turn_bytes=await turn_frame.read(),
-        return_bytes=await return_frame.read(),
-        consume=True,
-    )
+    _ = liveness_gesture  # blink | smile — detected on device
     return clock_in_employee(
         db,
         employee,
@@ -634,7 +656,7 @@ async def clock_in_with_face(
         longitude=longitude,
         shift_assignment_id=shift_assignment_id,
         business_timezone=business.timezone,
-        face_match_score=liveness.match_score,
+        face_image_bytes=await file.read(),
         liveness_passed=True,
     )
 
@@ -645,14 +667,67 @@ def clock_out(
     db: Annotated[Session, Depends(get_db)],
     user: Annotated[User, Depends(get_current_user)],
 ):
-    """Clock out using device GPS; server validates geofence before closing the record."""
+    """GPS-only clock-out is disabled — face + GPS is required."""
+    _current_employee(db, user)
+    _face_required()
+
+
+@router.post("/attendance/clock-out-face", response_model=AttendanceActionResponse)
+async def clock_out_with_face(
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+    latitude: Annotated[float, Form(...)],
+    longitude: Annotated[float, Form(...)],
+    file: Annotated[UploadFile, File(..., description="Face image after blink/smile")],
+    liveness_gesture: Annotated[str | None, Form()] = None,
+):
+    """Clock out with GPS + client blink/smile gesture + server face match."""
     employee, business = _current_employee(db, user)
+    _ = liveness_gesture  # blink | smile — detected on device
+    score = verify_employee_face_match(db, employee, await file.read())
     return clock_out_employee(
         db,
         employee,
-        latitude=body.latitude,
-        longitude=body.longitude,
+        latitude=latitude,
+        longitude=longitude,
         business_timezone=business.timezone,
+        face_match_score=score,
+        liveness_passed=True,
+    )
+
+
+@router.get("/face-status", response_model=FaceStatusResponse)
+def employee_face_status(
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+):
+    employee, _business = _current_employee(db, user)
+    return FaceStatusResponse(**face_status_for_employee(db, employee))
+
+
+@router.post("/face-samples", response_model=FaceEnrollResponse, status_code=201)
+async def employee_enroll_face_samples(
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+    files: Annotated[list[UploadFile], File(..., description="3–5 face images")],
+):
+    """Employee self-enroll — same embedding pipeline as owner face demo."""
+    employee, _business = _current_employee(db, user)
+    payloads: list[bytes] = []
+    for upload in files:
+        data = await upload.read()
+        if not data:
+            raise HTTPException(400, f"Empty file: {upload.filename or 'upload'}")
+        payloads.append(data)
+    result = enroll_face_sample_bytes(
+        db, employee, payloads, enrolled_by=user.id
+    )
+    return FaceEnrollResponse(
+        employee_id=result["employee_id"],
+        face_registration_status=result["face_registration_status"],
+        sample_count=result["sample_count"],
+        model_version=result["model_version"],
+        message=result["message"],
     )
 
 
@@ -662,16 +737,20 @@ def face_registration(
     db: Annotated[Session, Depends(get_db)],
     user: Annotated[User, Depends(get_current_user)],
 ):
+    """Legacy status endpoint. Prefer POST /employee/face-samples for enrollment."""
     employee, business = _current_employee(db, user)
-    now = datetime.now(timezone.utc)
-    employee.face_registration_status = body.status
-    if body.status == "completed":
-        employee.face_registered_at = now
-        employee.face_registration_skipped_at = None
-    else:
-        employee.face_registration_skipped_at = now
-    db.commit()
-    db.refresh(employee)
+    status = face_status_for_employee(db, employee)
+    if status["sample_count"] < 1 or employee.face_registration_status != "completed":
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "face_enrollment_required",
+                "message": (
+                    "Upload face samples via POST /employee/face-samples. "
+                    "Skipping face registration is not allowed."
+                ),
+            },
+        )
     return _employee_profile_response(db, employee, business)
 
 
@@ -681,7 +760,7 @@ def payslip_pdf(
     user: Annotated[User, Depends(get_current_user)],
 ):
     employee, business = _current_employee(db, user)
-    period_start, period_end = _current_period()
+    period_start, period_end = _current_period(db, business.id)
     data = {
         "business_name": business.name,
         **_calculate_employee_payslip(db, employee, period_start, period_end),
