@@ -153,7 +153,7 @@ def test_validate_happy_path_consumes_challenge():
         )
 
     assert result.liveness_passed is True
-    assert result.match_score >= 0.45
+    assert result.match_score >= 0.50
     assert challenge.consumed_at is not None
     db.commit.assert_called()
 

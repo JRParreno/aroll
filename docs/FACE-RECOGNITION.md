@@ -20,7 +20,7 @@ Client (admin-web / Flutter)
 
 | Setting | Env / config | Default |
 |---------|--------------|---------|
-| Match threshold | `FACE_MATCH_THRESHOLD` | `0.45` |
+| Match threshold | `FACE_MATCH_THRESHOLD` | `0.50` |
 | Model version | `FACE_MODEL_VERSION` | `sface_v3` |
 | Enrollment samples | min / max | `3` / `5` |
 | Challenge TTL | `FACE_LIVENESS_CHALLENGE_TTL_SECONDS` | `90` |
@@ -43,11 +43,22 @@ curl.exe -L -o models\face_recognition_sface_2021dec.onnx https://github.com/ope
 ```
 
 SFace's published benchmark threshold is `0.363`, but real webcam testing
-showed impostor photos scoring up to ~0.37, so the default is a stricter
-`0.45` (genuine matches typically score 0.5+; verify uses the best score
-across all enrolled samples). Tune per deployment by testing a few genuine
-and impostor captures. Embeddings are model-specific — re-enroll everyone
-after any model change.
+showed impostor photos scoring up to ~0.37 and lookalike siblings around
+~0.46, so the default is a stricter `0.50` (genuine same-person matches
+typically score 0.50–0.70+; verify uses the best score across all enrolled
+samples).
+
+**How to read the score (no ML knowledge needed):**
+
+| Score vs threshold | Meaning |
+|--------------------|---------|
+| Below threshold (e.g. 0.40 &lt; 0.50) | Rejected — not a match |
+| At/above threshold (e.g. 0.55 ≥ 0.50) | Accepted — treated as the enrolled person |
+| Sibling/lookalike near the bar | Raise `FACE_MATCH_THRESHOLD` (try `0.55`) |
+| Real employee often rejected | Lower slightly (try `0.48`) or re-enroll with clearer samples |
+
+Tune per deployment with a few genuine and impostor captures. Embeddings are
+model-specific — re-enroll everyone after any model change.
 
 **Liveness:** randomized one-time head-turn (`turn_left` / `turn_right`) blocks
 static printed photos and photo-on-phone attacks. It does **not** claim protection
@@ -72,7 +83,7 @@ Base path: `/api/v1` (Bearer JWT).
   "sample_count": 3,
   "model_version": "sface_v3",
   "face_registered_at": "2026-07-14T…",
-  "threshold": 0.45
+  "threshold": 0.50
 }
 ```
 

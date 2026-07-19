@@ -18,10 +18,12 @@ class Settings(BaseSettings):
     # Set to false in production and list explicit origins in CORS_ORIGINS instead.
     cors_allow_localhost_regex: bool = True
     registration_upload_dir: str = "uploads/registrations"
-    # Cosine similarity threshold for face match. SFace's published benchmark
-    # threshold is 0.363, but real webcam captures showed impostors reaching
-    # ~0.37, so we use a stricter 0.45 (genuine matches typically score 0.5+).
-    face_match_threshold: float = 0.45
+    # Cosine similarity threshold for face match. Higher = stricter (fewer
+    # false accepts, more "try again" for genuine people in bad lighting).
+    # SFace's published bar is ~0.363; webcam impostors hit ~0.37; lookalike
+    # siblings have scored ~0.46. Default 0.50 rejects that band while genuine
+    # same-person captures usually still land at 0.50–0.70+.
+    face_match_threshold: float = 0.50
     face_model_version: str = "sface_v3"
     face_min_enrollment_samples: int = 3
     face_max_enrollment_samples: int = 5
