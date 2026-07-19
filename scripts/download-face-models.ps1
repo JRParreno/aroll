@@ -49,26 +49,46 @@ function Get-FaceModel($spec) {
 
     Write-Host ("  [GET]  {0} ..." -f $spec.Name) -ForegroundColor Yellow
     $tmp = "$dest.download"
-    try {
-        # Prefer curl.exe (progress bar); fall back to Invoke-WebRequest.
-        if (Get-Command curl.exe -ErrorAction SilentlyContinue) {
-            & curl.exe -L --fail --retry 3 -o $tmp $spec.Url
-            if ($LASTEXITCODE -ne 0) { throw "curl exited with code $LASTEXITCODE" }
+    if (Test-Path $tmp) { Remove-Item $tmp -Force -ErrorAction SilentlyContinue }
+
+    # Try curl.exe first (progress bar), then fall back to Invoke-WebRequest
+    # with TLS 1.2 forced (fixes curl exit code 35 / SSL errors on some PCs).
+    $downloaded = $false
+    if (Get-Command curl.exe -ErrorAction SilentlyContinue) {
+        & curl.exe -L --fail --retry 3 --ssl-no-revoke -o $tmp $spec.Url
+        if ($LASTEXITCODE -eq 0) {
+            $downloaded = $true
         } else {
-            Invoke-WebRequest -Uri $spec.Url -OutFile $tmp -UseBasicParsing
+            Write-Host ("  [WARN] curl failed (code {0}) - retrying with PowerShell downloader..." -f $LASTEXITCODE) -ForegroundColor Yellow
+            if (Test-Path $tmp) { Remove-Item $tmp -Force -ErrorAction SilentlyContinue }
         }
-        $size = (Get-Item $tmp).Length
-        if ($size -lt $spec.MinBytes) {
-            throw "Downloaded file is too small ($size bytes) - check the URL / network."
-        }
-        Move-Item -Force $tmp $dest
-        $mb = [math]::Round($size / 1MB, 1)
-        Write-Host ("  [OK]   {0} downloaded ({1} MB)" -f $spec.Name, $mb) -ForegroundColor Green
-    } catch {
-        if (Test-Path $tmp) { Remove-Item $tmp -Force -ErrorAction SilentlyContinue }
-        Write-Host ("  [FAIL] {0}: {1}" -f $spec.Name, $_.Exception.Message) -ForegroundColor Red
-        throw
     }
+
+    if (-not $downloaded) {
+        try {
+            [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+            $prevProgress = $ProgressPreference
+            $ProgressPreference = "SilentlyContinue"  # much faster large downloads
+            Invoke-WebRequest -Uri $spec.Url -OutFile $tmp -UseBasicParsing
+            $ProgressPreference = $prevProgress
+        } catch {
+            if (Test-Path $tmp) { Remove-Item $tmp -Force -ErrorAction SilentlyContinue }
+            Write-Host ("  [FAIL] {0}: {1}" -f $spec.Name, $_.Exception.Message) -ForegroundColor Red
+            Write-Host "         If this keeps failing: check internet/proxy/antivirus, or download manually:" -ForegroundColor Yellow
+            Write-Host ("         {0}" -f $spec.Url) -ForegroundColor Yellow
+            Write-Host ("         and save it as: {0}" -f $dest) -ForegroundColor Yellow
+            throw
+        }
+    }
+
+    $size = (Get-Item $tmp).Length
+    if ($size -lt $spec.MinBytes) {
+        Remove-Item $tmp -Force -ErrorAction SilentlyContinue
+        throw "Downloaded file is too small ($size bytes) - check the URL / network."
+    }
+    Move-Item -Force $tmp $dest
+    $mb = [math]::Round($size / 1MB, 1)
+    Write-Host ("  [OK]   {0} downloaded ({1} MB)" -f $spec.Name, $mb) -ForegroundColor Green
 }
 
 foreach ($m in $Models) {
