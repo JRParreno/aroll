@@ -31,6 +31,7 @@ from app.services.face_embedding import (
     best_match_score,
     detect_and_embed,
     match_passed,
+    mean_match_score,
 )
 from app.services.face_liveness import (
     challenge_instruction,
@@ -215,9 +216,10 @@ async def verify_face(
 
     probe = detect_and_embed(await file.read())
     gallery = [list(row.embedding) for row in samples]
-    score = best_match_score(probe, gallery)
+    score = mean_match_score(probe, gallery)
     passed = match_passed(score)
     threshold = settings.face_match_threshold
+    best = best_match_score(probe, gallery)
 
     return FaceVerifyResponse(
         employee_id=str(emp.id),
@@ -227,9 +229,16 @@ async def verify_face(
         model_version=MODEL_VERSION,
         liveness_checked=False,
         message=(
-            "Identity match passed (liveness NOT checked — use /face/verify-liveness)."
+            (
+                f"Identity match passed (mean {score:.3f}, best {best:.3f}). "
+                "Blink/smile is client-side only — use Strong head-turn for "
+                "server-verified liveness."
+            )
             if passed
-            else f"Face match failed (score {score:.3f} < {threshold:.3f})."
+            else (
+                f"Face match failed (mean {score:.3f} < {threshold:.3f}; "
+                f"best {best:.3f})."
+            )
         ),
     )
 

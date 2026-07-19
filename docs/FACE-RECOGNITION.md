@@ -20,7 +20,7 @@ Client (admin-web / Flutter)
 
 | Setting | Env / config | Default |
 |---------|--------------|---------|
-| Match threshold | `FACE_MATCH_THRESHOLD` | `0.45` |
+| Match threshold | `FACE_MATCH_THRESHOLD` | `0.78` |
 | Model version | `FACE_MODEL_VERSION` | `arcface_r50_v1` |
 | Enrollment samples | min / max | `3` / `5` |
 | Challenge TTL | `FACE_LIVENESS_CHALLENGE_TTL_SECONDS` | `90` |
@@ -67,14 +67,18 @@ light enough for a laptop.
 
 | Score vs threshold | Meaning |
 |--------------------|---------|
-| Below threshold (e.g. 0.35 &lt; 0.45) | Rejected — not a match |
-| At/above threshold (e.g. 0.84 ≥ 0.45) | Accepted — treated as the enrolled person |
-| Sibling/lookalike still passing | Raise `FACE_MATCH_THRESHOLD` (try `0.50`) |
-| Real employee often rejected | Lower slightly (try `0.40`) or re-enroll with clearer samples |
+| Below threshold (e.g. 0.70 &lt; 0.78) | Rejected — not a match |
+| At/above threshold (e.g. 0.84 ≥ 0.78) | Accepted — treated as the enrolled person |
+| Sibling/lookalike still passing | Raise `FACE_MATCH_THRESHOLD` (try `0.82`) |
+| Real employee often rejected | Lower slightly (try `0.72`) or re-enroll with clearer samples |
 
-With ArcFace R50, genuine same-person captures usually score **~0.45–0.85** (a
-clear, good capture can reach 0.8+) and different people (including siblings)
-fall well below (~0.30–0.45). Tune per deployment with a
+Scoring uses the **mean** similarity across all enrolled samples (not the single
+best photo). That blocks a lookalike who luckily matches one enrollment angle.
+
+With ArcFace R50, a clear genuine capture often scores **~0.80–0.85** (mean).
+Close siblings have previously scored ~0.77 on the old "best sample" rule — the
+combination of mean scoring + default **0.78** is meant to reject that case.
+Different / unrelated people usually fall much lower. Tune per deployment with a
 few genuine and lookalike captures. Embeddings are model-specific — **everyone
 must re-enroll after a model change** (migration `015` clears old embeddings and
 resets enrollment automatically).
@@ -102,7 +106,7 @@ Base path: `/api/v1` (Bearer JWT).
   "sample_count": 3,
   "model_version": "arcface_r50_v1",
   "face_registered_at": "2026-07-14T…",
-  "threshold": 0.45
+  "threshold": 0.78
 }
 ```
 

@@ -8,9 +8,11 @@ import pytest
 from app.services.face_embedding import (
     EMBEDDING_DIM,
     FacePipelineError,
+    best_match_score,
     cosine_similarity,
     detect_and_embed,
     match_passed,
+    mean_match_score,
 )
 
 
@@ -51,6 +53,20 @@ def test_cosine_similarity_orthogonal():
 def test_match_passed_threshold():
     assert match_passed(0.8, threshold=0.72) is True
     assert match_passed(0.5, threshold=0.72) is False
+
+
+def test_mean_match_stricter_than_best():
+    """A lookalike that luckily hits one enrolled sample still fails on mean."""
+    probe = [1.0, 0.0, 0.0]
+    gallery = [
+        [1.0, 0.0, 0.0],  # identical → 1.0
+        [0.0, 1.0, 0.0],  # orthogonal → 0.0
+        [0.0, 0.0, 1.0],  # orthogonal → 0.0
+    ]
+    assert best_match_score(probe, gallery) == pytest.approx(1.0)
+    assert mean_match_score(probe, gallery) == pytest.approx(1.0 / 3.0)
+    assert match_passed(best_match_score(probe, gallery), threshold=0.78) is True
+    assert match_passed(mean_match_score(probe, gallery), threshold=0.78) is False
 
 
 def test_invalid_image_raises():

@@ -20,6 +20,7 @@ from app.services.face_embedding import (
     cosine_similarity,
     detect_and_observe,
     match_passed,
+    mean_match_score,
 )
 
 DIRECTIONS = ("turn_left", "turn_right")
@@ -226,14 +227,16 @@ def validate_liveness_sequence(
 
     gallery = [list(row.embedding) for row in samples]
     # Use the return-to-center frame as the identity probe for enrollment match.
-    match_score = best_match_score(ret.embedding, gallery)
+    # Mean across enrolled samples is stricter against lookalike/sibling luck.
+    match_score = mean_match_score(ret.embedding, gallery)
     threshold = settings.face_match_threshold
     if not match_passed(match_score, threshold):
         raise LivenessError(
             "face_mismatch",
             (
                 f"Face did not match enrolled samples "
-                f"(score {match_score:.3f} < {threshold:.3f})."
+                f"(mean score {match_score:.3f} < {threshold:.3f}; "
+                f"best {best_match_score(ret.embedding, gallery):.3f})."
             ),
             status_code=403,
             match_score=round(match_score, 4),

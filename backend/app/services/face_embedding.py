@@ -259,9 +259,25 @@ def best_match_score(
     probe: list[float],
     gallery: list[list[float]],
 ) -> float:
+    """Highest similarity to any enrolled sample (lenient — lookalikes can luck out)."""
     if not gallery:
         return 0.0
     return max(cosine_similarity(probe, sample) for sample in gallery)
+
+
+def mean_match_score(
+    probe: list[float],
+    gallery: list[list[float]],
+) -> float:
+    """Average similarity across all enrolled samples.
+
+    Stricter than best/max: a sibling who luckily matches one enrollment photo
+    still has to look like the rest of the gallery.
+    """
+    if not gallery:
+        return 0.0
+    scores = [cosine_similarity(probe, sample) for sample in gallery]
+    return float(sum(scores) / len(scores))
 
 
 def match_passed(score: float, threshold: float | None = None) -> bool:

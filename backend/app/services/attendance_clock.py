@@ -198,9 +198,9 @@ def _verify_face_for_employee(
     from app.core.config import settings
     from app.models.face_embedding import EmployeeFaceEmbedding
     from app.services.face_embedding import (
-        best_match_score,
         detect_and_embed,
         match_passed,
+        mean_match_score,
     )
 
     samples = (
@@ -218,7 +218,7 @@ def _verify_face_for_employee(
         )
 
     probe = detect_and_embed(face_image_bytes)
-    score = best_match_score(probe, [list(row.embedding) for row in samples])
+    score = mean_match_score(probe, [list(row.embedding) for row in samples])
     if not match_passed(score):
         raise HTTPException(
             403,
@@ -226,7 +226,7 @@ def _verify_face_for_employee(
                 "code": "face_mismatch",
                 "message": (
                     f"Face did not match enrolled samples "
-                    f"(score {score:.3f} < {settings.face_match_threshold:.3f})."
+                    f"(mean score {score:.3f} < {settings.face_match_threshold:.3f})."
                 ),
                 "match_score": round(score, 4),
                 "threshold": settings.face_match_threshold,

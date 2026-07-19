@@ -367,7 +367,9 @@ export function OwnerFaceDemoPage() {
     onSuccess: (data) => {
       setQuickResult(data);
       if (data.passed) {
-        toast.success("Blink/smile liveness + identity match passed");
+        toast.success(
+          "Identity match passed (blink/smile detected on-device)"
+        );
       } else {
         toast.error("Face did not match — try again");
       }
@@ -1022,16 +1024,26 @@ export function OwnerFaceDemoPage() {
                     >
                       <p className="font-medium">
                         {quickResult.passed
-                          ? `${quickGesture ? gestureLabel(quickGesture) : "Gesture"} liveness + identity match passed`
+                          ? `Identity match passed${
+                              quickGesture
+                                ? ` · ${gestureLabel(quickGesture).toLowerCase()} detected on-device`
+                                : ""
+                            }`
                           : "Identity did not match"}
                       </p>
                       <p className="mt-1">
-                        Score {quickResult.match_score.toFixed(3)} / threshold{" "}
+                        Mean score {quickResult.match_score.toFixed(3)} / threshold{" "}
                         {quickResult.threshold.toFixed(3)}
                       </p>
                       <p className="mt-1 text-xs opacity-80">
                         {quickResult.message}
                       </p>
+                      {quickResult.passed && (
+                        <p className="mt-2 text-xs opacity-80">
+                          Blink/smile is checked in the browser only. Use Strong
+                          (head-turn) mode for server-verified liveness.
+                        </p>
+                      )}
                     </div>
                   )}
                 </div>
