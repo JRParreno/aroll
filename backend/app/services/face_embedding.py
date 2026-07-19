@@ -242,7 +242,7 @@ def detect_and_observe(image_bytes: bytes) -> FaceObservation:
 
 
 def detect_and_embed(image_bytes: bytes) -> list[float]:
-    """Detect the most prominent face and return a 128-d SFace embedding."""
+    """Detect the most prominent face and return a 512-d ArcFace embedding."""
     return detect_and_observe(image_bytes).embedding
 
 

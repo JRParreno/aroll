@@ -2,7 +2,7 @@ import { FaceLandmarker, FilesetResolver } from "@mediapipe/tasks-vision";
 
 // Client-side liveness helper: detects a blink or smile from the webcam using
 // MediaPipe FaceLandmarker blendshapes. This only guides *when* to capture a
-// frame. The FastAPI server remains authoritative for identity (SFace match).
+// frame. The FastAPI server remains authoritative for identity (ArcFace match).
 
 const WASM_CDN =
   "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm";
