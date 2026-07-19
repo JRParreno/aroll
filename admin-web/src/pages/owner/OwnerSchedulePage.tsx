@@ -89,6 +89,7 @@ export function OwnerSchedulePage() {
   const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<string[]>([]);
   const [employeeModalOpen, setEmployeeModalOpen] = useState(false);
   const [editingAssignmentId, setEditingAssignmentId] = useState<string | null>(null);
+  const [isRestDayWork, setIsRestDayWork] = useState(false);
   const [search, setSearch] = useState("");
   const [positionFilter, setPositionFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
@@ -215,12 +216,14 @@ export function OwnerSchedulePage() {
         shift_id: selectedShiftId,
         work_date: workDate,
         employee_ids: selectedEmployeeIds,
+        is_rest_day_work: isRestDayWork,
       }),
     onSuccess: (result) => {
       toast.success(
         result.created > 0 ? `Assigned ${result.created} employee(s)` : "No new assignments"
       );
       setSelectedEmployeeIds([]);
+      setIsRestDayWork(false);
       setEmployeeModalOpen(false);
       qc.invalidateQueries({ queryKey: ["weekly-schedule"] });
       qc.invalidateQueries({ queryKey: ["owner-performance"] });
@@ -247,14 +250,30 @@ export function OwnerSchedulePage() {
       updateScheduleAssignment(editingAssignmentId!, {
         shift_id: selectedShiftId,
         work_date: workDate,
+        is_rest_day_work: isRestDayWork,
       }),
     onSuccess: () => {
       toast.success("Schedule updated");
       setEditingAssignmentId(null);
+      setIsRestDayWork(false);
       qc.invalidateQueries({ queryKey: ["weekly-schedule"] });
       qc.invalidateQueries({ queryKey: ["owner-performance"] });
     },
-    onError: () => toast.error("Unable to update schedule"),
+    onError: (error: unknown) => {
+      const detail =
+        typeof error === "object" &&
+        error !== null &&
+        "response" in error &&
+        typeof error.response === "object" &&
+        error.response !== null &&
+        "data" in error.response &&
+        typeof error.response.data === "object" &&
+        error.response.data !== null &&
+        "detail" in error.response.data
+          ? String(error.response.data.detail)
+          : "Unable to update schedule";
+      toast.error(detail);
+    },
   });
 
   const addShift = useMutation({
@@ -300,6 +319,7 @@ export function OwnerSchedulePage() {
     setSelectedShiftId(shiftId);
     setSelectedEmployeeIds([]);
     setEditingAssignmentId(null);
+    setIsRestDayWork(false);
     setEmployeeModalOpen(true);
   }
 
@@ -507,9 +527,16 @@ export function OwnerSchedulePage() {
                                     {employee?.position_title ?? "Unassigned"}
                                   </td>
                                   <td className="px-4 py-3">
-                                    <span className="rounded-full border border-blue-100 bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700">
-                                      Assigned
-                                    </span>
+                                    <div className="flex flex-wrap gap-2">
+                                      <span className="rounded-full border border-blue-100 bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700">
+                                        Assigned
+                                      </span>
+                                      {assignment.is_rest_day_work && (
+                                        <span className="rounded-full border border-sky-100 bg-sky-50 px-2.5 py-1 text-xs font-medium text-sky-800">
+                                          Rest day
+                                        </span>
+                                      )}
+                                    </div>
                                   </td>
                                   <td className="px-4 py-3">
                                     <div className="flex justify-end gap-2">
@@ -519,6 +546,9 @@ export function OwnerSchedulePage() {
                                         onClick={() => {
                                           setEditingAssignmentId(assignment.id);
                                           setSelectedShiftId(shift.id);
+                                          setIsRestDayWork(
+                                            Boolean(assignment.is_rest_day_work)
+                                          );
                                           setEmployeeModalOpen(false);
                                         }}
                                       >
@@ -548,6 +578,14 @@ export function OwnerSchedulePage() {
             {editingAssignmentId && (
               <section className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-800">
                 Choose a new date or shift above, then save to reassign this schedule.
+                <label className="mt-4 flex items-center gap-2 rounded-xl border border-amber-200 bg-white px-4 py-3 text-sm text-[#1F2937]">
+                  <input
+                    type="checkbox"
+                    checked={isRestDayWork}
+                    onChange={(event) => setIsRestDayWork(event.target.checked)}
+                  />
+                  Mark as approved rest day work (premium applies)
+                </label>
                 <div className="mt-4 flex gap-2">
                   <Button
                     className="bg-[#1E3A5F] hover:bg-[#284B73]"
@@ -556,7 +594,13 @@ export function OwnerSchedulePage() {
                   >
                     Save Reassignment
                   </Button>
-                  <Button variant="outline" onClick={() => setEditingAssignmentId(null)}>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setEditingAssignmentId(null);
+                      setIsRestDayWork(false);
+                    }}
+                  >
                     Cancel
                   </Button>
                 </div>
@@ -845,17 +889,27 @@ export function OwnerSchedulePage() {
             </table>
           </div>
 
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setEmployeeModalOpen(false)}>
-              Cancel
-            </Button>
-            <Button
-              className="bg-[#1E3A5F] hover:bg-[#284B73]"
-              disabled={!selectedShiftId || selectedEmployeeIds.length === 0 || assign.isPending}
-              onClick={() => assign.mutate()}
-            >
-              Save Schedule
-            </Button>
+          <DialogFooter className="flex-col items-stretch gap-3 sm:flex-col">
+            <label className="flex items-center gap-2 rounded-xl border border-slate-200 bg-[#FAFBFC] px-4 py-3 text-sm text-[#1F2937]">
+              <input
+                type="checkbox"
+                checked={isRestDayWork}
+                onChange={(event) => setIsRestDayWork(event.target.checked)}
+              />
+              Mark as approved rest day work (premium applies)
+            </label>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setEmployeeModalOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                className="bg-[#1E3A5F] hover:bg-[#284B73]"
+                disabled={!selectedShiftId || selectedEmployeeIds.length === 0 || assign.isPending}
+                onClick={() => assign.mutate()}
+              >
+                Save Schedule
+              </Button>
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>

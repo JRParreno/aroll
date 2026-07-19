@@ -9,13 +9,24 @@ from app.core.deps import get_current_user, require_roles
 from app.db.session import get_db
 from app.models.attendance import AttendanceRecord
 from app.models.employee import Employee
-from app.models.enums import AttendanceStatus, UserRole
+from app.models.enums import AttendanceStatus, UserRole, Weekday
 from app.models.holiday import Holiday
 from app.models.payroll import BusinessPayrollConfig, Position
+from app.models.rest_day_policy import BusinessRestDayPolicy
 from app.models.scheduling import Shift, ShiftAssignment
 from app.models.user import User
 
 router = APIRouter(prefix="/owner/reports", tags=["owner-reports"])
+
+_WEEKDAY_BY_INDEX = (
+    Weekday.monday,
+    Weekday.tuesday,
+    Weekday.wednesday,
+    Weekday.thursday,
+    Weekday.friday,
+    Weekday.saturday,
+    Weekday.sunday,
+)
 
 
 def _shift_end_at(work_date: date, shift: Shift) -> datetime:
@@ -25,6 +36,20 @@ def _shift_end_at(work_date: date, shift: Shift) -> datetime:
     return end_at
 
 
+def _weekday_for_date(work_date: date) -> Weekday:
+    return _WEEKDAY_BY_INDEX[work_date.weekday()]
+
+
+def _is_rest_day_work(assignment: ShiftAssignment | None) -> bool:
+    return bool(assignment is not None and assignment.is_rest_day_work)
+
+
+def _rest_day_premium_percent(policy: BusinessRestDayPolicy | None) -> float:
+    if policy is None:
+        return 0.0
+    return float(policy.rest_day_premium_percent)
+
+
 def _calculate_employee_payslip(
     db: Session,
     employee: Employee,
@@ -32,10 +57,13 @@ def _calculate_employee_payslip(
     period_end: date,
 ) -> dict:
     config = db.get(BusinessPayrollConfig, employee.business_id)
+    rest_policy = db.get(BusinessRestDayPolicy, employee.business_id)
     position = db.get(Position, employee.position_id) if employee.position_id else None
     daily_rate = float(position.daily_rate) if position else 0.0
     overtime_rate = float(config.overtime_per_minute) if config else 0.0
     late_rate = float(config.late_deduction_per_minute) if config else 0.0
+    premium_percent = _rest_day_premium_percent(rest_policy)
+    rest_day_work_allowed = True
 
     rows = (
         db.query(AttendanceRecord, ShiftAssignment, Shift)
@@ -61,11 +89,19 @@ def _calculate_employee_payslip(
     late_minutes = 0.0
     absent_days = 0
     holiday_pay = 0.0
+    rest_day_pay = 0.0
+    rest_day_days = 0
     attendance_records = []
+    rest_day_records = []
 
     for record, assignment, shift in rows:
         work_date = assignment.work_date if assignment else record.created_at.date()
         holiday = holidays.get(work_date)
+        is_rest = _is_rest_day_work(assignment)
+        worked = (
+            record.status != AttendanceStatus.absent and record.time_in is not None
+        )
+
         if record.status == AttendanceStatus.absent:
             absent_days += 1
         elif record.time_in is not None:
@@ -88,6 +124,27 @@ def _calculate_employee_payslip(
             multiplier = float(holiday.pay_multiplier)
             holiday_pay += max(daily_rate * (multiplier - 1), 0)
 
+        day_rest_premium = 0.0
+        if is_rest and worked:
+            day_rest_premium = daily_rate * (premium_percent / 100.0)
+            rest_day_pay += day_rest_premium
+            rest_day_days += 1
+            rest_day_records.append(
+                {
+                    "date": work_date.isoformat(),
+                    "weekday": _weekday_for_date(work_date).value,
+                    "status": record.status.value,
+                    "time_in": record.time_in.isoformat() if record.time_in else None,
+                    "time_out": (
+                        record.time_out.isoformat() if record.time_out else None
+                    ),
+                    "shift_name": shift.name if shift else None,
+                    "premium_percent": premium_percent,
+                    "premium_pay": round(day_rest_premium, 2),
+                    "authorized": rest_day_work_allowed,
+                }
+            )
+
         attendance_records.append(
             {
                 "date": work_date.isoformat(),
@@ -95,12 +152,22 @@ def _calculate_employee_payslip(
                 "time_in": record.time_in.isoformat() if record.time_in else None,
                 "time_out": record.time_out.isoformat() if record.time_out else None,
                 "holiday_name": holiday.name if holiday else None,
+                "is_rest_day": is_rest,
+                "rest_day_premium_pay": (
+                    round(day_rest_premium, 2) if day_rest_premium else None
+                ),
             }
         )
 
     overtime_pay = overtime_minutes * overtime_rate
     deductions = late_minutes * late_rate
-    gross_pay = daily_rate * worked_days + overtime_pay + holiday_pay
+    if config is not None and not config.late_deduction_enabled:
+        deductions = 0.0
+    if config is not None and not config.overtime_enabled:
+        overtime_pay = 0.0
+    gross_pay = (
+        daily_rate * worked_days + overtime_pay + holiday_pay + rest_day_pay
+    )
     net_pay = max(gross_pay - deductions, 0)
 
     return {
@@ -116,6 +183,11 @@ def _calculate_employee_payslip(
         "overtime_hours": round(overtime_minutes / 60, 2),
         "overtime_pay": round(overtime_pay, 2),
         "holiday_pay": round(holiday_pay, 2),
+        "rest_day_days": rest_day_days,
+        "rest_day_premium_percent": premium_percent,
+        "rest_day_pay": round(rest_day_pay, 2),
+        "rest_day_work_allowed": rest_day_work_allowed,
+        "rest_day_records": rest_day_records,
         "deductions": round(deductions, 2),
         "absent_days": absent_days,
         "gross_pay": round(gross_pay, 2),
@@ -132,6 +204,10 @@ def attendance_report(
     if user.business_id is None:
         raise HTTPException(400, "No business context")
 
+    rest_policy = db.get(BusinessRestDayPolicy, user.business_id)
+    premium_percent = _rest_day_premium_percent(rest_policy)
+    rest_day_work_allowed = True
+
     rows = (
         db.query(AttendanceRecord, Employee, ShiftAssignment, Shift)
         .join(Employee, AttendanceRecord.employee_id == Employee.id)
@@ -143,28 +219,51 @@ def attendance_report(
         .all()
     )
     records = []
-    present = late = absent = 0
+    rest_day_work = []
+    present = late = absent = rest_day = 0
     for record, employee, assignment, shift in rows:
+        work_date = (
+            assignment.work_date
+            if assignment
+            else record.created_at.date()
+        )
+        is_rest = _is_rest_day_work(assignment)
         if record.status == AttendanceStatus.absent:
             absent += 1
         elif record.status == AttendanceStatus.late:
             late += 1
         else:
             present += 1
-        records.append(
-            {
-                "id": str(record.id),
-                "employee_name": employee.full_name,
-                "position_title": employee.position_title,
-                "date": assignment.work_date.isoformat() if assignment else record.created_at.date().isoformat(),
-                "time_in": record.time_in.isoformat() if record.time_in else None,
-                "time_out": record.time_out.isoformat() if record.time_out else None,
-                "status": record.status.value,
-                "shift_name": shift.name if shift else None,
-            }
-        )
+
+        item = {
+            "id": str(record.id),
+            "employee_name": employee.full_name,
+            "position_title": employee.position_title,
+            "date": work_date.isoformat(),
+            "weekday": _weekday_for_date(work_date).value,
+            "time_in": record.time_in.isoformat() if record.time_in else None,
+            "time_out": record.time_out.isoformat() if record.time_out else None,
+            "status": record.status.value,
+            "shift_name": shift.name if shift else None,
+            "is_rest_day": is_rest,
+            "rest_day_authorized": rest_day_work_allowed if is_rest else None,
+        }
+        records.append(item)
+
+        if is_rest and record.time_in is not None:
+            rest_day += 1
+            rest_day_work.append(item)
+
     return {
-        "summary": {"present": present, "late": late, "absent": absent},
+        "summary": {
+            "present": present,
+            "late": late,
+            "absent": absent,
+            "rest_day": rest_day,
+        },
+        "rest_day_premium_percent": premium_percent,
+        "rest_day_work_allowed": rest_day_work_allowed,
+        "rest_day_work": rest_day_work,
         "records": records,
     }
 

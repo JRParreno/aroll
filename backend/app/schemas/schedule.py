@@ -13,6 +13,7 @@ class ScheduleAssignmentResponse(BaseModel):
     shift_start_time: time
     shift_end_time: time
     shift_color: str | None
+    is_rest_day_work: bool = False
 
 
 class WeeklyScheduleResponse(BaseModel):
@@ -25,6 +26,7 @@ class ScheduleAssignRequest(BaseModel):
     shift_id: str
     work_date: date
     employee_ids: list[str] = Field(min_length=1)
+    is_rest_day_work: bool = False
 
 
 class ScheduleAssignResponse(BaseModel):
@@ -35,3 +37,4 @@ class ScheduleAssignResponse(BaseModel):
 class ScheduleAssignmentUpdateRequest(BaseModel):
     shift_id: str
     work_date: date
+    is_rest_day_work: bool | None = None

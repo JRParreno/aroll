@@ -103,8 +103,75 @@ class _EmployeePayslipScreenState extends State<EmployeePayslipScreen> {
                     ),
                     _Row('Overtime', money(payslip.overtimePay)),
                     _Row('Holiday Pay', money(payslip.holidayPay)),
+                    _Row(
+                      payslip.restDayPremiumPercent > 0
+                          ? 'Rest Day Premium (${payslip.restDayPremiumPercent.toStringAsFixed(0)}%)'
+                          : 'Rest Day Premium',
+                      money(payslip.restDayPay),
+                    ),
                     _Row('Total Earnings', money(payslip.grossPay),
                         strong: true),
+                    if (payslip.restDayRecords.isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      const _SectionTitle('Rest Day Work',
+                          color: Color(0xFFDBEAFE)),
+                      _Row(
+                        'Rest day',
+                        payslip.restDayName == null ||
+                                payslip.restDayName!.isEmpty
+                            ? 'Owner-approved rest day work'
+                            : titleCase(payslip.restDayName!),
+                      ),
+                      _Row('Days worked', '${payslip.restDayDays}'),
+                      ...payslip.restDayRecords.map(
+                        (record) => Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF0F9FF),
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(color: const Color(0xFFBAE6FD)),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        '${shortDate(record.date)}${record.weekday.isEmpty ? '' : ' · ${titleCase(record.weekday)}'}',
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ),
+                                    Text(
+                                      money(record.premiumPay),
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w700,
+                                        color: Color(0xFF075985),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  'In ${record.timeIn == null ? '--:--' : TimeOfDay.fromDateTime(record.timeIn!).format(context)}'
+                                  ' · Out ${record.timeOut == null ? '--:--' : TimeOfDay.fromDateTime(record.timeOut!).format(context)}'
+                                  '${record.shiftName == null ? '' : ' · ${record.shiftName}'}',
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    color: Color(0xFF6B7280),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 12),
                     const _SectionTitle('Deductions', color: Color(0xFFFFC5C5)),
                     _Row('Late/Undertime', money(payslip.deductions)),

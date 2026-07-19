@@ -17,6 +17,11 @@ function formatTime(value: string | null) {
   });
 }
 
+function formatWeekday(value?: string) {
+  if (!value) return "";
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
 function initials(name: string) {
   return name
     .split(" ")
@@ -70,19 +75,40 @@ export function OwnerAttendancePage() {
     });
   }, [data, search, month, day, year]);
 
+  const restDayWork = useMemo(() => {
+    const needle = search.toLowerCase();
+    const source = data?.rest_day_work ?? (data?.records ?? []).filter(
+      (record) => record.is_rest_day && record.time_in
+    );
+    return source.filter((record) => {
+      const recordDate = new Date(`${record.date}T00:00:00`);
+      return (
+        [record.employee_name, record.position_title ?? "", record.status]
+          .join(" ")
+          .toLowerCase()
+          .includes(needle) &&
+        (month === "all" || String(recordDate.getMonth()) === month) &&
+        (day === "all" || String(recordDate.getDate()) === day) &&
+        (year === "all" || String(recordDate.getFullYear()) === year)
+      );
+    });
+  }, [data, search, month, day, year]);
+
   const summary = records.reduce(
     (acc, record) => {
       if (record.status === "absent") acc.absent += 1;
       else if (record.status === "late") acc.late += 1;
       else acc.present += 1;
+      if (record.is_rest_day && record.time_in) acc.restDay += 1;
       return acc;
     },
-    { present: 0, late: 0, absent: 0 }
+    { present: 0, late: 0, absent: 0, restDay: 0 }
   );
 
   const maxCount = Math.max(summary.present, summary.late, summary.absent, 1);
   const total = summary.present + summary.late + summary.absent;
   const presentPercent = total > 0 ? Math.round((summary.present / total) * 100) : 0;
+  const restDayLabel = "Rest day";
 
   return (
     <OwnerPage>
@@ -184,6 +210,79 @@ export function OwnerAttendancePage() {
           </div>
         </section>
 
+        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="text-base font-semibold text-[#1F2937]">
+                Rest Day Work
+              </h2>
+              <p className="mt-1 text-sm text-[#6B7280]">
+                Employees who clocked in or out on {restDayLabel}
+                {typeof data?.rest_day_premium_percent === "number"
+                  ? ` · ${data.rest_day_premium_percent}% premium`
+                  : ""}
+                .
+              </p>
+            </div>
+            <span className="rounded-full bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700">
+              {restDayWork.length} record{restDayWork.length === 1 ? "" : "s"}
+            </span>
+          </div>
+          {restDayWork.length === 0 ? (
+            <p className="mt-4 text-sm text-[#6B7280]">
+              No rest day time-in/out records for this filter.
+            </p>
+          ) : (
+            <div className="mt-4 grid gap-3 lg:grid-cols-2">
+              {restDayWork.map((record) => {
+                const unauthorized = record.rest_day_authorized === false;
+                return (
+                  <div
+                    className={`flex items-center gap-4 rounded-xl border p-4 ${
+                      unauthorized
+                        ? "border-amber-200 bg-amber-50/70"
+                        : "border-sky-100 bg-sky-50/60"
+                    }`}
+                    key={`rest-${record.id}`}
+                  >
+                    <div
+                      className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-sm font-semibold ${
+                        unauthorized
+                          ? "bg-amber-100 text-amber-800"
+                          : "bg-sky-100 text-sky-800"
+                      }`}
+                    >
+                      {initials(record.employee_name)}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <h3 className="truncate text-sm font-semibold text-[#111827]">
+                        {record.employee_name}
+                      </h3>
+                      <p className="mt-0.5 text-xs text-[#6B7280]">
+                        {record.date}
+                        {record.weekday ? ` · ${formatWeekday(record.weekday)}` : ""}
+                        {record.shift_name ? ` · ${record.shift_name}` : ""}
+                      </p>
+                      <p className="text-xs text-[#6B7280]">
+                        In {formatTime(record.time_in)} · Out {formatTime(record.time_out)}
+                      </p>
+                    </div>
+                    <span
+                      className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                        unauthorized
+                          ? "bg-amber-100 text-amber-800"
+                          : "bg-sky-100 text-sky-800"
+                      }`}
+                    >
+                      {unauthorized ? "Not permitted" : "Rest day"}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+
         <section className="max-h-[430px] overflow-y-auto pr-2">
           {isLoading ? (
             <div className="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-[#6B7280] shadow-sm">
@@ -198,6 +297,7 @@ export function OwnerAttendancePage() {
               {records.map((record) => {
                 const late = record.status === "late";
                 const absent = record.status === "absent";
+                const restDay = Boolean(record.is_rest_day && record.time_in);
                 return (
                   <div
                     className="flex items-center gap-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
@@ -215,15 +315,18 @@ export function OwnerAttendancePage() {
                       </p>
                       <p className="text-xs text-[#6B7280]">
                         {statusCopy(record.status)}
+                        {restDay ? " · Rest day" : ""}
                       </p>
                     </div>
                     <span
                       className={`rounded-full px-3 py-1 text-xs font-semibold ${
                         absent
                           ? "bg-red-100 text-red-700"
-                          : late
-                            ? "bg-orange-100 text-orange-700"
-                            : "bg-green-100 text-green-700"
+                          : restDay
+                            ? "bg-sky-100 text-sky-800"
+                            : late
+                              ? "bg-orange-100 text-orange-700"
+                              : "bg-green-100 text-green-700"
                       }`}
                     >
                       {absent ? "Absent" : formatTime(record.time_in)}

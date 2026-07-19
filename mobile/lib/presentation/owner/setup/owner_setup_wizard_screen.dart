@@ -69,11 +69,7 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
   String _attMissingClockOutPolicy = 'auto_clock_out';
   bool _attAttendanceBasedSalaryEnabled = true;
 
-  String _restWeeklyDay = 'sunday';
-  bool _restWorkAllowed = false;
   final _restPremiumPercent = TextEditingController(text: '30');
-  bool _restUseCustomPremium = false;
-  final _restCustomPremiumPercent = TextEditingController();
 
   final _locationLabel = TextEditingController(text: 'Main');
   final _locationAddress = TextEditingController();
@@ -88,9 +84,7 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
   @override
   void initState() {
     super.initState();
-    _step = widget.initialStep < 0
-        ? -1
-        : clampSetupStep(widget.initialStep);
+    _step = widget.initialStep < 0 ? -1 : clampSetupStep(widget.initialStep);
     _loadAll();
   }
 
@@ -111,7 +105,6 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
     _attEarlyOutDeductionRate.dispose();
     _attOvertimeMinimum.dispose();
     _restPremiumPercent.dispose();
-    _restCustomPremiumPercent.dispose();
     _locationLabel.dispose();
     _locationAddress.dispose();
     _locationLatitude.dispose();
@@ -204,12 +197,7 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
   }
 
   void _applyRestDay(Map<String, dynamic> restDay) {
-    _restWeeklyDay = '${restDay['weekly_rest_day'] ?? 'sunday'}';
-    _restWorkAllowed = restDay['work_on_rest_day_allowed'] == true;
     _restPremiumPercent.text = '${restDay['rest_day_premium_percent'] ?? 30}';
-    _restUseCustomPremium = restDay['use_custom_premium'] == true;
-    final custom = restDay['custom_premium_percent'];
-    _restCustomPremiumPercent.text = custom == null ? '' : '$custom';
   }
 
   Future<void> _refreshSetupStatus() async {
@@ -231,7 +219,8 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
   bool get _payrollFormValid =>
       _nextPaydayDate != null &&
       (double.tryParse(_payrollLateDeductionRate.text) ?? -1) >= 0 &&
-      (double.tryParse(_payrollOvertimeRate.text) ?? -1) >= 0;
+      (double.tryParse(_payrollOvertimeRate.text) ?? -1) >= 0 &&
+      (double.tryParse(_restPremiumPercent.text) ?? -1) >= 0;
 
   bool get _locationCanSave =>
       _locationAddress.text.trim().length >= 5 &&
@@ -255,8 +244,6 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
       case 4:
         return isSetupStepComplete(_setupStatus, 'holidays');
       case 5:
-        return isSetupStepComplete(_setupStatus, 'rest_day');
-      case 6:
         return isSetupStepComplete(_setupStatus, 'location') ||
             _locationCanSave;
       default:
@@ -359,6 +346,9 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
         'overtime_enabled': _payrollOvertimeEnabled,
         'overtime_per_minute': double.parse(_payrollOvertimeRate.text),
       });
+      await _repo.updateRestDayPolicy({
+        'rest_day_premium_percent': double.parse(_restPremiumPercent.text),
+      });
       _showSnack('Payroll configuration saved');
       await _refreshSetupStatus();
       return true;
@@ -390,27 +380,6 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
       await _refreshSetupStatus();
     } catch (_) {
       _showSnack('Failed to save attendance policy');
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
-  Future<void> _saveRestDay() async {
-    setState(() => _busy = true);
-    try {
-      await _repo.updateRestDayPolicy({
-        'weekly_rest_day': _restWeeklyDay,
-        'work_on_rest_day_allowed': _restWorkAllowed,
-        'rest_day_premium_percent': double.parse(_restPremiumPercent.text),
-        'use_custom_premium': _restUseCustomPremium,
-        'custom_premium_percent': _restCustomPremiumPercent.text.trim().isEmpty
-            ? null
-            : double.parse(_restCustomPremiumPercent.text),
-      });
-      _showSnack('Rest day policy saved');
-      await _refreshSetupStatus();
-    } catch (_) {
-      _showSnack('Failed to save rest day policy');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -548,7 +517,7 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
           !isSetupStepComplete(_setupStatus, 'payroll') &&
           _payrollFormValid) {
         saved = await _savePayroll();
-      } else if (_step == 6 &&
+      } else if (_step == 5 &&
           !isSetupStepComplete(_setupStatus, 'location') &&
           _locationCanSave) {
         saved = await _saveLocation();
@@ -786,7 +755,8 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
               CircleAvatar(
                 radius: 18,
                 backgroundColor: const Color(0xFFE7EEF5),
-                child: Icon(entry.icon, size: 18, color: const Color(0xFF1E3A5F)),
+                child:
+                    Icon(entry.icon, size: 18, color: const Color(0xFF1E3A5F)),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -956,10 +926,8 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
       case 4:
         return HolidaySetupSection(onChanged: _refreshSetupStatus);
       case 5:
-        return _buildRestDayStep();
-      case 6:
         return _buildLocationStep();
-      case 7:
+      case 6:
         return _buildReviewStep();
       default:
         return const SizedBox.shrink();
@@ -1248,12 +1216,14 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
           ],
         ),
         const SizedBox(height: 10),
+        _buildRestDayFields(),
+        const SizedBox(height: 10),
         SizedBox(
           width: double.infinity,
           child: FilledButton(
             onPressed: _busy || !_payrollFormValid ? null : _savePayroll,
             style: _primaryButtonStyle,
-            child: const Text('Save Payroll'),
+            child: const Text('Save Payroll Configuration'),
           ),
         ),
       ],
@@ -1311,60 +1281,20 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
     );
   }
 
-  Widget _buildRestDayStep() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+  Widget _buildRestDayFields() {
+    return _compactPanel(
+      title: 'Rest Day Pay',
       children: [
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              flex: 3,
-              child: DropdownButtonFormField<String>(
-                initialValue: _restWeeklyDay,
-                isDense: true,
-                decoration: _compactInput('Weekly Rest Day'),
-                items: const [
-                  'sunday',
-                  'monday',
-                  'tuesday',
-                  'wednesday',
-                  'thursday',
-                  'friday',
-                  'saturday',
-                ]
-                    .map(
-                      (day) => DropdownMenuItem(
-                        value: day,
-                        child: Text(day[0].toUpperCase() + day.substring(1)),
-                      ),
-                    )
-                    .toList(),
-                onChanged: (value) {
-                  if (value != null) setState(() => _restWeeklyDay = value);
-                },
-              ),
-            ),
-            const SizedBox(width: 6),
-            Expanded(
-              flex: 2,
-              child: TextField(
-                controller: _restPremiumPercent,
-                style: const TextStyle(fontSize: 14),
-                decoration: _compactInput('Premium (%)'),
-                keyboardType: TextInputType.number,
-              ),
-            ),
-          ],
+        const Text(
+          'Set the premium rate for shifts marked as approved rest day work on the schedule.',
+          style: TextStyle(fontSize: 12, color: Color(0xFF6B7280)),
         ),
-        const SizedBox(height: 10),
-        SizedBox(
-          width: double.infinity,
-          child: FilledButton(
-            onPressed: _busy ? null : _saveRestDay,
-            style: _primaryButtonStyle,
-            child: const Text('Save Rest Day Policy'),
-          ),
+        const SizedBox(height: 8),
+        TextField(
+          controller: _restPremiumPercent,
+          style: const TextStyle(fontSize: 14),
+          decoration: _compactInput('Premium (%)'),
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
         ),
       ],
     );
@@ -1383,7 +1313,8 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
         ),
         const SizedBox(height: _fieldGap),
         OutlinedButton.icon(
-          onPressed: _locationLocating || _busy ? null : _useWizardCurrentLocation,
+          onPressed:
+              _locationLocating || _busy ? null : _useWizardCurrentLocation,
           icon: _locationLocating
               ? const SizedBox(
                   width: 16,

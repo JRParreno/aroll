@@ -77,6 +77,16 @@ def _attendance_policy(
     return policy
 
 
+def _rest_day_status(assignment: ShiftAssignment) -> tuple[bool, bool]:
+    """Return (is_rest_day_work, work_authorized) for the assignment.
+
+    Rest-day work is approved per schedule assignment by the owner/manager.
+    """
+    if not assignment.is_rest_day_work:
+        return False, True
+    return True, True
+
+
 def _validate_geofence(
     location: BusinessLocation,
     latitude: float,
@@ -288,6 +298,8 @@ def clock_in_employee(
         grace_minutes=policy.on_time_grace_minutes,
     )
 
+    is_rest_day, rest_day_authorized = _rest_day_status(assignment)
+
     now_utc = datetime.now(timezone.utc)
     record = AttendanceRecord(
         business_id=employee.business_id,
@@ -309,6 +321,11 @@ def clock_in_employee(
         if status == AttendanceStatus.in_progress
         else "Clocked in successfully. You were marked late."
     )
+    if is_rest_day:
+        message = (
+            f"{message} This shift is approved rest day work; "
+            "rest day premium applies."
+        )
     if resolved_score is not None:
         message = f"{message} Face match score: {resolved_score:.3f}."
     if liveness_passed is True:
@@ -325,6 +342,8 @@ def clock_in_employee(
             round(resolved_score, 4) if resolved_score is not None else None
         ),
         "liveness_passed": record.liveness_passed,
+        "is_rest_day": is_rest_day,
+        "rest_day_work_authorized": rest_day_authorized if is_rest_day else None,
     }
 
 

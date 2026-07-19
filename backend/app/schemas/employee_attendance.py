@@ -35,3 +35,5 @@ class AttendanceActionResponse(BaseModel):
     message: str
     face_match_score: float | None = None
     liveness_passed: bool | None = None
+    is_rest_day: bool = False
+    rest_day_work_authorized: bool | None = None

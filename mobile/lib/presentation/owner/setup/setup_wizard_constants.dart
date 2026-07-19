@@ -6,12 +6,11 @@ const setupWizardStepLabels = [
   'Payroll',
   'Attendance Policy',
   'Holidays',
-  'Rest Day',
   'Location',
   'Review',
 ];
 
-const setupWizardBusinessInfoStep = 8;
+const setupWizardBusinessInfoStep = 7;
 
 const setupWizardStepKeys = [
   'shifts',
@@ -19,7 +18,6 @@ const setupWizardStepKeys = [
   'payroll',
   'attendance_policy',
   'holidays',
-  'rest_day',
   'location',
   'review',
 ];
@@ -30,7 +28,6 @@ const setupWizardStepOrder = [
   'payroll',
   'attendance_policy',
   'holidays',
-  'rest_day',
   'location',
 ];
 
@@ -39,12 +36,12 @@ const requiredSetupKeys = {'shifts', 'positions', 'payroll', 'location'};
 const setupStepHelp = {
   'Shifts': 'Add the work shifts your employees can be assigned to.',
   'Positions': 'Create job roles and daily rates for payroll calculations.',
-  'Payroll': 'Set when employees are paid and how pay rules are applied.',
+  'Payroll':
+      'Set pay schedules, deductions, overtime, and rest day premium rules.',
   'Attendance Policy':
       'Choose the time rules used for lateness, absences, and overtime.',
   'Holidays':
       'Add the holidays your business follows. This helps schedules and pay stay accurate.',
-  'Rest Day': 'Choose the regular weekly rest day and rest day pay settings.',
   'Location':
       'Set your business work site so attendance can be checked by location.',
   'Business Information':
@@ -114,17 +111,10 @@ const setupMenuEntries = [
     icon: Icons.event_outlined,
   ),
   SetupMenuEntry(
-    label: 'Rest Day',
-    subtitle: 'Choose the regular weekly rest day and rest day pay settings.',
-    stepIndex: 5,
-    statusKey: 'rest_day',
-    icon: Icons.weekend_outlined,
-  ),
-  SetupMenuEntry(
     label: 'Location',
     subtitle:
         'Set your business work site so attendance can be checked by location.',
-    stepIndex: 6,
+    stepIndex: 5,
     statusKey: 'location',
     icon: Icons.location_on_outlined,
   ),
@@ -143,10 +133,9 @@ String setupWizardStepHelp(int step) {
   return setupStepHelp[setupWizardStepLabels[step]] ?? '';
 }
 
-int clampSetupStep(int step) =>
-    step.clamp(0, setupWizardStepLabels.length - 1);
+int clampSetupStep(int step) => step.clamp(0, setupWizardStepLabels.length - 1);
 
-/// `-1` opens the setup menu; `0..7` opens a specific step.
+/// `-1` opens the setup menu; `0..6` opens a specific step.
 int parseSetupWizardInitialStep(String? stepParam) {
   if (stepParam == null || stepParam == 'menu') return -1;
   final parsed = int.tryParse(stepParam);

@@ -282,6 +282,7 @@ EmployeePayslip _payslipFromJson(
   Map<String, dynamic> json, {
   required String businessName,
 }) {
+  final restDayRows = json['rest_day_records'] as List<dynamic>? ?? const [];
   return EmployeePayslip(
     businessName: businessName,
     employeeId: json['employee_id'] as String,
@@ -295,10 +296,31 @@ EmployeePayslip _payslipFromJson(
     overtimeHours: _double(json['overtime_hours']),
     overtimePay: _double(json['overtime_pay']),
     holidayPay: _double(json['holiday_pay']),
+    restDayPay: _double(json['rest_day_pay']),
+    restDayDays: _int(json['rest_day_days']),
+    restDayPremiumPercent: _double(json['rest_day_premium_percent']),
+    restDayName: json['rest_day_name'] as String?,
+    restDayRecords: restDayRows
+        .whereType<Map<String, dynamic>>()
+        .map(_restDayRecordFromJson)
+        .toList(),
     deductions: _double(json['deductions']),
     absentDays: _int(json['absent_days']),
     grossPay: _double(json['gross_pay']),
     netPay: _double(json['net_pay']),
+  );
+}
+
+EmployeeRestDayRecord _restDayRecordFromJson(Map<String, dynamic> json) {
+  return EmployeeRestDayRecord(
+    date: _requiredDate(json['date'] as String?),
+    weekday: json['weekday'] as String? ?? '',
+    status: json['status'] as String? ?? '',
+    timeIn: _dateTime(json['time_in'] as String?),
+    timeOut: _dateTime(json['time_out'] as String?),
+    shiftName: json['shift_name'] as String?,
+    premiumPercent: _double(json['premium_percent']),
+    premiumPay: _double(json['premium_pay']),
   );
 }
 

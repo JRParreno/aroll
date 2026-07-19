@@ -10,7 +10,7 @@ from app.core.profile_image import validate_profile_image_data
 from app.db.session import get_db
 from app.models.attendance_policy import BusinessAttendancePolicy
 from app.models.business import Business, BusinessLocation, BusinessRegistration
-from app.models.enums import MissingClockOutPolicy, UserRole, Weekday
+from app.models.enums import MissingClockOutPolicy, UserRole
 from app.models.payroll import BusinessPayrollConfig
 from app.models.registration_document import RegistrationDocument
 from app.models.rest_day_policy import BusinessRestDayPolicy
@@ -100,21 +100,11 @@ def _rest_day_policy_response(
 ) -> RestDayPolicyResponse:
     if policy is not None:
         return RestDayPolicyResponse(
-            weekly_rest_day=policy.weekly_rest_day.value,
-            work_on_rest_day_allowed=policy.work_on_rest_day_allowed,
             rest_day_premium_percent=float(policy.rest_day_premium_percent),
-            use_custom_premium=policy.use_custom_premium,
-            custom_premium_percent=float(policy.custom_premium_percent)
-            if policy.custom_premium_percent is not None
-            else None,
         )
 
     return RestDayPolicyResponse(
-        weekly_rest_day=Weekday.sunday.value,
-        work_on_rest_day_allowed=False,
         rest_day_premium_percent=30.0,
-        use_custom_premium=False,
-        custom_premium_percent=None,
     )
 
 
@@ -172,6 +162,12 @@ def get_payroll_config(
         late_deduction_per_minute=float(cfg.late_deduction_per_minute),
         overtime_enabled=cfg.overtime_enabled,
         overtime_per_minute=float(cfg.overtime_per_minute),
+        weekly_payday_weekday=(
+            cfg.weekly_payday_weekday.value if cfg.weekly_payday_weekday else None
+        ),
+        semi_monthly_payday_1=cfg.semi_monthly_payday_1,
+        semi_monthly_payday_2=cfg.semi_monthly_payday_2,
+        monthly_payday_day=cfg.monthly_payday_day,
     )
 
 
@@ -195,6 +191,10 @@ def update_payroll_config(
     cfg.late_deduction_per_minute = body.late_deduction_per_minute
     cfg.overtime_enabled = body.overtime_enabled
     cfg.overtime_per_minute = body.overtime_per_minute
+    cfg.weekly_payday_weekday = body.weekly_payday_weekday
+    cfg.semi_monthly_payday_1 = body.semi_monthly_payday_1
+    cfg.semi_monthly_payday_2 = body.semi_monthly_payday_2
+    cfg.monthly_payday_day = body.monthly_payday_day
     db.commit()
 
     policy = db.get(BusinessAttendancePolicy, user.business_id)
@@ -263,8 +263,11 @@ def update_rest_day_policy(
     if policy is None:
         policy = BusinessRestDayPolicy(business_id=user.business_id)
         db.add(policy)
-    for field, value in body.model_dump().items():
-        setattr(policy, field, value)
+    # Approval is per schedule assignment; keep legacy columns in a usable state.
+    policy.rest_day_premium_percent = body.rest_day_premium_percent
+    policy.work_on_rest_day_allowed = True
+    policy.use_custom_premium = False
+    policy.custom_premium_percent = None
     db.commit()
     return {"status": "ok"}
 

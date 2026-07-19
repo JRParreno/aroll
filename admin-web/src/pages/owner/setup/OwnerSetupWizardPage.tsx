@@ -23,6 +23,7 @@ import {
   getAttendancePolicy,
   getBusinessLocation,
   getPayrollConfig,
+  getRestDayPolicy,
   getSetupStatus,
   listPositions,
   listShifts,
@@ -39,25 +40,118 @@ const STEPS = [
   "Payroll",
   "Attendance",
   "Holidays",
-  "Rest Day",
   "Location",
   "Review",
 ];
 
+const STEP_STATUS_KEYS = [
+  "shifts",
+  "positions",
+  "payroll",
+  "attendance_policy",
+  "holidays",
+  "location",
+  "review",
+] as const;
+
 const STEP_HELP: Record<string, string> = {
   Shifts: "Add the work shifts your employees can be assigned to.",
   Positions: "Create job roles and daily rates for payroll calculations.",
-  Payroll: "Set when employees are paid and how pay rules are applied.",
+  Payroll:
+    "Set pay schedules, deductions, overtime, and rest day premium rules.",
   Attendance: "Choose the time rules used for lateness, absences, and overtime.",
   Holidays:
     "Add the holidays your business follows. This helps schedules and pay stay accurate.",
-  "Rest Day": "Choose the regular weekly rest day and rest day pay settings.",
   Location:
     "Set your business work site so attendance can be checked by location.",
   Review: "Check your setup progress and finish when the required parts are ready.",
 };
 
 const REQUIRED_SETUP_KEYS = new Set(["shifts", "positions", "payroll", "location"]);
+
+const WEEKDAYS = [
+  "monday",
+  "tuesday",
+  "wednesday",
+  "thursday",
+  "friday",
+  "saturday",
+  "sunday",
+] as const;
+
+const SEMI_MONTHLY_PRESETS: Record<string, [number, number]> = {
+  "15_30": [15, 30],
+  "10_25": [10, 25],
+  "5_20": [5, 20],
+};
+
+function presetForDays(day1: string, day2: string): string {
+  for (const [preset, [d1, d2]] of Object.entries(SEMI_MONTHLY_PRESETS)) {
+    if (Number(day1) === d1 && Number(day2) === d2) return preset;
+  }
+  return "custom";
+}
+
+/** Days 29-31 mean "last day" in shorter months (e.g. the 30th in February). */
+function clampedDate(year: number, monthIndex: number, day: number): Date {
+  const lastDay = new Date(year, monthIndex + 1, 0).getDate();
+  return new Date(year, monthIndex, Math.min(day, lastDay));
+}
+
+function toIsoDate(d: Date): string {
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${month}-${day}`;
+}
+
+function computeNextPayday(form: {
+  pay_period_type: string;
+  weekly_payday_weekday: string;
+  semi_monthly_payday_1: string;
+  semi_monthly_payday_2: string;
+  monthly_payday_day: string;
+}): string {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  if (form.pay_period_type === "weekly") {
+    const target = WEEKDAYS.indexOf(
+      form.weekly_payday_weekday as (typeof WEEKDAYS)[number]
+    );
+    if (target < 0) return "";
+    // Date#getDay is 0=Sunday; our list starts at Monday.
+    const targetDow = (target + 1) % 7;
+    const next = new Date(today);
+    next.setDate(next.getDate() + ((targetDow - next.getDay() + 7) % 7));
+    return toIsoDate(next);
+  }
+
+  if (form.pay_period_type === "semi_monthly") {
+    const day1 = Number(form.semi_monthly_payday_1);
+    const day2 = Number(form.semi_monthly_payday_2);
+    if (!day1 || !day2) return "";
+    const candidates = [
+      clampedDate(today.getFullYear(), today.getMonth(), day1),
+      clampedDate(today.getFullYear(), today.getMonth(), day2),
+      clampedDate(today.getFullYear(), today.getMonth() + 1, day1),
+    ];
+    const next = candidates.find((d) => d >= today);
+    return next ? toIsoDate(next) : "";
+  }
+
+  if (form.pay_period_type === "monthly") {
+    const day = Number(form.monthly_payday_day);
+    if (!day) return "";
+    const thisMonth = clampedDate(today.getFullYear(), today.getMonth(), day);
+    const next =
+      thisMonth >= today
+        ? thisMonth
+        : clampedDate(today.getFullYear(), today.getMonth() + 1, day);
+    return toIsoDate(next);
+  }
+
+  return "";
+}
 
 export function OwnerSetupWizardPage() {
   const navigate = useNavigate();
@@ -100,6 +194,10 @@ export function OwnerSetupWizardPage() {
     queryKey: ["business-location"],
     queryFn: getBusinessLocation,
   });
+  const { data: restDayPolicy } = useQuery({
+    queryKey: ["rest-day-policy"],
+    queryFn: getRestDayPolicy,
+  });
   const { data: setupStatus } = useQuery({
     queryKey: ["setup-status"],
     queryFn: getSetupStatus,
@@ -120,12 +218,16 @@ export function OwnerSetupWizardPage() {
   });
   const [payrollForm, setPayrollForm] = useState({
     pay_period_type: "monthly",
-    next_payday_date: "",
     auto_reset_payroll_cycle: true,
     late_deduction_enabled: true,
     late_deduction_per_minute: "1",
     overtime_enabled: true,
     overtime_per_minute: "1",
+    weekly_payday_weekday: "friday",
+    semi_monthly_preset: "15_30",
+    semi_monthly_payday_1: "15",
+    semi_monthly_payday_2: "30",
+    monthly_payday_day: "30",
   });
   const [attForm, setAttForm] = useState({
     early_clock_in_minutes: "15",
@@ -147,23 +249,25 @@ export function OwnerSetupWizardPage() {
     geofence_radius_m: "75",
   });
   const [restForm, setRestForm] = useState({
-    weekly_rest_day: "sunday",
-    work_on_rest_day_allowed: false,
     rest_day_premium_percent: "30",
-    use_custom_premium: false,
-    custom_premium_percent: "",
   });
 
   useEffect(() => {
     if (!payroll) return;
+    const day1 = String(payroll.semi_monthly_payday_1 ?? 15);
+    const day2 = String(payroll.semi_monthly_payday_2 ?? 30);
     setPayrollForm({
       pay_period_type: payroll.pay_period_type,
-      next_payday_date: payroll.next_payday_date ?? "",
       auto_reset_payroll_cycle: payroll.auto_reset_payroll_cycle,
       late_deduction_enabled: payroll.late_deduction_enabled,
       late_deduction_per_minute: String(payroll.late_deduction_per_minute),
       overtime_enabled: payroll.overtime_enabled,
       overtime_per_minute: String(payroll.overtime_per_minute),
+      weekly_payday_weekday: payroll.weekly_payday_weekday ?? "friday",
+      semi_monthly_preset: presetForDays(day1, day2),
+      semi_monthly_payday_1: day1,
+      semi_monthly_payday_2: day2,
+      monthly_payday_day: String(payroll.monthly_payday_day ?? 30),
     });
   }, [payroll]);
 
@@ -199,6 +303,13 @@ export function OwnerSetupWizardPage() {
     });
   }, [businessLocation]);
 
+  useEffect(() => {
+    if (!restDayPolicy) return;
+    setRestForm({
+      rest_day_premium_percent: String(restDayPolicy.rest_day_premium_percent),
+    });
+  }, [restDayPolicy]);
+
   const canCompleteSetup = useMemo(() => {
     if (!setupStatus) return false;
     return setupStatus.steps
@@ -226,10 +337,37 @@ export function OwnerSetupWizardPage() {
   const positionDraftValid =
     posForm.title.trim().length > 0 && Number(posForm.daily_rate) > 0;
 
+  const nextPaydayDate = useMemo(
+    () => computeNextPayday(payrollForm),
+    [payrollForm]
+  );
+
+  const paydayScheduleValid = useMemo(() => {
+    switch (payrollForm.pay_period_type) {
+      case "weekly":
+        return WEEKDAYS.includes(
+          payrollForm.weekly_payday_weekday as (typeof WEEKDAYS)[number]
+        );
+      case "semi_monthly": {
+        const day1 = Number(payrollForm.semi_monthly_payday_1);
+        const day2 = Number(payrollForm.semi_monthly_payday_2);
+        return day1 >= 1 && day2 <= 31 && day2 > day1;
+      }
+      case "monthly": {
+        const day = Number(payrollForm.monthly_payday_day);
+        return day >= 1 && day <= 31;
+      }
+      default:
+        return false;
+    }
+  }, [payrollForm]);
+
   const payrollFormValid =
-    Boolean(payrollForm.next_payday_date) &&
+    paydayScheduleValid &&
+    Boolean(nextPaydayDate) &&
     Number(payrollForm.late_deduction_per_minute) >= 0 &&
-    Number(payrollForm.overtime_per_minute) >= 0;
+    Number(payrollForm.overtime_per_minute) >= 0 &&
+    Number(restForm.rest_day_premium_percent) >= 0;
 
   const locationCanSave =
     locationForm.address.trim().length >= 5 &&
@@ -251,8 +389,6 @@ export function OwnerSetupWizardPage() {
       case 4:
         return isStepComplete("holidays");
       case 5:
-        return isStepComplete("rest_day");
-      case 6:
         return isStepComplete("location") || locationCanSave;
       default:
         return false;
@@ -301,19 +437,45 @@ export function OwnerSetupWizardPage() {
 
   const savePayroll = useMutation({
     mutationFn: () =>
-      updatePayrollConfig({
-        pay_period_type: payrollForm.pay_period_type,
-        next_payday_date: payrollForm.next_payday_date || null,
-        auto_reset_payroll_cycle: payrollForm.auto_reset_payroll_cycle,
-        late_deduction_enabled: payrollForm.late_deduction_enabled,
-        late_deduction_per_minute: Number(payrollForm.late_deduction_per_minute),
-        overtime_enabled: payrollForm.overtime_enabled,
-        overtime_per_minute: Number(payrollForm.overtime_per_minute),
-      }),
+      Promise.all([
+        updatePayrollConfig({
+          pay_period_type: payrollForm.pay_period_type,
+          next_payday_date: nextPaydayDate || null,
+          auto_reset_payroll_cycle: payrollForm.auto_reset_payroll_cycle,
+          late_deduction_enabled: payrollForm.late_deduction_enabled,
+          late_deduction_per_minute: Number(
+            payrollForm.late_deduction_per_minute
+          ),
+          overtime_enabled: payrollForm.overtime_enabled,
+          overtime_per_minute: Number(payrollForm.overtime_per_minute),
+          weekly_payday_weekday:
+            payrollForm.pay_period_type === "weekly"
+              ? payrollForm.weekly_payday_weekday
+              : null,
+          semi_monthly_payday_1:
+            payrollForm.pay_period_type === "semi_monthly"
+              ? Number(payrollForm.semi_monthly_payday_1)
+              : null,
+          semi_monthly_payday_2:
+            payrollForm.pay_period_type === "semi_monthly"
+              ? Number(payrollForm.semi_monthly_payday_2)
+              : null,
+          monthly_payday_day:
+            payrollForm.pay_period_type === "monthly"
+              ? Number(payrollForm.monthly_payday_day)
+              : null,
+        }),
+        updateRestDayPolicy({
+          rest_day_premium_percent: Number(
+            restForm.rest_day_premium_percent
+          ),
+        }),
+      ]),
     onSuccess: () => {
       toast.success("Payroll configuration saved");
       qc.invalidateQueries({ queryKey: ["setup-status"] });
       qc.invalidateQueries({ queryKey: ["payroll-config"] });
+      qc.invalidateQueries({ queryKey: ["rest-day-policy"] });
     },
   });
 
@@ -334,23 +496,6 @@ export function OwnerSetupWizardPage() {
       }),
     onSuccess: () => {
       toast.success("Attendance policy saved");
-      qc.invalidateQueries({ queryKey: ["setup-status"] });
-    },
-  });
-
-  const saveRestDay = useMutation({
-    mutationFn: () =>
-      updateRestDayPolicy({
-        weekly_rest_day: restForm.weekly_rest_day,
-        work_on_rest_day_allowed: restForm.work_on_rest_day_allowed,
-        rest_day_premium_percent: Number(restForm.rest_day_premium_percent),
-        use_custom_premium: restForm.use_custom_premium,
-        custom_premium_percent: restForm.custom_premium_percent
-          ? Number(restForm.custom_premium_percent)
-          : null,
-      }),
-    onSuccess: () => {
-      toast.success("Rest day policy saved");
       qc.invalidateQueries({ queryKey: ["setup-status"] });
     },
   });
@@ -425,7 +570,7 @@ export function OwnerSetupWizardPage() {
       if (step === 2 && !isStepComplete("payroll") && payrollFormValid) {
         await savePayroll.mutateAsync();
       }
-      if (step === 6 && !isStepComplete("location") && locationCanSave) {
+      if (step === 5 && !isStepComplete("location") && locationCanSave) {
         await saveLocation.mutateAsync();
       }
       goToStep(Math.min(step + 1, STEPS.length - 1));
@@ -472,7 +617,7 @@ export function OwnerSetupWizardPage() {
         {step < 0 ? (
           <div className="grid gap-4 sm:grid-cols-2">
             {STEPS.map((label, index) => {
-              const key = setupStatus?.steps[index]?.key;
+              const key = STEP_STATUS_KEYS[index];
               const complete = key ? isStepComplete(key) : false;
               return (
                 <button
@@ -707,21 +852,141 @@ export function OwnerSetupWizardPage() {
                       <option value="monthly">Monthly</option>
                     </select>
                   </div>
-                  <div className="space-y-2">
-                    <Label>Next Payday Date</Label>
-                    <Input
-                      className="h-11 rounded-xl border-slate-200 bg-white"
-                      type="date"
-                      value={payrollForm.next_payday_date}
-                      onChange={(e) =>
-                        setPayrollForm({
-                          ...payrollForm,
-                          next_payday_date: e.target.value,
-                        })
-                      }
-                    />
-                  </div>
+                  {payrollForm.pay_period_type === "weekly" && (
+                    <div className="space-y-2">
+                      <Label>Payday</Label>
+                      <select
+                        className="flex h-11 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
+                        value={payrollForm.weekly_payday_weekday}
+                        onChange={(e) =>
+                          setPayrollForm({
+                            ...payrollForm,
+                            weekly_payday_weekday: e.target.value,
+                          })
+                        }
+                      >
+                        {WEEKDAYS.map((d) => (
+                          <option key={d} value={d}>
+                            Every {d.charAt(0).toUpperCase() + d.slice(1)}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  {payrollForm.pay_period_type === "semi_monthly" && (
+                    <div className="space-y-2">
+                      <Label>Payday Schedule</Label>
+                      <select
+                        className="flex h-11 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
+                        value={payrollForm.semi_monthly_preset}
+                        onChange={(e) => {
+                          const preset = e.target.value;
+                          const days = SEMI_MONTHLY_PRESETS[preset];
+                          setPayrollForm({
+                            ...payrollForm,
+                            semi_monthly_preset: preset,
+                            semi_monthly_payday_1: days
+                              ? String(days[0])
+                              : payrollForm.semi_monthly_payday_1,
+                            semi_monthly_payday_2: days
+                              ? String(days[1])
+                              : payrollForm.semi_monthly_payday_2,
+                          });
+                        }}
+                      >
+                        <option value="15_30">
+                          Every 15th &amp; 30th (end of month)
+                        </option>
+                        <option value="10_25">Every 10th &amp; 25th</option>
+                        <option value="5_20">Every 5th &amp; 20th</option>
+                        <option value="custom">Custom days…</option>
+                      </select>
+                    </div>
+                  )}
+
+                  {payrollForm.pay_period_type === "monthly" && (
+                    <div className="space-y-2">
+                      <Label>Payday (day of month)</Label>
+                      <Input
+                        className="h-11 rounded-xl border-slate-200 bg-white"
+                        type="number"
+                        min="1"
+                        max="31"
+                        value={payrollForm.monthly_payday_day}
+                        onChange={(e) =>
+                          setPayrollForm({
+                            ...payrollForm,
+                            monthly_payday_day: e.target.value,
+                          })
+                        }
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Use 31 for "last day of the month".
+                      </p>
+                    </div>
+                  )}
+
+                  {payrollForm.pay_period_type === "semi_monthly" &&
+                    payrollForm.semi_monthly_preset === "custom" && (
+                      <>
+                        <div className="space-y-2">
+                          <Label>First Payday (day of month)</Label>
+                          <Input
+                            className="h-11 rounded-xl border-slate-200 bg-white"
+                            type="number"
+                            min="1"
+                            max="15"
+                            value={payrollForm.semi_monthly_payday_1}
+                            onChange={(e) =>
+                              setPayrollForm({
+                                ...payrollForm,
+                                semi_monthly_payday_1: e.target.value,
+                              })
+                            }
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Second Payday (day of month)</Label>
+                          <Input
+                            className="h-11 rounded-xl border-slate-200 bg-white"
+                            type="number"
+                            min="16"
+                            max="31"
+                            value={payrollForm.semi_monthly_payday_2}
+                            onChange={(e) =>
+                              setPayrollForm({
+                                ...payrollForm,
+                                semi_monthly_payday_2: e.target.value,
+                              })
+                            }
+                          />
+                        </div>
+                      </>
+                    )}
                 </div>
+
+                <p className="rounded-xl bg-[#F3F6FA] px-4 py-3 text-sm text-[#6B7280]">
+                  {nextPaydayDate ? (
+                    <>
+                      Next payday:{" "}
+                      <span className="font-medium text-[#1F2937]">
+                        {new Date(`${nextPaydayDate}T00:00:00`).toLocaleDateString(
+                          undefined,
+                          {
+                            weekday: "long",
+                            year: "numeric",
+                            month: "long",
+                            day: "numeric",
+                          }
+                        )}
+                      </span>{" "}
+                      — calculated from the schedule above.
+                    </>
+                  ) : (
+                    "Choose a valid payday schedule to see the next payday."
+                  )}
+                </p>
                 <label className="flex items-center gap-2 rounded-xl border border-slate-200 bg-[#FAFBFC] px-4 py-3 text-sm">
                   <input
                     type="checkbox"
@@ -802,11 +1067,42 @@ export function OwnerSetupWizardPage() {
                   </div>
                 </div>
 
+                <div className="space-y-4 rounded-2xl border border-slate-200 bg-[#FAFBFC] p-4">
+                  <div>
+                    <p className="text-sm font-medium text-[#1F2937]">
+                      Rest Day Pay
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Set the premium rate for shifts the owner or manager
+                      marks as approved rest day work on the schedule.
+                    </p>
+                  </div>
+                  <div className="space-y-2 sm:max-w-xs">
+                    <Label>Rest Day Premium (%)</Label>
+                    <Input
+                      className="h-11 rounded-xl border-slate-200 bg-white"
+                      type="number"
+                      min="0"
+                      value={restForm.rest_day_premium_percent}
+                      onChange={(e) =>
+                        setRestForm({
+                          ...restForm,
+                          rest_day_premium_percent: e.target.value,
+                        })
+                      }
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      30% adds 0.30 × the employee's daily rate.
+                    </p>
+                  </div>
+                </div>
+
                 <Button
                   className="rounded-xl bg-[#1E3A5F] hover:bg-[#284B73]"
                   onClick={() => savePayroll.mutate()}
+                  disabled={!payrollFormValid || savePayroll.isPending}
                 >
-                  Save Payroll
+                  Save Payroll Configuration
                 </Button>
               </>
             )}
@@ -852,60 +1148,6 @@ export function OwnerSetupWizardPage() {
             {step === 4 && <HolidaySetupSection />}
 
             {step === 5 && (
-              <>
-                <div className="grid gap-5 sm:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label>Weekly Rest Day</Label>
-                    <select
-                      className="flex h-11 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
-                      value={restForm.weekly_rest_day}
-                      onChange={(e) =>
-                        setRestForm({
-                          ...restForm,
-                          weekly_rest_day: e.target.value,
-                        })
-                      }
-                    >
-                      {[
-                        "sunday",
-                        "monday",
-                        "tuesday",
-                        "wednesday",
-                        "thursday",
-                        "friday",
-                        "saturday",
-                      ].map((d) => (
-                        <option key={d} value={d}>
-                          {d.charAt(0).toUpperCase() + d.slice(1)}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Rest Day Premium (%)</Label>
-                    <Input
-                      className="h-11 rounded-xl border-slate-200 bg-white"
-                      type="number"
-                      value={restForm.rest_day_premium_percent}
-                      onChange={(e) =>
-                        setRestForm({
-                          ...restForm,
-                          rest_day_premium_percent: e.target.value,
-                        })
-                      }
-                    />
-                  </div>
-                </div>
-                <Button
-                  className="rounded-xl bg-[#1E3A5F] hover:bg-[#284B73]"
-                  onClick={() => saveRestDay.mutate()}
-                >
-                  Save Rest Day Policy
-                </Button>
-              </>
-            )}
-
-            {step === 6 && (
               <>
                 <p className="rounded-xl bg-[#F3F6FA] px-4 py-3 text-sm text-[#6B7280]">
                   Set your primary work site and geofence. Required before
@@ -988,7 +1230,7 @@ export function OwnerSetupWizardPage() {
               </>
             )}
 
-            {step === 7 && (
+            {step === 6 && (
               <>
                 <p className="rounded-xl bg-[#F3F6FA] px-4 py-3 text-sm text-[#6B7280]">
                   Review your configuration and mark setup as complete. Required

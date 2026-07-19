@@ -28,6 +28,7 @@ class _OwnerScheduleScreenState extends State<OwnerScheduleScreen> {
   String? _expandedShiftId;
   String? _editingAssignmentId;
   final Set<String> _selectedEmployeeIds = {};
+  bool _isRestDayWork = false;
   bool _loading = true;
   bool _saving = false;
   String? _error;
@@ -133,6 +134,7 @@ class _OwnerScheduleScreenState extends State<OwnerScheduleScreen> {
       _expandedShiftId = null;
       _selectedEmployeeIds.clear();
       _editingAssignmentId = null;
+      _isRestDayWork = false;
     });
     _loadData();
   }
@@ -142,10 +144,12 @@ class _OwnerScheduleScreenState extends State<OwnerScheduleScreen> {
       if (_expandedShiftId == shiftId) {
         _expandedShiftId = null;
         _selectedEmployeeIds.clear();
+        _isRestDayWork = false;
       } else {
         _expandedShiftId = shiftId;
         _selectedEmployeeIds.clear();
         _editingAssignmentId = null;
+        _isRestDayWork = false;
       }
     });
   }
@@ -177,6 +181,7 @@ class _OwnerScheduleScreenState extends State<OwnerScheduleScreen> {
           assignmentId: _editingAssignmentId!,
           shiftId: _expandedShiftId!,
           workDate: _workDate,
+          isRestDayWork: _isRestDayWork,
         );
         _showMessage('Schedule updated');
       } else {
@@ -184,6 +189,7 @@ class _OwnerScheduleScreenState extends State<OwnerScheduleScreen> {
           shiftId: _expandedShiftId!,
           workDate: _workDate,
           employeeIds: _selectedEmployeeIds.toList(growable: false),
+          isRestDayWork: _isRestDayWork,
         );
         final created = result['created'] as int? ?? 0;
         _showMessage(
@@ -196,6 +202,7 @@ class _OwnerScheduleScreenState extends State<OwnerScheduleScreen> {
       setState(() {
         _selectedEmployeeIds.clear();
         _editingAssignmentId = null;
+        _isRestDayWork = false;
       });
       await _loadData();
     } on DioException catch (error) {
@@ -221,10 +228,15 @@ class _OwnerScheduleScreenState extends State<OwnerScheduleScreen> {
   }
 
   void _startReassignment(String assignmentId, String shiftId) {
+    final assignment = _assignments.cast<Map<String, dynamic>?>().firstWhere(
+          (item) => '${item?['id']}' == assignmentId,
+          orElse: () => null,
+        );
     setState(() {
       _editingAssignmentId = assignmentId;
       _expandedShiftId = shiftId;
       _selectedEmployeeIds.clear();
+      _isRestDayWork = assignment?['is_rest_day_work'] == true;
     });
     _showMessage('Choose a new date or shift, then tap Set Schedule.');
   }
@@ -272,6 +284,12 @@ class _OwnerScheduleScreenState extends State<OwnerScheduleScreen> {
           _BottomActions(
             saving: _saving,
             mode: _mode,
+            isRestDayWork: _isRestDayWork,
+            showRestDayToggle: _mode == _ScheduleMode.assign &&
+                _expandedShiftId != null,
+            onRestDayWorkChanged: (value) {
+              setState(() => _isRestDayWork = value);
+            },
             onSetSchedule: _mode == _ScheduleMode.assign ? _saveSchedule : null,
             onViewSchedule: () {
               setState(() {
@@ -444,6 +462,27 @@ class _OwnerScheduleScreenState extends State<OwnerScheduleScreen> {
                   trailing: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
+                      if (assignment['is_rest_day_work'] == true)
+                        Container(
+                          margin: const EdgeInsets.only(right: 6),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF0F9FF),
+                            borderRadius: BorderRadius.circular(999),
+                            border: Border.all(color: const Color(0xFFBAE6FD)),
+                          ),
+                          child: const Text(
+                            'Rest day',
+                            style: TextStyle(
+                              color: Color(0xFF075985),
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
                       Container(
                         padding: const EdgeInsets.symmetric(
                           horizontal: 8,
@@ -849,12 +888,18 @@ class _BottomActions extends StatelessWidget {
     required this.mode,
     required this.onViewSchedule,
     this.onSetSchedule,
+    this.isRestDayWork = false,
+    this.showRestDayToggle = false,
+    this.onRestDayWorkChanged,
   });
 
   final bool saving;
   final _ScheduleMode mode;
   final VoidCallback? onSetSchedule;
   final VoidCallback onViewSchedule;
+  final bool isRestDayWork;
+  final bool showRestDayToggle;
+  final ValueChanged<bool>? onRestDayWorkChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -864,31 +909,54 @@ class _BottomActions extends StatelessWidget {
         color: Colors.white,
         border: Border(top: BorderSide(color: Color(0xFFE5E7EB))),
       ),
-      child: Row(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Expanded(
-            child: OutlinedButton(
-              onPressed: saving ? null : onSetSchedule,
-              style: OutlinedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                side: const BorderSide(color: Color(0xFF93C5FD)),
-                foregroundColor: const Color(0xFF1E466E),
+          if (showRestDayToggle)
+            SwitchListTile.adaptive(
+              contentPadding: EdgeInsets.zero,
+              dense: true,
+              title: const Text(
+                'Approved rest day work',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
               ),
-              child: Text(saving ? 'Saving...' : 'Set Schedule'),
+              subtitle: const Text(
+                'Premium applies when the employee clocks in',
+                style: TextStyle(fontSize: 11, color: Color(0xFF6B7280)),
+              ),
+              value: isRestDayWork,
+              onChanged: saving ? null : onRestDayWorkChanged,
             ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: FilledButton(
-              onPressed: saving ? null : onViewSchedule,
-              style: FilledButton.styleFrom(
-                backgroundColor: const Color(0xFF1E466E),
-                padding: const EdgeInsets.symmetric(vertical: 14),
+          if (showRestDayToggle) const SizedBox(height: 4),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: saving ? null : onSetSchedule,
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    side: const BorderSide(color: Color(0xFF93C5FD)),
+                    foregroundColor: const Color(0xFF1E466E),
+                  ),
+                  child: Text(saving ? 'Saving...' : 'Set Schedule'),
+                ),
               ),
-              child: Text(
-                mode == _ScheduleMode.assign ? 'View Schedule' : 'Assign Schedule',
+              const SizedBox(width: 12),
+              Expanded(
+                child: FilledButton(
+                  onPressed: saving ? null : onViewSchedule,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFF1E466E),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                  ),
+                  child: Text(
+                    mode == _ScheduleMode.assign
+                        ? 'View Schedule'
+                        : 'Assign Schedule',
+                  ),
+                ),
               ),
-            ),
+            ],
           ),
         ],
       ),

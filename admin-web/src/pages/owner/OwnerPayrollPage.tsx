@@ -270,8 +270,71 @@ function PayslipPreview({
         <Row label="Basic Salary" value={money(payslip.daily_rate * payslip.worked_days)} />
         <Row label="Overtime" value={money(payslip.overtime_pay)} />
         <Row label="Holiday Pay" value={money(payslip.holiday_pay)} />
+        <Row
+          label={`Rest Day Premium${
+            payslip.rest_day_premium_percent
+              ? ` (${payslip.rest_day_premium_percent}%)`
+              : ""
+          }`}
+          value={money(payslip.rest_day_pay ?? 0)}
+        />
         <Row label="Total Earnings" value={money(payslip.gross_pay)} strong />
       </Section>
+
+      {(payslip.rest_day_records?.length ?? 0) > 0 && (
+        <Section title="Rest Day Work" color="#DBEAFE">
+          <Row
+            label="Rest day"
+            value={
+              payslip.rest_day_name
+                ? payslip.rest_day_name.charAt(0).toUpperCase() +
+                  payslip.rest_day_name.slice(1)
+                : "Owner-approved rest day work"
+            }
+          />
+          <Row label="Days worked" value={`${payslip.rest_day_days ?? 0}`} />
+          {payslip.rest_day_records?.map((record) => (
+            <div
+              key={`${record.date}-${record.time_in ?? "in"}`}
+              className="rounded-lg border border-sky-100 bg-sky-50/70 px-3 py-2 text-xs text-[#374151]"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-medium">
+                  {record.date}
+                  {record.weekday
+                    ? ` · ${record.weekday.charAt(0).toUpperCase()}${record.weekday.slice(1)}`
+                    : ""}
+                  {record.authorized === false && (
+                    <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800">
+                      Not permitted
+                    </span>
+                  )}
+                </span>
+                <span className="font-semibold text-sky-800">
+                  {money(record.premium_pay)}
+                </span>
+              </div>
+              <p className="mt-1 text-[#6B7280]">
+                In{" "}
+                {record.time_in
+                  ? new Date(record.time_in).toLocaleTimeString([], {
+                      hour: "numeric",
+                      minute: "2-digit",
+                    })
+                  : "--:--"}{" "}
+                · Out{" "}
+                {record.time_out
+                  ? new Date(record.time_out).toLocaleTimeString([], {
+                      hour: "numeric",
+                      minute: "2-digit",
+                    })
+                  : "--:--"}
+                {record.shift_name ? ` · ${record.shift_name}` : ""}
+              </p>
+            </div>
+          ))}
+        </Section>
+      )}
 
       <Section title={settings.deductionsSection} color={settings.deductionsColor}>
         <Row label="Late/Undertime" value={money(payslip.deductions)} />
@@ -428,6 +491,14 @@ function downloadPayslip(
     ["Basic Salary", money(payslip.daily_rate * payslip.worked_days)],
     ["Overtime Pay", money(payslip.overtime_pay)],
     ["Holiday Pay", money(payslip.holiday_pay)],
+    [
+      `Rest Day Premium${
+        payslip.rest_day_premium_percent
+          ? ` (${payslip.rest_day_premium_percent}%)`
+          : ""
+      }`,
+      money(payslip.rest_day_pay ?? 0),
+    ],
     [settings.deductionsSection, ""],
     ["Deductions", money(payslip.deductions)],
     [settings.netPaySection, ""],

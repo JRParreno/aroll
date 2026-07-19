@@ -43,4 +43,6 @@ class ShiftAssignment(Base):
         UUID(as_uuid=True), ForeignKey("employee.id"), nullable=False
     )
     work_date: Mapped[date] = mapped_column(Date, nullable=False)
+    # Owner/manager-approved rest-day work for this assignment (premium eligible).
+    is_rest_day_work: Mapped[bool] = mapped_column(Boolean, default=False)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)

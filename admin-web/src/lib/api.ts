@@ -207,16 +207,40 @@ export type OwnerPerformance = {
 };
 
 export type OwnerAttendanceReport = {
-  summary: { present: number; late: number; absent: number };
+  summary: {
+    present: number;
+    late: number;
+    absent: number;
+    rest_day?: number;
+  };
+  rest_day_name?: string | null;
+  rest_day_premium_percent?: number;
+  rest_day_work_allowed?: boolean;
+  rest_day_work?: {
+    id: string;
+    employee_name: string;
+    position_title: string | null;
+    date: string;
+    weekday?: string;
+    time_in: string | null;
+    time_out: string | null;
+    status: string;
+    shift_name: string | null;
+    is_rest_day?: boolean;
+    rest_day_authorized?: boolean | null;
+  }[];
   records: {
     id: string;
     employee_name: string;
     position_title: string | null;
     date: string;
+    weekday?: string;
     time_in: string | null;
     time_out: string | null;
     status: string;
     shift_name: string | null;
+    is_rest_day?: boolean;
+    rest_day_authorized?: boolean | null;
   }[];
 };
 
@@ -249,6 +273,21 @@ export type EmployeePayslip = {
   overtime_hours: number;
   overtime_pay: number;
   holiday_pay: number;
+  rest_day_days?: number;
+  rest_day_premium_percent?: number;
+  rest_day_pay?: number;
+  rest_day_name?: string | null;
+  rest_day_records?: {
+    date: string;
+    weekday: string;
+    status: string;
+    time_in: string | null;
+    time_out: string | null;
+    shift_name: string | null;
+    premium_percent: number;
+    premium_pay: number;
+    authorized?: boolean;
+  }[];
   deductions: number;
   absent_days: number;
   gross_pay: number;
@@ -259,6 +298,8 @@ export type EmployeePayslip = {
     time_in: string | null;
     time_out: string | null;
     holiday_name: string | null;
+    is_rest_day?: boolean;
+    rest_day_premium_pay?: number | null;
   }[];
 };
 
@@ -742,6 +783,7 @@ export type ScheduleAssignment = {
   shift_start_time: string;
   shift_end_time: string;
   shift_color: string | null;
+  is_rest_day_work?: boolean;
 };
 
 export type WeeklySchedule = {
@@ -766,6 +808,10 @@ export type PayrollConfig = {
   late_deduction_per_minute: number;
   overtime_enabled: boolean;
   overtime_per_minute: number;
+  weekly_payday_weekday: string | null;
+  semi_monthly_payday_1: number | null;
+  semi_monthly_payday_2: number | null;
+  monthly_payday_day: number | null;
 };
 
 export type AttendancePolicy = {
@@ -783,11 +829,7 @@ export type AttendancePolicy = {
 };
 
 export type RestDayPolicy = {
-  weekly_rest_day: string;
-  work_on_rest_day_allowed: boolean;
   rest_day_premium_percent: number;
-  use_custom_premium: boolean;
-  custom_premium_percent: number | null;
 };
 
 export type Holiday = {
@@ -1041,6 +1083,7 @@ export async function assignSchedule(payload: {
   shift_id: string;
   work_date: string;
   employee_ids: string[];
+  is_rest_day_work?: boolean;
 }) {
   const { data } = await api.post<{
     created: number;
@@ -1054,6 +1097,7 @@ export async function updateScheduleAssignment(
   payload: {
     shift_id: string;
     work_date: string;
+    is_rest_day_work?: boolean;
   }
 ) {
   const { data } = await api.put<ScheduleAssignment>(
