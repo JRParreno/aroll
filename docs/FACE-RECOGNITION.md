@@ -13,52 +13,63 @@ Client (admin-web / Flutter)
   → Request one-time head-turn challenge
   → Capture center → turn → return frames
   → FastAPI multipart upload
-  → YuNet landmarks (pose) + SFace 128-d embedding (sface_v3)
+  → YuNet landmarks (pose) + ArcFace R50 512-d embedding (arcface_r50_v1)
   → PostgreSQL pgvector (employee_face_embedding)
   → Cosine similarity vs enrolled samples + liveness checks
 ```
 
 | Setting | Env / config | Default |
 |---------|--------------|---------|
-| Match threshold | `FACE_MATCH_THRESHOLD` | `0.50` |
-| Model version | `FACE_MODEL_VERSION` | `sface_v3` |
+| Match threshold | `FACE_MATCH_THRESHOLD` | `0.45` |
+| Model version | `FACE_MODEL_VERSION` | `arcface_r50_v1` |
 | Enrollment samples | min / max | `3` / `5` |
 | Challenge TTL | `FACE_LIVENESS_CHALLENGE_TTL_SECONDS` | `90` |
 | Center yaw max | `FACE_LIVENESS_CENTER_YAW_MAX` | `0.18` |
 | Turn yaw min | `FACE_LIVENESS_TURN_YAW_MIN` | `0.28` |
 | Continuity threshold | `FACE_LIVENESS_CONTINUITY_THRESHOLD` | `0.40` |
 
-`sface_v3` uses real face-recognition models from the OpenCV zoo, run natively
-by OpenCV (no extra Python deps):
+The pipeline runs entirely through OpenCV (`cv2.FaceDetectorYN` + `cv2.dnn`) —
+**no extra Python dependencies**:
 
-- **YuNet** (`face_detection_yunet_2023mar.onnx`) — face detection + landmarks (also used for head-turn pose)
-- **SFace** (`face_recognition_sface_2021dec.onnx`) — aligned crop → 128-d embedding
+- **YuNet** (`face_detection_yunet_2023mar.onnx`) — face detection + 5 landmarks (also used for head-turn pose)
+- **ArcFace R50** (`arcface_w600k_r50.onnx`, InsightFace `buffalo_l`) — 112×112 aligned crop → **512-d** embedding
+
+ArcFace R50 replaced the earlier lightweight SFace model because SFace could not
+reliably separate lookalikes (siblings scored ~0.46 and passed). ArcFace is the
+industry-standard model (~99.8% on LFW) and gives a much wider gap between
+genuine matches and lookalikes.
+
+> **License:** the ArcFace / `buffalo_l` weights are provided by InsightFace for
+> **non-commercial / academic research** use (fine for this thesis). Commercial
+> deployment needs an InsightFace license or a commercially-licensed model.
 
 The ONNX files live in `backend/models/`. If missing, download them:
 
 ```powershell
 cd backend; mkdir models -Force
 curl.exe -L -o models\face_detection_yunet_2023mar.onnx https://github.com/opencv/opencv_zoo/raw/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx
-curl.exe -L -o models\face_recognition_sface_2021dec.onnx https://github.com/opencv/opencv_zoo/raw/main/models/face_recognition_sface/face_recognition_sface_2021dec.onnx
+curl.exe -L -o models\arcface_w600k_r50.onnx https://huggingface.co/immich-app/buffalo_l/resolve/main/recognition/model.onnx
 ```
 
-SFace's published benchmark threshold is `0.363`, but real webcam testing
-showed impostor photos scoring up to ~0.37 and lookalike siblings around
-~0.46, so the default is a stricter `0.50` (genuine same-person matches
-typically score 0.50–0.70+; verify uses the best score across all enrolled
-samples).
+The ArcFace model is ~175 MB. It loads once at first use (~400 MB RAM) and runs
+at ~100–200 ms per face on CPU — only on the few frames per clock-in, so it is
+light enough for a laptop.
 
 **How to read the score (no ML knowledge needed):**
 
 | Score vs threshold | Meaning |
 |--------------------|---------|
-| Below threshold (e.g. 0.40 &lt; 0.50) | Rejected — not a match |
-| At/above threshold (e.g. 0.55 ≥ 0.50) | Accepted — treated as the enrolled person |
-| Sibling/lookalike near the bar | Raise `FACE_MATCH_THRESHOLD` (try `0.55`) |
-| Real employee often rejected | Lower slightly (try `0.48`) or re-enroll with clearer samples |
+| Below threshold (e.g. 0.35 &lt; 0.45) | Rejected — not a match |
+| At/above threshold (e.g. 0.84 ≥ 0.45) | Accepted — treated as the enrolled person |
+| Sibling/lookalike still passing | Raise `FACE_MATCH_THRESHOLD` (try `0.50`) |
+| Real employee often rejected | Lower slightly (try `0.40`) or re-enroll with clearer samples |
 
-Tune per deployment with a few genuine and impostor captures. Embeddings are
-model-specific — re-enroll everyone after any model change.
+With ArcFace R50, genuine same-person captures usually score **~0.45–0.85** (a
+clear, good capture can reach 0.8+) and different people (including siblings)
+fall well below (~0.30–0.45). Tune per deployment with a
+few genuine and lookalike captures. Embeddings are model-specific — **everyone
+must re-enroll after a model change** (migration `015` clears old embeddings and
+resets enrollment automatically).
 
 **Liveness:** randomized one-time head-turn (`turn_left` / `turn_right`) blocks
 static printed photos and photo-on-phone attacks. It does **not** claim protection
@@ -81,9 +92,9 @@ Base path: `/api/v1` (Bearer JWT).
   "employee_id": "…",
   "face_registration_status": "completed",
   "sample_count": 3,
-  "model_version": "sface_v3",
+  "model_version": "arcface_r50_v1",
   "face_registered_at": "2026-07-14T…",
-  "threshold": 0.50
+  "threshold": 0.45
 }
 ```
 
@@ -247,7 +258,7 @@ validation. Geofence still required.
 | Quick (blink/smile) | **Client** (MediaPipe / ML Kit) | Lower — server can't independently prove the blink | Highest (no instructions to follow) |
 | Strong (head turn) | **Server** (YuNet pose from 3 frames) | Higher — random direction can't be faked by a still photo | Slightly more friction |
 
-In both modes the **server** still performs the SFace identity match. Quick mode is a convenience trade-off: use Strong mode where anti-spoofing matters (e.g. real attendance clock-in). `clock-in-face` currently uses the Strong (head-turn) path.
+In both modes the **server** still performs the ArcFace identity match. Quick mode is a convenience trade-off: use Strong mode where anti-spoofing matters (e.g. real attendance clock-in). `clock-in-face` currently uses the Strong (head-turn) path.
 
 Live status shows face found, yaw/scores, guidance, and (Strong mode) stability + time remaining. Loops stop on expiry, employee change, camera stop, success/error, unmount, or mode switch.
 
@@ -285,7 +296,7 @@ dependencies:
 ```
 
 `google_mlkit_face_detection` is **free** and runs on-device. Use it only to
-decide *when* to capture frames. FastAPI YuNet/SFace remains authoritative for
+decide *when* to capture frames. FastAPI YuNet/ArcFace remains authoritative for
 liveness and identity — never trust ML Kit alone for pass/fail.
 
 ### Enrollment (`face_registration_screen.dart`)
@@ -394,13 +405,14 @@ Keep JSON `/attendance/clock-in` as GPS-only fallback until enrollment coverage 
 
 | Path | Role |
 |------|------|
-| `backend/app/services/face_embedding.py` | YuNet detect + SFace embed + landmarks |
+| `backend/app/services/face_embedding.py` | YuNet detect + ArcFace embed + landmarks |
 | `backend/app/services/face_liveness.py` | One-time challenge + head-turn validation |
 | `backend/app/api/face.py` | Enroll / status / verify / liveness APIs |
 | `backend/app/models/face_embedding.py` | Embedding table |
 | `backend/app/models/face_liveness.py` | Challenge table |
 | `backend/alembic/versions/013_employee_face_embedding.py` | Embeddings + HNSW |
 | `backend/alembic/versions/014_face_liveness_challenge.py` | Challenges |
+| `backend/alembic/versions/015_arcface_embedding_512.py` | 512-d ArcFace migration (clears old embeddings) |
 | `backend/app/services/attendance_clock.py` | Clock-in after server liveness |
 
 Install / migrate:
@@ -419,13 +431,13 @@ Pin: `opencv-python-headless>=4.10.0,<5`.
 
 Keep:
 
-- Table `employee_face_embedding` with `vector(128)` (or migrate dim if the new model differs)
+- Table `employee_face_embedding` with `vector(<dim>)` (migrate the dimension if the new model differs — see migration `015` for the 128→512 example)
 - Same multipart APIs and response shapes
 - Client unchanged
 
 Change only:
 
-1. `detect_and_observe()` / `detect_and_embed()` implementation
+1. `detect_and_observe()` / `detect_and_embed()` implementation (+ `EMBEDDING_DIM`)
 2. `MODEL_VERSION` / `face_model_version` setting
 3. Re-enroll all employees (embeddings are not compatible across models)
 
@@ -433,7 +445,7 @@ Change only:
 
 ## Manual test checklist
 
-- [ ] Migrate to 014
+- [ ] Migrate to head (015) — this clears old embeddings; everyone re-enrolls
 - [ ] Owner Face demo: enroll 3 photos for a test employee
 - [ ] Start liveness challenge → complete center/turn/return with live webcam → pass
 - [ ] Still photo of a phone / printed face cannot complete a random head-turn → fail

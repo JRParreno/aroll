@@ -38,3 +38,6 @@ backend/uploads/
 # PlantUML export (optional; keep sources in repo)
 # docs/diagrams/**/*.png
 # docs/diagrams/**/*.svg
+
+# Large face model (download via docs/FACE-RECOGNITION.md)
+backend/models/arcface_w600k_r50.onnx

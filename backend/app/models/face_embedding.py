@@ -21,7 +21,7 @@ class EmployeeFaceEmbedding(Base):
         nullable=False,
         index=True,
     )
-    embedding: Mapped[list[float]] = mapped_column(Vector(128), nullable=False)
+    embedding: Mapped[list[float]] = mapped_column(Vector(512), nullable=False)
     model_version: Mapped[str] = mapped_column(String(50), nullable=False)
     sample_index: Mapped[int] = mapped_column(SmallInteger, nullable=False)
     enrolled_by: Mapped[uuid.UUID] = mapped_column(

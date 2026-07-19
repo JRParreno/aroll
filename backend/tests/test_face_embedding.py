@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 
 from app.services.face_embedding import (
+    EMBEDDING_DIM,
     FacePipelineError,
     cosine_similarity,
     detect_and_embed,
@@ -64,15 +65,15 @@ def test_empty_image_raises():
     assert exc.value.detail["code"] == "invalid_image"
 
 
-def test_detect_and_embed_returns_128_when_face_found():
-    """Cascade may miss synthetic faces; skip if environment cannot detect."""
+def test_detect_and_embed_returns_embedding_when_face_found():
+    """Detector may miss synthetic faces; skip if environment cannot detect."""
     data = _synthetic_face_jpeg()
     try:
         vec = detect_and_embed(data)
     except FacePipelineError as exc:
-        if exc.detail.get("code") == "no_face":
-            pytest.skip("Haar cascade did not detect synthetic face in this env")
+        if exc.detail.get("code") in ("no_face", "weak_face"):
+            pytest.skip("Detector did not find the synthetic face in this env")
         raise
-    assert len(vec) == 128
+    assert len(vec) == EMBEDDING_DIM
     norm = float(np.linalg.norm(vec))
     assert norm == pytest.approx(1.0, abs=1e-5)

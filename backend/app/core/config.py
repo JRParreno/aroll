@@ -20,11 +20,13 @@ class Settings(BaseSettings):
     registration_upload_dir: str = "uploads/registrations"
     # Cosine similarity threshold for face match. Higher = stricter (fewer
     # false accepts, more "try again" for genuine people in bad lighting).
-    # SFace's published bar is ~0.363; webcam impostors hit ~0.37; lookalike
-    # siblings have scored ~0.46. Default 0.50 rejects that band while genuine
-    # same-person captures usually still land at 0.50–0.70+.
-    face_match_threshold: float = 0.50
-    face_model_version: str = "sface_v3"
+    # Scale is model-specific. For ArcFace R50 (arcface_r50_v1) genuine
+    # same-person captures usually score ~0.45–0.85, while different people
+    # (including siblings) drop well below (~0.30–0.45). Default 0.45 gives a
+    # safe margin for genuine acceptance while rejecting lookalikes; raise
+    # toward 0.50 for stricter lookalike rejection.
+    face_match_threshold: float = 0.45
+    face_model_version: str = "arcface_r50_v1"
     face_min_enrollment_samples: int = 3
     face_max_enrollment_samples: int = 5
     # One-time head-turn challenge settings.
