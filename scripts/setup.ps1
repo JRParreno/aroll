@@ -106,6 +106,10 @@ if (-not $SkipFlutter -and $hasFlutter) {
     Pop-Location
 }
 
+# --- Face models (YuNet + ArcFace) ---
+Write-Host "Face recognition models..." -ForegroundColor Yellow
+& "$Root\scripts\download-face-models.ps1"
+
 # --- Database ---
 if (-not $SkipDatabase -and $hasDocker) {
     Write-Host ""
@@ -142,7 +146,9 @@ Write-Host "=== Setup complete ===" -ForegroundColor Green
 Write-Host ""
 Write-Host "Next steps:" -ForegroundColor Cyan
 Write-Host '  .\scripts\aroll.ps1     - dev menu (start services)'
+Write-Host '  .\scripts\download-face-models.ps1 - re-download face models if needed'
 Write-Host '  docs/PROJECT-SETUP.md  - full setup guide'
+Write-Host '  docs/FACE-RECOGNITION.md - face enroll / liveness demo'
 Write-Host '  http://localhost:8000/docs - API (after starting backend)'
 Write-Host '  http://localhost:5173      - Admin web'
 Write-Host ""

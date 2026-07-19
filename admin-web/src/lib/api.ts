@@ -538,6 +538,50 @@ export type FaceVerifyResult = {
   threshold: number;
   model_version: string;
   message: string;
+  liveness_checked?: boolean;
+};
+
+export type LivenessChallenge = {
+  challenge_id: string;
+  employee_id: string;
+  direction: string;
+  instruction: string;
+  expires_at: string;
+  ttl_seconds: number;
+};
+
+export type FaceLivenessVerifyResult = {
+  employee_id: string;
+  challenge_id: string;
+  direction: string;
+  match_score: number;
+  passed: boolean;
+  liveness_passed: boolean;
+  threshold: number;
+  model_version: string;
+  pose: {
+    center_yaw: number;
+    turn_yaw: number;
+    return_yaw: number;
+    continuity_center_turn: number;
+    continuity_turn_return: number;
+  };
+  message: string;
+};
+
+export type LivenessPoseObserveResult = {
+  challenge_id: string;
+  employee_id: string;
+  step: string;
+  direction: string;
+  ready: boolean;
+  face_detected: boolean;
+  face_count: number;
+  yaw: number | null;
+  detection_score: number | null;
+  guidance: string;
+  reason_code: string | null;
+  expires_at: string;
 };
 
 export async function getEmployeeFaceStatus(employeeId: string) {
@@ -572,6 +616,7 @@ export async function deleteEmployeeFaceSamples(employeeId: string) {
   return data;
 }
 
+/** Identity-only diagnostic — does NOT prove liveness. Prefer verifyEmployeeFaceLiveness. */
 export async function verifyEmployeeFace(employeeId: string, file: Blob) {
   const formData = new FormData();
   formData.append("employee_id", employeeId);
@@ -579,6 +624,53 @@ export async function verifyEmployeeFace(employeeId: string, file: Blob) {
   const { data } = await api.post<FaceVerifyResult>("/face/verify", formData, {
     headers: { "Content-Type": "multipart/form-data" },
   });
+  return data;
+}
+
+export async function createFaceLivenessChallenge(employeeId: string) {
+  const { data } = await api.post<LivenessChallenge>("/face/liveness/challenges", {
+    employee_id: employeeId,
+  });
+  return data;
+}
+
+export async function verifyEmployeeFaceLiveness(params: {
+  employeeId: string;
+  challengeId: string;
+  centerFrame: Blob;
+  turnFrame: Blob;
+  returnFrame: Blob;
+}) {
+  const formData = new FormData();
+  formData.append("employee_id", params.employeeId);
+  formData.append("challenge_id", params.challengeId);
+  formData.append("center_frame", params.centerFrame, "center.jpg");
+  formData.append("turn_frame", params.turnFrame, "turn.jpg");
+  formData.append("return_frame", params.returnFrame, "return.jpg");
+  const { data } = await api.post<FaceLivenessVerifyResult>(
+    "/face/verify-liveness",
+    formData,
+    { headers: { "Content-Type": "multipart/form-data" } }
+  );
+  return data;
+}
+
+export async function observeFaceLivenessPose(params: {
+  employeeId: string;
+  challengeId: string;
+  step: "center" | "turn" | "return";
+  frame: Blob;
+}) {
+  const formData = new FormData();
+  formData.append("employee_id", params.employeeId);
+  formData.append("challenge_id", params.challengeId);
+  formData.append("step", params.step);
+  formData.append("frame", params.frame, "observe.jpg");
+  const { data } = await api.post<LivenessPoseObserveResult>(
+    "/face/liveness/observe",
+    formData,
+    { headers: { "Content-Type": "multipart/form-data" } }
+  );
   return data;
 }
 

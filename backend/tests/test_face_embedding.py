@@ -6,10 +6,13 @@ import numpy as np
 import pytest
 
 from app.services.face_embedding import (
+    EMBEDDING_DIM,
     FacePipelineError,
+    best_match_score,
     cosine_similarity,
     detect_and_embed,
     match_passed,
+    mean_match_score,
 )
 
 
@@ -52,6 +55,20 @@ def test_match_passed_threshold():
     assert match_passed(0.5, threshold=0.72) is False
 
 
+def test_mean_match_stricter_than_best():
+    """A lookalike that luckily hits one enrolled sample still fails on mean."""
+    probe = [1.0, 0.0, 0.0]
+    gallery = [
+        [1.0, 0.0, 0.0],  # identical → 1.0
+        [0.0, 1.0, 0.0],  # orthogonal → 0.0
+        [0.0, 0.0, 1.0],  # orthogonal → 0.0
+    ]
+    assert best_match_score(probe, gallery) == pytest.approx(1.0)
+    assert mean_match_score(probe, gallery) == pytest.approx(1.0 / 3.0)
+    assert match_passed(best_match_score(probe, gallery), threshold=0.78) is True
+    assert match_passed(mean_match_score(probe, gallery), threshold=0.78) is False
+
+
 def test_invalid_image_raises():
     with pytest.raises(FacePipelineError) as exc:
         detect_and_embed(b"not-an-image")
@@ -64,15 +81,15 @@ def test_empty_image_raises():
     assert exc.value.detail["code"] == "invalid_image"
 
 
-def test_detect_and_embed_returns_128_when_face_found():
-    """Cascade may miss synthetic faces; skip if environment cannot detect."""
+def test_detect_and_embed_returns_embedding_when_face_found():
+    """Detector may miss synthetic faces; skip if environment cannot detect."""
     data = _synthetic_face_jpeg()
     try:
         vec = detect_and_embed(data)
     except FacePipelineError as exc:
-        if exc.detail.get("code") == "no_face":
-            pytest.skip("Haar cascade did not detect synthetic face in this env")
+        if exc.detail.get("code") in ("no_face", "weak_face"):
+            pytest.skip("Detector did not find the synthetic face in this env")
         raise
-    assert len(vec) == 128
+    assert len(vec) == EMBEDDING_DIM
     norm = float(np.linalg.norm(vec))
     assert norm == pytest.approx(1.0, abs=1e-5)

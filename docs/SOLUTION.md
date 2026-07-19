@@ -580,7 +580,7 @@ API --> Web : done
 | **Liveness** | Lightweight challenge on device (e.g. blink or head turn) or frame-variance check before API call. |
 | **Geolocation** | Haversine distance from `business_location` `latitude`/`longitude` center; reject if outside `geofence_radius_m`. `address` is display-only and does not affect the check. |
 
-**Implementation (sample):** See **[FACE-RECOGNITION.md](./FACE-RECOGNITION.md)** — OpenCV `opencv_hist_v1` embeddings in FastAPI, owner admin-web enroll/verify demo at `/owner/face-demo`, and Flutter wiring guide for `clock-in-face`.
+**Implementation (sample):** See **[FACE-RECOGNITION.md](./FACE-RECOGNITION.md)** — YuNet + ArcFace R50 (`arcface_r50_v1`, 512-d) embeddings, server-validated head-turn liveness (`/face/liveness/challenges` + `/face/verify-liveness`), owner demo at `/owner/face-demo`, and Flutter wiring for `clock-in-face`.
 
 **Design parameters (to tune during build):**
 

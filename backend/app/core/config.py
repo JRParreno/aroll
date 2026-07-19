@@ -18,12 +18,29 @@ class Settings(BaseSettings):
     # Set to false in production and list explicit origins in CORS_ORIGINS instead.
     cors_allow_localhost_regex: bool = True
     registration_upload_dir: str = "uploads/registrations"
-    # Cosine similarity threshold for face match. SFace's published
-    # same-identity threshold is 0.363 cosine similarity (OpenCV zoo).
-    face_match_threshold: float = 0.363
-    face_model_version: str = "sface_v3"
+    # Cosine similarity threshold for face match. Higher = stricter (fewer
+    # false accepts, more "try again" for genuine people in bad lighting).
+    # Scale is model-specific. For ArcFace R50 (arcface_r50_v1) we score the
+    # *mean* similarity across all enrolled samples (not the single best), which
+    # is stricter against lookalikes. Close siblings have scored ~0.77 on the
+    # old "best sample" rule; mean scoring + default 0.78 rejects that band
+    # while a clear genuine capture (~0.80–0.85) still passes. Raise toward
+    # 0.82 if lookalikes still pass; lower toward 0.70 if genuine people fail
+    # in poor lighting (prefer re-enrolling clear samples first).
+    face_match_threshold: float = 0.78
+    face_model_version: str = "arcface_r50_v1"
     face_min_enrollment_samples: int = 3
     face_max_enrollment_samples: int = 5
+    # One-time head-turn challenge settings.
+    face_liveness_challenge_ttl_seconds: int = 90
+    # Absolute yaw proxy (nose offset / inter-eye distance) for a front-facing frame.
+    face_liveness_center_yaw_max: float = 0.18
+    # Minimum absolute yaw for the instructed turn frame.
+    face_liveness_turn_yaw_min: float = 0.28
+    # Minimum absolute yaw delta between center and turn frames.
+    face_liveness_turn_delta_min: float = 0.22
+    # Cosine similarity required between consecutive challenge frames (same person).
+    face_liveness_continuity_threshold: float = 0.40
 
     @property
     def cors_origin_list(self) -> list[str]:

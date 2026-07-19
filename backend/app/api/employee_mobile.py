@@ -608,13 +608,25 @@ async def clock_in_with_face(
     user: Annotated[User, Depends(get_current_user)],
     latitude: Annotated[float, Form(...)],
     longitude: Annotated[float, Form(...)],
-    face_image: Annotated[UploadFile, File(...)],
+    challenge_id: Annotated[uuid.UUID, Form(...)],
+    center_frame: Annotated[UploadFile, File(...)],
+    turn_frame: Annotated[UploadFile, File(...)],
+    return_frame: Annotated[UploadFile, File(...)],
     shift_assignment_id: Annotated[uuid.UUID | None, Form()] = None,
-    liveness_passed: Annotated[bool, Form()] = True,
 ):
-    """Clock in with GPS + face image. Used by Flutter once camera capture is wired."""
+    """Clock in with GPS + server-validated head-turn liveness + face match."""
+    from app.services.face_liveness import validate_liveness_sequence
+
     employee, business = _current_employee(db, user)
-    image_bytes = await face_image.read()
+    liveness = validate_liveness_sequence(
+        db,
+        challenge_id=challenge_id,
+        employee=employee,
+        center_bytes=await center_frame.read(),
+        turn_bytes=await turn_frame.read(),
+        return_bytes=await return_frame.read(),
+        consume=True,
+    )
     return clock_in_employee(
         db,
         employee,
@@ -622,8 +634,8 @@ async def clock_in_with_face(
         longitude=longitude,
         shift_assignment_id=shift_assignment_id,
         business_timezone=business.timezone,
-        face_image_bytes=image_bytes,
-        liveness_passed=liveness_passed,
+        face_match_score=liveness.match_score,
+        liveness_passed=True,
     )
 
 
