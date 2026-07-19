@@ -37,7 +37,11 @@ Future<void> initDependencies() async {
   sl.registerLazySingleton(() => ChangePasswordUsecase(sl<AuthRepository>()));
   sl.registerLazySingleton(() => LogoutUsecase(sl<AuthRepository>()));
   sl.registerLazySingleton(
-    () => RestoreSessionUsecase(sl<AuthRepository>(), sl<AppState>()),
+    () => RestoreSessionUsecase(
+      sl<AuthRepository>(),
+      sl<AppState>(),
+      sl<EmployeeRepository>(),
+    ),
   );
 
   initBloc(sl);

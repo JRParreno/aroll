@@ -1,6 +1,8 @@
 import 'package:aroll_mobile/core/app_state.dart';
 import 'package:aroll_mobile/core/di/injection.dart';
+import 'package:aroll_mobile/core/router/app_router.dart';
 import 'package:aroll_mobile/core/utils/password_validation.dart';
+import 'package:aroll_mobile/domain/repositories/employee_repository.dart';
 import 'package:aroll_mobile/domain/usecase/auth/change_password_usecase.dart';
 import 'package:aroll_mobile/presentation/auth/bloc/change_password_bloc/change_password_bloc.dart';
 import 'package:aroll_mobile/presentation/auth/bloc/change_password_bloc/change_password_event.dart';
@@ -38,11 +40,24 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
     super.dispose();
   }
 
-  void _onSuccess(SuccessChangePasswordState state) {
+  Future<void> _onSuccess(SuccessChangePasswordState state) async {
     final appState = sl<AppState>();
     final clearedSession = state.session.copyWith(mustChangePassword: false);
     appState.setSession(clearedSession, mustChange: false);
-    context.go(clearedSession.isOwner ? '/owner/home' : '/face-registration');
+    if (clearedSession.isOwner) {
+      if (!mounted) return;
+      context.go('/owner/home');
+      return;
+    }
+    // Employees must complete face registration before any other screen.
+    try {
+      final face = await sl<EmployeeRepository>().getFaceStatus();
+      appState.setFaceEnrolled(face.isCompleted);
+    } catch (_) {
+      appState.setFaceEnrolled(false);
+    }
+    if (!mounted) return;
+    context.go(resolveAuthenticatedRoute(appState));
   }
 
   InputDecoration _passwordDecoration({
