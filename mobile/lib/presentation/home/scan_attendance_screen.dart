@@ -1,9 +1,12 @@
 import 'package:aroll_mobile/core/di/injection.dart';
+import 'package:aroll_mobile/core/face/face_api_errors.dart';
 import 'package:aroll_mobile/core/location/employee_location_service.dart';
 import 'package:aroll_mobile/domain/entities/employee_portal.dart';
+import 'package:aroll_mobile/domain/entities/face_liveness.dart';
 import 'package:aroll_mobile/domain/repositories/employee_repository.dart';
 import 'package:aroll_mobile/presentation/employee/employee_ui.dart';
-import 'package:dio/dio.dart';
+import 'package:aroll_mobile/presentation/employee/face_attendance_result_screen.dart';
+import 'package:aroll_mobile/presentation/employee/face_liveness_capture_screen.dart';
 import 'package:flutter/material.dart';
 
 class ScanAttendanceScreen extends StatefulWidget {
@@ -157,38 +160,19 @@ class _ScanAttendanceScreenState extends State<ScanAttendanceScreen> {
       setState(() {
         _submitting = false;
         _actionError =
-            'You must be inside the work-site geofence to clock in.';
+            'Please move inside the work-site area before clocking in.';
       });
       return;
     }
-    try {
-      final result = await _repo.clockIn(
+    await _runFaceAttendanceFlow(
+      action: FaceAttendanceAction.clockIn,
+      verify: (capture) => _repo.clockInWithFace(
         latitude: location.latitude,
         longitude: location.longitude,
+        capture: capture,
         shiftAssignmentId: _resolvedShiftAssignmentId,
-      );
-      if (!mounted) return;
-      setState(() {
-        _submitting = false;
-        _successMessage = result.message;
-        _attendanceStatus = EmployeeAttendanceStatus(
-          status: result.status,
-          timeIn: result.timeIn,
-          timeOut: result.timeOut,
-        );
-        _geofencePreview = GeofencePreview(
-          distanceM: result.distanceM,
-          allowedRadiusM: result.allowedRadiusM,
-          insideGeofence: result.insideGeofence,
-        );
-      });
-    } catch (error) {
-      if (!mounted) return;
-      setState(() {
-        _submitting = false;
-        _actionError = _messageFromError(error, fallback: 'Clock-in failed.');
-      });
-    }
+      ),
+    );
   }
 
   Future<void> _clockOut() async {
@@ -206,37 +190,63 @@ class _ScanAttendanceScreenState extends State<ScanAttendanceScreen> {
       setState(() {
         _submitting = false;
         _actionError =
-            'You must be inside the work-site geofence to clock out.';
+            'Please move inside the work-site area before clocking out.';
       });
       return;
     }
-    try {
-      final result = await _repo.clockOut(
+    await _runFaceAttendanceFlow(
+      action: FaceAttendanceAction.clockOut,
+      verify: (capture) => _repo.clockOutWithFace(
         latitude: location.latitude,
         longitude: location.longitude,
+        capture: capture,
+      ),
+    );
+  }
+
+  Future<void> _runFaceAttendanceFlow({
+    required FaceAttendanceAction action,
+    required Future<AttendanceClockResult> Function(FaceQuickCapture capture)
+        verify,
+  }) async {
+    while (mounted) {
+      final capture = await _captureFace();
+      if (capture == null) {
+        if (mounted) setState(() => _submitting = false);
+        return;
+      }
+      if (!mounted) return;
+      final outcome = await Navigator.of(context).push<Object?>(
+        MaterialPageRoute(
+          fullscreenDialog: true,
+          builder: (_) => FaceAttendanceResultScreen(
+            action: action,
+            verify: () => verify(capture),
+          ),
+        ),
       );
       if (!mounted) return;
-      setState(() {
-        _submitting = false;
-        _successMessage = result.message;
-        _attendanceStatus = EmployeeAttendanceStatus(
-          status: result.status,
-          timeIn: result.timeIn,
-          timeOut: result.timeOut,
-        );
-        _geofencePreview = GeofencePreview(
-          distanceM: result.distanceM,
-          allowedRadiusM: result.allowedRadiusM,
-          insideGeofence: result.insideGeofence,
-        );
-      });
-    } catch (error) {
-      if (!mounted) return;
-      setState(() {
-        _submitting = false;
-        _actionError = _messageFromError(error, fallback: 'Clock-out failed.');
-      });
+      if (outcome == true) {
+        setState(() => _submitting = false);
+        await _load();
+        return;
+      }
+      if (outcome == 'retry') {
+        // Capture again with a fresh blink/smile.
+        continue;
+      }
+      setState(() => _submitting = false);
+      return;
     }
+  }
+
+  Future<FaceQuickCapture?> _captureFace() async {
+    return Navigator.of(context).push<FaceQuickCapture>(
+      MaterialPageRoute(
+        builder: (_) => const FaceLivenessCaptureScreen(),
+        fullscreenDialog: true,
+      ),
+    );
   }
 
   String _messageFromError(Object error, {required String fallback}) {
@@ -245,19 +255,7 @@ class _ScanAttendanceScreenState extends State<ScanAttendanceScreen> {
         error is LocationAccuracyException) {
       return error.toString();
     }
-    if (error is DioException) {
-      final data = error.response?.data;
-      if (data is Map<String, dynamic>) {
-        final detail = data['detail'];
-        if (detail is String && detail.isNotEmpty) return detail;
-        if (detail is Map<String, dynamic>) {
-          final message = detail['message'];
-          if (message is String && message.isNotEmpty) return message;
-        }
-      }
-      return fallback;
-    }
-    return fallback;
+    return faceApiErrorMessage(error, fallback: fallback);
   }
 
   @override
@@ -461,7 +459,7 @@ class _ScanAttendanceScreenState extends State<ScanAttendanceScreen> {
                             ),
                             const SizedBox(height: 12),
                             const Text(
-                              'GPS verifies you are at the work site. Face recognition will be added later.',
+                              'Clock in and out with face verification and GPS. You must be inside the work-site radius.',
                               textAlign: TextAlign.center,
                               style: TextStyle(
                                 color: EmployeeColors.textMuted,

@@ -38,6 +38,9 @@ class AttendanceRecord(Base):
     latitude_out: Mapped[float | None] = mapped_column(Numeric(10, 7), nullable=True)
     longitude_out: Mapped[float | None] = mapped_column(Numeric(10, 7), nullable=True)
     face_match_score: Mapped[float | None] = mapped_column(Numeric(5, 4), nullable=True)
+    face_match_score_out: Mapped[float | None] = mapped_column(
+        Numeric(5, 4), nullable=True
+    )
     liveness_passed: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()

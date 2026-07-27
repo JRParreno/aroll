@@ -1,13 +1,28 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Search } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import {
   OwnerPage,
   OwnerPageContent,
   OwnerPageHeader,
 } from "@/components/owner/layout/OwnerPageLayout";
-import { getOwnerAttendanceReport } from "@/lib/api";
+import {
+  approveOwnerAttendanceCorrection,
+  getOwnerAttendanceCorrections,
+  getOwnerAttendanceReport,
+  rejectOwnerAttendanceCorrection,
+  type OwnerAttendanceCorrection,
+} from "@/lib/api";
+
+function todayIso() {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
 
 function formatTime(value: string | null) {
   if (!value) return "--:--";
@@ -20,6 +35,16 @@ function formatTime(value: string | null) {
 function formatWeekday(value?: string) {
   if (!value) return "";
   return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+function formatDisplayDate(value: string) {
+  const date = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
 }
 
 function initials(name: string) {
@@ -40,132 +65,215 @@ function statusCopy(status: string) {
 }
 
 export function OwnerAttendancePage() {
+  const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
-  const [month, setMonth] = useState("all");
-  const [day, setDay] = useState("all");
-  const [year, setYear] = useState("all");
+  const [date, setDate] = useState(todayIso);
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [rejectingId, setRejectingId] = useState<string | null>(null);
+  const [rejectNote, setRejectNote] = useState("");
 
-  const { data, isLoading } = useQuery({
-    queryKey: ["owner-attendance-report"],
-    queryFn: getOwnerAttendanceReport,
+  useEffect(() => {
+    const handle = window.setTimeout(() => {
+      setDebouncedSearch(search.trim());
+    }, 250);
+    return () => window.clearTimeout(handle);
+  }, [search]);
+
+  const { data, isLoading, isError, refetch, isFetching } = useQuery({
+    queryKey: ["owner-attendance-report", date, debouncedSearch],
+    queryFn: () =>
+      getOwnerAttendanceReport({
+        date: date || undefined,
+        q: debouncedSearch || undefined,
+      }),
   });
 
-  const filterOptions = useMemo(() => {
-    const dates = (data?.records ?? []).map((record) => new Date(`${record.date}T00:00:00`));
-    return {
-      months: Array.from(new Set(dates.map((date) => String(date.getMonth())))),
-      days: Array.from(new Set(dates.map((date) => String(date.getDate())))),
-      years: Array.from(new Set(dates.map((date) => String(date.getFullYear())))),
-    };
-  }, [data]);
+  const {
+    data: pendingCorrections = [],
+    isLoading: correctionsLoading,
+  } = useQuery({
+    queryKey: ["owner-attendance-corrections", "pending"],
+    queryFn: () => getOwnerAttendanceCorrections("pending"),
+  });
 
-  const records = useMemo(() => {
-    const needle = search.toLowerCase();
-    return (data?.records ?? []).filter((record) => {
-      const recordDate = new Date(`${record.date}T00:00:00`);
-      return (
-        [record.employee_name, record.position_title ?? "", record.status]
-          .join(" ")
-          .toLowerCase()
-          .includes(needle) &&
-        (month === "all" || String(recordDate.getMonth()) === month) &&
-        (day === "all" || String(recordDate.getDate()) === day) &&
-        (year === "all" || String(recordDate.getFullYear()) === year)
-      );
-    });
-  }, [data, search, month, day, year]);
+  const invalidateAttendance = async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["owner-attendance-corrections"] }),
+      queryClient.invalidateQueries({ queryKey: ["owner-attendance-report"] }),
+      queryClient.invalidateQueries({ queryKey: ["owner-payroll-report"] }),
+    ]);
+  };
 
-  const restDayWork = useMemo(() => {
-    const needle = search.toLowerCase();
-    const source = data?.rest_day_work ?? (data?.records ?? []).filter(
-      (record) => record.is_rest_day && record.time_in
-    );
-    return source.filter((record) => {
-      const recordDate = new Date(`${record.date}T00:00:00`);
-      return (
-        [record.employee_name, record.position_title ?? "", record.status]
-          .join(" ")
-          .toLowerCase()
-          .includes(needle) &&
-        (month === "all" || String(recordDate.getMonth()) === month) &&
-        (day === "all" || String(recordDate.getDate()) === day) &&
-        (year === "all" || String(recordDate.getFullYear()) === year)
-      );
-    });
-  }, [data, search, month, day, year]);
-
-  const summary = records.reduce(
-    (acc, record) => {
-      if (record.status === "absent") acc.absent += 1;
-      else if (record.status === "late") acc.late += 1;
-      else acc.present += 1;
-      if (record.is_rest_day && record.time_in) acc.restDay += 1;
-      return acc;
+  const approveMutation = useMutation({
+    mutationFn: (requestId: string) =>
+      approveOwnerAttendanceCorrection(requestId),
+    onSuccess: () => {
+      toast.success("Correction approved. Attendance updated.");
+      void invalidateAttendance();
     },
-    { present: 0, late: 0, absent: 0, restDay: 0 }
-  );
+    onError: () => toast.error("Could not approve this correction."),
+  });
+
+  const rejectMutation = useMutation({
+    mutationFn: ({
+      requestId,
+      note,
+    }: {
+      requestId: string;
+      note: string;
+    }) => rejectOwnerAttendanceCorrection(requestId, note),
+    onSuccess: () => {
+      toast.success("Correction rejected.");
+      setRejectingId(null);
+      setRejectNote("");
+      void invalidateAttendance();
+    },
+    onError: () => toast.error("Could not reject this correction."),
+  });
+
+  const records = data?.records ?? [];
+  const restDayWork =
+    data?.rest_day_work ??
+    records.filter((record) => record.is_rest_day && record.time_in);
+
+  const summary = useMemo(() => {
+    return records.reduce(
+      (acc, record) => {
+        if (record.status === "absent") acc.absent += 1;
+        else if (record.status === "late") acc.late += 1;
+        else acc.present += 1;
+        if (record.is_rest_day && record.time_in) acc.restDay += 1;
+        return acc;
+      },
+      { present: 0, late: 0, absent: 0, restDay: 0 }
+    );
+  }, [records]);
 
   const maxCount = Math.max(summary.present, summary.late, summary.absent, 1);
   const total = summary.present + summary.late + summary.absent;
-  const presentPercent = total > 0 ? Math.round((summary.present / total) * 100) : 0;
+  const presentPercent =
+    total > 0 ? Math.round((summary.present / total) * 100) : 0;
   const restDayLabel = "Rest day";
+  const hasActiveFilters = Boolean(date || debouncedSearch);
 
   return (
     <OwnerPage>
       <OwnerPageHeader title="Attendance" />
 
       <OwnerPageContent>
+        <section className="rounded-2xl border border-amber-200 bg-amber-50/40 p-5 shadow-sm">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="text-base font-semibold text-[#1F2937]">
+                Pending correction requests
+              </h2>
+              <p className="mt-1 text-sm text-[#6B7280]">
+                Employees who forgot to clock in or out can request the actual
+                time. Approve to update attendance and payroll.
+              </p>
+            </div>
+            <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-800">
+              {pendingCorrections.length} pending
+            </span>
+          </div>
+
+          {correctionsLoading ? (
+            <p className="mt-4 text-sm text-[#6B7280]">Loading requests…</p>
+          ) : pendingCorrections.length === 0 ? (
+            <p className="mt-4 text-sm text-[#6B7280]">
+              No pending correction requests right now.
+            </p>
+          ) : (
+            <div className="mt-4 grid gap-3">
+              {pendingCorrections.map((item) => (
+                <CorrectionCard
+                  key={item.id}
+                  item={item}
+                  approving={
+                    approveMutation.isPending &&
+                    approveMutation.variables === item.id
+                  }
+                  rejecting={
+                    rejectMutation.isPending &&
+                    rejectMutation.variables?.requestId === item.id
+                  }
+                  isRejectOpen={rejectingId === item.id}
+                  rejectNote={rejectingId === item.id ? rejectNote : ""}
+                  onApprove={() => approveMutation.mutate(item.id)}
+                  onOpenReject={() => {
+                    setRejectingId(item.id);
+                    setRejectNote("");
+                  }}
+                  onCancelReject={() => {
+                    setRejectingId(null);
+                    setRejectNote("");
+                  }}
+                  onRejectNoteChange={setRejectNote}
+                  onConfirmReject={() => {
+                    if (rejectNote.trim().length < 3) {
+                      toast.error("Add a short rejection reason.");
+                      return;
+                    }
+                    rejectMutation.mutate({
+                      requestId: item.id,
+                      note: rejectNote.trim(),
+                    });
+                  }}
+                />
+              ))}
+            </div>
+          )}
+        </section>
+
         <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <div className="mx-auto max-w-3xl space-y-3">
             <div className="relative">
-              <Search className="absolute left-4 top-3 h-5 w-5 text-[#6B7280]" />
+              <Search className="pointer-events-none absolute left-4 top-3 h-5 w-5 text-[#6B7280]" />
               <Input
                 className="h-11 rounded-xl bg-[#FAFBFC] pl-12"
-                placeholder="Search employee"
+                placeholder="Search by name, position, or shift"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
             </div>
-            <div className="grid gap-3 sm:grid-cols-3">
-              <select
-                className="h-10 rounded-xl border border-slate-200 bg-[#FAFBFC] px-4 text-sm text-[#374151]"
-                value={month}
-                onChange={(e) => setMonth(e.target.value)}
-              >
-                <option value="all">Month</option>
-                {filterOptions.months.map((value) => (
-                  <option key={value} value={value}>
-                    {new Date(2026, Number(value), 1).toLocaleDateString(undefined, {
-                      month: "long",
-                    })}
-                  </option>
-                ))}
-              </select>
-              <select
-                className="h-10 rounded-xl border border-slate-200 bg-[#FAFBFC] px-4 text-sm text-[#374151]"
-                value={day}
-                onChange={(e) => setDay(e.target.value)}
-              >
-                <option value="all">Day</option>
-                {filterOptions.days.map((value) => (
-                  <option key={value} value={value}>
-                    {value}
-                  </option>
-                ))}
-              </select>
-              <select
-                className="h-10 rounded-xl border border-slate-200 bg-[#FAFBFC] px-4 text-sm text-[#374151]"
-                value={year}
-                onChange={(e) => setYear(e.target.value)}
-              >
-                <option value="all">Year</option>
-                {filterOptions.years.map((value) => (
-                  <option key={value} value={value}>
-                    {value}
-                  </option>
-                ))}
-              </select>
+            <div className="flex flex-wrap items-center gap-3">
+              <label className="flex min-w-[200px] flex-1 flex-col gap-1 text-xs font-medium text-[#6B7280]">
+                Date
+                <Input
+                  type="date"
+                  className="h-10 rounded-xl bg-[#FAFBFC]"
+                  value={date}
+                  onChange={(e) => setDate(e.target.value)}
+                />
+              </label>
+              <div className="flex items-end gap-2 pb-0.5">
+                <button
+                  type="button"
+                  className="h-10 rounded-xl border border-slate-200 bg-white px-4 text-sm font-medium text-[#374151] hover:bg-slate-50"
+                  onClick={() => setDate(todayIso())}
+                >
+                  Today
+                </button>
+                <button
+                  type="button"
+                  className="h-10 rounded-xl border border-slate-200 bg-white px-4 text-sm font-medium text-[#374151] hover:bg-slate-50"
+                  onClick={() => {
+                    setDate("");
+                    setSearch("");
+                    setDebouncedSearch("");
+                  }}
+                >
+                  Clear
+                </button>
+              </div>
             </div>
+            {hasActiveFilters && (
+              <p className="text-xs text-[#6B7280]">
+                Showing{date ? ` ${formatDisplayDate(date)}` : " all dates"}
+                {debouncedSearch ? ` · matching “${debouncedSearch}”` : ""}
+                {isFetching ? " · updating…" : ""}
+              </p>
+            )}
           </div>
         </section>
 
@@ -177,11 +285,17 @@ export function OwnerAttendancePage() {
                 { label: "late", value: summary.late, color: "#FDBA74" },
                 { label: "absent", value: summary.absent, color: "#F87171" },
               ].map((item) => (
-                <div className="flex flex-1 flex-col items-center gap-2" key={item.label}>
+                <div
+                  className="flex flex-1 flex-col items-center gap-2"
+                  key={item.label}
+                >
                   <div
                     className="w-full max-w-16 rounded-t-lg"
                     style={{
-                      height: `${Math.max((item.value / maxCount) * 100, item.value ? 14 : 0)}%`,
+                      height: `${Math.max(
+                        (item.value / maxCount) * 100,
+                        item.value ? 14 : 0
+                      )}%`,
                       backgroundColor: item.color,
                     }}
                   />
@@ -225,7 +339,8 @@ export function OwnerAttendancePage() {
               </p>
             </div>
             <span className="rounded-full bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700">
-              {restDayWork.length} record{restDayWork.length === 1 ? "" : "s"}
+              {restDayWork.length} record
+              {restDayWork.length === 1 ? "" : "s"}
             </span>
           </div>
           {restDayWork.length === 0 ? (
@@ -259,12 +374,15 @@ export function OwnerAttendancePage() {
                         {record.employee_name}
                       </h3>
                       <p className="mt-0.5 text-xs text-[#6B7280]">
-                        {record.date}
-                        {record.weekday ? ` · ${formatWeekday(record.weekday)}` : ""}
+                        {formatDisplayDate(record.date)}
+                        {record.weekday
+                          ? ` · ${formatWeekday(record.weekday)}`
+                          : ""}
                         {record.shift_name ? ` · ${record.shift_name}` : ""}
                       </p>
                       <p className="text-xs text-[#6B7280]">
-                        In {formatTime(record.time_in)} · Out {formatTime(record.time_out)}
+                        In {formatTime(record.time_in)} · Out{" "}
+                        {formatTime(record.time_out)}
                       </p>
                     </div>
                     <span
@@ -288,9 +406,24 @@ export function OwnerAttendancePage() {
             <div className="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-[#6B7280] shadow-sm">
               Loading attendance...
             </div>
+          ) : isError ? (
+            <div className="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-[#6B7280] shadow-sm">
+              <p>
+                Couldn’t load attendance. Check your connection and try again.
+              </p>
+              <button
+                type="button"
+                className="mt-3 rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white"
+                onClick={() => void refetch()}
+              >
+                Retry
+              </button>
+            </div>
           ) : records.length === 0 ? (
             <div className="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-[#6B7280] shadow-sm">
-              No attendance records found.
+              No attendance records found
+              {date ? ` for ${formatDisplayDate(date)}` : ""}
+              {debouncedSearch ? ` matching “${debouncedSearch}”` : ""}.
             </div>
           ) : (
             <div className="grid gap-4 lg:grid-cols-2">
@@ -311,7 +444,15 @@ export function OwnerAttendancePage() {
                         {record.employee_name}
                       </h2>
                       <p className="mt-0.5 text-xs text-[#6B7280]">
-                        {record.shift_name ?? record.position_title ?? "Attendance"}
+                        {formatDisplayDate(record.date)}
+                        {record.weekday
+                          ? ` · ${formatWeekday(record.weekday)}`
+                          : ""}
+                        {record.shift_name
+                          ? ` · ${record.shift_name}`
+                          : record.position_title
+                            ? ` · ${record.position_title}`
+                            : ""}
                       </p>
                       <p className="text-xs text-[#6B7280]">
                         {statusCopy(record.status)}
@@ -339,5 +480,112 @@ export function OwnerAttendancePage() {
         </section>
       </OwnerPageContent>
     </OwnerPage>
+  );
+}
+
+function CorrectionCard({
+  item,
+  approving,
+  rejecting,
+  isRejectOpen,
+  rejectNote,
+  onApprove,
+  onOpenReject,
+  onCancelReject,
+  onRejectNoteChange,
+  onConfirmReject,
+}: {
+  item: OwnerAttendanceCorrection;
+  approving: boolean;
+  rejecting: boolean;
+  isRejectOpen: boolean;
+  rejectNote: string;
+  onApprove: () => void;
+  onOpenReject: () => void;
+  onCancelReject: () => void;
+  onRejectNoteChange: (value: string) => void;
+  onConfirmReject: () => void;
+}) {
+  return (
+    <div className="rounded-xl border border-amber-200 bg-white p-4">
+      <div className="flex flex-wrap items-start gap-3">
+        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-amber-100 text-sm font-semibold text-amber-800">
+          {initials(item.employee_name)}
+        </div>
+        <div className="min-w-0 flex-1">
+          <h3 className="truncate text-sm font-semibold text-[#111827]">
+            {item.employee_name}
+          </h3>
+          <p className="mt-0.5 text-xs text-[#6B7280]">
+            {formatDisplayDate(item.work_date)}
+            {item.shift_name ? ` · ${item.shift_name}` : ""}
+            {item.shift_start && item.shift_end
+              ? ` · ${item.shift_start} - ${item.shift_end}`
+              : ""}
+          </p>
+          <div className="mt-2 grid gap-1 text-xs text-[#374151] sm:grid-cols-2">
+            <p>
+              Recorded: In {formatTime(item.recorded_time_in)} · Out{" "}
+              {formatTime(item.recorded_time_out)}
+            </p>
+            <p>
+              Requested: In {formatTime(item.requested_time_in)} · Out{" "}
+              {formatTime(item.requested_time_out)}
+            </p>
+          </div>
+          <p className="mt-2 text-sm text-[#4B5563]">
+            <span className="font-medium text-[#111827]">Reason: </span>
+            {item.reason}
+          </p>
+        </div>
+      </div>
+
+      {isRejectOpen ? (
+        <div className="mt-3 space-y-2">
+          <Input
+            className="h-10 rounded-xl bg-[#FAFBFC]"
+            placeholder="Rejection reason (required)"
+            value={rejectNote}
+            onChange={(e) => onRejectNoteChange(e.target.value)}
+          />
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-60"
+              disabled={rejecting}
+              onClick={onConfirmReject}
+            >
+              {rejecting ? "Rejecting…" : "Confirm reject"}
+            </button>
+            <button
+              type="button"
+              className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-[#374151]"
+              onClick={onCancelReject}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="mt-3 flex flex-wrap gap-2">
+          <button
+            type="button"
+            className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-60"
+            disabled={approving || rejecting}
+            onClick={onApprove}
+          >
+            {approving ? "Approving…" : "Approve"}
+          </button>
+          <button
+            type="button"
+            className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-[#374151]"
+            disabled={approving || rejecting}
+            onClick={onOpenReject}
+          >
+            Reject
+          </button>
+        </div>
+      )}
+    </div>
   );
 }

@@ -111,6 +111,13 @@ def _scheduled_start(work_date: date, shift: Shift) -> datetime:
     return datetime.combine(work_date, shift.start_time)
 
 
+def _scheduled_end(work_date: date, shift: Shift) -> datetime:
+    end_at = datetime.combine(work_date, shift.end_time)
+    if shift.end_time <= shift.start_time:
+        end_at += timedelta(days=1)
+    return end_at
+
+
 def _resolve_assignment(
     db: Session,
     employee: Employee,
@@ -199,7 +206,7 @@ def _clock_in_status(
     return AttendanceStatus.in_progress
 
 
-def _verify_face_for_employee(
+def verify_employee_face_match(
     db: Session,
     employee: Employee,
     face_image_bytes: bytes,
@@ -262,7 +269,7 @@ def clock_in_employee(
 
     resolved_score = face_match_score
     if face_image_bytes is not None and resolved_score is None:
-        resolved_score = _verify_face_for_employee(db, employee, face_image_bytes)
+        resolved_score = verify_employee_face_match(db, employee, face_image_bytes)
 
     today = business_today(business_timezone)
     assignment, shift = _resolve_assignment(
@@ -354,6 +361,8 @@ def clock_out_employee(
     latitude: float,
     longitude: float,
     business_timezone: str | None = "Asia/Manila",
+    face_match_score: float | None = None,
+    liveness_passed: bool | None = None,
 ) -> dict:
     location = _primary_location(db, employee.business_id)
     geofence = _validate_geofence(location, latitude, longitude)
@@ -363,7 +372,10 @@ def clock_out_employee(
     if record is None or record.time_in is None:
         raise HTTPException(400, "You are not clocked in yet.")
 
+    policy = _attendance_policy(db, employee.business_id)
     shift_name = None
+    shift: Shift | None = None
+    assignment: ShiftAssignment | None = None
     if record.shift_assignment_id is not None:
         row = (
             db.query(ShiftAssignment, Shift)
@@ -372,15 +384,64 @@ def clock_out_employee(
             .first()
         )
         if row is not None:
-            shift_name = row[1].name
+            assignment, shift = row
+            shift_name = shift.name
 
     now_utc = datetime.now(timezone.utc)
     record.time_out = now_utc
     record.latitude_out = latitude
     record.longitude_out = longitude
-    record.status = AttendanceStatus.complete
+    if face_match_score is not None:
+        record.face_match_score_out = face_match_score
+    if liveness_passed is True:
+        record.liveness_passed = True
+    elif liveness_passed is False:
+        record.liveness_passed = False
+
+    was_late = record.status == AttendanceStatus.late
+    worked_minutes = max(
+        (now_utc - record.time_in).total_seconds() / 60.0,
+        0.0,
+    )
+
+    # Absent if worked time is below the stricter of the two thresholds.
+    # Half-day pay (between thresholds) is applied in payslip math; status
+    # stays late/complete so reports still show presence.
+    absent_bar = min(
+        policy.half_day_threshold_minutes, policy.absent_threshold_minutes
+    )
+    if worked_minutes < absent_bar:
+        record.status = AttendanceStatus.absent
+    elif was_late:
+        record.status = AttendanceStatus.late
+    else:
+        record.status = AttendanceStatus.complete
+
+    early_out_minutes = 0.0
+    if (
+        shift is not None
+        and assignment is not None
+        and policy.early_out_deduction_enabled
+    ):
+        now_local = business_now(business_timezone).replace(tzinfo=None)
+        scheduled_end = _scheduled_end(assignment.work_date, shift)
+        if now_local < scheduled_end:
+            early_out_minutes = (scheduled_end - now_local).total_seconds() / 60.0
+
     db.commit()
     db.refresh(record)
+
+    message = "Clocked out successfully."
+    if record.status == AttendanceStatus.late:
+        message = "Clocked out successfully. Late status preserved."
+    elif record.status == AttendanceStatus.absent:
+        message = "Clocked out. Marked absent due to insufficient worked time."
+    if early_out_minutes > 0:
+        message = f"{message} Early out: {early_out_minutes:.0f} min."
+    if face_match_score is not None:
+        message = f"{message} Face match score: {face_match_score:.3f}."
+    if liveness_passed is True:
+        message = f"{message} Liveness passed."
 
     return {
         "id": str(record.id),
@@ -389,13 +450,20 @@ def clock_out_employee(
         "time_out": record.time_out.isoformat() if record.time_out else None,
         "geofence": geofence,
         "shift_name": shift_name,
-        "message": "Clocked out successfully.",
+        "message": message,
         "face_match_score": (
             float(record.face_match_score)
             if record.face_match_score is not None
             else None
         ),
+        "face_match_score_out": (
+            float(record.face_match_score_out)
+            if record.face_match_score_out is not None
+            else None
+        ),
         "liveness_passed": record.liveness_passed,
+        "early_out_minutes": round(early_out_minutes, 2),
+        "worked_minutes": round(worked_minutes, 2),
     }
 
 

@@ -1,11 +1,12 @@
 import 'dart:io';
 
 import 'package:aroll_mobile/core/network/api_client.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:aroll_mobile/domain/entities/employee_portal.dart';
+import 'package:aroll_mobile/domain/entities/face_liveness.dart';
 import 'package:aroll_mobile/domain/entities/user_session.dart';
 import 'package:aroll_mobile/domain/repositories/employee_repository.dart';
 import 'package:dio/dio.dart';
+import 'package:path_provider/path_provider.dart';
 
 class EmployeeRepositoryImpl implements EmployeeRepository {
   EmployeeRepositoryImpl(this._api);
@@ -55,6 +56,37 @@ class EmployeeRepositoryImpl implements EmployeeRepository {
   }
 
   @override
+  Future<AttendanceCorrectionRequest> submitAttendanceCorrection({
+    required String shiftAssignmentId,
+    DateTime? requestedTimeIn,
+    DateTime? requestedTimeOut,
+    required String reason,
+  }) async {
+    final res = await _api.dio.post<Map<String, dynamic>>(
+      '/employee/attendance-corrections',
+      data: {
+        'shift_assignment_id': shiftAssignmentId,
+        if (requestedTimeIn != null)
+          'requested_time_in': requestedTimeIn.toUtc().toIso8601String(),
+        if (requestedTimeOut != null)
+          'requested_time_out': requestedTimeOut.toUtc().toIso8601String(),
+        'reason': reason,
+      },
+    );
+    return _correctionFromJson(res.data!);
+  }
+
+  @override
+  Future<List<AttendanceCorrectionRequest>> getAttendanceCorrections() async {
+    final res = await _api.dio.get<List<dynamic>>(
+      '/employee/attendance-corrections',
+    );
+    return (res.data ?? [])
+        .map((item) => _correctionFromJson(item as Map<String, dynamic>))
+        .toList();
+  }
+
+  @override
   Future<EmployeePayroll> getPayroll() async {
     final res = await _api.dio.get<Map<String, dynamic>>('/employee/payroll');
     final rows = res.data!['rows'] as List<dynamic>? ?? [];
@@ -79,12 +111,30 @@ class EmployeeRepositoryImpl implements EmployeeRepository {
   }
 
   @override
-  Future<EmployeeProfile> updateFaceRegistration(String status) async {
+  Future<FaceStatus> getFaceStatus() async {
+    final res = await _api.dio.get<Map<String, dynamic>>('/employee/face-status');
+    return _faceStatusFromJson(res.data!);
+  }
+
+  @override
+  Future<FaceStatus> enrollFaceSamples(List<File> images) async {
+    final form = FormData();
+    for (var i = 0; i < images.length; i++) {
+      form.files.add(
+        MapEntry(
+          'files',
+          await MultipartFile.fromFile(
+            images[i].path,
+            filename: 'sample-${i + 1}.jpg',
+          ),
+        ),
+      );
+    }
     final res = await _api.dio.post<Map<String, dynamic>>(
-      '/employee/face-registration',
-      data: {'status': status},
+      '/employee/face-samples',
+      data: form,
     );
-    return _profileFromJson(res.data!);
+    return _faceStatusFromJson(res.data!);
   }
 
   @override
@@ -124,37 +174,64 @@ class EmployeeRepositoryImpl implements EmployeeRepository {
   }
 
   @override
-  Future<AttendanceClockResult> clockIn({
+  Future<AttendanceClockResult> clockInWithFace({
     required double latitude,
     required double longitude,
+    required FaceQuickCapture capture,
     String? shiftAssignmentId,
   }) async {
+    final form = FormData.fromMap({
+      'latitude': latitude,
+      'longitude': longitude,
+      'liveness_gesture': capture.gesture,
+      if (shiftAssignmentId != null) 'shift_assignment_id': shiftAssignmentId,
+      'file': await MultipartFile.fromFile(
+        capture.imagePath,
+        filename: 'face.jpg',
+      ),
+    });
     final res = await _api.dio.post<Map<String, dynamic>>(
-      '/employee/attendance/clock-in',
-      data: {
-        'latitude': latitude,
-        'longitude': longitude,
-        if (shiftAssignmentId != null)
-          'shift_assignment_id': shiftAssignmentId,
-      },
+      '/employee/attendance/clock-in-face',
+      data: form,
     );
     return _clockResultFromJson(res.data!);
   }
 
   @override
-  Future<AttendanceClockResult> clockOut({
+  Future<AttendanceClockResult> clockOutWithFace({
     required double latitude,
     required double longitude,
+    required FaceQuickCapture capture,
   }) async {
+    final form = FormData.fromMap({
+      'latitude': latitude,
+      'longitude': longitude,
+      'liveness_gesture': capture.gesture,
+      'file': await MultipartFile.fromFile(
+        capture.imagePath,
+        filename: 'face.jpg',
+      ),
+    });
     final res = await _api.dio.post<Map<String, dynamic>>(
-      '/employee/attendance/clock-out',
-      data: {
-        'latitude': latitude,
-        'longitude': longitude,
-      },
+      '/employee/attendance/clock-out-face',
+      data: form,
     );
     return _clockResultFromJson(res.data!);
   }
+}
+
+FaceStatus _faceStatusFromJson(Map<String, dynamic> json) {
+  return FaceStatus(
+    employeeId: json['employee_id'] as String? ?? '',
+    faceRegistrationStatus:
+        json['face_registration_status'] as String? ?? 'not_registered',
+    sampleCount: (json['sample_count'] as num?)?.toInt() ?? 0,
+    modelVersion: json['model_version'] as String?,
+    faceRegisteredAt: json['face_registered_at'] != null
+        ? DateTime.tryParse(json['face_registered_at'] as String)
+        : null,
+    threshold: (json['threshold'] as num?)?.toDouble() ?? 0.78,
+  );
 }
 
 EmployeeDashboard _dashboardFromJson(Map<String, dynamic> json) {
@@ -256,6 +333,8 @@ EmployeePerformanceSummary _performanceFromJson(Map<String, dynamic> json) {
 EmployeeShiftHistoryItem _historyFromJson(Map<String, dynamic> json) {
   return EmployeeShiftHistoryItem(
     id: json['id'] as String,
+    assignmentId: json['assignment_id'] as String? ?? json['id'] as String,
+    attendanceRecordId: json['attendance_record_id'] as String?,
     date: _requiredDate(json['date'] as String?),
     shiftName: json['shift_name'] as String?,
     shiftStart: json['shift_start'] as String?,
@@ -265,6 +344,25 @@ EmployeeShiftHistoryItem _historyFromJson(Map<String, dynamic> json) {
     status: json['status'] as String? ?? 'in_progress',
     overtimeMinutes: _double(json['overtime_minutes']),
     holidayName: json['holiday_name'] as String?,
+    canRequestCorrection: json['can_request_correction'] as bool? ?? false,
+    correctionStatus: json['correction_status'] as String?,
+    correctionId: json['correction_id'] as String?,
+    correctionReviewNote: json['correction_review_note'] as String?,
+  );
+}
+
+AttendanceCorrectionRequest _correctionFromJson(Map<String, dynamic> json) {
+  return AttendanceCorrectionRequest(
+    id: json['id'] as String,
+    assignmentId: json['shift_assignment_id'] as String,
+    workDate: _requiredDate(json['work_date'] as String?),
+    shiftName: json['shift_name'] as String?,
+    reason: json['reason'] as String? ?? '',
+    status: json['status'] as String? ?? 'pending',
+    requestedTimeIn: _dateTime(json['requested_time_in'] as String?),
+    requestedTimeOut: _dateTime(json['requested_time_out'] as String?),
+    reviewNote: json['review_note'] as String?,
+    createdAt: _dateTime(json['created_at'] as String?) ?? DateTime.now(),
   );
 }
 

@@ -722,8 +722,68 @@ export async function getOwnerPerformance(days = 30) {
   return data;
 }
 
-export async function getOwnerAttendanceReport() {
-  const { data } = await api.get<OwnerAttendanceReport>("/owner/reports/attendance");
+export type OwnerAttendanceCorrection = {
+  id: string;
+  business_id: string;
+  employee_id: string;
+  employee_name: string;
+  shift_assignment_id: string;
+  attendance_record_id: string | null;
+  work_date: string;
+  shift_name: string | null;
+  shift_start: string | null;
+  shift_end: string | null;
+  recorded_time_in: string | null;
+  recorded_time_out: string | null;
+  requested_time_in: string | null;
+  requested_time_out: string | null;
+  reason: string;
+  status: string;
+  review_note: string | null;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  created_at: string;
+};
+
+export async function getOwnerAttendanceReport(params?: {
+  date?: string;
+  q?: string;
+}) {
+  const { data } = await api.get<OwnerAttendanceReport>(
+    "/owner/reports/attendance",
+    {
+      params: {
+        ...(params?.date ? { date: params.date } : {}),
+        ...(params?.q?.trim() ? { q: params.q.trim() } : {}),
+      },
+    }
+  );
+  return data;
+}
+
+export async function getOwnerAttendanceCorrections(status = "pending") {
+  const { data } = await api.get<OwnerAttendanceCorrection[]>(
+    "/owner/attendance-corrections",
+    { params: { status } }
+  );
+  return data;
+}
+
+export async function approveOwnerAttendanceCorrection(requestId: string) {
+  const { data } = await api.post<OwnerAttendanceCorrection>(
+    `/owner/attendance-corrections/${requestId}/approve`
+  );
+  return data;
+}
+
+export async function rejectOwnerAttendanceCorrection(
+  requestId: string,
+  reviewNote: string
+) {
+  const { data } = await api.post<OwnerAttendanceCorrection>(
+    `/owner/attendance-corrections/${requestId}/reject`,
+    { review_note: reviewNote }
+  );
   return data;
 }
 

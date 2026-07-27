@@ -375,6 +375,8 @@ class EmployeeAttendanceStatus extends Equatable {
 class EmployeeShiftHistoryItem extends Equatable {
   const EmployeeShiftHistoryItem({
     required this.id,
+    required this.assignmentId,
+    required this.attendanceRecordId,
     required this.date,
     required this.shiftName,
     required this.shiftStart,
@@ -384,9 +386,15 @@ class EmployeeShiftHistoryItem extends Equatable {
     required this.status,
     required this.overtimeMinutes,
     required this.holidayName,
+    this.canRequestCorrection = false,
+    this.correctionStatus,
+    this.correctionId,
+    this.correctionReviewNote,
   });
 
   final String id;
+  final String assignmentId;
+  final String? attendanceRecordId;
   final DateTime date;
   final String? shiftName;
   final String? shiftStart;
@@ -396,10 +404,20 @@ class EmployeeShiftHistoryItem extends Equatable {
   final String status;
   final double overtimeMinutes;
   final String? holidayName;
+  final bool canRequestCorrection;
+  final String? correctionStatus;
+  final String? correctionId;
+  final String? correctionReviewNote;
+
+  bool get needsClockIn => timeIn == null;
+  bool get needsClockOut => timeOut == null;
+  bool get isCorrectionPending => correctionStatus == 'pending';
 
   @override
   List<Object?> get props => [
         id,
+        assignmentId,
+        attendanceRecordId,
         date,
         shiftName,
         shiftStart,
@@ -409,6 +427,50 @@ class EmployeeShiftHistoryItem extends Equatable {
         status,
         overtimeMinutes,
         holidayName,
+        canRequestCorrection,
+        correctionStatus,
+        correctionId,
+        correctionReviewNote,
+      ];
+}
+
+class AttendanceCorrectionRequest extends Equatable {
+  const AttendanceCorrectionRequest({
+    required this.id,
+    required this.assignmentId,
+    required this.workDate,
+    required this.shiftName,
+    required this.reason,
+    required this.status,
+    required this.requestedTimeIn,
+    required this.requestedTimeOut,
+    required this.reviewNote,
+    required this.createdAt,
+  });
+
+  final String id;
+  final String assignmentId;
+  final DateTime workDate;
+  final String? shiftName;
+  final String reason;
+  final String status;
+  final DateTime? requestedTimeIn;
+  final DateTime? requestedTimeOut;
+  final String? reviewNote;
+  final DateTime createdAt;
+
+  @override
+  List<Object?> get props => [
+        id,
+        assignmentId,
+        workDate,
+        shiftName,
+        reason,
+        status,
+        requestedTimeIn,
+        requestedTimeOut,
+        reviewNote,
+        createdAt,
       ];
 }
 

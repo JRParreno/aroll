@@ -1,4 +1,5 @@
 from app.models.attendance import AttendanceRecord
+from app.models.attendance_correction import AttendanceCorrectionRequest
 from app.models.attendance_policy import BusinessAttendancePolicy
 from app.models.business import Business, BusinessLocation, BusinessRegistration
 from app.models.employee import Employee
@@ -28,6 +29,7 @@ __all__ = [
     "Shift",
     "ShiftAssignment",
     "AttendanceRecord",
+    "AttendanceCorrectionRequest",
     "PayrollRun",
     "Payslip",
     "ActivityLog",

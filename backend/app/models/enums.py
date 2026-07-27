@@ -66,6 +66,12 @@ class AttendanceStatus(str, enum.Enum):
     incomplete = "incomplete"
 
 
+class AttendanceCorrectionStatus(str, enum.Enum):
+    pending = "pending"
+    approved = "approved"
+    rejected = "rejected"
+
+
 class ShiftType(str, enum.Enum):
     morning = "morning"
     afternoon = "afternoon"

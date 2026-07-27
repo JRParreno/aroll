@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
@@ -33,6 +32,7 @@ from app.services.face_embedding import (
     match_passed,
     mean_match_score,
 )
+from app.services.face_enrollment import enroll_face_sample_bytes, face_status_for_employee
 from app.services.face_liveness import (
     challenge_instruction,
     create_challenge,
@@ -85,23 +85,7 @@ def get_face_status(
     if user.business_id is None:
         raise HTTPException(400, "No business context")
     emp = _get_business_employee(db, employee_id, user.business_id)
-    samples = (
-        db.query(EmployeeFaceEmbedding)
-        .filter(EmployeeFaceEmbedding.employee_id == emp.id)
-        .order_by(EmployeeFaceEmbedding.sample_index.asc())
-        .all()
-    )
-    model_version = samples[0].model_version if samples else None
-    return FaceStatusResponse(
-        employee_id=str(emp.id),
-        face_registration_status=emp.face_registration_status,
-        sample_count=len(samples),
-        model_version=model_version,
-        face_registered_at=(
-            emp.face_registered_at.isoformat() if emp.face_registered_at else None
-        ),
-        threshold=settings.face_match_threshold,
-    )
+    return FaceStatusResponse(**face_status_for_employee(db, emp))
 
 
 @router.post(
@@ -118,48 +102,16 @@ async def enroll_face_samples(
     if user.business_id is None:
         raise HTTPException(400, "No business context")
     emp = _get_business_employee(db, employee_id, user.business_id)
-
     payloads = await _read_uploads(files)
-    min_n = settings.face_min_enrollment_samples
-    max_n = settings.face_max_enrollment_samples
-    if len(payloads) < min_n or len(payloads) > max_n:
-        raise HTTPException(
-            400,
-            f"Upload between {min_n} and {max_n} face images (got {len(payloads)}).",
-        )
-
-    embeddings: list[list[float]] = []
-    for data in payloads:
-        embeddings.append(detect_and_embed(data))
-
-    db.query(EmployeeFaceEmbedding).filter(
-        EmployeeFaceEmbedding.employee_id == emp.id
-    ).delete(synchronize_session=False)
-
-    now = datetime.now(timezone.utc)
-    for index, vector in enumerate(embeddings, start=1):
-        db.add(
-            EmployeeFaceEmbedding(
-                employee_id=emp.id,
-                embedding=vector,
-                model_version=MODEL_VERSION,
-                sample_index=index,
-                enrolled_by=user.id,
-                enrolled_at=now,
-            )
-        )
-
-    emp.face_registration_status = "completed"
-    emp.face_registered_at = now
-    emp.face_registration_skipped_at = None
-    db.commit()
-
+    result = enroll_face_sample_bytes(
+        db, emp, payloads, enrolled_by=user.id
+    )
     return FaceEnrollResponse(
-        employee_id=str(emp.id),
-        face_registration_status=emp.face_registration_status,
-        sample_count=len(embeddings),
-        model_version=MODEL_VERSION,
-        message=f"Enrolled {len(embeddings)} face sample(s).",
+        employee_id=result["employee_id"],
+        face_registration_status=result["face_registration_status"],
+        sample_count=result["sample_count"],
+        model_version=result["model_version"],
+        message=result["message"],
     )
 
 
@@ -245,11 +197,12 @@ async def verify_face(
 
 @router.post("/face/liveness/challenges", response_model=LivenessChallengeResponse)
 def create_liveness_challenge(
-    body: LivenessChallengeCreateRequest,
     db: Annotated[Session, Depends(get_db)],
     user: Annotated[User, Depends(get_current_user)],
+    body: LivenessChallengeCreateRequest | None = None,
 ):
     """Issue a one-time random head-turn challenge for an employee."""
+    body = body or LivenessChallengeCreateRequest()
     if user.role in (UserRole.owner, UserRole.manager):
         if not body.employee_id:
             raise HTTPException(400, "employee_id is required for owner/manager")
