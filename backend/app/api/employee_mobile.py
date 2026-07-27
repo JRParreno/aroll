@@ -92,23 +92,14 @@ def _dt_label(value: datetime | None) -> str | None:
 
 
 def _branding_response(business: Business) -> dict:
-    theme = business.theme_settings or {}
-    return {
-        "logo_url": business.logo_url,
-        "owner_profile_image_url": business.owner_profile_image_url,
-        "display_image_url": business.display_image_url,
-        "theme": {
-            "primary_color": theme.get("primary_color", "#1E3A5F"),
-            "secondary_color": theme.get("secondary_color", "#284B73"),
-            "sidebar_color": theme.get("sidebar_color", "#1E3A5F"),
-            "accent_color": theme.get("accent_color", "#3B82F6"),
-            "button_color": theme.get("button_color", "#1E3A5F"),
-            "card_style": theme.get("card_style", "soft"),
-            "font_size": theme.get("font_size", "comfortable"),
-            "color_mode": theme.get("color_mode", "light"),
-            "layout_density": theme.get("layout_density", "rounded"),
-        },
-    }
+    from app.schemas.business import BusinessBrandingSettings, BusinessThemeSettings
+
+    return BusinessBrandingSettings(
+        logo_url=business.logo_url,
+        owner_profile_image_url=business.owner_profile_image_url,
+        display_image_url=business.display_image_url,
+        theme=BusinessThemeSettings(**(business.theme_settings or {})),
+    ).model_dump()
 
 
 def _primary_location(db: Session, business_id: uuid.UUID) -> BusinessLocation | None:

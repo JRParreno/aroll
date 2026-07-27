@@ -1,50 +1,87 @@
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { format } from "date-fns";
-import type { Employee, ScheduleAssignment } from "@/lib/api";
+import type { Employee, ScheduleColors } from "@/lib/api";
 import {
   WEEKDAY_LABELS,
   formatShiftTime,
   formatWeekRange,
   getWeekDays,
-  textColorForBackground,
   toDateKey,
   type ScheduleCell,
 } from "@/components/owner/schedule/scheduleUtils";
+import {
+  defaultScheduleColors,
+  defaultScheduleDisplay,
+} from "@/components/owner/schedule/scheduleThemeDefaults";
 
 type ExportRow = {
   employee: Employee;
   cells: ScheduleCell[];
 };
 
-function cellLabel(cells: ScheduleCell): string {
+export type ScheduleExportTheme = {
+  colors: ScheduleColors;
+  visibleDays: string[];
+  defaultStart: string;
+  defaultEnd: string;
+};
+
+function resolveTheme(theme?: Partial<ScheduleExportTheme>): ScheduleExportTheme {
+  return {
+    colors: theme?.colors ?? defaultScheduleColors,
+    visibleDays: theme?.visibleDays ?? defaultScheduleDisplay.visible_days,
+    defaultStart: theme?.defaultStart ?? defaultScheduleDisplay.default_start,
+    defaultEnd: theme?.defaultEnd ?? defaultScheduleDisplay.default_end,
+  };
+}
+
+function hexToRgb(hex: string): [number, number, number] {
+  const normalized = hex.replace("#", "").trim();
+  const expanded =
+    normalized.length === 3
+      ? normalized
+          .split("")
+          .map((char) => char + char)
+          .join("")
+      : normalized;
+  const value = Number.parseInt(expanded, 16);
+  return [(value >> 16) & 255, (value >> 8) & 255, value & 255];
+}
+
+function visibleDayIndexes(visibleDays: string[]) {
+  return WEEKDAY_LABELS.map((day, index) => ({ day, index })).filter(({ day }) =>
+    visibleDays.includes(day)
+  );
+}
+
+function cellLabel(
+  cells: ScheduleCell[],
+  defaultStart: string,
+  defaultEnd: string
+): string {
   if (cells.length === 0) {
     return "OFF";
   }
-  return cells
+  const label = cells
     .map(
       (cell) =>
-        `${cell.shift_name} ${formatShiftTime(cell.shift_start_time)} – ${formatShiftTime(cell.shift_end_time)}`
+        `${formatShiftTime(cell.shift_start_time)}-${formatShiftTime(cell.shift_end_time)}`
     )
-    .join("; ");
+    .join(", ");
+  return label || `${formatShiftTime(defaultStart)}-${formatShiftTime(defaultEnd)}`;
 }
 
-function buildTableBody(rows: ExportRow[], weekStart: Date): string[][] {
+function buildVisibleTableBody(
+  rows: ExportRow[],
+  weekStart: Date,
+  theme: ScheduleExportTheme
+): string[][] {
   const weekDays = getWeekDays(weekStart);
+  const indexes = visibleDayIndexes(theme.visibleDays);
   return rows.map(({ employee, cells }) => [
     employee.full_name,
-    ...cells.map((cell, index) => {
-      const dateKey = toDateKey(weekDays[index]);
-      if (cell.length === 0) {
-        return "OFF";
-      }
-      return cell
-        .map(
-          (assignment) =>
-            `${assignment.shift_name} (${formatShiftTime(assignment.shift_start_time)} – ${formatShiftTime(assignment.shift_end_time)}) [${dateKey}]`
-        )
-        .join("; ");
-    }),
+    ...indexes.map(({ index }) => cellLabel(cells[index], theme.defaultStart, theme.defaultEnd)),
   ]);
 }
 
@@ -52,9 +89,20 @@ export function downloadSchedulePdf(options: {
   businessName: string;
   weekStart: Date;
   rows: ExportRow[];
+  theme?: Partial<ScheduleExportTheme>;
 }) {
+  const theme = resolveTheme(options.theme);
   const doc = new jsPDF({ orientation: "landscape" });
   const generatedAt = new Date();
+  const indexes = visibleDayIndexes(theme.visibleDays);
+  const rowColors = [
+    theme.colors.row1,
+    theme.colors.row2,
+    theme.colors.row3,
+    theme.colors.row4,
+    theme.colors.row5,
+  ];
+  const weekDays = getWeekDays(options.weekStart);
 
   doc.setFontSize(16);
   doc.text(options.businessName, 14, 16);
@@ -64,12 +112,40 @@ export function downloadSchedulePdf(options: {
 
   autoTable(doc, {
     startY: 38,
-    head: [["Employee", ...WEEKDAY_LABELS]],
-    body: buildTableBody(options.rows, options.weekStart).map((row) =>
-      row.map((value) => value.replace(/\s*\[\d{4}-\d{2}-\d{2}\]/, ""))
+    head: [["Employee", ...indexes.map(({ day }) => day)]],
+    body: buildVisibleTableBody(options.rows, options.weekStart, theme),
+    styles: {
+      fontSize: 8,
+      cellPadding: 2,
+      textColor: hexToRgb(theme.colors.text),
+    },
+    headStyles: {
+      fillColor: hexToRgb(theme.colors.header),
+      textColor: [255, 255, 255],
+    },
+    didParseCell: (data) => {
+      if (data.section !== "body") return;
+      const rowIndex = data.row.index;
+      const colIndex = data.column.index;
+      data.cell.styles.fillColor = hexToRgb(rowColors[rowIndex % rowColors.length]);
+      data.cell.styles.textColor = hexToRgb(theme.colors.text);
+      if (colIndex > 0) {
+        const dayIndex = indexes[colIndex - 1]?.index;
+        if (dayIndex !== undefined) {
+          const row = options.rows[rowIndex];
+          const cells = row?.cells[dayIndex] ?? [];
+          if (cells.length === 0) {
+            data.cell.styles.fillColor = hexToRgb(theme.colors.off);
+          }
+        }
+      }
+    },
+    columnStyles: Object.fromEntries(
+      indexes.map((_, columnIndex) => [
+        columnIndex + 1,
+        { halign: "center" as const },
+      ])
     ),
-    styles: { fontSize: 8, cellPadding: 2 },
-    headStyles: { fillColor: [30, 58, 95] },
   });
 
   doc.save(
@@ -81,9 +157,12 @@ export function downloadScheduleExcel(options: {
   businessName: string;
   weekStart: Date;
   rows: ExportRow[];
+  theme?: Partial<ScheduleExportTheme>;
 }) {
+  const theme = resolveTheme(options.theme);
   const weekDays = getWeekDays(options.weekStart);
-  const headers = ["Employee", ...WEEKDAY_LABELS];
+  const indexes = visibleDayIndexes(theme.visibleDays);
+  const headers = ["Employee", ...indexes.map(({ day }) => day)];
   const lines = [
     [`Business: ${options.businessName}`],
     [`Week: ${formatWeekRange(options.weekStart)}`],
@@ -92,13 +171,12 @@ export function downloadScheduleExcel(options: {
     headers,
     ...options.rows.map(({ employee, cells }) => [
       employee.full_name,
-      ...cells.map((cell) => cellLabel(cell).replace("\n", " ")),
+      ...indexes.map(({ index }) =>
+        cellLabel(cells[index], theme.defaultStart, theme.defaultEnd).replace("\n", " ")
+      ),
     ]),
     [],
-    ...weekDays.map((day, index) => [
-      WEEKDAY_LABELS[index],
-      format(day, "yyyy-MM-dd"),
-    ]),
+    ...indexes.map(({ day, index }) => [day, format(weekDays[index], "yyyy-MM-dd")]),
   ];
 
   const csv = lines
@@ -124,27 +202,32 @@ export function printSchedule(options: {
   businessName: string;
   weekStart: Date;
   rows: ExportRow[];
+  theme?: Partial<ScheduleExportTheme>;
 }) {
+  const theme = resolveTheme(options.theme);
   const weekDays = getWeekDays(options.weekStart);
+  const indexes = visibleDayIndexes(theme.visibleDays);
+  const rowColors = [
+    theme.colors.row1,
+    theme.colors.row2,
+    theme.colors.row3,
+    theme.colors.row4,
+    theme.colors.row5,
+  ];
+
   const tableRows = options.rows
-    .map(({ employee, cells }) => {
-      const cellsHtml = cells
-        .map((dayCells) => {
-          if (dayCells.length === 0) {
-            return "<td>OFF</td>";
-          }
-          return `<td style="padding:8px;font-size:12px;vertical-align:top;">${dayCells
-            .map((cell) => {
-              const bg = cell.shift_color ?? "#f1f5f9";
-              const color = cell.shift_color
-                ? textColorForBackground(cell.shift_color)
-                : "#334155";
-              return `<div style="background:${bg};color:${color};padding:6px;border-radius:4px;margin-bottom:4px;"><strong>${cell.shift_name}</strong><br/>${formatShiftTime(cell.shift_start_time)} – ${formatShiftTime(cell.shift_end_time)}</div>`;
-            })
-            .join("")}</td>`;
+    .map(({ employee, cells }, rowIndex) => {
+      const rowBackground = rowColors[rowIndex % rowColors.length];
+      const cellsHtml = indexes
+        .map(({ index }) => {
+          const dayCells = cells[index];
+          const label = cellLabel(dayCells, theme.defaultStart, theme.defaultEnd);
+          const isOff = label === "OFF";
+          const background = isOff ? theme.colors.off : rowBackground;
+          return `<td style="padding:8px;font-size:12px;vertical-align:top;text-align:center;background:${background};color:${theme.colors.text};border:1px solid rgba(255,255,255,0.35);">${label}</td>`;
         })
         .join("");
-      return `<tr><td><strong>${employee.full_name}</strong></td>${cellsHtml}</tr>`;
+      return `<tr><td style="padding:8px;font-weight:600;background:${rowBackground};color:${theme.colors.text};border:1px solid rgba(255,255,255,0.35);"><strong>${employee.full_name}</strong></td>${cellsHtml}</tr>`;
     })
     .join("");
 
@@ -163,8 +246,8 @@ export function printSchedule(options: {
           h1 { margin: 0 0 8px; font-size: 24px; }
           p { margin: 0 0 16px; color: #475569; }
           table { width: 100%; border-collapse: collapse; }
-          th, td { border: 1px solid #cbd5e1; text-align: left; vertical-align: top; }
-          th { background: #1e3a5f; color: white; padding: 10px; }
+          th { border: 1px solid rgba(255,255,255,0.25); text-align: center; vertical-align: top; padding: 10px; background: ${theme.colors.header}; color: #ffffff; }
+          td { text-align: left; vertical-align: top; }
         </style>
       </head>
       <body>
@@ -174,8 +257,13 @@ export function printSchedule(options: {
         <table>
           <thead>
             <tr>
-              <th>Employee</th>
-              ${WEEKDAY_LABELS.map((label, index) => `<th>${label}<br/><span style="font-weight:normal;font-size:11px;">${format(weekDays[index], "yyyy-MM-dd")}</span></th>`).join("")}
+              <th style="text-align:left;">Employee</th>
+              ${indexes
+                .map(
+                  ({ day, index }) =>
+                    `<th>${day}<br/><span style="font-weight:normal;font-size:11px;">${format(weekDays[index], "yyyy-MM-dd")}</span></th>`
+                )
+                .join("")}
             </tr>
           </thead>
           <tbody>${tableRows}</tbody>
@@ -186,4 +274,74 @@ export function printSchedule(options: {
   printWindow.document.close();
   printWindow.focus();
   printWindow.print();
+}
+
+export async function downloadScheduleImage(options: {
+  businessName: string;
+  weekStart: Date;
+  rows: ExportRow[];
+  theme?: Partial<ScheduleExportTheme>;
+}) {
+  const theme = resolveTheme(options.theme);
+  const weekDays = getWeekDays(options.weekStart);
+  const indexes = visibleDayIndexes(theme.visibleDays);
+  const rowColors = [
+    theme.colors.row1,
+    theme.colors.row2,
+    theme.colors.row3,
+    theme.colors.row4,
+    theme.colors.row5,
+  ];
+
+  const container = document.createElement("div");
+  container.style.position = "fixed";
+  container.style.left = "-10000px";
+  container.style.top = "0";
+  container.style.background = "#ffffff";
+  container.style.padding = "24px";
+  container.innerHTML = `
+    <h1 style="margin:0 0 8px;font-family:Arial,sans-serif;font-size:24px;">${options.businessName}</h1>
+    <p style="margin:0 0 16px;font-family:Arial,sans-serif;color:#475569;">Weekly Schedule: ${formatWeekRange(options.weekStart)}</p>
+    <table style="border-collapse:collapse;font-family:Arial,sans-serif;font-size:12px;">
+      <thead>
+        <tr>
+          <th style="padding:10px;background:${theme.colors.header};color:#fff;border:1px solid rgba(255,255,255,0.25);text-align:left;">Employee</th>
+          ${indexes
+            .map(
+              ({ day, index }) =>
+                `<th style="padding:10px;background:${theme.colors.header};color:#fff;border:1px solid rgba(255,255,255,0.25);text-align:center;">${day}<br/><span style="font-weight:normal;font-size:11px;">${format(weekDays[index], "yyyy-MM-dd")}</span></th>`
+            )
+            .join("")}
+        </tr>
+      </thead>
+      <tbody>
+        ${options.rows
+          .map(({ employee, cells }, rowIndex) => {
+            const rowBackground = rowColors[rowIndex % rowColors.length];
+            return `<tr>
+              <td style="padding:8px;background:${rowBackground};color:${theme.colors.text};border:1px solid rgba(255,255,255,0.35);font-weight:600;">${employee.full_name}</td>
+              ${indexes
+                .map(({ index }) => {
+                  const label = cellLabel(cells[index], theme.defaultStart, theme.defaultEnd);
+                  const isOff = label === "OFF";
+                  const background = isOff ? theme.colors.off : rowBackground;
+                  return `<td style="padding:8px;background:${background};color:${theme.colors.text};border:1px solid rgba(255,255,255,0.35);text-align:center;">${label}</td>`;
+                })
+                .join("")}
+            </tr>`;
+          })
+          .join("")}
+      </tbody>
+    </table>
+  `;
+  document.body.appendChild(container);
+
+  const { default: html2canvas } = await import("html2canvas");
+  const canvas = await html2canvas(container, { backgroundColor: "#ffffff", scale: 2 });
+  document.body.removeChild(container);
+
+  const link = document.createElement("a");
+  link.href = canvas.toDataURL("image/png");
+  link.download = `${options.businessName.replace(/\s+/g, "-").toLowerCase()}-schedule-${toDateKey(options.weekStart)}.png`;
+  link.click();
 }

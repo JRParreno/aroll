@@ -124,6 +124,10 @@ class OwnerRepository {
               .get<Map<String, dynamic>>('/businesses/me/business-settings'))
           .data!;
 
+  Future<void> updateBusinessSettings(Map<String, dynamic> payload) async {
+    await _api.dio.put<void>('/businesses/me/business-settings', data: payload);
+  }
+
   Future<List<Map<String, dynamic>>> shifts() async =>
       _list(await _api.dio.get<List<dynamic>>('/shifts'));
 

@@ -3,6 +3,25 @@ from pydantic import BaseModel, Field
 from app.schemas.registration import RegistrationDocumentResponse
 
 
+class ScheduleTableColors(BaseModel):
+    header: str = "#1E3A5F"
+    row1: str = "#FFE5A3"
+    row2: str = "#FFB166"
+    row3: str = "#B8F28C"
+    row4: str = "#B9D8F7"
+    row5: str = "#F2A7EA"
+    off: str = "#F8B4B4"
+    text: str = "#111827"
+
+
+class ScheduleDisplaySettings(BaseModel):
+    default_start: str = "09:00"
+    default_end: str = "17:00"
+    visible_days: list[str] = Field(
+        default_factory=lambda: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+    )
+
+
 class BusinessThemeSettings(BaseModel):
     primary_color: str = "#1E3A5F"
     secondary_color: str = "#284B73"
@@ -13,6 +32,8 @@ class BusinessThemeSettings(BaseModel):
     font_size: str = "comfortable"
     color_mode: str = "light"
     layout_density: str = "rounded"
+    schedule_colors: ScheduleTableColors | None = None
+    schedule_display: ScheduleDisplaySettings | None = None
 
 
 class BusinessBrandingSettings(BaseModel):

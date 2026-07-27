@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:aroll_mobile/core/utils/branding_image.dart';
 import 'package:aroll_mobile/core/utils/data_uri_image.dart';
 import 'package:aroll_mobile/core/utils/format.dart';
 import 'package:aroll_mobile/domain/entities/employee_portal.dart';
@@ -858,11 +859,12 @@ class BusinessLogo extends StatelessWidget {
       );
     }
 
-    if (logoUrl!.startsWith('http')) {
+    final remoteUrl = resolveRemoteBrandingImageUrl(logoUrl!);
+    if (remoteUrl != null) {
       return ClipRRect(
         borderRadius: BorderRadius.circular(8),
         child: Image.network(
-          logoUrl!,
+          remoteUrl,
           height: height,
           width: width,
           fit: BoxFit.contain,

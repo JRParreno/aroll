@@ -1,3 +1,4 @@
+import 'package:aroll_mobile/core/theme/schedule_theme.dart';
 import 'package:aroll_mobile/domain/entities/user_session.dart';
 import 'package:flutter/foundation.dart';
 
@@ -82,6 +83,27 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  void updateSessionScheduleTheme({
+    required ScheduleTableColors scheduleColors,
+    required ScheduleDisplaySettings scheduleDisplay,
+  }) {
+    final current = session;
+    if (current?.branding == null) return;
+    final branding = current!.branding!;
+    session = current.copyWith(
+      branding: BusinessBrandingSettings(
+        logoUrl: branding.logoUrl,
+        ownerProfileImageUrl: branding.ownerProfileImageUrl,
+        displayImageUrl: branding.displayImageUrl,
+        theme: branding.theme.copyWith(
+          scheduleColors: scheduleColors,
+          scheduleDisplay: scheduleDisplay,
+        ),
+      ),
+    );
+    notifyListeners();
+  }
+
   void updateOwnerProfileImage(String? imageUrl) {
     if (session == null) return;
     final branding = session!.branding;
@@ -101,6 +123,8 @@ class AppState extends ChangeNotifier {
               fontSize: 'comfortable',
               colorMode: 'light',
               layoutDensity: 'rounded',
+              scheduleColors: ScheduleTableColors.defaults,
+              scheduleDisplay: ScheduleDisplaySettings.defaults,
             ),
       ),
     );

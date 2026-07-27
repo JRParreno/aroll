@@ -1,8 +1,13 @@
+import 'package:aroll_mobile/core/app_state.dart';
 import 'package:aroll_mobile/core/di/injection.dart';
+import 'package:aroll_mobile/core/theme/business_theme_parsing.dart';
+import 'package:aroll_mobile/core/theme/schedule_theme.dart';
 import 'package:aroll_mobile/data/repositories/owner_repository.dart';
 import 'package:aroll_mobile/presentation/employee/employee_ui.dart';
+import 'package:aroll_mobile/presentation/owner/owner_schedule_theme_sheet.dart';
 import 'package:aroll_mobile/presentation/owner/owner_shell.dart';
 import 'package:aroll_mobile/presentation/owner/owner_schedule_utils.dart';
+import 'package:aroll_mobile/presentation/shared/schedule_themed_table.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -37,6 +42,9 @@ class _OwnerScheduleScreenState extends State<OwnerScheduleScreen> {
   List<Map<String, dynamic>> _employees = const [];
   List<Map<String, dynamic>> _assignments = const [];
   List<Map<String, dynamic>> _holidays = const [];
+  Map<String, dynamic>? _businessSettings;
+  ScheduleTableColors _scheduleColors = ScheduleTableColors.defaults;
+  ScheduleDisplaySettings _scheduleDisplay = ScheduleDisplaySettings.defaults;
 
   @override
   void initState() {
@@ -59,6 +67,7 @@ class _OwnerScheduleScreenState extends State<OwnerScheduleScreen> {
         _repo.employees(),
         _repo.holidays(),
         _repo.weeklySchedule(_weekStart),
+        _repo.businessSettings(),
       ]);
       if (!mounted) return;
       setState(() {
@@ -72,6 +81,8 @@ class _OwnerScheduleScreenState extends State<OwnerScheduleScreen> {
             const [])
             .whereType<Map<String, dynamic>>()
             .toList(growable: false);
+        _businessSettings = results[4] as Map<String, dynamic>;
+        _applyScheduleThemeFromSettings(_businessSettings!);
         _loading = false;
       });
     } catch (_) {
@@ -239,6 +250,44 @@ class _OwnerScheduleScreenState extends State<OwnerScheduleScreen> {
       _isRestDayWork = assignment?['is_rest_day_work'] == true;
     });
     _showMessage('Choose a new date or shift, then tap Set Schedule.');
+  }
+
+  void _applyScheduleThemeFromSettings(Map<String, dynamic> settings) {
+    final branding = businessBrandingFromJson(
+      settings['branding'] as Map<String, dynamic>?,
+    );
+    if (branding != null) {
+      _scheduleColors = branding.theme.scheduleColors;
+      _scheduleDisplay = branding.theme.scheduleDisplay;
+      return;
+    }
+    final sessionTheme = sl<AppState>().session?.branding?.theme;
+    if (sessionTheme != null) {
+      _scheduleColors = sessionTheme.scheduleColors;
+      _scheduleDisplay = sessionTheme.scheduleDisplay;
+    }
+  }
+
+  Future<void> _openScheduleThemeEditor() async {
+    final settings = _businessSettings;
+    if (settings == null) return;
+    final saved = await showOwnerScheduleThemeSheet(
+      context: context,
+      initialColors: _scheduleColors,
+      initialDisplay: _scheduleDisplay,
+      businessSettings: settings,
+    );
+    if (saved != true || !mounted) return;
+    final refreshed = await _repo.businessSettings();
+    setState(() {
+      _businessSettings = refreshed;
+      _applyScheduleThemeFromSettings(refreshed);
+    });
+    sl<AppState>().updateSessionScheduleTheme(
+      scheduleColors: _scheduleColors,
+      scheduleDisplay: _scheduleDisplay,
+    );
+    _showMessage('Schedule table settings saved');
   }
 
   void _showMessage(String message) {
@@ -574,6 +623,17 @@ class _OwnerScheduleScreenState extends State<OwnerScheduleScreen> {
       assignments: _assignments,
       weekStart: _weekStart,
     );
+    final tableRows = rows.map((row) {
+      final employee = row['employee'] as Map<String, dynamic>;
+      final cells = row['cells'] as List<List<Map<String, dynamic>>>;
+      return ScheduleThemedTableRow(
+        employeeName: '${employee['full_name'] ?? 'Employee'}',
+        dayLabels: scheduleDayLabelsFromAssignments(
+          cells: cells,
+          display: _scheduleDisplay,
+        ),
+      );
+    }).toList(growable: false);
 
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -607,24 +667,22 @@ class _OwnerScheduleScreenState extends State<OwnerScheduleScreen> {
             ),
           ],
         ),
-        const SizedBox(height: 12),
-        if (rows.isEmpty)
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 32),
-            child: Text(
-              'No schedule records found.',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: Color(0xFF6B7280)),
-            ),
-          )
-        else
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: _ScheduleViewerTable(
-              rows: rows,
-              weekStart: _weekStart,
-            ),
+        Align(
+          alignment: Alignment.centerRight,
+          child: TextButton.icon(
+            onPressed: _openScheduleThemeEditor,
+            icon: const Icon(Icons.palette_outlined, size: 18),
+            label: const Text('Edit Table'),
           ),
+        ),
+        const SizedBox(height: 8),
+        ScheduleThemedTable(
+          rows: tableRows,
+          weekStart: _weekStart,
+          colors: _scheduleColors,
+          display: _scheduleDisplay,
+          emptyMessage: 'No schedule records found.',
+        ),
       ],
     );
   }
@@ -828,56 +886,6 @@ class _AvailabilityChip extends StatelessWidget {
         label,
         style: TextStyle(color: fg, fontSize: 11, fontWeight: FontWeight.w600),
       ),
-    );
-  }
-}
-
-class _ScheduleViewerTable extends StatelessWidget {
-  const _ScheduleViewerTable({
-    required this.rows,
-    required this.weekStart,
-  });
-
-  final List<Map<String, dynamic>> rows;
-  final DateTime weekStart;
-
-  @override
-  Widget build(BuildContext context) {
-    final weekDays = ownerWeekDays(weekStart);
-    return DataTable(
-      headingRowColor: WidgetStateProperty.all(const Color(0xFF1E466E)),
-      columns: [
-        const DataColumn(
-          label: Text('Employee', style: TextStyle(color: Colors.white)),
-        ),
-        ...ownerWeekdayLabels.map(
-          (label) => DataColumn(
-            label: Text(label, style: const TextStyle(color: Colors.white)),
-          ),
-        ),
-      ],
-      rows: rows.map((row) {
-        final employee = row['employee'] as Map<String, dynamic>;
-        final cells = row['cells'] as List<List<Map<String, dynamic>>>;
-        return DataRow(
-          cells: [
-            DataCell(Text('${employee['full_name'] ?? 'Employee'}')),
-            ...List.generate(weekDays.length, (index) {
-              final dayAssignments = cells[index];
-              final label = dayAssignments.isEmpty
-                  ? 'OFF'
-                  : dayAssignments
-                      .map(
-                        (assignment) =>
-                            '${formatOwnerShiftTime('${assignment['shift_start_time']}')}-'
-                            '${formatOwnerShiftTime('${assignment['shift_end_time']}')}',
-                      )
-                      .join(', ');
-              return DataCell(Text(label, style: const TextStyle(fontSize: 11)));
-            }),
-          ],
-        );
-      }).toList(),
     );
   }
 }
