@@ -1,5 +1,6 @@
 import 'package:aroll_mobile/core/error/failures.dart';
 import 'package:aroll_mobile/core/network/api_client.dart';
+import 'package:aroll_mobile/core/theme/business_theme_parsing.dart';
 import 'package:aroll_mobile/domain/entities/user_session.dart';
 import 'package:aroll_mobile/domain/repositories/auth_repository.dart';
 import 'package:dio/dio.dart';
@@ -13,25 +14,7 @@ class AuthRepositoryImpl implements AuthRepository {
   BusinessBrandingSettings? _brandingFromJson(Map<String, dynamic> data) {
     final branding = data['branding'];
     if (branding is! Map<String, dynamic>) return null;
-    final theme = branding['theme'];
-    final themeMap =
-        theme is Map<String, dynamic> ? theme : <String, dynamic>{};
-    return BusinessBrandingSettings(
-      logoUrl: branding['logo_url'] as String?,
-      ownerProfileImageUrl: branding['owner_profile_image_url'] as String?,
-      displayImageUrl: branding['display_image_url'] as String?,
-      theme: BusinessThemeSettings(
-        primaryColor: (themeMap['primary_color'] as String?) ?? '#1E3A5F',
-        secondaryColor: (themeMap['secondary_color'] as String?) ?? '#284B73',
-        sidebarColor: (themeMap['sidebar_color'] as String?) ?? '#1E3A5F',
-        accentColor: (themeMap['accent_color'] as String?) ?? '#3B82F6',
-        buttonColor: (themeMap['button_color'] as String?) ?? '#1E3A5F',
-        cardStyle: (themeMap['card_style'] as String?) ?? 'soft',
-        fontSize: (themeMap['font_size'] as String?) ?? 'comfortable',
-        colorMode: (themeMap['color_mode'] as String?) ?? 'light',
-        layoutDensity: (themeMap['layout_density'] as String?) ?? 'rounded',
-      ),
-    );
+    return businessBrandingFromJson(branding);
   }
 
   UserSession _sessionFromMe(

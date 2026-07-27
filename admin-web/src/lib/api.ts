@@ -943,6 +943,23 @@ export type AccountSettingsUpdate = {
   branding?: BusinessBrandingSettings;
 };
 
+export type ScheduleColors = {
+  header: string;
+  row1: string;
+  row2: string;
+  row3: string;
+  row4: string;
+  row5: string;
+  off: string;
+  text: string;
+};
+
+export type ScheduleDisplaySettings = {
+  default_start: string;
+  default_end: string;
+  visible_days: string[];
+};
+
 export type BusinessThemeSettings = {
   primary_color: string;
   secondary_color: string;
@@ -953,6 +970,9 @@ export type BusinessThemeSettings = {
   font_size: string;
   color_mode: string;
   layout_density: string;
+
+  schedule_colors?: ScheduleColors;
+  schedule_display?: ScheduleDisplaySettings;
 };
 
 export type BusinessBrandingSettings = {

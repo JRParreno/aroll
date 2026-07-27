@@ -1,9 +1,19 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Download, FileSpreadsheet, Pencil, Plus, Printer, Search, Trash2, Users } from "lucide-react";
-import { useMemo, useState } from "react";
+import { Download, FileSpreadsheet, Image, Pencil, Plus, Printer, Search, Trash2, Users } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
+  businessBrandingForSave,
+  defaultBusinessBranding,
+} from "@/components/owner/settings/brandingDefaults";
+import {
+  defaultScheduleColors,
+  defaultScheduleDisplay,
+  type ScheduleDisplaySettings,
+} from "@/components/owner/schedule/scheduleThemeDefaults";
+import {
   downloadScheduleExcel,
+  downloadScheduleImage,
   downloadSchedulePdf,
   printSchedule,
 } from "@/components/owner/schedule/scheduleExport";
@@ -36,30 +46,22 @@ import {
   assignSchedule,
   createShift,
   deleteScheduleAssignment,
+  getBusinessSettings,
   getMe,
   getWeeklySchedule,
   listEmployees,
   listHolidays,
   listShifts,
+  updateBusinessSettings,
   updateScheduleAssignment,
   type Employee,
   type ScheduleAssignment,
+  type ScheduleColors,
   type Shift,
 } from "@/lib/api";
 import { ME_QUERY_KEY } from "@/lib/authSession";
 
 type EmployeeAvailability = "available" | "assigned" | "conflict";
-
-const defaultTableColors = {
-  header: "#1E3A5F",
-  row1: "#FFE5A3",
-  row2: "#FFB166",
-  row3: "#B8F28C",
-  row4: "#B9D8F7",
-  row5: "#F2A7EA",
-  off: "#F8B4B4",
-  text: "#111827",
-};
 
 function initials(name: string) {
   return name
@@ -95,10 +97,12 @@ export function OwnerSchedulePage() {
   const [typeFilter, setTypeFilter] = useState("all");
   const [availabilityFilter, setAvailabilityFilter] = useState("all");
   const [customizing, setCustomizing] = useState(false);
-  const [tableColors, setTableColors] = useState(defaultTableColors);
-  const [visibleDays, setVisibleDays] = useState(WEEKDAY_LABELS);
-  const [defaultStart, setDefaultStart] = useState("09:00");
-  const [defaultEnd, setDefaultEnd] = useState("17:00");
+  const [tableColors, setTableColors] = useState<ScheduleColors>(defaultScheduleColors);
+  const [visibleDays, setVisibleDays] = useState<string[]>(
+    defaultScheduleDisplay.visible_days
+  );
+  const [defaultStart, setDefaultStart] = useState(defaultScheduleDisplay.default_start);
+  const [defaultEnd, setDefaultEnd] = useState(defaultScheduleDisplay.default_end);
   const [showNewShift, setShowNewShift] = useState(false);
   const [newShift, setNewShift] = useState({
     name: "",
@@ -112,6 +116,10 @@ export function OwnerSchedulePage() {
   const { data: me } = useQuery({
     queryKey: ME_QUERY_KEY,
     queryFn: getMe,
+  });
+  const { data: businessSettings } = useQuery({
+    queryKey: ["business-settings"],
+    queryFn: getBusinessSettings,
   });
   const { data: employees = [] } = useQuery({
     queryKey: ["employees"],
@@ -209,6 +217,66 @@ export function OwnerSchedulePage() {
     () => buildScheduleMatrix(viewerEmployees, assignments, weekStart),
     [viewerEmployees, assignments, weekStart]
   );
+
+  useEffect(() => {
+    const theme = businessSettings?.branding?.theme;
+    if (!theme) return;
+    if (theme.schedule_colors) {
+      setTableColors(theme.schedule_colors);
+    }
+    const display = theme.schedule_display;
+    if (display) {
+      setDefaultStart(display.default_start);
+      setDefaultEnd(display.default_end);
+      if (display.visible_days.length > 0) {
+        setVisibleDays(display.visible_days);
+      }
+    }
+  }, [businessSettings]);
+
+  const scheduleExportTheme = useMemo(
+    () => ({
+      colors: tableColors,
+      visibleDays,
+      defaultStart,
+      defaultEnd,
+    }),
+    [tableColors, visibleDays, defaultStart, defaultEnd]
+  );
+
+  const saveTableColors = useMutation({
+    mutationFn: async () => {
+      if (!businessSettings) {
+        throw new Error("Business settings not loaded");
+      }
+      const branding = businessSettings.branding ?? defaultBusinessBranding;
+      const scheduleDisplay: ScheduleDisplaySettings = {
+        default_start: defaultStart,
+        default_end: defaultEnd,
+        visible_days: visibleDays,
+      };
+      await updateBusinessSettings({
+        business_name: businessSettings.business_name,
+        business_type: businessSettings.business_type,
+        address: businessSettings.address,
+        branding: businessBrandingForSave({
+          ...branding,
+          theme: {
+            ...branding.theme,
+            schedule_colors: tableColors,
+            schedule_display: scheduleDisplay,
+          },
+        }),
+      });
+    },
+    onSuccess: () => {
+      toast.success("Schedule table settings saved");
+      qc.invalidateQueries({ queryKey: ["business-settings"] });
+      qc.invalidateQueries({ queryKey: ME_QUERY_KEY });
+      setCustomizing(false);
+    },
+    onError: () => toast.error("Failed to save schedule table colors"),
+  });
 
   const assign = useMutation({
     mutationFn: () =>
@@ -623,15 +691,30 @@ export function OwnerSchedulePage() {
                 <Button variant="outline" onClick={() => setWeekStart((current) => navigateWeek(current, "next"))}>
                   Next
                 </Button>
-                <Button variant="outline" className="gap-2" onClick={() => downloadSchedulePdf({ businessName, weekStart, rows: scheduleRows })}>
+                <Button variant="outline" className="gap-2" onClick={() => downloadSchedulePdf({ businessName, weekStart, rows: scheduleRows, theme: scheduleExportTheme })}>
                   <Download className="h-4 w-4" />
                   PDF
                 </Button>
-                <Button variant="outline" className="gap-2" onClick={() => downloadScheduleExcel({ businessName, weekStart, rows: scheduleRows })}>
+                <Button variant="outline" className="gap-2" onClick={() => downloadScheduleExcel({ businessName, weekStart, rows: scheduleRows, theme: scheduleExportTheme })}>
                   <FileSpreadsheet className="h-4 w-4" />
                   Excel
                 </Button>
-                <Button variant="outline" className="gap-2" onClick={() => printSchedule({ businessName, weekStart, rows: scheduleRows })}>
+                <Button
+                  variant="outline"
+                  className="gap-2"
+                  onClick={() =>
+                    void downloadScheduleImage({
+                      businessName,
+                      weekStart,
+                      rows: scheduleRows,
+                      theme: scheduleExportTheme,
+                    })
+                  }
+                >
+                  <Image className="h-4 w-4" />
+                  Image
+                </Button>
+                <Button variant="outline" className="gap-2" onClick={() => printSchedule({ businessName, weekStart, rows: scheduleRows, theme: scheduleExportTheme })}>
                   <Printer className="h-4 w-4" />
                   Print
                 </Button>
@@ -785,10 +868,22 @@ export function OwnerSchedulePage() {
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setTableColors(defaultTableColors)}>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setTableColors(defaultScheduleColors);
+                setVisibleDays(defaultScheduleDisplay.visible_days);
+                setDefaultStart(defaultScheduleDisplay.default_start);
+                setDefaultEnd(defaultScheduleDisplay.default_end);
+              }}
+            >
               Reset
             </Button>
-            <Button className="bg-[#1E3A5F] hover:bg-[#284B73]" onClick={() => setCustomizing(false)}>
+            <Button
+              className="bg-[#1E3A5F] hover:bg-[#284B73]"
+              disabled={saveTableColors.isPending || !businessSettings}
+              onClick={() => saveTableColors.mutate()}
+            >
               Apply Changes
             </Button>
           </DialogFooter>
@@ -949,7 +1044,7 @@ function ColorScheduleTable({
 }: {
   rows: { employee: Employee; cells: ScheduleCell[] }[];
   weekStart: Date;
-  colors: typeof defaultTableColors;
+  colors: ScheduleColors;
   visibleDays: string[];
   defaultStart: string;
   defaultEnd: string;

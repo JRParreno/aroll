@@ -1,8 +1,11 @@
 import 'package:aroll_mobile/core/app_state.dart';
 import 'package:aroll_mobile/core/di/injection.dart';
+import 'package:aroll_mobile/core/theme/schedule_theme.dart';
 import 'package:aroll_mobile/domain/entities/employee_portal.dart';
 import 'package:aroll_mobile/domain/repositories/employee_repository.dart';
 import 'package:aroll_mobile/presentation/employee/employee_ui.dart';
+import 'package:aroll_mobile/presentation/owner/owner_schedule_utils.dart';
+import 'package:aroll_mobile/presentation/shared/schedule_themed_table.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
@@ -15,10 +18,12 @@ class EmployeeScheduleScreen extends StatefulWidget {
 
 class _EmployeeScheduleScreenState extends State<EmployeeScheduleScreen> {
   late Future<_ScheduleData> _future;
+  late DateTime _weekStart;
 
   @override
   void initState() {
     super.initState();
+    _weekStart = ownerWeekStart(DateTime.now());
     _future = _load();
   }
 
@@ -68,6 +73,17 @@ class _EmployeeScheduleScreenState extends State<EmployeeScheduleScreen> {
           }
 
           final data = snapshot.data!;
+          final theme = data.profile.branding?.theme;
+          final scheduleColors =
+              theme?.scheduleColors ?? ScheduleTableColors.defaults;
+          final scheduleDisplay =
+              theme?.scheduleDisplay ?? ScheduleDisplaySettings.defaults;
+          final weekLabels = _weekLabelsForEmployee(
+            profile: data.profile,
+            items: data.items,
+            weekStart: _weekStart,
+            display: scheduleDisplay,
+          );
           final todayItems =
               data.items.where((item) => item.status == 'today').toList();
           final upcomingItems =
@@ -83,6 +99,47 @@ class _EmployeeScheduleScreenState extends State<EmployeeScheduleScreen> {
                   activeCount: data.items.length,
                 ),
                 const SizedBox(height: 12),
+                Row(
+                  children: [
+                    IconButton(
+                      onPressed: () {
+                        setState(() {
+                          _weekStart =
+                              _weekStart.subtract(const Duration(days: 7));
+                        });
+                      },
+                      icon: const Icon(Icons.chevron_left),
+                    ),
+                    Expanded(
+                      child: Text(
+                        formatOwnerWeekRange(_weekStart),
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () {
+                        setState(() {
+                          _weekStart = _weekStart.add(const Duration(days: 7));
+                        });
+                      },
+                      icon: const Icon(Icons.chevron_right),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                ScheduleThemedTable(
+                  rows: [
+                    ScheduleThemedTableRow(
+                      employeeName: data.profile.fullName,
+                      dayLabels: weekLabels,
+                    ),
+                  ],
+                  weekStart: _weekStart,
+                  colors: scheduleColors,
+                  display: scheduleDisplay,
+                ),
+                const SizedBox(height: 16),
                 _HistoryLinkCard(
                   onTap: () => context.push('/shift-history'),
                 ),
@@ -130,6 +187,33 @@ class _EmployeeScheduleScreenState extends State<EmployeeScheduleScreen> {
         },
       ),
     );
+  }
+
+  List<String> _weekLabelsForEmployee({
+    required EmployeeProfile profile,
+    required List<EmployeeScheduleItem> items,
+    required DateTime weekStart,
+    required ScheduleDisplaySettings display,
+  }) {
+    final weekDays = ownerWeekDays(weekStart);
+    return weekDays.map((day) {
+      final dayItems = items.where(
+        (item) =>
+            item.workDate.year == day.year &&
+            item.workDate.month == day.month &&
+            item.workDate.day == day.day,
+      );
+      if (dayItems.isEmpty) return 'OFF';
+      return dayItems
+          .map(
+            (item) => scheduleCellTimeLabel(
+              startTime: item.startTime,
+              endTime: item.endTime,
+              display: display,
+            ),
+          )
+          .join(', ');
+    }).toList(growable: false);
   }
 }
 

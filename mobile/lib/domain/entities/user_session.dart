@@ -1,5 +1,7 @@
 import 'package:equatable/equatable.dart';
 
+import 'package:aroll_mobile/core/theme/schedule_theme.dart';
+
 class UserSession extends Equatable {
   const UserSession({
     required this.userId,
@@ -108,6 +110,8 @@ class BusinessThemeSettings extends Equatable {
     required this.fontSize,
     required this.colorMode,
     required this.layoutDensity,
+    this.scheduleColors = ScheduleTableColors.defaults,
+    this.scheduleDisplay = ScheduleDisplaySettings.defaults,
   });
 
   final String primaryColor;
@@ -119,6 +123,36 @@ class BusinessThemeSettings extends Equatable {
   final String fontSize;
   final String colorMode;
   final String layoutDensity;
+  final ScheduleTableColors scheduleColors;
+  final ScheduleDisplaySettings scheduleDisplay;
+
+  BusinessThemeSettings copyWith({
+    String? primaryColor,
+    String? secondaryColor,
+    String? sidebarColor,
+    String? accentColor,
+    String? buttonColor,
+    String? cardStyle,
+    String? fontSize,
+    String? colorMode,
+    String? layoutDensity,
+    ScheduleTableColors? scheduleColors,
+    ScheduleDisplaySettings? scheduleDisplay,
+  }) {
+    return BusinessThemeSettings(
+      primaryColor: primaryColor ?? this.primaryColor,
+      secondaryColor: secondaryColor ?? this.secondaryColor,
+      sidebarColor: sidebarColor ?? this.sidebarColor,
+      accentColor: accentColor ?? this.accentColor,
+      buttonColor: buttonColor ?? this.buttonColor,
+      cardStyle: cardStyle ?? this.cardStyle,
+      fontSize: fontSize ?? this.fontSize,
+      colorMode: colorMode ?? this.colorMode,
+      layoutDensity: layoutDensity ?? this.layoutDensity,
+      scheduleColors: scheduleColors ?? this.scheduleColors,
+      scheduleDisplay: scheduleDisplay ?? this.scheduleDisplay,
+    );
+  }
 
   @override
   List<Object?> get props => [
@@ -131,5 +165,7 @@ class BusinessThemeSettings extends Equatable {
         fontSize,
         colorMode,
         layoutDensity,
+        scheduleColors,
+        scheduleDisplay,
       ];
 }

@@ -1,4 +1,8 @@
 import type { BusinessBrandingSettings, BusinessThemeSettings } from "@/lib/api";
+import {
+  defaultScheduleColors,
+  defaultScheduleDisplay,
+} from "@/components/owner/schedule/scheduleThemeDefaults";
 
 export const defaultBusinessTheme: BusinessThemeSettings = {
   primary_color: "#1E3A5F",
@@ -10,6 +14,8 @@ export const defaultBusinessTheme: BusinessThemeSettings = {
   font_size: "comfortable",
   color_mode: "light",
   layout_density: "rounded",
+  schedule_colors: defaultScheduleColors,
+  schedule_display: defaultScheduleDisplay,
 };
 
 export const defaultBusinessBranding: BusinessBrandingSettings = {

@@ -1,3 +1,4 @@
+import 'package:aroll_mobile/core/utils/branding_image.dart';
 import 'package:aroll_mobile/core/di/injection.dart';
 import 'package:aroll_mobile/data/repositories/owner_repository.dart';
 import 'package:aroll_mobile/domain/entities/user_session.dart';
@@ -5,6 +6,7 @@ import 'package:aroll_mobile/presentation/owner/owner_shell.dart';
 import 'package:aroll_mobile/presentation/owner/setup/setup_progress_card.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:aroll_mobile/core/theme/business_theme.dart';
 
 class OwnerDashboardScreen extends StatefulWidget {
   const OwnerDashboardScreen({super.key, required this.session});
@@ -48,10 +50,13 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
           if (snapshot.hasError) {
             return OwnerErrorState(onRetry: _refresh);
           }
+
+          final session = widget.session;
+
           final performance = snapshot.data![0];
           final setup = snapshot.data![1];
           final summary =
-              performance['summary'] as Map<String, dynamic>? ?? const {};
+      performance['summary'] as Map<String, dynamic>? ?? const {};
           return RefreshIndicator(
             onRefresh: _refresh,
             child: ListView(
@@ -84,8 +89,8 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
                       child: _DashboardManagementCard(
                         label: 'Manage Employees',
                         icon: Icons.groups_rounded,
-                        backgroundColor: const Color(0xFFFFE8D6),
-                        iconColor: const Color(0xFF1E466E),
+                        backgroundColor: BusinessTheme.secondary(session),
+                        iconColor: BusinessTheme.primary(session),
                         onTap: () => context.push('/owner/employees'),
                       ),
                     ),
@@ -94,8 +99,8 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
                       child: _DashboardManagementCard(
                         label: 'Setup Location',
                         icon: Icons.location_on_outlined,
-                        backgroundColor: const Color(0xFFFFE1E8),
-                        iconColor: const Color(0xFFE11D48),
+                        backgroundColor: BusinessTheme.secondary(session),
+                        iconColor: BusinessTheme.primary(session),
                         onTap: () => context.push('/owner/location'),
                       ),
                     ),
@@ -104,8 +109,8 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
                       child: _DashboardManagementCard(
                         label: 'Employee Payroll',
                         icon: Icons.account_balance_wallet_outlined,
-                        backgroundColor: const Color(0xFFDBEAFE),
-                        iconColor: const Color(0xFF1E466E),
+                        backgroundColor: BusinessTheme.secondary(session),
+                        iconColor: BusinessTheme.primary(session),
                         onTap: () => context.push('/owner/payroll'),
                       ),
                     ),
@@ -126,39 +131,46 @@ class _OwnerHeader extends StatelessWidget {
   final UserSession session;
 
   @override
-  Widget build(BuildContext context) => Row(
-        children: [
-          CircleAvatar(
-            radius: 24,
-            backgroundColor: const Color(0xFFE7EEF5),
-            backgroundImage: session.branding?.logoUrl != null
-                ? NetworkImage(session.branding!.logoUrl!)
-                : null,
-            child: session.branding?.logoUrl == null
-                ? const Icon(Icons.storefront_rounded,
-                    size: 24, color: Color(0xFF1E466E))
-                : null,
+  Widget build(BuildContext context) {
+    final logoImage = brandingImageProvider(session.branding?.logoUrl);
+
+    return Row(
+      children: [
+        CircleAvatar(
+          radius: 24,
+          backgroundColor: BusinessTheme.primary(session),
+          backgroundImage: logoImage,
+          child: logoImage == null
+              ? Icon(
+                  Icons.storefront_rounded,
+                  size: 24,
+                  color: BusinessTheme.button(session),
+                )
+              : null,
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text(
+            session.fullName.isEmpty ? 'Business Owner' : session.fullName,
+            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              session.fullName.isEmpty ? 'Business Owner' : session.fullName,
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
-            ),
-          ),
-          IconButton(
-            tooltip: 'Settings',
-            onPressed: () => context.push('/owner/settings'),
-            icon: const Icon(Icons.settings_outlined),
-          ),
-        ],
-      );
+        ),
+        IconButton(
+          tooltip: 'Settings',
+          onPressed: () => context.push('/owner/settings'),
+          icon: const Icon(Icons.settings_outlined),
+        ),
+      ],
+    );
+  }
 }
 
 class _DashboardSummaryCards extends StatelessWidget {
-  const _DashboardSummaryCards({required this.summary});
+  const _DashboardSummaryCards({
+    required this.summary,
+  });
 
   final Map<String, dynamic> summary;
 
