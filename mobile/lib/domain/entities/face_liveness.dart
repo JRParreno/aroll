@@ -1,3 +1,4 @@
+import 'package:aroll_mobile/core/face/face_model.dart';
 import 'package:equatable/equatable.dart';
 
 class FaceStatus extends Equatable {
@@ -17,8 +18,17 @@ class FaceStatus extends Equatable {
   final DateTime? faceRegisteredAt;
   final double threshold;
 
+  /// True only when enrollment exists and matches the current ArcFace model.
+  bool get hasCompatibleModel =>
+      modelVersion != null && modelVersion == kExpectedFaceModelVersion;
+
+  /// Incomplete or outdated embeddings force re-registration (no matching attempt).
   bool get isCompleted =>
-      faceRegistrationStatus == 'completed' && sampleCount > 0;
+      faceRegistrationStatus == 'completed' &&
+      sampleCount > 0 &&
+      hasCompatibleModel;
+
+  bool get needsReregistration => !isCompleted;
 
   @override
   List<Object?> get props => [
@@ -31,15 +41,16 @@ class FaceStatus extends Equatable {
       ];
 }
 
-/// Single-frame capture after on-device blink or smile.
+/// Single-frame capture for attendance. Gesture is a Form contract value
+/// (`blink`/`smile`); identity matching is always performed on the server.
 class FaceQuickCapture extends Equatable {
   const FaceQuickCapture({
     required this.imagePath,
-    required this.gesture,
+    this.gesture = 'blink',
   });
 
   final String imagePath;
-  /// `blink` or `smile`
+  /// `blink` or `smile` — required by the clock-*-face Form contract.
   final String gesture;
 
   @override

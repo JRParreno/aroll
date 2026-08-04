@@ -2,6 +2,14 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import {
   OwnerPage,
@@ -10,10 +18,12 @@ import {
 } from "@/components/owner/layout/OwnerPageLayout";
 import {
   approveOwnerAttendanceCorrection,
+  completeOwnerAttendance,
   getOwnerAttendanceCorrections,
   getOwnerAttendanceReport,
   rejectOwnerAttendanceCorrection,
   type OwnerAttendanceCorrection,
+  type OwnerAttendanceReport,
 } from "@/lib/api";
 
 function todayIso() {
@@ -56,12 +66,87 @@ function initials(name: string) {
     .join("");
 }
 
+function EmployeeAvatar({
+  name,
+  imageUrl,
+  className = "h-14 w-14 text-sm",
+  fallbackClassName = "bg-slate-100 text-[#374151]",
+}: {
+  name: string;
+  imageUrl?: string | null;
+  className?: string;
+  fallbackClassName?: string;
+}) {
+  return (
+    <div
+      className={`flex shrink-0 items-center justify-center overflow-hidden rounded-full text-sm font-semibold ${className} ${
+        imageUrl ? "bg-slate-100" : fallbackClassName
+      }`}
+    >
+      {imageUrl ? (
+        <img
+          alt={name}
+          className="h-full w-full object-cover"
+          src={imageUrl}
+        />
+      ) : (
+        initials(name)
+      )}
+    </div>
+  );
+}
+
 function statusCopy(status: string) {
   if (status === "late") return "Arrived late";
   if (status === "absent") return "Marked absent";
   if (status === "in_progress") return "Clocked in";
   if (status === "complete") return "Arrived on time";
+  if (status === "on_leave") return "On Leave";
+  if (status === "holiday_paid") return "Paid holiday (not worked)";
+  if (status === "incomplete") {
+    return "Incomplete Attendance · Waiting for Attendance Correction";
+  }
   return status.replace("_", " ");
+}
+
+type AttendanceRecord = OwnerAttendanceReport["records"][number];
+
+function employmentLabel(value?: string | null) {
+  if (value === "full_time") return "Full Timer";
+  if (value === "part_time") return "Part Timer";
+  if (!value) return "Not set";
+  return value
+    .replaceAll("_", " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function rateLabel(value?: number | null) {
+  if (value == null || Number.isNaN(Number(value))) return "Not set";
+  const amount = Number(value);
+  const formatted = new Intl.NumberFormat("en-PH", {
+    style: "currency",
+    currency: "PHP",
+    minimumFractionDigits: Number.isInteger(amount) ? 0 : 2,
+    maximumFractionDigits: 2,
+  }).format(amount);
+  return `${formatted}/day`;
+}
+
+function EmployeeInfoRow({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="flex items-start justify-between gap-3 py-2.5">
+      <p className="text-[12.5px] font-semibold text-[#6B7280]">{label}</p>
+      <p className="max-w-[60%] text-right text-[13.5px] font-semibold text-[#111827]">
+        {value}
+      </p>
+    </div>
+  );
 }
 
 export function OwnerAttendancePage() {
@@ -71,6 +156,11 @@ export function OwnerAttendancePage() {
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [rejectingId, setRejectingId] = useState<string | null>(null);
   const [rejectNote, setRejectNote] = useState("");
+  const [detailsEmployee, setDetailsEmployee] =
+    useState<AttendanceRecord | null>(null);
+  const [completing, setCompleting] = useState<AttendanceRecord | null>(null);
+  const [completeTime, setCompleteTime] = useState("");
+  const [completeReason, setCompleteReason] = useState("");
 
   useEffect(() => {
     const handle = window.setTimeout(() => {
@@ -101,6 +191,7 @@ export function OwnerAttendancePage() {
       queryClient.invalidateQueries({ queryKey: ["owner-attendance-corrections"] }),
       queryClient.invalidateQueries({ queryKey: ["owner-attendance-report"] }),
       queryClient.invalidateQueries({ queryKey: ["owner-payroll-report"] }),
+      queryClient.invalidateQueries({ queryKey: ["owner-performance"] }),
     ]);
   };
 
@@ -131,6 +222,43 @@ export function OwnerAttendancePage() {
     onError: () => toast.error("Could not reject this correction."),
   });
 
+  const completeMutation = useMutation({
+    mutationFn: () => {
+      if (!completing || !completeTime) {
+        return Promise.reject(new Error("Clock-out time is required."));
+      }
+      const timeOut = new Date(`${completing.date}T${completeTime}:00`);
+      if (Number.isNaN(timeOut.getTime())) {
+        return Promise.reject(new Error("Enter a valid clock-out time."));
+      }
+      return completeOwnerAttendance(completing.id, {
+        time_out: timeOut.toISOString(),
+        reason: completeReason.trim() || undefined,
+      });
+    },
+    onSuccess: () => {
+      toast.success("Attendance completed. Payroll will update automatically.");
+      setCompleting(null);
+      setCompleteTime("");
+      setCompleteReason("");
+      void invalidateAttendance();
+    },
+    onError: (error: unknown) => {
+      const detail =
+        typeof error === "object" &&
+        error !== null &&
+        "response" in error &&
+        typeof (error as { response?: { data?: { detail?: unknown } } }).response
+          ?.data?.detail === "string"
+          ? String(
+              (error as { response?: { data?: { detail?: string } } }).response
+                ?.data?.detail
+            )
+          : "Could not complete attendance.";
+      toast.error(detail);
+    },
+  });
+
   const records = data?.records ?? [];
   const restDayWork =
     data?.rest_day_work ??
@@ -141,7 +269,12 @@ export function OwnerAttendancePage() {
       (acc, record) => {
         if (record.status === "absent") acc.absent += 1;
         else if (record.status === "late") acc.late += 1;
-        else acc.present += 1;
+        else if (
+          record.status === "complete" ||
+          record.status === "in_progress"
+        ) {
+          acc.present += 1;
+        }
         if (record.is_rest_day && record.time_in) acc.restDay += 1;
         return acc;
       },
@@ -153,6 +286,8 @@ export function OwnerAttendancePage() {
   const total = summary.present + summary.late + summary.absent;
   const presentPercent =
     total > 0 ? Math.round((summary.present / total) * 100) : 0;
+  const chartHeight = 160;
+  const maxBarHeight = 120;
   const restDayLabel = "Rest day";
   const hasActiveFilters = Boolean(date || debouncedSearch);
 
@@ -168,8 +303,8 @@ export function OwnerAttendancePage() {
                 Pending correction requests
               </h2>
               <p className="mt-1 text-sm text-[#6B7280]">
-                Employees who forgot to clock in or out can request the actual
-                time. Approve to update attendance and payroll.
+                Employees can request corrected clock-in and clock-out times for
+                a shift. Approve to update attendance and payroll.
               </p>
             </div>
             <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-800">
@@ -279,29 +414,43 @@ export function OwnerAttendancePage() {
 
         <section className="grid gap-5 lg:grid-cols-[1fr_220px]">
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="flex h-40 items-end gap-12 border-b border-l border-slate-200 px-8">
+            <div
+              className="flex items-end gap-12 border-b border-l border-slate-200 px-8"
+              style={{ height: `${chartHeight}px` }}
+            >
               {[
                 { label: "on time", value: summary.present, color: "#BEF7A5" },
                 { label: "late", value: summary.late, color: "#FDBA74" },
                 { label: "absent", value: summary.absent, color: "#F87171" },
-              ].map((item) => (
-                <div
-                  className="flex flex-1 flex-col items-center gap-2"
-                  key={item.label}
-                >
+              ].map((item) => {
+                const barHeight =
+                  item.value > 0
+                    ? Math.max(
+                        14,
+                        Math.round((item.value / maxCount) * maxBarHeight)
+                      )
+                    : 0;
+                return (
                   <div
-                    className="w-full max-w-16 rounded-t-lg"
-                    style={{
-                      height: `${Math.max(
-                        (item.value / maxCount) * 100,
-                        item.value ? 14 : 0
-                      )}%`,
-                      backgroundColor: item.color,
-                    }}
-                  />
-                  <span className="text-xs text-[#6B7280]">{item.label}</span>
-                </div>
-              ))}
+                    className="flex flex-1 flex-col items-center justify-end"
+                    key={item.label}
+                  >
+                    <span className="mb-1 text-xs font-semibold text-[#374151]">
+                      {item.value}
+                    </span>
+                    <div
+                      className="w-full max-w-16 rounded-t-lg"
+                      style={{
+                        height: `${barHeight}px`,
+                        backgroundColor: item.color,
+                      }}
+                    />
+                    <span className="mt-2 text-xs text-[#6B7280]">
+                      {item.label}
+                    </span>
+                  </div>
+                );
+              })}
             </div>
           </div>
 
@@ -352,23 +501,26 @@ export function OwnerAttendancePage() {
               {restDayWork.map((record) => {
                 const unauthorized = record.rest_day_authorized === false;
                 return (
-                  <div
-                    className={`flex items-center gap-4 rounded-xl border p-4 ${
+                  <button
+                    type="button"
+                    className={`flex w-full items-center gap-4 rounded-xl border p-4 text-left transition hover:shadow-sm ${
                       unauthorized
-                        ? "border-amber-200 bg-amber-50/70"
-                        : "border-sky-100 bg-sky-50/60"
+                        ? "border-amber-200 bg-amber-50/70 hover:border-amber-300"
+                        : "border-sky-100 bg-sky-50/60 hover:border-sky-200"
                     }`}
                     key={`rest-${record.id}`}
+                    onClick={() => setDetailsEmployee(record)}
                   >
-                    <div
-                      className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-sm font-semibold ${
+                    <EmployeeAvatar
+                      name={record.employee_name}
+                      imageUrl={record.profile_image_url}
+                      className="h-12 w-12 text-sm"
+                      fallbackClassName={
                         unauthorized
                           ? "bg-amber-100 text-amber-800"
                           : "bg-sky-100 text-sky-800"
-                      }`}
-                    >
-                      {initials(record.employee_name)}
-                    </div>
+                      }
+                    />
                     <div className="min-w-0 flex-1">
                       <h3 className="truncate text-sm font-semibold text-[#111827]">
                         {record.employee_name}
@@ -394,7 +546,7 @@ export function OwnerAttendancePage() {
                     >
                       {unauthorized ? "Not permitted" : "Rest day"}
                     </span>
-                  </div>
+                  </button>
                 );
               })}
             </div>
@@ -430,15 +582,28 @@ export function OwnerAttendancePage() {
               {records.map((record) => {
                 const late = record.status === "late";
                 const absent = record.status === "absent";
+                const incomplete = record.status === "incomplete";
+                const onLeave = record.status === "on_leave";
+                const holidayPaid = record.status === "holiday_paid";
                 const restDay = Boolean(record.is_rest_day && record.time_in);
                 return (
                   <div
-                    className="flex items-center gap-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+                    className="flex cursor-pointer items-center gap-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-[#C5D4E3] hover:shadow-md"
                     key={record.id}
+                    onClick={() => setDetailsEmployee(record)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        setDetailsEmployee(record);
+                      }
+                    }}
+                    role="button"
+                    tabIndex={0}
                   >
-                    <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-slate-100 text-sm font-semibold text-[#374151]">
-                      {initials(record.employee_name)}
-                    </div>
+                    <EmployeeAvatar
+                      name={record.employee_name}
+                      imageUrl={record.profile_image_url}
+                    />
                     <div className="min-w-0 flex-1">
                       <h2 className="truncate text-sm font-semibold text-[#111827]">
                         {record.employee_name}
@@ -454,23 +619,59 @@ export function OwnerAttendancePage() {
                             ? ` · ${record.position_title}`
                             : ""}
                       </p>
-                      <p className="text-xs text-[#6B7280]">
+                      <p
+                        className={`text-xs ${
+                          incomplete
+                            ? "font-semibold text-amber-700"
+                            : onLeave || holidayPaid
+                              ? "font-semibold text-sky-700"
+                              : "text-[#6B7280]"
+                        }`}
+                      >
                         {statusCopy(record.status)}
                         {restDay ? " · Rest day" : ""}
                       </p>
+                      {incomplete ? (
+                        <Button
+                          className="mt-2 h-8 px-3 text-xs"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setCompleting(record);
+                            setCompleteTime("");
+                            setCompleteReason("");
+                          }}
+                          size="sm"
+                          type="button"
+                          variant="outline"
+                        >
+                          Complete Attendance
+                        </Button>
+                      ) : null}
                     </div>
                     <span
                       className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                        absent
-                          ? "bg-red-100 text-red-700"
-                          : restDay
-                            ? "bg-sky-100 text-sky-800"
-                            : late
-                              ? "bg-orange-100 text-orange-700"
-                              : "bg-green-100 text-green-700"
+                        incomplete
+                          ? "bg-amber-100 text-amber-800"
+                          : absent
+                            ? "bg-red-100 text-red-700"
+                            : holidayPaid || onLeave
+                              ? "bg-sky-100 text-sky-800"
+                              : restDay
+                                ? "bg-sky-100 text-sky-800"
+                                : late
+                                  ? "bg-orange-100 text-orange-700"
+                                  : "bg-green-100 text-green-700"
                       }`}
                     >
-                      {absent ? "Absent" : formatTime(record.time_in)}
+                      {incomplete
+                        ? "Incomplete"
+                        : absent
+                          ? "Absent"
+                          : holidayPaid
+                            ? "Holiday"
+                            : onLeave
+                              ? "Leave"
+                              : formatTime(record.time_in)}
                     </span>
                   </div>
                 );
@@ -479,6 +680,149 @@ export function OwnerAttendancePage() {
           )}
         </section>
       </OwnerPageContent>
+
+      <Dialog
+        open={Boolean(detailsEmployee)}
+        onOpenChange={(open) => {
+          if (!open) setDetailsEmployee(null);
+        }}
+      >
+        <DialogContent className="max-w-md gap-0 overflow-hidden border-slate-200 p-0 sm:rounded-2xl">
+          <div className="border-b border-[#E8EEF4] px-5 py-4">
+            <DialogHeader>
+              <DialogTitle className="text-[15px] font-extrabold text-[#111827]">
+                Employee Details
+              </DialogTitle>
+            </DialogHeader>
+            <p className="mt-1 text-xs text-[#6B7280]">
+              Information from your employee records.
+            </p>
+          </div>
+          {detailsEmployee ? (
+            <div className="px-5 py-3">
+              <div className="mb-3 flex items-center gap-3">
+                <EmployeeAvatar
+                  name={detailsEmployee.employee_name}
+                  imageUrl={detailsEmployee.profile_image_url}
+                  className="h-14 w-14 text-sm"
+                />
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-extrabold text-[#111827]">
+                    Employee Information
+                  </p>
+                  <p className="text-[11.5px] text-[#6B7280]">
+                    Stored employee profile details
+                  </p>
+                </div>
+              </div>
+              <div className="divide-y divide-[#E8EEF4]">
+                <EmployeeInfoRow
+                  label="Complete Name"
+                  value={detailsEmployee.employee_name || "Not set"}
+                />
+                <EmployeeInfoRow
+                  label="Role"
+                  value={detailsEmployee.position_title || "Not set"}
+                />
+                <EmployeeInfoRow
+                  label="Employment"
+                  value={employmentLabel(detailsEmployee.employment_type)}
+                />
+                <EmployeeInfoRow
+                  label="Rate"
+                  value={rateLabel(detailsEmployee.daily_rate)}
+                />
+                <EmployeeInfoRow
+                  label="Time In"
+                  value={formatTime(detailsEmployee.time_in)}
+                />
+                <EmployeeInfoRow
+                  label="Time Out"
+                  value={formatTime(detailsEmployee.time_out)}
+                />
+              </div>
+            </div>
+          ) : null}
+          <DialogFooter className="border-t border-[#E8EEF4] px-5 py-3">
+            <Button
+              onClick={() => setDetailsEmployee(null)}
+              type="button"
+              variant="outline"
+            >
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(completing)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setCompleting(null);
+            setCompleteTime("");
+            setCompleteReason("");
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Complete Attendance</DialogTitle>
+          </DialogHeader>
+          {completing ? (
+            <div className="space-y-3">
+              <p className="text-sm text-[#6B7280]">
+                Enter the correct clock-out time for{" "}
+                <span className="font-semibold text-[#111827]">
+                  {completing.employee_name}
+                </span>{" "}
+                on {formatDisplayDate(completing.date)}. Clock-in was{" "}
+                {formatTime(completing.time_in)}.
+              </p>
+              <div>
+                <label className="mb-1 block text-xs font-semibold text-[#374151]">
+                  Clock-out time
+                </label>
+                <Input
+                  onChange={(event) => setCompleteTime(event.target.value)}
+                  type="time"
+                  value={completeTime}
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-semibold text-[#374151]">
+                  Reason (optional)
+                </label>
+                <Input
+                  onChange={(event) => setCompleteReason(event.target.value)}
+                  placeholder="Employee forgot to clock out"
+                  value={completeReason}
+                />
+              </div>
+            </div>
+          ) : null}
+          <DialogFooter>
+            <Button
+              onClick={() => {
+                setCompleting(null);
+                setCompleteTime("");
+                setCompleteReason("");
+              }}
+              type="button"
+              variant="outline"
+            >
+              Cancel
+            </Button>
+            <Button
+              disabled={!completeTime || completeMutation.isPending}
+              onClick={() => completeMutation.mutate()}
+              type="button"
+            >
+              {completeMutation.isPending ? "Saving…" : "Save clock-out"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </OwnerPage>
   );
 }
@@ -509,9 +853,12 @@ function CorrectionCard({
   return (
     <div className="rounded-xl border border-amber-200 bg-white p-4">
       <div className="flex flex-wrap items-start gap-3">
-        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-amber-100 text-sm font-semibold text-amber-800">
-          {initials(item.employee_name)}
-        </div>
+        <EmployeeAvatar
+          name={item.employee_name}
+          imageUrl={item.profile_image_url}
+          className="h-12 w-12 text-sm"
+          fallbackClassName="bg-amber-100 text-amber-800"
+        />
         <div className="min-w-0 flex-1">
           <h3 className="truncate text-sm font-semibold text-[#111827]">
             {item.employee_name}

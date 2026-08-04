@@ -9,7 +9,7 @@ from app.core.deps import require_roles
 from app.core.security import generate_temporary_password, hash_password
 from app.db.session import get_db
 from app.models.employee import Employee
-from app.models.enums import EmployeeStatus, UserRole
+from app.models.enums import EmployeeStatus, PayBasis, UserRole
 from app.models.attendance import AttendanceRecord
 from app.models.face_embedding import EmployeeFaceEmbedding
 from app.models.face_liveness import FaceLivenessChallenge
@@ -22,12 +22,20 @@ from app.schemas.employee import (
     EmployeeCreateResponse,
     EmployeeResponse,
     EmployeeUpdate,
+    _validate_pay_fields,
 )
 
 router = APIRouter(prefix="/employees", tags=["employees"])
 
 
+def _float_or_none(value) -> float | None:
+    if value is None:
+        return None
+    return float(value)
+
+
 def _employee_response(emp: Employee, user: User) -> EmployeeResponse:
+    pay_basis = getattr(emp, "pay_basis", None) or PayBasis.daily
     return EmployeeResponse(
         id=str(emp.id),
         email=user.email,
@@ -35,9 +43,14 @@ def _employee_response(emp: Employee, user: User) -> EmployeeResponse:
         generated_username=user.email if user.must_change_password else None,
         full_name=emp.full_name,
         position_title=emp.position_title,
+        position_id=str(emp.position_id) if emp.position_id else None,
         phone=emp.phone,
         profile_image_url=emp.profile_image_url,
         employment_type=emp.employment_type.value,
+        pay_basis=pay_basis.value if hasattr(pay_basis, "value") else str(pay_basis),
+        daily_rate=_float_or_none(getattr(emp, "daily_rate", None)),
+        hourly_rate=_float_or_none(getattr(emp, "hourly_rate", None)),
+        monthly_salary=_float_or_none(getattr(emp, "monthly_salary", None)),
         status=emp.status.value,
         must_change_password=user.must_change_password,
         temporary_password=(
@@ -73,6 +86,10 @@ def _get_business_employee(
     return row
 
 
+def _raise_pay_validation(exc: ValueError) -> None:
+    raise HTTPException(400, str(exc)) from exc
+
+
 @router.get("", response_model=list[EmployeeResponse])
 def list_employees(
     db: Annotated[Session, Depends(get_db)],
@@ -105,12 +122,36 @@ def create_employee(
 
     position_id = uuid.UUID(body.position_id) if body.position_id else None
     position_title = body.position_title.strip()
+    pos: Position | None = None
     if position_id:
         pos = db.get(Position, position_id)
         if pos is None or pos.business_id != user.business_id:
             raise HTTPException(400, "Invalid position")
         if not position_title:
             position_title = pos.title
+
+    pay_basis = body.pay_basis or PayBasis.daily
+    daily_rate = body.daily_rate
+    hourly_rate = body.hourly_rate
+    monthly_salary = body.monthly_salary
+    # Prefill daily rate from Position when creating (owner may override in body).
+    if (
+        pay_basis == PayBasis.daily
+        and daily_rate is None
+        and pos is not None
+        and pos.daily_rate is not None
+    ):
+        daily_rate = float(pos.daily_rate)
+
+    try:
+        _validate_pay_fields(
+            pay_basis=pay_basis,
+            daily_rate=daily_rate,
+            hourly_rate=hourly_rate,
+            monthly_salary=monthly_salary,
+        )
+    except ValueError as exc:
+        _raise_pay_validation(exc)
 
     temp_password = generate_temporary_password()
     new_user = User(
@@ -131,6 +172,10 @@ def create_employee(
         full_name=body.full_name.strip(),
         position_title=position_title,
         employment_type=body.employment_type,
+        pay_basis=pay_basis,
+        daily_rate=daily_rate,
+        hourly_rate=hourly_rate,
+        monthly_salary=monthly_salary,
         phone=body.phone.strip() if body.phone else None,
         status=EmployeeStatus.invited,
     )
@@ -164,6 +209,7 @@ def update_employee(
             emp.position_id = pos.id
             if "position_title" not in updates:
                 emp.position_title = pos.title
+            # Do NOT silently overwrite customized pay rates when position changes.
         else:
             emp.position_id = None
 
@@ -176,6 +222,17 @@ def update_employee(
             setattr(emp, field, value.strip() if value else None)
         else:
             setattr(emp, field, value)
+
+    pay_basis = emp.pay_basis or PayBasis.daily
+    try:
+        _validate_pay_fields(
+            pay_basis=pay_basis,
+            daily_rate=_float_or_none(emp.daily_rate),
+            hourly_rate=_float_or_none(emp.hourly_rate),
+            monthly_salary=_float_or_none(emp.monthly_salary),
+        )
+    except ValueError as exc:
+        _raise_pay_validation(exc)
 
     db.commit()
     db.refresh(emp)
@@ -218,18 +275,18 @@ def delete_employee(
         AttendanceRecord.business_id == user.business_id,
         AttendanceRecord.employee_id == emp.id,
     ).delete(synchronize_session=False)
-    db.query(EmployeeFaceEmbedding).filter(
-        EmployeeFaceEmbedding.employee_id == emp.id,
-    ).delete(synchronize_session=False)
-    db.query(FaceLivenessChallenge).filter(
-        FaceLivenessChallenge.employee_id == emp.id,
-    ).delete(synchronize_session=False)
-    db.query(ShiftAssignment).filter(
-        ShiftAssignment.employee_id == emp.id,
-    ).delete(synchronize_session=False)
+    db.query(ShiftAssignment).filter(ShiftAssignment.employee_id == emp.id).delete(
+        synchronize_session=False
+    )
     db.query(Payslip).filter(Payslip.employee_id == emp.id).delete(
         synchronize_session=False
     )
+    db.query(EmployeeFaceEmbedding).filter(
+        EmployeeFaceEmbedding.employee_id == emp.id
+    ).delete(synchronize_session=False)
+    db.query(FaceLivenessChallenge).filter(
+        FaceLivenessChallenge.employee_id == emp.id
+    ).delete(synchronize_session=False)
 
     db.delete(emp)
     db.delete(linked_user)
@@ -250,13 +307,13 @@ def reactivate_employee(
     if emp.status != EmployeeStatus.inactive:
         raise HTTPException(400, "Employee is not inactive")
 
-    emp.is_active = True
-    linked_user.is_active = True
     emp.status = (
         EmployeeStatus.invited
         if linked_user.must_change_password
         else EmployeeStatus.active
     )
+    emp.is_active = True
+    linked_user.is_active = True
     db.commit()
     db.refresh(emp)
     return _employee_response(emp, linked_user)

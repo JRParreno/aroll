@@ -18,17 +18,20 @@ class Settings(BaseSettings):
     # Set to false in production and list explicit origins in CORS_ORIGINS instead.
     cors_allow_localhost_regex: bool = True
     registration_upload_dir: str = "uploads/registrations"
-    # Cosine similarity threshold for face match. Higher = stricter (fewer
-    # false accepts, more "try again" for genuine people in bad lighting).
-    # Scale is model-specific. For ArcFace R50 (arcface_r50_v1) we score the
-    # *mean* similarity across all enrolled samples (not the single best), which
-    # is stricter against lookalikes. Close siblings have scored ~0.77 on the
-    # old "best sample" rule; mean scoring + default 0.78 rejects that band
-    # while a clear genuine capture (~0.80–0.85) still passes. Raise toward
-    # 0.82 if lookalikes still pass; lower toward 0.70 if genuine people fail
-    # in poor lighting (prefer re-enrolling clear samples first).
-    face_match_threshold: float = 0.78
-    face_model_version: str = "arcface_r50_v1"
+    # Attendance identity is 1:1 (logged-in employee gallery only).
+    # Decision: mean + min (+ centroid) cosine vs that gallery.
+    #
+    # Thresholds are InsightFace ArcFace (w600k_r50) 1:1 norms for a *correctly
+    # aligned* face — not the collapsed ~0.9 band from the v1 landmark bug.
+    # Typical ArcFace: same-person ≈ 0.4–0.8, different people usually < 0.35.
+    # mean≥0.50 and min≥0.42 targets low FAR while accepting genuine live probes.
+    face_match_threshold: float = 0.50
+    face_min_match_threshold: float = 0.42
+    # Kept for older callers / logs that still mention "best"; not the accept gate.
+    face_best_match_threshold: float = 0.42
+    # Enrollment frames of the same person (correct ArcFace scale).
+    face_enrollment_consistency_min: float = 0.40
+    face_model_version: str = "arcface_r50_v2"
     face_min_enrollment_samples: int = 3
     face_max_enrollment_samples: int = 5
     # One-time head-turn challenge settings.

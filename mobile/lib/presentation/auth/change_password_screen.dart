@@ -60,12 +60,13 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
     context.go(resolveAuthenticatedRoute(appState));
   }
 
-  InputDecoration _passwordDecoration({
+  InputDecoration _passwordDecoration(
+    BuildContext context, {
     required String label,
     required bool visible,
     required VoidCallback onToggle,
   }) {
-    return employeeInputDecoration(labelText: label).copyWith(
+    return employeeInputDecoration(context, labelText: label).copyWith(
       suffixIcon: PasswordVisibilityToggle(
         visible: visible,
         onToggle: onToggle,
@@ -126,6 +127,7 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
                       controller: _current,
                       obscureText: !_showCurrent,
                       decoration: _passwordDecoration(
+                        context,
                         label: 'Current (temporary) password',
                         visible: _showCurrent,
                         onToggle: () =>
@@ -138,6 +140,7 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
                       controller: _newPass,
                       obscureText: !_showNew,
                       decoration: _passwordDecoration(
+                        context,
                         label: 'New password',
                         visible: _showNew,
                         onToggle: () => setState(() => _showNew = !_showNew),
@@ -164,6 +167,7 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
                       controller: _confirm,
                       obscureText: !_showConfirm,
                       decoration: _passwordDecoration(
+                        context,
                         label: 'Confirm new password',
                         visible: _showConfirm,
                         onToggle: () =>

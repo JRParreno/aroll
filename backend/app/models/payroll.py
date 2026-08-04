@@ -17,7 +17,7 @@ from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
-from app.models.enums import PayPeriodType, PayrollRunStatus, Weekday
+from app.models.enums import HolidayRulesMode, PayPeriodType, PayrollRunStatus, Weekday
 
 
 class Position(Base):
@@ -50,6 +50,11 @@ class BusinessPayrollConfig(Base):
     )
     overtime_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     overtime_per_minute: Mapped[float] = mapped_column(Numeric(10, 2), default=1.0)
+    # When True, minutes past shift end first recover late-from-start before
+    # accruing payable OT. Default False preserves existing payslip behavior.
+    enable_late_overtime_balancing: Mapped[bool] = mapped_column(
+        Boolean, default=False
+    )
     next_payday_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     auto_reset_payroll_cycle: Mapped[bool] = mapped_column(Boolean, default=True)
     # Payday schedule, interpreted per pay_period_type. Day values 29-31 are
@@ -60,6 +65,11 @@ class BusinessPayrollConfig(Base):
     semi_monthly_payday_1: Mapped[int | None] = mapped_column(Integer, nullable=True)
     semi_monthly_payday_2: Mapped[int | None] = mapped_column(Integer, nullable=True)
     monthly_payday_day: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    holiday_rules_mode: Mapped[HolidayRulesMode] = mapped_column(
+        Enum(HolidayRulesMode),
+        default=HolidayRulesMode.philippine_labor,
+        nullable=False,
+    )
 
 
 class PayrollRun(Base):

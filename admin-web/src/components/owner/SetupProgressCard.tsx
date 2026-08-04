@@ -32,14 +32,15 @@ export function SetupProgressCard({ status }: Props) {
   const totalParts = setupSteps.length;
 
   return (
-    <section className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+    <section className="owner-card relative overflow-hidden px-4 py-4 sm:px-5">
+      <div className="pointer-events-none absolute inset-y-0 right-0 w-40 bg-gradient-to-l from-[#1E3A5F]/[0.04] to-transparent" />
+      <div className="relative flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2.5">
             <h2 className="text-sm font-semibold text-[#1F2937]">
               Business Setup Progress
             </h2>
-            <span className="rounded-full bg-[#F3F6FA] px-2.5 py-1 text-xs font-medium text-[#1E3A5F]">
+            <span className="rounded-full bg-[#EEF3F8] px-2.5 py-1 text-xs font-semibold text-[#1E3A5F]">
               {status.completion_percent}%
             </span>
           </div>
@@ -48,18 +49,14 @@ export function SetupProgressCard({ status }: Props) {
           </p>
         </div>
 
-        <div className="flex items-center gap-3 sm:min-w-[260px]">
-          <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-[#E5E7EB]">
+        <div className="flex items-center gap-3 sm:min-w-[280px]">
+          <div className="h-2 flex-1 overflow-hidden rounded-full bg-[#E5E7EB]">
             <div
-              className="h-full rounded-full bg-[#1E3A5F] transition-all"
+              className="h-full rounded-full bg-gradient-to-r from-[#1E3A5F] to-[#284B73] transition-all"
               style={{ width: `${status.completion_percent}%` }}
             />
           </div>
-          <Button
-            asChild
-            size="sm"
-            className="h-9 rounded-xl bg-[#1E3A5F] px-4 text-xs text-white hover:bg-[#284B73]"
-          >
+          <Button asChild size="sm" className="h-9 rounded-xl px-4 text-xs">
             <Link to={continuePath}>Continue Setup</Link>
           </Button>
         </div>

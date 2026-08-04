@@ -6,10 +6,15 @@ import 'package:aroll_mobile/presentation/auth/employee_login_screen.dart';
 import 'package:aroll_mobile/presentation/auth/owner_login_screen.dart';
 import 'package:aroll_mobile/presentation/auth/role_landing_screen.dart';
 import 'package:aroll_mobile/presentation/employee/attendance_correction_screen.dart';
+import 'package:aroll_mobile/presentation/employee/employee_notifications_screen.dart';
 import 'package:aroll_mobile/presentation/employee/face_registration_screen.dart';
+import 'package:aroll_mobile/presentation/employee/leave_request_detail_screen.dart';
+import 'package:aroll_mobile/presentation/employee/leave_requests_screen.dart';
+import 'package:aroll_mobile/presentation/employee/payroll_history_screen.dart';
 import 'package:aroll_mobile/presentation/employee/payroll_screen.dart';
 import 'package:aroll_mobile/presentation/employee/payslip_screen.dart';
 import 'package:aroll_mobile/presentation/employee/profile_screen.dart';
+import 'package:aroll_mobile/presentation/employee/request_leave_screen.dart';
 import 'package:aroll_mobile/presentation/employee/schedule_screen.dart';
 import 'package:aroll_mobile/presentation/employee/shift_detail_screen.dart';
 import 'package:aroll_mobile/presentation/employee/shift_history_screen.dart';
@@ -18,9 +23,15 @@ import 'package:aroll_mobile/presentation/home/scan_attendance_screen.dart';
 import 'package:aroll_mobile/presentation/owner/owner_attendance_screen.dart';
 import 'package:aroll_mobile/presentation/owner/owner_employees_screen.dart';
 import 'package:aroll_mobile/presentation/owner/owner_dashboard_screen.dart';
+import 'package:aroll_mobile/presentation/owner/owner_leave_management_screen.dart';
 import 'package:aroll_mobile/presentation/owner/owner_location_screen.dart';
+import 'package:aroll_mobile/presentation/owner/owner_notifications_screen.dart';
 import 'package:aroll_mobile/presentation/owner/owner_productivity_screen.dart';
+import 'package:aroll_mobile/presentation/owner/owner_account_information_screen.dart';
+import 'package:aroll_mobile/presentation/owner/owner_business_information_screen.dart';
+import 'package:aroll_mobile/presentation/owner/owner_business_setup_summary_screen.dart';
 import 'package:aroll_mobile/presentation/owner/owner_profile_screen.dart';
+import 'package:aroll_mobile/presentation/owner/owner_leave_policy_screen.dart';
 import 'package:aroll_mobile/presentation/owner/owner_settings_screen.dart';
 import 'package:aroll_mobile/presentation/owner/owner_setup_screen.dart';
 import 'package:aroll_mobile/presentation/owner/owner_registration.dart';
@@ -29,9 +40,14 @@ import 'package:aroll_mobile/presentation/owner/payroll/owner_payroll_detail_scr
 import 'package:aroll_mobile/presentation/owner/payroll/owner_payroll_list_screen.dart';
 import 'package:aroll_mobile/presentation/owner/setup/owner_setup_wizard_screen.dart';
 import 'package:aroll_mobile/presentation/owner/setup/setup_wizard_constants.dart';
+import 'package:aroll_mobile/presentation/shared/app_ui.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+
+CustomTransitionPage<void> _fadePage(GoRouterState state, Widget child) {
+  return appFadeSlidePage(key: state.pageKey, child: child);
+}
 
 bool _isPublicRoute(String loc) {
   return loc == '/login' ||
@@ -112,155 +128,307 @@ GoRouter createAppRouter(AppState appState) {
       return redirect;
     },
     routes: [
-      GoRoute(path: '/login', builder: (_, __) => const RoleLandingScreen()),
+      GoRoute(
+        path: '/login',
+        pageBuilder: (context, state) =>
+            _fadePage(state, const RoleLandingScreen()),
+      ),
       GoRoute(
         path: '/login/employee',
-        builder: (_, __) => const EmployeeLoginScreen(),
+        pageBuilder: (context, state) =>
+            _fadePage(state, const EmployeeLoginScreen()),
       ),
       GoRoute(
         path: '/login/owner-options',
-        builder: (_, __) => const OwnerOptionsScreen(),
+        pageBuilder: (context, state) =>
+            _fadePage(state, const OwnerOptionsScreen()),
       ),
       GoRoute(
         path: '/login/owner',
-        builder: (_, __) => const OwnerLoginScreen(),
+        pageBuilder: (context, state) =>
+            _fadePage(state, const OwnerLoginScreen()),
       ),
       GoRoute(
         path: '/register-business',
-        builder: (_, __) => const OwnerRegistrationScreen(),
+        pageBuilder: (context, state) =>
+            _fadePage(state, const OwnerRegistrationScreen()),
       ),
       GoRoute(
         path: '/track-registration',
-        builder: (_, state) => TrackRegistrationScreen(
-          initialEmail: state.uri.queryParameters['email'],
+        pageBuilder: (context, state) => _fadePage(
+          state,
+          TrackRegistrationScreen(
+            initialEmail: state.uri.queryParameters['email'],
+          ),
         ),
       ),
       GoRoute(
         path: '/change-password',
-        builder: (_, __) => const ChangePasswordScreen(),
+        pageBuilder: (context, state) =>
+            _fadePage(state, const ChangePasswordScreen()),
       ),
       GoRoute(
         path: '/home',
-        builder: (context, state) {
+        pageBuilder: (context, state) {
           final session = appState.session;
           if (session == null) {
-            return const Scaffold(body: Center(child: Text('No session')));
+            return _fadePage(
+              state,
+              const Scaffold(body: Center(child: Text('No session'))),
+            );
           }
-          return HomeScreen(session: session);
+          return _fadePage(state, HomeScreen(session: session));
         },
       ),
       GoRoute(
+        path: '/notifications',
+        pageBuilder: (context, state) =>
+            _fadePage(state, const EmployeeNotificationsScreen()),
+      ),
+      GoRoute(
         path: '/face-registration',
-        builder: (_, __) => const FaceRegistrationScreen(),
+        pageBuilder: (context, state) =>
+            _fadePage(state, const FaceRegistrationScreen()),
       ),
       GoRoute(
         path: '/schedule',
-        builder: (_, __) => const EmployeeScheduleScreen(),
+        pageBuilder: (context, state) =>
+            _fadePage(state, const EmployeeScheduleScreen()),
         routes: [
           GoRoute(
             path: 'detail',
-            builder: (context, state) {
+            pageBuilder: (context, state) {
               final item = state.extra;
               if (item is! EmployeeScheduleItem) {
-                return const EmployeeScheduleScreen();
+                return _fadePage(state, const EmployeeScheduleScreen());
               }
-              return ShiftDetailScreen(item: item);
+              return _fadePage(state, ShiftDetailScreen(item: item));
             },
           ),
         ],
       ),
       GoRoute(
         path: '/profile',
-        builder: (_, __) => const EmployeeProfileScreen(),
+        pageBuilder: (context, state) =>
+            _fadePage(state, const EmployeeProfileScreen()),
       ),
       GoRoute(
         path: '/shift-history',
-        builder: (_, __) => const ShiftHistoryScreen(),
+        pageBuilder: (context, state) {
+          final focusAttendanceRecordId =
+              state.uri.queryParameters['attendance_record_id'];
+          final focusAssignmentId =
+              state.uri.queryParameters['shift_assignment_id'];
+          return _fadePage(
+            state,
+            ShiftHistoryScreen(
+              focusAttendanceRecordId: focusAttendanceRecordId,
+              focusAssignmentId: focusAssignmentId,
+            ),
+          );
+        },
         routes: [
           GoRoute(
             path: 'correction',
-            builder: (context, state) {
+            pageBuilder: (context, state) {
               final item = state.extra;
               if (item is! EmployeeShiftHistoryItem) {
-                return const ShiftHistoryScreen();
+                return _fadePage(state, const ShiftHistoryScreen());
               }
-              return AttendanceCorrectionScreen(item: item);
+              return _fadePage(
+                state,
+                AttendanceCorrectionScreen(item: item),
+              );
             },
           ),
         ],
       ),
       GoRoute(
         path: '/payroll',
-        builder: (_, __) => const EmployeePayrollScreen(),
-      ),
-      GoRoute(
-        path: '/payslip',
-        builder: (_, __) => const EmployeePayslipScreen(),
-      ),
-      GoRoute(
-        path: '/scan-attendance',
-        builder: (context, state) {
-          final assignmentId =
-              state.uri.queryParameters['shift_assignment_id'];
-          return ScanAttendanceScreen(shiftAssignmentId: assignmentId);
-        },
-      ),
-      GoRoute(
-        path: '/owner/home',
-        builder: (_, __) => OwnerDashboardScreen(session: appState.session!),
-      ),
-      GoRoute(
-        path: '/owner/attendance',
-        builder: (_, __) => const OwnerAttendanceScreen(),
-      ),
-      GoRoute(
-        path: '/owner/employees',
-        builder: (_, __) => const OwnerEmployeesScreen(),
-      ),
-      GoRoute(
-        path: '/owner/schedule',
-        builder: (_, __) => const OwnerScheduleScreen(),
-      ),
-      GoRoute(
-        path: '/owner/payroll',
-        builder: (_, __) => const OwnerPayrollListScreen(),
+        pageBuilder: (context, state) =>
+            _fadePage(state, const EmployeePayrollScreen()),
         routes: [
           GoRoute(
-            path: ':employeeId',
-            builder: (_, state) => OwnerPayrollDetailScreen(
-              employeeId: state.pathParameters['employeeId']!,
+            path: 'history',
+            pageBuilder: (context, state) =>
+                _fadePage(state, const EmployeePayrollHistoryScreen()),
+          ),
+        ],
+      ),
+      GoRoute(
+        path: '/leave-requests',
+        pageBuilder: (context, state) =>
+            _fadePage(state, const LeaveRequestsScreen()),
+        routes: [
+          GoRoute(
+            path: 'new',
+            pageBuilder: (context, state) =>
+                _fadePage(state, const RequestLeaveScreen()),
+          ),
+          GoRoute(
+            path: ':requestId/edit',
+            pageBuilder: (context, state) => _fadePage(
+              state,
+              RequestLeaveScreen(
+                requestId: state.pathParameters['requestId'],
+              ),
+            ),
+          ),
+          GoRoute(
+            path: ':requestId',
+            pageBuilder: (context, state) => _fadePage(
+              state,
+              LeaveRequestDetailScreen(
+                requestId: state.pathParameters['requestId'] ?? '',
+              ),
             ),
           ),
         ],
       ),
       GoRoute(
+        path: '/payslip',
+        pageBuilder: (context, state) {
+          final asOfRaw = state.uri.queryParameters['as_of'];
+          final asOf = asOfRaw == null ? null : DateTime.tryParse(asOfRaw);
+          return _fadePage(state, EmployeePayslipScreen(asOf: asOf));
+        },
+      ),
+      GoRoute(
+        path: '/scan-attendance',
+        pageBuilder: (context, state) {
+          final assignmentId =
+              state.uri.queryParameters['shift_assignment_id'];
+          return _fadePage(
+            state,
+            ScanAttendanceScreen(shiftAssignmentId: assignmentId),
+          );
+        },
+      ),
+      GoRoute(
+        path: '/owner/home',
+        pageBuilder: (context, state) => _fadePage(
+          state,
+          OwnerDashboardScreen(session: appState.session!),
+        ),
+      ),
+      GoRoute(
+        path: '/owner/attendance',
+        pageBuilder: (context, state) =>
+            _fadePage(state, const OwnerAttendanceScreen()),
+      ),
+      GoRoute(
+        path: '/owner/employees',
+        pageBuilder: (context, state) =>
+            _fadePage(state, const OwnerEmployeesScreen()),
+      ),
+      GoRoute(
+        path: '/owner/schedule',
+        pageBuilder: (context, state) =>
+            _fadePage(state, const OwnerScheduleScreen()),
+      ),
+      GoRoute(
+        path: '/owner/leave',
+        pageBuilder: (context, state) =>
+            _fadePage(state, const OwnerLeaveManagementScreen()),
+        routes: [
+          GoRoute(
+            path: ':requestId',
+            pageBuilder: (context, state) => _fadePage(
+              state,
+              OwnerLeaveDetailScreen(
+                requestId: state.pathParameters['requestId'] ?? '',
+              ),
+            ),
+          ),
+        ],
+      ),
+      GoRoute(
+        path: '/owner/notifications',
+        pageBuilder: (context, state) =>
+            _fadePage(state, const OwnerNotificationsScreen()),
+      ),
+      GoRoute(
+        path: '/owner/payroll',
+        pageBuilder: (context, state) =>
+            _fadePage(state, const OwnerPayrollListScreen()),
+        routes: [
+          GoRoute(
+            path: ':employeeId',
+            pageBuilder: (context, state) {
+              final asOfRaw = state.uri.queryParameters['as_of'];
+              final asOf =
+                  asOfRaw == null ? null : DateTime.tryParse(asOfRaw);
+              return _fadePage(
+                state,
+                OwnerPayrollDetailScreen(
+                  employeeId: state.pathParameters['employeeId']!,
+                  asOf: asOf,
+                ),
+              );
+            },
+          ),
+        ],
+      ),
+      GoRoute(
         path: '/owner/profile',
-        builder: (_, __) => OwnerProfileScreen(session: appState.session!),
+        pageBuilder: (context, state) => _fadePage(
+          state,
+          OwnerProfileScreen(session: appState.session!),
+        ),
       ),
       GoRoute(
         path: '/owner/productivity',
-        builder: (_, __) => const OwnerProductivityScreen(),
+        pageBuilder: (context, state) =>
+            _fadePage(state, const OwnerProductivityScreen()),
       ),
       GoRoute(
         path: '/owner/location',
-        builder: (_, __) => const OwnerLocationScreen(),
+        pageBuilder: (context, state) =>
+            _fadePage(state, const OwnerLocationScreen()),
       ),
       GoRoute(
         path: '/owner/settings',
-        builder: (_, __) => const OwnerSettingsScreen(),
+        pageBuilder: (context, state) =>
+            _fadePage(state, const OwnerSettingsScreen()),
+        routes: [
+          GoRoute(
+            path: 'account',
+            pageBuilder: (context, state) =>
+                _fadePage(state, const OwnerAccountInformationScreen()),
+          ),
+          GoRoute(
+            path: 'business',
+            pageBuilder: (context, state) =>
+                _fadePage(state, const OwnerBusinessInformationScreen()),
+          ),
+          GoRoute(
+            path: 'setup-summary',
+            pageBuilder: (context, state) =>
+                _fadePage(state, const OwnerBusinessSetupSummaryScreen()),
+          ),
+          GoRoute(
+            path: 'leave-policy',
+            pageBuilder: (context, state) =>
+                _fadePage(state, const OwnerLeavePolicyScreen()),
+          ),
+        ],
       ),
       GoRoute(
         path: '/owner/setup-wizard',
-        builder: (_, state) {
+        pageBuilder: (context, state) {
           final stepParam = state.uri.queryParameters['step'];
-          return OwnerSetupWizardScreen(
-            initialStep: parseSetupWizardInitialStep(stepParam),
+          return _fadePage(
+            state,
+            OwnerSetupWizardScreen(
+              initialStep: parseSetupWizardInitialStep(stepParam),
+            ),
           );
         },
       ),
       GoRoute(
         path: '/owner/setup',
-        builder: (_, __) => const OwnerSetupScreen(),
+        pageBuilder: (context, state) =>
+            _fadePage(state, const OwnerSetupScreen()),
       ),
     ],
   );

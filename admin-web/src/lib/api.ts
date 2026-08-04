@@ -139,6 +139,8 @@ export type DashboardStats = {
   }[];
 };
 
+export type PayBasis = "daily" | "hourly" | "monthly";
+
 export type Employee = {
   id: string;
   email: string;
@@ -146,8 +148,13 @@ export type Employee = {
   generated_username: string | null;
   full_name: string;
   position_title: string | null;
+  position_id?: string | null;
   phone: string | null;
   employment_type: string;
+  pay_basis: PayBasis;
+  daily_rate: number | null;
+  hourly_rate: number | null;
+  monthly_salary: number | null;
   status: "invited" | "active" | "inactive";
   must_change_password: boolean;
   temporary_password: string | null;
@@ -211,6 +218,8 @@ export type OwnerAttendanceReport = {
     present: number;
     late: number;
     absent: number;
+    incomplete?: number;
+    on_leave?: number;
     rest_day?: number;
   };
   rest_day_name?: string | null;
@@ -218,8 +227,12 @@ export type OwnerAttendanceReport = {
   rest_day_work_allowed?: boolean;
   rest_day_work?: {
     id: string;
+    employee_id?: string;
     employee_name: string;
     position_title: string | null;
+    employment_type?: string | null;
+    daily_rate?: number | null;
+    profile_image_url?: string | null;
     date: string;
     weekday?: string;
     time_in: string | null;
@@ -231,8 +244,12 @@ export type OwnerAttendanceReport = {
   }[];
   records: {
     id: string;
+    employee_id?: string;
     employee_name: string;
     position_title: string | null;
+    employment_type?: string | null;
+    daily_rate?: number | null;
+    profile_image_url?: string | null;
     date: string;
     weekday?: string;
     time_in: string | null;
@@ -249,15 +266,60 @@ export type OwnerPayrollReport = {
     employee_id: string;
     employee_name: string;
     position_title: string | null;
+    profile_image_url?: string | null;
     period_start: string;
     period_end: string;
+    pay_date?: string;
     daily_rate: number;
+    pay_basis?: PayBasis;
+    hourly_rate?: number | null;
+    monthly_salary?: number | null;
     worked_days: number;
+    hours_worked?: number;
+    late_deductions?: number;
+    undertime_deductions?: number;
     overtime_pay: number;
+    overtime_hours?: number;
+    regular_pay?: number;
+    gross_pay?: number;
     deductions: number;
     total_salary: number;
+    net_pay?: number;
+    payroll_status?: string;
     pay_period_type: string;
   }[];
+  period_start?: string;
+  period_end?: string;
+  pay_date?: string;
+  payroll_status?: string;
+  as_of?: string;
+  incomplete_attendance_count?: number;
+  can_finalize?: boolean;
+  is_finalized?: boolean;
+  finalized_at?: string | null;
+};
+
+export type PayrollAdjustment = {
+  id: string;
+  employee_id: string;
+  period_start: string;
+  period_end: string;
+  kind: "deduction" | "allowance" | string;
+  type_key: string;
+  custom_name?: string | null;
+  display_name: string;
+  description?: string | null;
+  amount: number;
+  created_by?: string | null;
+  created_at?: string | null;
+  updated_by?: string | null;
+  updated_at?: string | null;
+  previous_amount?: number | null;
+};
+
+export type PayrollAdjustmentTypeOption = {
+  key: string;
+  label: string;
 };
 
 export type EmployeePayslip = {
@@ -268,10 +330,17 @@ export type EmployeePayslip = {
   period_start: string;
   period_end: string;
   daily_rate: number;
+  pay_basis?: PayBasis;
+  hourly_rate?: number | null;
+  monthly_salary?: number | null;
+  hourly_rate_configured?: number | null;
+  monthly_salary_configured?: number | null;
   worked_days: number;
   overtime_minutes: number;
   overtime_hours: number;
   overtime_pay: number;
+  /** Engine base earnings — source for UI Basic Salary. */
+  regular_pay?: number;
   holiday_pay: number;
   rest_day_days?: number;
   rest_day_premium_percent?: number;
@@ -289,9 +358,20 @@ export type EmployeePayslip = {
     authorized?: boolean;
   }[];
   deductions: number;
+  late_deductions?: number;
+  undertime_deductions?: number;
   absent_days: number;
+  paid_leave_days?: number;
+  unpaid_leave_days?: number;
   gross_pay: number;
   net_pay: number;
+  base_net_pay?: number;
+  final_net_pay?: number;
+  payroll_adjustments?: PayrollAdjustment[];
+  payroll_adjustments_total?: number;
+  payroll_adjustments_deduction_total?: number;
+  payroll_adjustments_allowance_total?: number;
+  adjustments_editable?: boolean;
   attendance_records: {
     date: string;
     status: string;
@@ -518,6 +598,10 @@ export async function createEmployee(payload: {
   position_id?: string;
   employment_type?: string;
   phone?: string;
+  pay_basis?: PayBasis;
+  daily_rate?: number | null;
+  hourly_rate?: number | null;
+  monthly_salary?: number | null;
 }) {
   const { data } = await api.post<EmployeeCreateResponse>(
     "/employees",
@@ -534,6 +618,10 @@ export async function updateEmployee(
     position_id?: string;
     employment_type?: string;
     phone?: string | null;
+    pay_basis?: PayBasis;
+    daily_rate?: number | null;
+    hourly_rate?: number | null;
+    monthly_salary?: number | null;
   }
 ) {
   const { data } = await api.put<Employee>(`/employees/${id}`, payload);
@@ -715,9 +803,20 @@ export async function observeFaceLivenessPose(params: {
   return data;
 }
 
-export async function getOwnerPerformance(days = 30) {
+export async function getOwnerPerformance(params?: {
+  days?: number;
+  year?: number;
+  month?: number;
+}) {
+  const useMonth =
+    params?.year != null &&
+    params?.month != null &&
+    Number.isFinite(params.year) &&
+    Number.isFinite(params.month);
   const { data } = await api.get<OwnerPerformance>("/owner/performance", {
-    params: { days },
+    params: useMonth
+      ? { year: params!.year, month: params!.month }
+      : { days: params?.days ?? 30 },
   });
   return data;
 }
@@ -727,6 +826,7 @@ export type OwnerAttendanceCorrection = {
   business_id: string;
   employee_id: string;
   employee_name: string;
+  profile_image_url?: string | null;
   shift_assignment_id: string;
   attendance_record_id: string | null;
   work_date: string;
@@ -787,14 +887,95 @@ export async function rejectOwnerAttendanceCorrection(
   return data;
 }
 
-export async function getOwnerPayrollReport() {
-  const { data } = await api.get<OwnerPayrollReport>("/owner/reports/payroll");
+export async function completeOwnerAttendance(
+  recordId: string,
+  payload: { time_out: string; reason?: string }
+) {
+  const { data } = await api.post<{
+    id: string;
+    employee_id: string;
+    status: string;
+    time_in: string | null;
+    time_out: string | null;
+  }>(`/owner/attendance-records/${recordId}/complete`, payload);
   return data;
 }
 
-export async function getEmployeePayslip(employeeId: string) {
+export async function getOwnerPayrollReport(asOf?: string) {
+  const { data } = await api.get<OwnerPayrollReport>("/owner/reports/payroll", {
+    params: asOf ? { as_of: asOf } : undefined,
+  });
+  return data;
+}
+
+export async function finalizeOwnerPayroll(asOf?: string) {
+  const { data } = await api.post<{
+    status: string;
+    payroll_run_id: string;
+    period_start: string;
+    period_end: string;
+    finalized_at?: string | null;
+  }>("/owner/reports/payroll/finalize", null, {
+    params: asOf ? { as_of: asOf } : undefined,
+  });
+  return data;
+}
+
+export async function getEmployeePayslip(employeeId: string, asOf?: string) {
   const { data } = await api.get<EmployeePayslip>(
-    `/owner/reports/payroll/${employeeId}/payslip`
+    `/owner/reports/payroll/${employeeId}/payslip`,
+    { params: asOf ? { as_of: asOf } : undefined }
+  );
+  return data;
+}
+
+export async function getPayrollAdjustmentTypes() {
+  const { data } = await api.get<{
+    deduction_types: PayrollAdjustmentTypeOption[];
+    allowance_types: PayrollAdjustmentTypeOption[];
+  }>("/owner/payroll/adjustment-types");
+  return data;
+}
+
+export async function createPayrollAdjustment(
+  employeeId: string,
+  payload: {
+    kind: string;
+    type_key: string;
+    custom_name?: string | null;
+    description?: string | null;
+    amount: number;
+  },
+  asOf?: string
+) {
+  const { data } = await api.post<PayrollAdjustment>(
+    `/owner/payroll/${employeeId}/adjustments`,
+    payload,
+    { params: asOf ? { as_of: asOf } : undefined }
+  );
+  return data;
+}
+
+export async function updatePayrollAdjustment(
+  adjustmentId: string,
+  payload: {
+    kind?: string;
+    type_key?: string;
+    custom_name?: string | null;
+    description?: string | null;
+    amount?: number;
+  }
+) {
+  const { data } = await api.patch<PayrollAdjustment>(
+    `/owner/payroll/adjustments/${adjustmentId}`,
+    payload
+  );
+  return data;
+}
+
+export async function deletePayrollAdjustment(adjustmentId: string) {
+  const { data } = await api.delete<{ ok: boolean }>(
+    `/owner/payroll/adjustments/${adjustmentId}`
   );
   return data;
 }
@@ -844,7 +1025,186 @@ export type ScheduleAssignment = {
   shift_end_time: string;
   shift_color: string | null;
   is_rest_day_work?: boolean;
+  on_leave?: boolean;
+  assigned_during_leave?: boolean;
+  leave_pending?: boolean;
 };
+
+export type LeaveRequestPreviousVersion = {
+  leave_type: string;
+  leave_type_label: string;
+  start_date: string;
+  end_date: string | null;
+  leave_days: number;
+  reason: string;
+  has_supporting_document: boolean;
+  supporting_document: string | null;
+  is_paid: boolean;
+};
+
+export type LeaveRequest = {
+  id: string;
+  business_id: string;
+  employee_id: string;
+  employee_name: string | null;
+  employee_position: string | null;
+  employee_profile_image_url?: string | null;
+  leave_type: string;
+  leave_type_label: string;
+  start_date: string;
+  end_date: string;
+  leave_days: number;
+  reason: string;
+  supporting_document: string | null;
+  has_supporting_document: boolean;
+  status:
+    | "pending"
+    | "approved"
+    | "rejected"
+    | "cancellation_pending"
+    | "cancelled";
+  policy_is_paid: boolean;
+  is_paid: boolean;
+  is_paid_overridden?: boolean;
+  has_pending_changes: boolean;
+  previous_request: LeaveRequestPreviousVersion | null;
+  owner_remarks: string | null;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export async function listOwnerLeaveRequests(params?: {
+  status?: string;
+  employee_id?: string;
+  leave_type?: string;
+  start_date?: string;
+  end_date?: string;
+}) {
+  const { data } = await api.get<LeaveRequest[]>("/owner/leave-requests", {
+    params,
+  });
+  return data;
+}
+
+export async function getOwnerLeaveRequest(requestId: string) {
+  const { data } = await api.get<LeaveRequest>(
+    `/owner/leave-requests/${requestId}`
+  );
+  return data;
+}
+
+export async function approveOwnerLeaveRequest(
+  requestId: string,
+  remarks?: string,
+  options?: { is_paid?: boolean; override_reason?: string }
+) {
+  const { data } = await api.post<LeaveRequest>(
+    `/owner/leave-requests/${requestId}/approve`,
+    {
+      remarks: remarks || null,
+      is_paid: options?.is_paid ?? null,
+      override_reason: options?.override_reason || null,
+    }
+  );
+  return data;
+}
+
+export async function rejectOwnerLeaveRequest(
+  requestId: string,
+  remarks?: string
+) {
+  const { data } = await api.post<LeaveRequest>(
+    `/owner/leave-requests/${requestId}/reject`,
+    { remarks: remarks || null }
+  );
+  return data;
+}
+
+export async function approveOwnerLeaveCancellation(
+  requestId: string,
+  remarks?: string
+) {
+  const { data } = await api.post<LeaveRequest>(
+    `/owner/leave-requests/${requestId}/approve-cancellation`,
+    { remarks: remarks || null }
+  );
+  return data;
+}
+
+export async function rejectOwnerLeaveCancellation(
+  requestId: string,
+  remarks?: string
+) {
+  const { data } = await api.post<LeaveRequest>(
+    `/owner/leave-requests/${requestId}/reject-cancellation`,
+    { remarks: remarks || null }
+  );
+  return data;
+}
+
+export type EmployeeLeaveAvailabilityItem = {
+  employee_id: string;
+  on_leave: boolean;
+  leave_pending: boolean;
+};
+
+export type EmployeeLeaveAvailability = {
+  work_date: string;
+  employees: EmployeeLeaveAvailabilityItem[];
+};
+
+export async function getLeaveAvailability(workDate: string) {
+  const { data } = await api.get<EmployeeLeaveAvailability>(
+    "/schedules/leave-availability",
+    { params: { work_date: workDate } }
+  );
+  return data;
+}
+
+export type Notification = {
+  id: string;
+  business_id: string | null;
+  type: string;
+  title: string;
+  message: string;
+  entity_type: string | null;
+  entity_id: string | null;
+  deep_link: string | null;
+  is_read: boolean;
+  metadata: Record<string, unknown> | null;
+  created_at: string;
+};
+
+export async function listNotifications(params?: {
+  unread_only?: boolean;
+  limit?: number;
+}) {
+  const { data } = await api.get<Notification[]>("/notifications", { params });
+  return data;
+}
+
+export async function getNotificationUnreadCount() {
+  const { data } = await api.get<{ count: number }>(
+    "/notifications/unread-count"
+  );
+  return data.count;
+}
+
+export async function markNotificationRead(notificationId: string) {
+  const { data } = await api.post<Notification>(
+    `/notifications/${notificationId}/read`
+  );
+  return data;
+}
+
+export async function markAllNotificationsRead() {
+  const { data } = await api.post<{ marked_read: number }>(
+    "/notifications/read-all"
+  );
+  return data;
+}
 
 export type WeeklySchedule = {
   week_start: string;
@@ -860,6 +1220,8 @@ export type Position = {
   is_active: boolean;
 };
 
+export type HolidayRulesMode = "philippine_labor" | "custom_company";
+
 export type PayrollConfig = {
   pay_period_type: string;
   next_payday_date: string | null;
@@ -868,10 +1230,12 @@ export type PayrollConfig = {
   late_deduction_per_minute: number;
   overtime_enabled: boolean;
   overtime_per_minute: number;
+  enable_late_overtime_balancing: boolean;
   weekly_payday_weekday: string | null;
   semi_monthly_payday_1: number | null;
   semi_monthly_payday_2: number | null;
   monthly_payday_day: number | null;
+  holiday_rules_mode: HolidayRulesMode;
 };
 
 export type AttendancePolicy = {
@@ -879,14 +1243,46 @@ export type AttendancePolicy = {
   on_time_grace_minutes: number;
   half_day_threshold_minutes: number;
   absent_threshold_minutes: number;
+  absent_threshold_percent: number;
+  half_day_threshold_percent: number;
   early_out_deduction_enabled: boolean;
   early_out_deduction_per_minute: number;
   overtime_enabled: boolean;
   overtime_minimum_minutes: number;
+  maximum_overtime_minutes: number;
   overtime_rate_per_minute: number;
   missing_clock_out_policy: string;
   attendance_based_salary_enabled: boolean;
 };
+
+export type LeavePolicyItem = {
+  leave_type: string;
+  leave_type_label: string;
+  is_paid: boolean;
+  payroll_treatment: string;
+};
+
+export type LeavePolicy = {
+  business_id: string;
+  items: LeavePolicyItem[];
+  treatments: Record<string, boolean>;
+  updated_at?: string | null;
+};
+
+export async function getLeavePolicy() {
+  const { data } = await api.get<LeavePolicy>("/businesses/me/leave-policy");
+  return data;
+}
+
+export async function updateLeavePolicy(payload: {
+  treatments: Record<string, boolean>;
+}) {
+  const { data } = await api.put<LeavePolicy>(
+    "/businesses/me/leave-policy",
+    payload
+  );
+  return data;
+}
 
 export type RestDayPolicy = {
   rest_day_premium_percent: number;
@@ -1144,6 +1540,7 @@ export async function assignSchedule(payload: {
   work_date: string;
   employee_ids: string[];
   is_rest_day_work?: boolean;
+  override_leave?: boolean;
 }) {
   const { data } = await api.post<{
     created: number;
@@ -1158,6 +1555,7 @@ export async function updateScheduleAssignment(
     shift_id: string;
     work_date: string;
     is_rest_day_work?: boolean;
+    override_leave?: boolean;
   }
 ) {
   const { data } = await api.put<ScheduleAssignment>(
@@ -1169,6 +1567,146 @@ export async function updateScheduleAssignment(
 
 export async function deleteScheduleAssignment(assignmentId: string) {
   const { data } = await api.delete(`/schedules/assignments/${assignmentId}`);
+  return data;
+}
+
+export type ScheduleReuseSource =
+  | "previous_week"
+  | "week"
+  | "last_schedule"
+  | "template";
+
+export type ScheduleConflictMode = "replace" | "merge";
+
+export type ScheduleTemplateSummary = {
+  id: string;
+  name: string;
+  entry_count: number;
+  employee_count: number;
+  created_at: string | null;
+};
+
+export type ScheduleReuseSuggestions = {
+  target_week_start: string;
+  previous_week_start: string | null;
+  previous_week_assignment_count: number;
+  last_schedule_week_start: string | null;
+  last_schedule_assignment_count: number;
+  templates: ScheduleTemplateSummary[];
+  suggest_previous: boolean;
+};
+
+export type ScheduleReusePreviewItem = {
+  employee_id: string;
+  employee_name: string;
+  shift_id: string;
+  shift_name: string;
+  shift_start_time: string;
+  shift_end_time: string;
+  shift_color: string | null;
+  work_date: string;
+  is_rest_day_work: boolean;
+  status:
+    | "new"
+    | "conflict"
+    | "duplicate"
+    | "skipped_inactive"
+    | "skipped_missing_shift";
+  conflict_reason: string | null;
+};
+
+export type ScheduleReusePreview = {
+  source: ScheduleReuseSource;
+  source_label: string;
+  source_week_start: string | null;
+  target_week_start: string;
+  target_week_end: string;
+  employee_count: number;
+  working_day_count: number;
+  items: ScheduleReusePreviewItem[];
+  conflicts: {
+    existing_assignment_count: number;
+    conflict_count: number;
+    duplicate_count: number;
+    skipped_count: number;
+    creatable_count: number;
+  };
+};
+
+export type ScheduleReuseApplyResult = {
+  created: number;
+  removed: number;
+  skipped: number;
+  target_week_start: string;
+  target_week_end: string;
+};
+
+export async function getScheduleReuseSuggestions(targetWeekStart: string) {
+  const { data } = await api.get<ScheduleReuseSuggestions>(
+    "/schedules/reuse/suggestions",
+    { params: { target_week_start: targetWeekStart } }
+  );
+  return data;
+}
+
+export async function previewScheduleReuse(payload: {
+  source: ScheduleReuseSource;
+  target_week_start: string;
+  source_week_start?: string;
+  template_id?: string;
+}) {
+  const { data } = await api.post<ScheduleReusePreview>(
+    "/schedules/reuse/preview",
+    payload
+  );
+  return data;
+}
+
+export async function applyScheduleReuse(payload: {
+  source: ScheduleReuseSource;
+  target_week_start: string;
+  conflict_mode: ScheduleConflictMode;
+  source_week_start?: string;
+  template_id?: string;
+}) {
+  const { data } = await api.post<ScheduleReuseApplyResult>(
+    "/schedules/reuse/apply",
+    payload
+  );
+  return data;
+}
+
+export async function listScheduleTemplates() {
+  const { data } = await api.get<ScheduleTemplateSummary[]>(
+    "/schedules/templates"
+  );
+  return data;
+}
+
+export async function createScheduleTemplate(payload: {
+  name: string;
+  week_start: string;
+}) {
+  const { data } = await api.post<ScheduleTemplateSummary>(
+    "/schedules/templates",
+    payload
+  );
+  return data;
+}
+
+export async function renameScheduleTemplate(
+  templateId: string,
+  name: string
+) {
+  const { data } = await api.patch<ScheduleTemplateSummary>(
+    `/schedules/templates/${templateId}`,
+    { name }
+  );
+  return data;
+}
+
+export async function deleteScheduleTemplate(templateId: string) {
+  const { data } = await api.delete(`/schedules/templates/${templateId}`);
   return data;
 }
 

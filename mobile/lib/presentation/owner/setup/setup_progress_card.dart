@@ -1,4 +1,6 @@
+import 'package:aroll_mobile/presentation/owner/setup/setup_ui.dart';
 import 'package:aroll_mobile/presentation/owner/setup/setup_wizard_constants.dart';
+import 'package:aroll_mobile/presentation/shared/app_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
@@ -24,71 +26,88 @@ class SetupProgressCard extends StatelessWidget {
     final totalParts = setupWizardStepOrder.length;
     final continueStep = firstIncompleteSetupStepIndex(data);
 
-    return Card(
-      margin: EdgeInsets.zero,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const Expanded(
-                  child: Text(
-                    'Business Setup Progress',
-                    style: TextStyle(fontWeight: FontWeight.w700),
-                  ),
+    return SetupSurfaceCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: AppColors.iconWell,
+                  borderRadius: BorderRadius.circular(12),
                 ),
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF3F6FA),
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Text(
-                    '$percent%',
-                    style: const TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF1E3A5F),
-                    ),
-                  ),
+                child: const Icon(
+                  Icons.checklist_rounded,
+                  size: 20,
+                  color: SetupUi.navy,
                 ),
-              ],
-            ),
-            const SizedBox(height: 6),
-            Text(
-              '$completedParts of $totalParts parts completed',
-              style: const TextStyle(fontSize: 12, color: Color(0xFF6B7280)),
-            ),
-            const SizedBox(height: 12),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(999),
-              child: LinearProgressIndicator(
-                value: percent / 100,
-                minHeight: 6,
-                backgroundColor: const Color(0xFFE5E7EB),
-                color: const Color(0xFF1E3A5F),
               ),
-            ),
-            if (showContinueButton) ...[
-              const SizedBox(height: 14),
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton(
-                  onPressed: () => context.push(
-                    '/owner/setup-wizard?step=$continueStep',
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Business Setup Progress',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '$completedParts of $totalParts parts completed',
+                      style: appMutedStyle().copyWith(fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  color: AppColors.chipFill,
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  '$percent%',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: SetupUi.navy,
                   ),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: const Color(0xFF1E3A5F),
-                  ),
-                  child: const Text('Continue Setup'),
                 ),
               ),
             ],
+          ),
+          const SizedBox(height: 14),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(999),
+            child: LinearProgressIndicator(
+              value: percent / 100,
+              minHeight: 8,
+              backgroundColor: const Color(0xFFE8EEF4),
+              color: SetupUi.navy,
+            ),
+          ),
+          if (showContinueButton) ...[
+            const SizedBox(height: 14),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                style: SetupUi.primaryButton,
+                onPressed: () => context.push(
+                  '/owner/setup-wizard?step=$continueStep',
+                ),
+                child: const Text('Continue Setup'),
+              ),
+            ),
           ],
-        ),
+        ],
       ),
     );
   }

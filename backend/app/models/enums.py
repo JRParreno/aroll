@@ -46,6 +46,18 @@ class EmploymentType(str, enum.Enum):
     part_time = "part_time"
 
 
+class PayBasis(str, enum.Enum):
+    """How an employee's base pay is expressed.
+
+    Phase 2: daily payroll uses Employee.daily_rate (Position fallback).
+    Hourly / monthly payroll formulas are Phase 3+.
+    """
+
+    daily = "daily"
+    hourly = "hourly"
+    monthly = "monthly"
+
+
 class EmployeeStatus(str, enum.Enum):
     invited = "invited"
     active = "active"
@@ -64,6 +76,37 @@ class AttendanceStatus(str, enum.Enum):
     late = "late"
     absent = "absent"
     incomplete = "incomplete"
+    on_leave = "on_leave"
+
+
+class LeaveType(str, enum.Enum):
+    sick = "sick"
+    vacation = "vacation"
+    emergency = "emergency"
+    maternity = "maternity"
+    paternity = "paternity"
+    unpaid = "unpaid"
+    other = "other"
+
+
+class LeaveRequestStatus(str, enum.Enum):
+    """Leave workflow statuses.
+
+    Display labels:
+    - pending → Pending Approval
+    - approved → Approved
+    - rejected → Rejected
+    - cancellation_pending → Cancellation Pending
+    - cancelled → Cancelled
+
+    Designed to stay open for future leave-balance / credit policies.
+    """
+
+    pending = "pending"
+    approved = "approved"
+    rejected = "rejected"
+    cancellation_pending = "cancellation_pending"
+    cancelled = "cancelled"
 
 
 class AttendanceCorrectionStatus(str, enum.Enum):
@@ -83,6 +126,13 @@ class HolidayType(str, enum.Enum):
     regular = "regular"
     special_non_working = "special_non_working"
     company = "company"
+
+
+class HolidayRulesMode(str, enum.Enum):
+    """How holiday pay is resolved for a business."""
+
+    philippine_labor = "philippine_labor"
+    custom_company = "custom_company"
 
 
 class MissingClockOutPolicy(str, enum.Enum):

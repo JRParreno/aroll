@@ -3,7 +3,7 @@ import { ArrowLeft } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export const ownerPageContentClassName =
-  "mx-auto w-full max-w-6xl space-y-6 px-5 py-6 sm:px-8";
+  "mx-auto w-full max-w-6xl space-y-6 px-5 py-6 sm:px-8 sm:py-8";
 
 type OwnerPageBackLinkProps = {
   to: string;
@@ -20,7 +20,7 @@ export function OwnerPageBackLink({
     <Link
       to={to}
       className={cn(
-        "inline-flex items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-foreground",
+        "inline-flex items-center gap-2 rounded-lg px-1 py-0.5 text-sm font-medium text-[#6B7280] transition-colors hover:bg-white hover:text-[#1E3A5F]",
         className
       )}
     >
@@ -57,30 +57,37 @@ export function OwnerPageHeader({
   return (
     <header
       className={cn(
-        "border-b border-slate-200 bg-white px-5 py-6 sm:px-8",
+        "relative overflow-hidden border-b border-slate-200/80 bg-white/90 px-5 py-6 backdrop-blur-sm sm:px-8",
         className
       )}
     >
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-[#1E3A5F]/15 to-transparent" />
+      <div className="pointer-events-none absolute -right-16 -top-20 h-44 w-44 rounded-full bg-[#1E3A5F]/[0.035]" />
+      <div className="pointer-events-none absolute -left-10 bottom-0 h-28 w-28 rounded-full bg-[#284B73]/[0.03]" />
       <div
         className={cn(
-          "mx-auto flex max-w-6xl flex-col gap-4",
+          "relative mx-auto flex max-w-6xl flex-col gap-4",
           actions && "lg:flex-row lg:items-center lg:justify-between"
         )}
       >
-        <div>
+        <div className="min-w-0">
           {eyebrow ? (
-            <p className="text-sm font-medium text-[#6B7280]">{eyebrow}</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#6B7280]">
+              {eyebrow}
+            </p>
           ) : null}
           <h1
             className={cn(
-              "text-2xl font-semibold text-[#1F2937]",
-              eyebrow && "mt-1"
+              "text-2xl font-semibold tracking-tight text-[#1F2937] sm:text-[1.7rem]",
+              eyebrow && "mt-1.5"
             )}
           >
             {title}
           </h1>
           {description ? (
-            <p className="mt-1 text-sm text-[#6B7280]">{description}</p>
+            <p className="mt-1.5 max-w-2xl text-sm leading-relaxed text-[#6B7280]">
+              {description}
+            </p>
           ) : null}
         </div>
         {actions ? (
@@ -101,5 +108,22 @@ type OwnerPageContentProps = {
 export function OwnerPageContent({ children, className }: OwnerPageContentProps) {
   return (
     <div className={cn(ownerPageContentClassName, className)}>{children}</div>
+  );
+}
+
+type OwnerCardProps = {
+  children: React.ReactNode;
+  className?: string;
+  muted?: boolean;
+};
+
+/** Shared white panel used across owner pages (UI only). */
+export function OwnerCard({ children, className, muted = false }: OwnerCardProps) {
+  return (
+    <div
+      className={cn(muted ? "owner-card-muted" : "owner-card", className)}
+    >
+      {children}
+    </div>
   );
 }

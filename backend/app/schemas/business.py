@@ -27,7 +27,7 @@ class LocationUpdate(BaseModel):
     address: str = Field(min_length=5)
     latitude: float | None = None
     longitude: float | None = None
-    geofence_radius_m: int = Field(default=75, ge=20, le=200)
+    geofence_radius_m: int = Field(default=75, ge=5, le=200)
 
 
 class LocationResponse(BaseModel):

@@ -1,36 +1,79 @@
 import 'dart:math' as math;
 
+import 'package:aroll_mobile/core/theme/business_brand_theme.dart';
 import 'package:aroll_mobile/core/utils/data_uri_image.dart';
 import 'package:aroll_mobile/core/utils/format.dart';
 import 'package:aroll_mobile/domain/entities/employee_portal.dart';
 import 'package:aroll_mobile/domain/entities/user_session.dart';
 import 'package:aroll_mobile/presentation/auth/sign_out_dialog.dart';
+import 'package:aroll_mobile/presentation/shared/app_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
-/// Shared visual tokens aligned with the Business Owner mobile app.
+/// Shared visual tokens. Brand accents should prefer [BrandColors.of].
 abstract final class EmployeeColors {
-  static const scaffold = Color(0xFFF4F6F8);
-  static const primary = Color(0xFF1E466E);
-  static const primaryDark = Color(0xFF1E3A5F);
-  static const border = Color(0xFFE5E7EB);
-  static const textPrimary = Color(0xFF111827);
-  static const textBody = Color(0xFF374151);
-  static const textMuted = Color(0xFF6B7280);
-  static const iconWell = Color(0xFFE7EEF5);
-  static const fieldFill = Color(0xFFF9FAFB);
-  static const chipFill = Color(0xFFF3F4F6);
-  static const success = Color(0xFF16A34A);
+  static const scaffold = AppColors.scaffold;
+  static const primary = AppColors.primary;
+  static const primaryDark = AppColors.primaryDark;
+  static const border = AppColors.border;
+  static const textPrimary = AppColors.textPrimary;
+  static const textBody = AppColors.textBody;
+  static const textMuted = AppColors.textMuted;
+  static const iconWell = AppColors.iconWell;
+  static const fieldFill = AppColors.fieldFill;
+  static const chipFill = AppColors.chipFill;
+  static const success = AppColors.success;
 }
 
+/// Owner setup primary color from the active [Theme] (session branding).
+Color brandPrimary(BuildContext context) => BrandColors.of(context).primary;
+
+Color brandSecondary(BuildContext context) => BrandColors.of(context).secondary;
+
+Color brandButton(BuildContext context) => BrandColors.of(context).button;
+
+Color brandAccent(BuildContext context) => BrandColors.of(context).accent;
+
+Color brandIconWell(BuildContext context) => BrandColors.of(context).iconWell;
+
+/// Resolves branding primary, preferring live theme then optional profile branding.
 Color employeePrimary(
-    BusinessBrandingSettings? branding, BuildContext context) {
-  return _hexColor(branding?.theme.primaryColor) ??
-      EmployeeColors.primary;
+  BusinessBrandingSettings? branding,
+  BuildContext context,
+) {
+  final fromBranding = parseBrandHex(branding?.theme.primaryColor);
+  if (fromBranding != null) return fromBranding;
+  return BrandColors.of(context).primary;
 }
 
 String money(num value) => formatPeso(value);
+
+String salaryRateRowLabel() => salaryRateLabel();
+
+/// Salary rate label from payslip / payroll summary pay_basis fields.
+String salaryRateDisplay({
+  required String payBasis,
+  required num dailyRate,
+  num? hourlyRate,
+  num? monthlySalary,
+}) {
+  return formatSalaryRate(
+    payBasis: payBasis,
+    dailyRate: dailyRate,
+    hourlyRate: hourlyRate,
+    monthlySalary: monthlySalary,
+  );
+}
+
+String salaryRateDisplayFromPayslip(EmployeePayslip payslip) {
+  return salaryRateDisplay(
+    payBasis: payslip.payBasis,
+    dailyRate: payslip.dailyRate,
+    hourlyRate: payslip.hourlyRate,
+    monthlySalary: payslip.monthlySalary,
+  );
+}
 
 String shortDate(DateTime value) => DateFormat('MMM d, yyyy').format(value);
 
@@ -67,13 +110,36 @@ void employeeNavigateBack(BuildContext context) {
   }
 }
 
+/// Standard page header title — matches the Profile [AppBar] title.
+TextStyle employeePageTitleStyle([Color? color]) => appPageTitleStyle(color);
+
+class EmployeePageTitle extends StatelessWidget {
+  const EmployeePageTitle(
+    this.text, {
+    super.key,
+    this.color,
+  });
+
+  final String text;
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      text,
+      overflow: TextOverflow.ellipsis,
+      style: employeePageTitleStyle(color),
+    );
+  }
+}
+
 class EmployeeScaffold extends StatelessWidget {
   const EmployeeScaffold({
     super.key,
     required this.title,
     required this.selectedIndex,
     required this.child,
-    this.showBack = false,
+    this.showBack = true,
     this.actions,
   });
 
@@ -91,17 +157,19 @@ class EmployeeScaffold extends StatelessWidget {
         backgroundColor: EmployeeColors.scaffold,
         elevation: 0,
         scrolledUnderElevation: 0,
-        title: Text(
-          title,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(fontWeight: FontWeight.w700),
-        ),
+        automaticallyImplyLeading: false,
+        titleSpacing: showBack ? 0 : NavigationToolbar.kMiddleSpacing,
+        title: EmployeePageTitle(title),
         centerTitle: false,
         leading: showBack
             ? IconButton(
                 tooltip: 'Back',
+                constraints: const BoxConstraints(
+                  minWidth: AppSizes.minTap,
+                  minHeight: AppSizes.minTap,
+                ),
                 onPressed: () => employeeNavigateBack(context),
-                icon: const Icon(Icons.arrow_back_rounded),
+                icon: const Icon(Icons.arrow_back_rounded, size: AppSizes.iconLg),
               )
             : null,
         actions: actions,
@@ -120,35 +188,79 @@ class EmployeeBottomNav extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final items = [
-      const _NavItem(Icons.home_rounded, 'Home', '/home'),
-      const _NavItem(Icons.calendar_month_rounded, 'Schedule', '/schedule'),
-      const _NavItem(Icons.face_retouching_natural, 'Scan', '/scan-attendance'),
-      const _NavItem(Icons.payments_rounded, 'Payroll', '/payroll'),
-      const _NavItem(Icons.person_rounded, 'Profile', '/profile'),
+      const _NavItem(Icons.home_outlined, Icons.home_rounded, 'Home', '/home'),
+      const _NavItem(
+        Icons.history_outlined,
+        Icons.history_rounded,
+        'Shift History',
+        '/shift-history',
+      ),
+      const _NavItem(
+        Icons.face_retouching_natural_outlined,
+        Icons.face_retouching_natural,
+        'Scan',
+        '/scan-attendance',
+      ),
+      const _NavItem(
+        Icons.payments_outlined,
+        Icons.payments_rounded,
+        'Payroll',
+        '/payroll',
+      ),
+      const _NavItem(
+        Icons.person_outline_rounded,
+        Icons.person_rounded,
+        'Profile',
+        '/profile',
+      ),
     ];
 
-    return NavigationBar(
-      selectedIndex: selectedIndex,
-      height: 70,
-      labelBehavior: NavigationDestinationLabelBehavior.alwaysHide,
-      onDestinationSelected: (index) => context.go(items[index].route),
-      destinations: items
-          .map(
-            (item) => NavigationDestination(
-              icon: Icon(item.icon),
-              selectedIcon: Icon(item.icon),
-              label: item.label,
-            ),
-          )
-          .toList(),
+    final brand = BrandColors.of(context);
+    return Material(
+      color: Colors.white,
+      elevation: 0,
+      child: Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          border: Border(
+            top: BorderSide(color: EmployeeColors.border),
+          ),
+        ),
+        child: NavigationBar(
+          selectedIndex: selectedIndex,
+          height: AppSizes.navHeight,
+          backgroundColor: Colors.white,
+          surfaceTintColor: Colors.transparent,
+          indicatorColor: brand.iconWell,
+          labelBehavior: NavigationDestinationLabelBehavior.alwaysHide,
+          onDestinationSelected: (index) => context.go(items[index].route),
+          destinations: [
+            for (var i = 0; i < items.length; i++)
+              NavigationDestination(
+                icon: Icon(
+                  items[i].icon,
+                  size: i == 2 ? AppSizes.iconXl : AppSizes.iconLg,
+                  color: EmployeeColors.textBody,
+                ),
+                selectedIcon: Icon(
+                  items[i].selectedIcon,
+                  size: i == 2 ? AppSizes.iconXl : AppSizes.iconLg,
+                  color: brand.primary,
+                ),
+                label: items[i].label,
+              ),
+          ],
+        ),
+      ),
     );
   }
 }
 
 class _NavItem {
-  const _NavItem(this.icon, this.label, this.route);
+  const _NavItem(this.icon, this.selectedIcon, this.label, this.route);
 
   final IconData icon;
+  final IconData selectedIcon;
   final String label;
   final String route;
 }
@@ -157,32 +269,22 @@ class EmployeeCard extends StatelessWidget {
   const EmployeeCard({
     super.key,
     required this.child,
-    this.padding = const EdgeInsets.all(16),
+    this.padding = const EdgeInsets.all(AppSpacing.lg),
     this.margin,
+    this.onTap,
   });
 
   final Widget child;
   final EdgeInsets padding;
   final EdgeInsets? margin;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      margin: margin,
+    return AppCard(
       padding: padding,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: EmployeeColors.border),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.035),
-            blurRadius: 14,
-            offset: const Offset(0, 7),
-          ),
-        ],
-      ),
+      margin: margin,
+      onTap: onTap,
       child: child,
     );
   }
@@ -206,41 +308,48 @@ class EmployeeActionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      margin: EdgeInsets.zero,
-      color: prominent ? EmployeeColors.primary : Colors.white,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: BorderSide(color: EmployeeColors.border.withValues(alpha: prominent ? 0 : 1)),
-      ),
-      child: ListTile(
-        contentPadding: const EdgeInsets.all(14),
-        leading: CircleAvatar(
-          backgroundColor:
-              prominent ? Colors.white24 : EmployeeColors.iconWell,
-          child: Icon(
-            icon,
-            color: prominent ? Colors.white : EmployeeColors.primary,
+    final brand = BrandColors.of(context);
+    return AppPressable(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(AppRadii.card),
+      child: Card(
+        margin: EdgeInsets.zero,
+        elevation: 0,
+        color: prominent ? brand.primary : Colors.white,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppRadii.card),
+          side: BorderSide(
+            color: EmployeeColors.border.withValues(alpha: prominent ? 0 : 1),
           ),
         ),
-        title: Text(
-          title,
-          style: TextStyle(
-            fontWeight: FontWeight.w700,
-            color: prominent ? Colors.white : EmployeeColors.textPrimary,
+        child: ListTile(
+          contentPadding: const EdgeInsets.all(14),
+          leading: CircleAvatar(
+            backgroundColor: prominent ? Colors.white24 : brand.iconWell,
+            child: Icon(
+              icon,
+              size: AppSizes.iconLg,
+              color: prominent ? Colors.white : brand.primary,
+            ),
+          ),
+          title: Text(
+            title,
+            style: TextStyle(
+              fontWeight: FontWeight.w700,
+              color: prominent ? Colors.white : EmployeeColors.textPrimary,
+            ),
+          ),
+          subtitle: Text(
+            subtitle,
+            style: TextStyle(
+              color: prominent ? Colors.white70 : EmployeeColors.textMuted,
+            ),
+          ),
+          trailing: Icon(
+            Icons.chevron_right_rounded,
+            color: prominent ? Colors.white : EmployeeColors.textMuted,
           ),
         ),
-        subtitle: Text(
-          subtitle,
-          style: TextStyle(
-            color: prominent ? Colors.white70 : EmployeeColors.textMuted,
-          ),
-        ),
-        trailing: Icon(
-          Icons.chevron_right_rounded,
-          color: prominent ? Colors.white : EmployeeColors.textMuted,
-        ),
-        onTap: onTap,
       ),
     );
   }
@@ -262,47 +371,16 @@ class EmployeePrimaryButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: double.infinity,
-      height: 48,
-      child: FilledButton(
-        onPressed: loading ? null : onPressed,
-        style: FilledButton.styleFrom(
-          backgroundColor: EmployeeColors.primaryDark,
-          foregroundColor: Colors.white,
-          disabledBackgroundColor:
-              EmployeeColors.primaryDark.withValues(alpha: 0.6),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
-          ),
-          elevation: 0,
-        ),
-        child: loading
-            ? const SizedBox(
-                height: 20,
-                width: 20,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: Colors.white,
-                ),
-              )
-            : Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    label,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 15,
-                    ),
-                  ),
-                  if (icon != null) ...[
-                    const SizedBox(width: 8),
-                    Icon(icon, size: 18),
-                  ],
-                ],
-              ),
-      ),
+    return AppPrimaryButton(
+      label: label,
+      onPressed: onPressed == null
+          ? null
+          : () {
+              appLightHaptic();
+              onPressed!();
+            },
+      loading: loading,
+      icon: icon,
     );
   }
 }
@@ -321,47 +399,25 @@ class EmployeeOutlinedButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: double.infinity,
-      height: 48,
-      child: OutlinedButton.icon(
-        onPressed: onPressed,
-        icon: Icon(icon ?? Icons.logout_rounded, size: 18),
-        label: Text(label),
-        style: OutlinedButton.styleFrom(
-          foregroundColor: EmployeeColors.textBody,
-          side: const BorderSide(color: EmployeeColors.border),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
-          ),
-        ),
-      ),
+    return AppOutlinedButton(
+      label: label,
+      onPressed: onPressed,
+      icon: icon,
     );
   }
 }
 
-InputDecoration employeeInputDecoration({
+InputDecoration employeeInputDecoration(
+  BuildContext context, {
   String? hintText,
   String? labelText,
   Widget? prefixIcon,
 }) {
-  final border = OutlineInputBorder(
-    borderRadius: BorderRadius.circular(12),
-    borderSide: const BorderSide(color: EmployeeColors.border),
-  );
-  return InputDecoration(
-    labelText: labelText,
+  return appBrandedInputDecoration(
+    context,
     hintText: hintText,
+    labelText: labelText,
     prefixIcon: prefixIcon,
-    filled: true,
-    fillColor: EmployeeColors.fieldFill,
-    isDense: true,
-    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-    border: border,
-    enabledBorder: border,
-    focusedBorder: border.copyWith(
-      borderSide: const BorderSide(color: EmployeeColors.primaryDark, width: 1.5),
-    ),
   );
 }
 
@@ -462,6 +518,8 @@ class EmployeeStatusChip extends StatelessWidget {
       return (label: 'Today', color: const Color(0xFF2563EB));
     case 'completed':
       return (label: 'Completed', color: const Color(0xFF16A34A));
+    case 'on_leave':
+      return (label: 'On Leave', color: const Color(0xFF2563EB));
     default:
       return (label: 'Upcoming', color: const Color(0xFF6B7280));
   }
@@ -478,7 +536,9 @@ String employeeAttendanceHistoryLabel(String status) {
     case 'in_progress':
       return 'In Progress';
     case 'incomplete':
-      return 'Incomplete';
+      return 'Incomplete Attendance – Clock-Out Missing';
+    case 'on_leave':
+      return 'On Leave';
     default:
       return titleCase(status);
   }
@@ -721,40 +781,11 @@ class EmployeeEmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final content = Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, size: 44, color: EmployeeColors.textMuted),
-        const SizedBox(height: 12),
-        Text(
-          title,
-          textAlign: TextAlign.center,
-          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w700,
-              ),
-        ),
-        const SizedBox(height: 6),
-        Text(
-          description,
-          textAlign: TextAlign.center,
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: EmployeeColors.textMuted,
-                height: 1.4,
-              ),
-        ),
-      ],
-    );
-
-    if (inCard) {
-      return EmployeeCard(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 28),
-        child: content,
-      );
-    }
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
-      child: Center(child: content),
+    return AppEmptyState(
+      title: title,
+      description: description,
+      icon: icon,
+      inCard: inCard,
     );
   }
 }
@@ -816,9 +847,7 @@ class EmployeeErrorState extends StatelessWidget {
   }
 }
 
-Widget loadingView() {
-  return const Center(child: CircularProgressIndicator());
-}
+Widget loadingView() => appLoadingView();
 
 Widget errorView(Object? error, {Future<void> Function()? onRetry}) {
   return EmployeeErrorState(
@@ -845,33 +874,35 @@ class BusinessLogo extends StatelessWidget {
       return const SizedBox.shrink();
     }
 
+    final size = math.min(height, width);
     final bytes = dataUriBytes(logoUrl);
+    Widget? image;
     if (bytes != null) {
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(8),
-        child: Image.memory(
-          bytes,
-          height: height,
-          width: width,
-          fit: BoxFit.contain,
-        ),
+      image = Image.memory(
+        bytes,
+        height: size,
+        width: size,
+        fit: BoxFit.cover,
+      );
+    } else if (logoUrl!.startsWith('http')) {
+      image = Image.network(
+        logoUrl!,
+        height: size,
+        width: size,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => const SizedBox.shrink(),
       );
     }
 
-    if (logoUrl!.startsWith('http')) {
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(8),
-        child: Image.network(
-          logoUrl!,
-          height: height,
-          width: width,
-          fit: BoxFit.contain,
-          errorBuilder: (_, __, ___) => const SizedBox.shrink(),
-        ),
-      );
-    }
+    if (image == null) return const SizedBox.shrink();
 
-    return const SizedBox.shrink();
+    return ClipOval(
+      child: SizedBox(
+        height: size,
+        width: size,
+        child: image,
+      ),
+    );
   }
 }
 
@@ -892,24 +923,77 @@ class EmployeeAvatar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bytes = dataUriBytes(imageUrl);
-    final color = backgroundColor ?? EmployeeColors.iconWell;
+    final color = backgroundColor ?? BrandColors.of(context).iconWell;
+    final networkUrl = (imageUrl != null &&
+            imageUrl!.trim().isNotEmpty &&
+            bytes == null &&
+            (imageUrl!.startsWith('http://') ||
+                imageUrl!.startsWith('https://')))
+        ? imageUrl!.trim()
+        : null;
 
-    return Container(
+    Widget imageChild;
+    if (bytes != null) {
+      imageChild = Image.memory(
+        bytes,
+        fit: BoxFit.cover,
+        alignment: Alignment.center,
+        gaplessPlayback: true,
+        filterQuality: FilterQuality.medium,
+      );
+    } else if (networkUrl != null) {
+      imageChild = Image.network(
+        networkUrl,
+        fit: BoxFit.cover,
+        alignment: Alignment.center,
+        filterQuality: FilterQuality.medium,
+        errorBuilder: (_, __, ___) => _AvatarPlaceholder(size: size),
+      );
+    } else {
+      imageChild = _AvatarPlaceholder(size: size);
+    }
+
+    return SizedBox(
       height: size,
       width: size,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: color,
-        border: Border.all(color: Colors.white, width: 2),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: bytes != null
-          ? Image.memory(bytes, fit: BoxFit.cover)
-          : Icon(
-              Icons.person_rounded,
-              size: size * 0.58,
-              color: EmployeeColors.textMuted,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          ClipOval(
+            child: ColoredBox(
+              color: color,
+              child: SizedBox.expand(child: imageChild),
             ),
+          ),
+          const IgnorePointer(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.fromBorderSide(
+                  BorderSide(color: Colors.white, width: 2),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AvatarPlaceholder extends StatelessWidget {
+  const _AvatarPlaceholder({required this.size});
+
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Icon(
+        Icons.person_rounded,
+        size: size * 0.58,
+        color: EmployeeColors.textMuted,
+      ),
     );
   }
 }
@@ -947,56 +1031,54 @@ class EmployeePerformanceChart extends StatelessWidget {
     );
 
     return EmployeeCard(
-      padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Performance Overview',
-            style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
-          ),
-          const SizedBox(height: 2),
-          const Text(
-            'Live attendance and shift activity.',
-            style: TextStyle(color: EmployeeColors.textMuted, fontSize: 12),
-          ),
-          const SizedBox(height: 12),
           SizedBox(
-            height: 120,
+            height: 128,
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: values
                   .map(
                     (entry) => Expanded(
                       child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        padding: const EdgeInsets.symmetric(horizontal: 3),
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.end,
                           children: [
                             Text(
                               '${entry.$2}',
                               style: const TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            const SizedBox(height: 3),
-                            Container(
-                              height: entry.$2 > 0
-                                  ? math.max(8, 72 * entry.$2 / maxValue)
-                                  : 0,
-                              decoration: BoxDecoration(
-                                color: entry.$3,
-                                borderRadius: const BorderRadius.vertical(
-                                  top: Radius.circular(4),
-                                ),
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                color: EmployeeColors.textPrimary,
                               ),
                             ),
                             const SizedBox(height: 4),
+                            Container(
+                              height: entry.$2 > 0
+                                  ? math.max(10, 78 * entry.$2 / maxValue)
+                                  : 4,
+                              decoration: BoxDecoration(
+                                color: entry.$2 > 0
+                                    ? entry.$3
+                                    : EmployeeColors.chipFill,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                            ),
+                            const SizedBox(height: 6),
                             Text(
                               entry.$1,
                               textAlign: TextAlign.center,
-                              style: const TextStyle(fontSize: 9),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 9,
+                                fontWeight: FontWeight.w600,
+                                color: EmployeeColors.textMuted,
+                                height: 1.15,
+                              ),
                             ),
                           ],
                         ),
@@ -1018,7 +1100,7 @@ class EmployeePerformanceChart extends StatelessWidget {
               ),
               child: const Text(
                 'No attendance records yet.\n'
-                'Charts will automatically update once you start clocking in.',
+                'Charts will update once you start clocking in.',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 12,
@@ -1052,11 +1134,3 @@ Color statusColor(String status) {
   return const Color(0xFF2563EB);
 }
 
-Color? _hexColor(String? value) {
-  if (value == null || value.isEmpty) return null;
-  final normalized = value.replaceFirst('#', '');
-  if (normalized.length != 6) return null;
-  final parsed = int.tryParse('FF$normalized', radix: 16);
-  if (parsed == null) return null;
-  return Color(parsed);
-}

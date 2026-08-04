@@ -39,10 +39,13 @@ function ScheduleCellView({ cells }: { cells: ScheduleCell }) {
                 : undefined
             }
           >
-            <p className="font-medium">{cell.shift_name}</p>
+            <p className="font-medium">
+              {cell.on_leave ? "On Leave" : cell.shift_name}
+            </p>
             <p>
-              {formatShiftTime(cell.shift_start_time)} –{" "}
-              {formatShiftTime(cell.shift_end_time)}
+              {cell.on_leave
+                ? cell.shift_name
+                : `${formatShiftTime(cell.shift_start_time)} – ${formatShiftTime(cell.shift_end_time)}`}
             </p>
           </div>
         );

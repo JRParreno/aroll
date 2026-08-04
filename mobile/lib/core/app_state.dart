@@ -107,6 +107,15 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Keep session branding in sync with profile/dashboard payloads so the
+  /// Material theme matches the owner's business-setup colors.
+  void updateBusinessBranding(BusinessBrandingSettings? branding) {
+    if (session == null || branding == null) return;
+    if (session!.branding == branding) return;
+    session = session!.copyWith(branding: branding);
+    notifyListeners();
+  }
+
   String? resolveEmployeeAvatarUrl(String? fallback) =>
       employeeProfileImageUrl ?? fallback;
 }

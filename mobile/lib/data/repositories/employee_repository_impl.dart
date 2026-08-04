@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:aroll_mobile/core/network/api_client.dart';
 import 'package:aroll_mobile/domain/entities/employee_portal.dart';
 import 'package:aroll_mobile/domain/entities/face_liveness.dart';
+import 'package:aroll_mobile/domain/entities/leave_request.dart';
 import 'package:aroll_mobile/domain/entities/user_session.dart';
 import 'package:aroll_mobile/domain/repositories/employee_repository.dart';
 import 'package:dio/dio.dart';
@@ -87,9 +88,19 @@ class EmployeeRepositoryImpl implements EmployeeRepository {
   }
 
   @override
-  Future<EmployeePayroll> getPayroll() async {
-    final res = await _api.dio.get<Map<String, dynamic>>('/employee/payroll');
+  Future<EmployeePayroll> getPayroll({
+    DateTime? asOf,
+    int historyLimit = 6,
+  }) async {
+    final res = await _api.dio.get<Map<String, dynamic>>(
+      '/employee/payroll',
+      queryParameters: {
+        if (asOf != null) 'as_of': _apiDate(asOf),
+        'history_limit': historyLimit,
+      },
+    );
     final rows = res.data!['rows'] as List<dynamic>? ?? [];
+    final history = res.data!['history'] as List<dynamic>? ?? [];
     return EmployeePayroll(
       summary: _payslipFromJson(
         res.data!['summary'] as Map<String, dynamic>,
@@ -98,12 +109,21 @@ class EmployeeRepositoryImpl implements EmployeeRepository {
       rows: rows
           .map((row) => _payrollRowFromJson(row as Map<String, dynamic>))
           .toList(),
+      history: history
+          .whereType<Map<String, dynamic>>()
+          .map(_payrollHistoryFromJson)
+          .toList(),
     );
   }
 
   @override
-  Future<EmployeePayslip> getPayslip() async {
-    final res = await _api.dio.get<Map<String, dynamic>>('/employee/payslip');
+  Future<EmployeePayslip> getPayslip({DateTime? asOf}) async {
+    final res = await _api.dio.get<Map<String, dynamic>>(
+      '/employee/payslip',
+      queryParameters: {
+        if (asOf != null) 'as_of': _apiDate(asOf),
+      },
+    );
     return _payslipFromJson(
       res.data!,
       businessName: res.data!['business_name'] as String? ?? 'Business',
@@ -181,8 +201,9 @@ class EmployeeRepositoryImpl implements EmployeeRepository {
     String? shiftAssignmentId,
   }) async {
     final form = FormData.fromMap({
-      'latitude': latitude,
-      'longitude': longitude,
+      // Full WGS84 precision as strings avoids multipart numeric truncation.
+      'latitude': latitude.toStringAsFixed(7),
+      'longitude': longitude.toStringAsFixed(7),
       'liveness_gesture': capture.gesture,
       if (shiftAssignmentId != null) 'shift_assignment_id': shiftAssignmentId,
       'file': await MultipartFile.fromFile(
@@ -204,8 +225,8 @@ class EmployeeRepositoryImpl implements EmployeeRepository {
     required FaceQuickCapture capture,
   }) async {
     final form = FormData.fromMap({
-      'latitude': latitude,
-      'longitude': longitude,
+      'latitude': latitude.toStringAsFixed(7),
+      'longitude': longitude.toStringAsFixed(7),
       'liveness_gesture': capture.gesture,
       'file': await MultipartFile.fromFile(
         capture.imagePath,
@@ -217,6 +238,116 @@ class EmployeeRepositoryImpl implements EmployeeRepository {
       data: form,
     );
     return _clockResultFromJson(res.data!);
+  }
+
+  @override
+  Future<List<LeaveRequestItem>> getLeaveRequests({String? status}) async {
+    final res = await _api.dio.get<List<dynamic>>(
+      '/employee/leave-requests',
+      queryParameters: {
+        if (status != null && status.isNotEmpty) 'status': status,
+      },
+    );
+    return (res.data ?? const [])
+        .map((item) => _leaveRequestFromJson(item as Map<String, dynamic>))
+        .toList();
+  }
+
+  @override
+  Future<LeaveRequestItem> getLeaveRequest(String requestId) async {
+    final res = await _api.dio.get<Map<String, dynamic>>(
+      '/employee/leave-requests/$requestId',
+    );
+    return _leaveRequestFromJson(res.data!);
+  }
+
+  @override
+  Future<LeaveRequestItem> createLeaveRequest({
+    required String leaveType,
+    required DateTime startDate,
+    required DateTime endDate,
+    required String reason,
+    String? supportingDocument,
+  }) async {
+    final res = await _api.dio.post<Map<String, dynamic>>(
+      '/employee/leave-requests',
+      data: {
+        'leave_type': leaveType,
+        'start_date': _apiDate(startDate),
+        'end_date': _apiDate(endDate),
+        'reason': reason,
+        if (supportingDocument != null)
+          'supporting_document': supportingDocument,
+      },
+    );
+    return _leaveRequestFromJson(res.data!);
+  }
+
+  @override
+  Future<LeaveRequestItem> updateLeaveRequest({
+    required String requestId,
+    required String leaveType,
+    required DateTime startDate,
+    required DateTime endDate,
+    required String reason,
+    String? supportingDocument,
+  }) async {
+    final res = await _api.dio.patch<Map<String, dynamic>>(
+      '/employee/leave-requests/$requestId',
+      data: {
+        'leave_type': leaveType,
+        'start_date': _apiDate(startDate),
+        'end_date': _apiDate(endDate),
+        'reason': reason,
+        if (supportingDocument != null)
+          'supporting_document': supportingDocument,
+      },
+    );
+    return _leaveRequestFromJson(res.data!);
+  }
+
+  @override
+  Future<LeaveRequestItem> cancelLeaveRequest(String requestId) async {
+    final res = await _api.dio.post<Map<String, dynamic>>(
+      '/employee/leave-requests/$requestId/cancel',
+    );
+    return _leaveRequestFromJson(res.data!);
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> notifications({
+    bool unreadOnly = false,
+    int limit = 50,
+  }) async {
+    final res = await _api.dio.get<List<dynamic>>(
+      '/notifications',
+      queryParameters: {
+        if (unreadOnly) 'unread_only': true,
+        'limit': limit,
+      },
+    );
+    return (res.data ?? [])
+        .whereType<Map<String, dynamic>>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .toList();
+  }
+
+  @override
+  Future<int> unreadNotificationCount() async {
+    final res = await _api.dio.get<Map<String, dynamic>>(
+      '/notifications/unread-count',
+    );
+    return (res.data?['count'] as num?)?.toInt() ?? 0;
+  }
+
+  @override
+  Future<void> markNotificationRead(String notificationId) async {
+    await _api.dio.post('/notifications/$notificationId/read');
+  }
+
+  @override
+  Future<void> markAllNotificationsRead() async {
+    await _api.dio.post('/notifications/read-all');
   }
 }
 
@@ -230,12 +361,14 @@ FaceStatus _faceStatusFromJson(Map<String, dynamic> json) {
     faceRegisteredAt: json['face_registered_at'] != null
         ? DateTime.tryParse(json['face_registered_at'] as String)
         : null,
-    threshold: (json['threshold'] as num?)?.toDouble() ?? 0.78,
+    threshold: (json['threshold'] as num?)?.toDouble() ?? 0.75,
   );
 }
 
 EmployeeDashboard _dashboardFromJson(Map<String, dynamic> json) {
   final schedules = json['upcoming_schedules'] as List<dynamic>? ?? [];
+  final reminderJson =
+      json['incomplete_attendance_reminder'] as Map<String, dynamic>?;
   return EmployeeDashboard(
     profile: _profileFromJson(json['profile'] as Map<String, dynamic>),
     todaySchedule: json['today_schedule'] is Map<String, dynamic>
@@ -255,6 +388,19 @@ EmployeeDashboard _dashboardFromJson(Map<String, dynamic> json) {
     ),
     performance:
         _performanceFromJson(json['performance'] as Map<String, dynamic>),
+    incompleteAttendanceReminder: reminderJson == null
+        ? null
+        : IncompleteAttendanceReminder(
+            show: reminderJson['show'] == true,
+            message: reminderJson['message'] as String? ??
+                'You forgot to clock out for your previous shift.\n'
+                    'Please submit a correction request to complete your attendance.',
+            count: (reminderJson['count'] as num?)?.toInt() ?? 0,
+            attendanceRecordId:
+                reminderJson['attendance_record_id'] as String?,
+            shiftAssignmentId:
+                reminderJson['shift_assignment_id'] as String?,
+          ),
   );
 }
 
@@ -381,16 +527,28 @@ EmployeePayslip _payslipFromJson(
   required String businessName,
 }) {
   final restDayRows = json['rest_day_records'] as List<dynamic>? ?? const [];
+  final periodEnd = _requiredDate(json['period_end'] as String?);
+  final adjustments = _payrollAdjustmentsFromJson(json['payroll_adjustments']);
   return EmployeePayslip(
     businessName: businessName,
-    employeeId: json['employee_id'] as String,
+    employeeId: json['employee_id'] as String? ?? '',
     employeeName: json['employee_name'] as String? ?? 'Employee',
     positionTitle: json['position_title'] as String?,
     employmentType: json['employment_type'] as String? ?? 'full_time',
     periodStart: _requiredDate(json['period_start'] as String?),
-    periodEnd: _requiredDate(json['period_end'] as String?),
+    periodEnd: periodEnd,
+    payDate: _date(json['pay_date'] as String?) ?? periodEnd,
     dailyRate: _double(json['daily_rate']),
+    payBasis: json['pay_basis'] as String? ?? 'daily',
+    hourlyRate: _nullableDouble(
+      json['hourly_rate'] ?? json['hourly_rate_configured'],
+    ),
+    monthlySalary: _nullableDouble(
+      json['monthly_salary'] ?? json['monthly_salary_configured'],
+    ),
     workedDays: _int(json['worked_days']),
+    regularPay: _double(json['regular_pay']),
+    hoursWorked: _double(json['hours_worked']),
     overtimeHours: _double(json['overtime_hours']),
     overtimePay: _double(json['overtime_pay']),
     holidayPay: _double(json['holiday_pay']),
@@ -403,10 +561,70 @@ EmployeePayslip _payslipFromJson(
         .map(_restDayRecordFromJson)
         .toList(),
     deductions: _double(json['deductions']),
+    lateDeductions: _double(json['late_deductions']),
+    undertimeDeductions: _double(json['undertime_deductions']),
     absentDays: _int(json['absent_days']),
     grossPay: _double(json['gross_pay']),
     netPay: _double(json['net_pay']),
+    baseNetPay: json['base_net_pay'] == null
+        ? null
+        : _double(json['base_net_pay']),
+    finalNetPay: json['final_net_pay'] == null
+        ? null
+        : _double(json['final_net_pay']),
+    payrollAdjustments: adjustments,
+    payrollAdjustmentsTotal: _double(json['payroll_adjustments_total']),
+    payrollStatus: json['payroll_status'] as String? ?? 'current',
   );
+}
+
+EmployeePayrollHistoryItem _payrollHistoryFromJson(Map<String, dynamic> json) {
+  final periodEnd = _requiredDate(json['period_end'] as String?);
+  final adjustments = _payrollAdjustmentsFromJson(json['payroll_adjustments']);
+  return EmployeePayrollHistoryItem(
+    periodStart: _requiredDate(json['period_start'] as String?),
+    periodEnd: periodEnd,
+    payDate: _date(json['pay_date'] as String?) ?? periodEnd,
+    dailyRate: _double(json['daily_rate']),
+    payBasis: json['pay_basis'] as String? ?? 'daily',
+    hourlyRate: _nullableDouble(
+      json['hourly_rate'] ?? json['hourly_rate_configured'],
+    ),
+    monthlySalary: _nullableDouble(
+      json['monthly_salary'] ?? json['monthly_salary_configured'],
+    ),
+    workedDays: _double(json['worked_days']),
+    regularPay: _double(json['regular_pay']),
+    hoursWorked: _double(json['hours_worked']),
+    lateDeductions: _double(json['late_deductions']),
+    undertimeDeductions: _double(json['undertime_deductions']),
+    overtimePay: _double(json['overtime_pay']),
+    overtimeHours: _double(json['overtime_hours']),
+    grossPay: _double(json['gross_pay']),
+    deductions: _double(json['deductions']),
+    netPay: _double(json['net_pay']),
+    finalNetPay: json['final_net_pay'] == null
+        ? null
+        : _double(json['final_net_pay']),
+    payrollAdjustments: adjustments,
+    payrollAdjustmentsTotal: _double(json['payroll_adjustments_total']),
+    payrollStatus: json['payroll_status'] as String? ?? 'completed',
+  );
+}
+
+List<EmployeePayrollAdjustment> _payrollAdjustmentsFromJson(Object? raw) {
+  final rows = raw as List<dynamic>? ?? const [];
+  return rows.whereType<Map<String, dynamic>>().map((json) {
+    return EmployeePayrollAdjustment(
+      id: json['id'] as String? ?? '',
+      kind: json['kind'] as String? ?? 'deduction',
+      typeKey: json['type_key'] as String? ?? 'other',
+      displayName: json['display_name'] as String? ?? 'Adjustment',
+      description: json['description'] as String?,
+      amount: _double(json['amount']),
+      createdAt: _dateTime(json['created_at'] as String?),
+    );
+  }).toList();
 }
 
 EmployeeRestDayRecord _restDayRecordFromJson(Map<String, dynamic> json) {
@@ -471,6 +689,13 @@ double _double(Object? value) {
   return double.tryParse('$value') ?? 0;
 }
 
+double? _nullableDouble(Object? value) {
+  if (value == null) return null;
+  if (value is double) return value;
+  if (value is num) return value.toDouble();
+  return double.tryParse('$value');
+}
+
 EmployeeWorksite _worksiteFromJson(Map<String, dynamic> json) {
   return EmployeeWorksite(
     label: json['label'] as String? ?? 'Work site',
@@ -493,5 +718,48 @@ AttendanceClockResult _clockResultFromJson(Map<String, dynamic> json) {
     allowedRadiusM: _double(geofence['allowed_radius_m']),
     shiftName: json['shift_name'] as String?,
     message: json['message'] as String? ?? 'Attendance recorded.',
+  );
+}
+
+LeaveRequestPreviousVersion? _leaveRequestPreviousFromJson(Object? raw) {
+  if (raw is! Map<String, dynamic>) return null;
+  return LeaveRequestPreviousVersion(
+    leaveType: '${raw['leave_type']}',
+    leaveTypeLabel: raw['leave_type_label'] as String? ??
+        '${raw['leave_type']}',
+    startDate: DateTime.parse('${raw['start_date']}'),
+    endDate: DateTime.parse('${raw['end_date']}'),
+    leaveDays: _int(raw['leave_days']),
+    reason: raw['reason'] as String? ?? '',
+    hasSupportingDocument: raw['has_supporting_document'] as bool? ?? false,
+    supportingDocument: raw['supporting_document'] as String?,
+    isPaid: raw['is_paid'] as bool? ?? true,
+  );
+}
+
+LeaveRequestItem _leaveRequestFromJson(Map<String, dynamic> json) {
+  return LeaveRequestItem(
+    id: '${json['id']}',
+    employeeId: '${json['employee_id']}',
+    employeeName: json['employee_name'] as String?,
+    employeePosition: json['employee_position'] as String?,
+    leaveType: '${json['leave_type']}',
+    leaveTypeLabel: json['leave_type_label'] as String? ??
+        '${json['leave_type']}',
+    startDate: DateTime.parse('${json['start_date']}'),
+    endDate: DateTime.parse('${json['end_date']}'),
+    leaveDays: _int(json['leave_days']),
+    reason: json['reason'] as String? ?? '',
+    status: '${json['status']}',
+    isPaid: json['is_paid'] as bool? ?? true,
+    policyIsPaid: json['policy_is_paid'] as bool?,
+    isPaidOverridden: json['is_paid_overridden'] as bool? ?? false,
+    hasSupportingDocument: json['has_supporting_document'] as bool? ?? false,
+    supportingDocument: json['supporting_document'] as String?,
+    ownerRemarks: json['owner_remarks'] as String?,
+    reviewedAt: _dateTime(json['reviewed_at'] as String?),
+    createdAt: _dateTime(json['created_at'] as String?) ?? DateTime.now(),
+    hasPendingChanges: json['has_pending_changes'] as bool? ?? false,
+    previousRequest: _leaveRequestPreviousFromJson(json['previous_request']),
   );
 }

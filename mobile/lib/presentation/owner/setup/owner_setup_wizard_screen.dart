@@ -5,12 +5,14 @@ import 'package:aroll_mobile/core/location/business_location_geocoding.dart';
 import 'package:aroll_mobile/core/location/employee_location_service.dart';
 import 'package:aroll_mobile/data/repositories/owner_repository.dart';
 import 'package:aroll_mobile/presentation/owner/setup/holiday_setup_section.dart';
+import 'package:aroll_mobile/presentation/owner/setup/setup_ui.dart';
 import 'package:aroll_mobile/presentation/owner/setup/setup_wizard_constants.dart';
 import 'package:aroll_mobile/presentation/owner/widgets/business_location_map_picker.dart';
+import 'package:aroll_mobile/presentation/shared/app_ui.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:latlong2/latlong.dart';
 
 class OwnerSetupWizardScreen extends StatefulWidget {
   const OwnerSetupWizardScreen({super.key, this.initialStep = -1});
@@ -22,10 +24,8 @@ class OwnerSetupWizardScreen extends StatefulWidget {
 }
 
 class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
-  static const _sectionGap = 8.0;
-  static const _fieldGap = 8.0;
-  static const _cardPadding = 12.0;
-  static const _stepRowHeight = 38.0;
+  static const _fieldGap = SetupUi.fieldGap;
+  static const _cardPadding = 16.0;
 
   final _repo = sl<OwnerRepository>();
 
@@ -53,19 +53,24 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
   String _payPeriodType = 'monthly';
   DateTime? _nextPaydayDate;
   bool _autoResetPayrollCycle = true;
+  String _holidayRulesMode = 'philippine_labor';
   bool _payrollLateDeductionEnabled = true;
   final _payrollLateDeductionRate = TextEditingController(text: '1');
   bool _payrollOvertimeEnabled = true;
   final _payrollOvertimeRate = TextEditingController(text: '1');
+  bool _payrollLateOtBalancing = false;
 
   final _attEarlyClockIn = TextEditingController(text: '15');
   final _attOnTimeGrace = TextEditingController(text: '10');
   final _attHalfDay = TextEditingController(text: '120');
   final _attAbsent = TextEditingController(text: '240');
+  final _attAbsentPercent = TextEditingController(text: '25');
+  final _attHalfDayPercent = TextEditingController(text: '50');
   bool _attEarlyOutDeductionEnabled = false;
   final _attEarlyOutDeductionRate = TextEditingController(text: '2');
   bool _attOvertimeEnabled = true;
   final _attOvertimeMinimum = TextEditingController(text: '30');
+  final _attMaximumOvertime = TextEditingController(text: '180');
   String _attMissingClockOutPolicy = 'auto_clock_out';
   bool _attAttendanceBasedSalaryEnabled = true;
 
@@ -102,8 +107,11 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
     _attOnTimeGrace.dispose();
     _attHalfDay.dispose();
     _attAbsent.dispose();
+    _attAbsentPercent.dispose();
+    _attHalfDayPercent.dispose();
     _attEarlyOutDeductionRate.dispose();
     _attOvertimeMinimum.dispose();
+    _attMaximumOvertime.dispose();
     _restPremiumPercent.dispose();
     _locationLabel.dispose();
     _locationAddress.dispose();
@@ -150,7 +158,7 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
       if (!mounted) return;
       setState(() {
         _loading = false;
-        _loadError = 'Unable to load setup wizard.';
+        _loadError = 'Unable to load setup. Please try again.';
       });
     }
   }
@@ -161,11 +169,17 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
     _nextPaydayDate =
         payday == null || payday.isEmpty ? null : DateTime.tryParse(payday);
     _autoResetPayrollCycle = payroll['auto_reset_payroll_cycle'] != false;
+    _holidayRulesMode =
+        payroll['holiday_rules_mode'] == 'custom_company'
+            ? 'custom_company'
+            : 'philippine_labor';
     _payrollLateDeductionEnabled = payroll['late_deduction_enabled'] != false;
     _payrollLateDeductionRate.text =
         '${payroll['late_deduction_per_minute'] ?? 1}';
     _payrollOvertimeEnabled = payroll['overtime_enabled'] != false;
     _payrollOvertimeRate.text = '${payroll['overtime_per_minute'] ?? 1}';
+    _payrollLateOtBalancing =
+        payroll['enable_late_overtime_balancing'] == true;
   }
 
   void _applyAttendance(Map<String, dynamic> attendance) {
@@ -173,6 +187,9 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
     _attOnTimeGrace.text = '${attendance['on_time_grace_minutes'] ?? 10}';
     _attHalfDay.text = '${attendance['half_day_threshold_minutes'] ?? 120}';
     _attAbsent.text = '${attendance['absent_threshold_minutes'] ?? 240}';
+    _attAbsentPercent.text = '${attendance['absent_threshold_percent'] ?? 25}';
+    _attHalfDayPercent.text =
+        '${attendance['half_day_threshold_percent'] ?? 50}';
     _attEarlyOutDeductionEnabled =
         attendance['early_out_deduction_enabled'] == true;
     _attEarlyOutDeductionRate.text =
@@ -180,6 +197,8 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
     _attOvertimeEnabled = attendance['overtime_enabled'] != false;
     _attOvertimeMinimum.text =
         '${attendance['overtime_minimum_minutes'] ?? 30}';
+    _attMaximumOvertime.text =
+        '${attendance['maximum_overtime_minutes'] ?? 180}';
     _attMissingClockOutPolicy =
         '${attendance['missing_clock_out_policy'] ?? 'auto_clock_out'}';
     _attAttendanceBasedSalaryEnabled =
@@ -226,8 +245,8 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
       _locationAddress.text.trim().length >= 5 &&
       _locationLatitude.text.trim().isNotEmpty &&
       _locationLongitude.text.trim().isNotEmpty &&
-      _locationGeofence >= 20 &&
-      _locationGeofence <= 200;
+      _locationGeofence >= kMinGeofenceRadiusM &&
+      _locationGeofence <= kMaxGeofenceRadiusM;
 
   bool _currentStepCanContinue() {
     switch (_step) {
@@ -264,12 +283,12 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
         employeeCapacity: int.parse(_shiftCapacity.text),
       );
       _shiftName.clear();
-      _showSnack('Shift added');
+      _showSnack('Work shift added');
       _shifts = await _repo.shifts();
       await _refreshSetupStatus();
       return true;
     } catch (_) {
-      _showSnack('Failed to add shift');
+      _showSnack('Could not add work shift');
       return false;
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -283,7 +302,7 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
       _shifts = await _repo.shifts();
       await _refreshSetupStatus();
     } catch (_) {
-      _showSnack('Failed to remove shift');
+      _showSnack('Could not remove work shift');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -301,17 +320,17 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
       _positionTitle.clear();
       _positionRate.clear();
       _positionDescription.clear();
-      _showSnack('Position added');
+      _showSnack('Job role added');
       final positions = await _repo.positions();
       await _refreshSetupStatus();
       if (!mounted) return false;
       setState(() => _positions = positions);
       return true;
     } on DioException catch (e) {
-      _showSnack(_errorMessageFromDio(e, fallback: 'Failed to add position'));
+      _showSnack(_errorMessageFromDio(e, fallback: 'Could not add job role'));
       return false;
     } catch (_) {
-      _showSnack('Failed to add position');
+      _showSnack('Could not add job role');
       return false;
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -325,7 +344,7 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
       _positions = await _repo.positions();
       await _refreshSetupStatus();
     } catch (_) {
-      _showSnack('Failed to remove position');
+      _showSnack('Could not remove job role');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -340,20 +359,22 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
         'next_payday_date':
             _nextPaydayDate == null ? null : formatApiDate(_nextPaydayDate!),
         'auto_reset_payroll_cycle': _autoResetPayrollCycle,
+        'holiday_rules_mode': _holidayRulesMode,
         'late_deduction_enabled': _payrollLateDeductionEnabled,
         'late_deduction_per_minute':
             double.parse(_payrollLateDeductionRate.text),
         'overtime_enabled': _payrollOvertimeEnabled,
         'overtime_per_minute': double.parse(_payrollOvertimeRate.text),
+        'enable_late_overtime_balancing': _payrollLateOtBalancing,
       });
       await _repo.updateRestDayPolicy({
         'rest_day_premium_percent': double.parse(_restPremiumPercent.text),
       });
-      _showSnack('Payroll configuration saved');
+      _showSnack('Pay settings saved');
       await _refreshSetupStatus();
       return true;
     } catch (_) {
-      _showSnack('Failed to save payroll configuration');
+      _showSnack('Could not save pay settings');
       return false;
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -368,18 +389,21 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
         'on_time_grace_minutes': int.parse(_attOnTimeGrace.text),
         'half_day_threshold_minutes': int.parse(_attHalfDay.text),
         'absent_threshold_minutes': int.parse(_attAbsent.text),
+        'absent_threshold_percent': int.parse(_attAbsentPercent.text),
+        'half_day_threshold_percent': int.parse(_attHalfDayPercent.text),
         'early_out_deduction_enabled': _attEarlyOutDeductionEnabled,
         'early_out_deduction_per_minute':
             double.parse(_attEarlyOutDeductionRate.text),
         'overtime_enabled': _attOvertimeEnabled,
         'overtime_minimum_minutes': int.parse(_attOvertimeMinimum.text),
+        'maximum_overtime_minutes': int.parse(_attMaximumOvertime.text),
         'missing_clock_out_policy': _attMissingClockOutPolicy,
         'attendance_based_salary_enabled': _attAttendanceBasedSalaryEnabled,
       });
-      _showSnack('Attendance policy saved');
+      _showSnack('Clock-in settings saved');
       await _refreshSetupStatus();
     } catch (_) {
-      _showSnack('Failed to save attendance policy');
+      _showSnack('Could not save clock-in settings');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -396,11 +420,11 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
         'longitude': double.parse(_locationLongitude.text.trim()),
         'geofence_radius_m': _locationGeofence.round(),
       });
-      _showSnack('Business location saved');
+      _showSnack('Workplace location saved');
       await _refreshSetupStatus();
       return true;
     } catch (_) {
-      _showSnack('Failed to save location');
+      _showSnack('Could not save workplace location');
       return false;
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -458,14 +482,14 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
         parseSetupDateTime(status['setup_completed_at']),
       );
       if (!mounted) return;
-      _showSnack('Business setup marked complete');
+      _showSnack('Setup finished');
       context.go('/owner/home');
     } on DioException catch (e) {
       final missing = _missingItemsFromError(e);
-      _showSnack(missing ?? 'Complete all required setup steps first');
+      _showSnack(missing ?? 'Please finish the required setup steps first');
       await _refreshSetupStatus();
     } catch (_) {
-      _showSnack('Complete all required setup steps first');
+      _showSnack('Please finish the required setup steps first');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -523,7 +547,7 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
         saved = await _saveLocation();
       }
       if (!mounted || !saved) {
-        if (!saved) _showSnack('Save this step before continuing.');
+        if (!saved) _showSnack('Please save this step before continuing.');
         return;
       }
       setState(() => _step = clampSetupStep(_step + 1));
@@ -579,12 +603,12 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF7F8FA),
+      backgroundColor: SetupUi.scaffold,
       appBar: AppBar(
-        backgroundColor: const Color(0xFFF7F8FA),
+        backgroundColor: SetupUi.scaffold,
         elevation: 0,
         scrolledUnderElevation: 0,
-        toolbarHeight: 52,
+        toolbarHeight: 56,
         leading: IconButton(
           tooltip: 'Back',
           onPressed: _handleBack,
@@ -592,34 +616,42 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
         ),
         title: Text(
           setupWizardScreenTitle(_step),
-          style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 18),
+          style: const TextStyle(
+            fontWeight: FontWeight.w800,
+            fontSize: 18,
+            color: AppColors.textPrimary,
+          ),
         ),
       ),
       body: _loading
-          ? const Center(child: CircularProgressIndicator())
+          ? const Center(child: CircularProgressIndicator(color: SetupUi.navy))
           : _loadError != null
               ? Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(_loadError!),
-                      const SizedBox(height: 12),
-                      FilledButton(
-                        onPressed: _loadAll,
-                        child: const Text('Retry'),
-                      ),
-                    ],
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        SetupInfoBanner(_loadError!, tone: SetupBannerTone.danger),
+                        const SizedBox(height: 14),
+                        FilledButton(
+                          onPressed: _loadAll,
+                          style: SetupUi.primaryButton,
+                          child: const Text('Retry'),
+                        ),
+                      ],
+                    ),
                   ),
                 )
               : Column(
                   children: [
                     Expanded(
                       child: ListView(
-                        padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
                         children: [
                           if (_step < 0) ...[
                             _buildTitleSection(),
-                            const SizedBox(height: 12),
+                            const SizedBox(height: 14),
                             _buildSetupMenu(),
                           ] else
                             _buildStepCard(),
@@ -632,78 +664,30 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
     );
   }
 
-  InputDecoration _compactInput(String label, {String? hint}) {
-    return InputDecoration(
-      isDense: true,
-      labelText: label,
-      hintText: hint,
-      labelStyle: const TextStyle(fontSize: 12),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
-      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(8),
-        borderSide: BorderSide(color: Colors.grey.shade300),
-      ),
-    );
-  }
+  InputDecoration _compactInput(String label, {String? hint}) =>
+      SetupUi.input(label, hint: hint);
 
-  ButtonStyle get _primaryButtonStyle => FilledButton.styleFrom(
-        backgroundColor: const Color(0xFF1E3A5F),
-        minimumSize: const Size(0, 40),
-        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 14),
-        textStyle: const TextStyle(fontSize: 14),
-      );
+  ButtonStyle get _primaryButtonStyle => SetupUi.primaryButton;
 
   Widget _compactSwitch({
     required String title,
     required bool value,
     required ValueChanged<bool> onChanged,
   }) {
-    return SwitchListTile(
-      contentPadding: EdgeInsets.zero,
-      dense: true,
-      visualDensity: VisualDensity.compact,
-      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-      title: Text(title, style: const TextStyle(fontSize: 13)),
+    return SetupCompactSwitch(
+      title: title,
       value: value,
       onChanged: onChanged,
     );
   }
 
-  Widget _compactPanel(
-      {required String title, required List<Widget> children}) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFAFBFC),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFE5E7EB)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            title,
-            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
-          ),
-          const SizedBox(height: 4),
-          ...children,
-        ],
-      ),
-    );
-  }
-
   Widget _buildTitleSection() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 2),
-      child: Text(
-        'Choose a setup section to configure. Tap a card to open that area.',
-        style: TextStyle(
-          fontSize: 13,
-          height: 1.4,
-          color: Colors.grey.shade600,
-        ),
+    return const SetupSurfaceCard(
+      child: SetupSectionHeader(
+        icon: Icons.storefront_outlined,
+        title: 'Business Setup',
+        subtitle:
+            'Choose a section below to configure. Each card opens its settings.',
       ),
     );
   }
@@ -712,16 +696,16 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
     return Column(
       children: [
         for (var i = 0; i < setupMenuEntries.length; i++) ...[
-          if (i > 0) const SizedBox(height: 8),
+          if (i > 0) const SizedBox(height: 10),
           _buildSetupMenuCard(setupMenuEntries[i]),
         ],
         if (canCompleteSetup(_setupStatus)) ...[
-          const SizedBox(height: 8),
+          const SizedBox(height: 10),
           _buildSetupMenuCard(
             const SetupMenuEntry(
-              label: 'Review & Complete',
+              label: 'Review Your Setup',
               subtitle:
-                  'Check required steps and mark your business setup complete.',
+                  'Check the required steps and finish setting up your business.',
               stepIndex: 7,
               statusKey: 'review',
               icon: Icons.task_alt_outlined,
@@ -733,181 +717,51 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
   }
 
   Widget _buildSetupMenuCard(SetupMenuEntry entry) {
-    final complete = entry.statusKey == null
-        ? false
-        : isSetupStepComplete(_setupStatus, entry.statusKey!);
+    final hasStatus = entry.statusKey != null;
+    final complete = hasStatus &&
+        (entry.statusKey == 'review'
+            ? canCompleteSetup(_setupStatus)
+            : isSetupStepComplete(_setupStatus, entry.statusKey!));
 
-    return Material(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(12),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        onTap: () => setState(() => _step = entry.stepIndex),
-        child: Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: const Color(0xFFE5E7EB)),
-          ),
-          child: Row(
-            children: [
-              CircleAvatar(
-                radius: 18,
-                backgroundColor: const Color(0xFFE7EEF5),
-                child:
-                    Icon(entry.icon, size: 18, color: const Color(0xFF1E3A5F)),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      entry.label,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w700,
-                        fontSize: 15,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      entry.subtitle,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 12,
-                        height: 1.35,
-                        color: Colors.grey.shade600,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              if (entry.statusKey != null)
-                Icon(
-                  complete
-                      ? Icons.check_circle_rounded
-                      : Icons.chevron_right_rounded,
-                  size: 20,
-                  color: complete ? Colors.green : const Color(0xFF9CA3AF),
-                )
-              else
-                const Icon(
-                  Icons.chevron_right_rounded,
-                  size: 20,
-                  color: Color(0xFF9CA3AF),
-                ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildStepNavRow(int startIndex) {
-    return Row(
-      children: [
-        for (var offset = 0; offset < 4; offset++) ...[
-          if (offset > 0) const SizedBox(width: 6),
-          Expanded(child: _buildStepChip(startIndex + offset)),
-        ],
-      ],
-    );
-  }
-
-  Widget _buildStepChip(int index) {
-    final label = setupWizardStepLabels[index];
-    final key = setupWizardStepKeys[index];
-    final complete = isSetupStepComplete(_setupStatus, key);
-    final active = index == _step;
-
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: () => setState(() => _step = index),
-        borderRadius: BorderRadius.circular(8),
-        child: Container(
-          height: _stepRowHeight,
-          padding: const EdgeInsets.symmetric(horizontal: 6),
-          alignment: Alignment.centerLeft,
-          decoration: BoxDecoration(
-            color: active ? const Color(0xFF1E3A5F) : const Color(0xFFFAFBFC),
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(
-              color: active ? const Color(0xFF1E3A5F) : const Color(0xFFE5E7EB),
-            ),
-          ),
-          child: Row(
-            children: [
-              Icon(
-                complete
-                    ? Icons.check_circle_rounded
-                    : Icons.radio_button_unchecked_rounded,
-                size: 13,
-                color: active
-                    ? Colors.white
-                    : complete
-                        ? Colors.green
-                        : const Color(0xFF9CA3AF),
-              ),
-              const SizedBox(width: 4),
-              Expanded(
-                child: Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 10.5,
-                    color: active ? Colors.white : const Color(0xFF374151),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildStepNav() {
-    return Card(
-      margin: EdgeInsets.zero,
-      child: Padding(
-        padding: const EdgeInsets.all(6),
-        child: Column(
-          children: [
-            SizedBox(height: _stepRowHeight, child: _buildStepNavRow(0)),
-            const SizedBox(height: 6),
-            SizedBox(height: _stepRowHeight, child: _buildStepNavRow(4)),
-          ],
-        ),
-      ),
+    return SetupMenuCard(
+      label: entry.label,
+      subtitle: entry.subtitle,
+      icon: entry.icon,
+      complete: complete,
+      showStatus: hasStatus && entry.statusKey != 'review',
+      onTap: () => setState(() => _step = entry.stepIndex),
     );
   }
 
   Widget _buildStepCard() {
-    return Card(
-      margin: EdgeInsets.zero,
-      child: Padding(
-        padding: const EdgeInsets.all(_cardPadding),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              setupWizardStepHelp(_step),
-              style: TextStyle(
-                fontSize: 12,
-                height: 1.35,
-                color: Colors.grey.shade600,
-              ),
-            ),
-            const SizedBox(height: 10),
-            _buildStepContent(),
-          ],
+    final icon = switch (_step) {
+      setupWizardBusinessInfoStep => Icons.business_rounded,
+      0 => Icons.schedule_rounded,
+      1 => Icons.badge_outlined,
+      2 => Icons.payments_outlined,
+      3 => Icons.fact_check_outlined,
+      4 => Icons.event_outlined,
+      5 => Icons.location_on_outlined,
+      6 => Icons.task_alt_outlined,
+      _ => Icons.settings_outlined,
+    };
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SetupSurfaceCard(
+          child: SetupSectionHeader(
+            icon: icon,
+            title: setupWizardScreenTitle(_step),
+            subtitle: setupWizardStepHelp(_step),
+          ),
         ),
-      ),
+        const SizedBox(height: 12),
+        SetupSurfaceCard(
+          padding: const EdgeInsets.all(_cardPadding),
+          child: _buildStepContent(),
+        ),
+      ],
     );
   }
 
@@ -938,118 +792,106 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        TextField(
-          controller: _shiftName,
-          style: const TextStyle(fontSize: 14),
-          decoration: _compactInput('Shift Name', hint: 'Morning Shift'),
-        ),
-        const SizedBox(height: _fieldGap),
-        DropdownButtonFormField<String>(
-          initialValue: _shiftType,
-          isDense: true,
-          decoration: _compactInput('Shift Type'),
-          items: const [
-            DropdownMenuItem(value: 'morning', child: Text('Morning')),
-            DropdownMenuItem(value: 'afternoon', child: Text('Afternoon')),
-            DropdownMenuItem(value: 'evening', child: Text('Evening')),
-            DropdownMenuItem(value: 'night', child: Text('Night')),
-          ],
-          onChanged: (value) {
-            if (value != null) setState(() => _shiftType = value);
-          },
-        ),
-        const SizedBox(height: _fieldGap),
-        Row(
+        SetupPanel(
+          title: 'Add a work shift',
+          icon: Icons.schedule_rounded,
+          subtitle: 'Create the shift times your team usually follows.',
           children: [
-            Expanded(
-              child: OutlinedButton(
-                style: OutlinedButton.styleFrom(
-                  visualDensity: VisualDensity.compact,
-                  padding: const EdgeInsets.symmetric(vertical: 10),
-                ),
-                onPressed: () => _pickTime(
-                  initial: _shiftStart,
-                  onPicked: (value) => setState(() => _shiftStart = value),
-                ),
-                child: Text(
-                  'Start ${formatApiTime(_shiftStart)}',
-                  style: const TextStyle(fontSize: 13),
-                ),
-              ),
+            TextField(
+              controller: _shiftName,
+              style: const TextStyle(fontSize: 14),
+              decoration: _compactInput('Shift name', hint: 'Morning Shift'),
             ),
-            const SizedBox(width: 6),
-            Expanded(
-              child: OutlinedButton(
-                style: OutlinedButton.styleFrom(
-                  visualDensity: VisualDensity.compact,
-                  padding: const EdgeInsets.symmetric(vertical: 10),
+            const SizedBox(height: _fieldGap),
+            DropdownButtonFormField<String>(
+              initialValue: _shiftType,
+              isDense: true,
+              decoration: _compactInput('Shift type'),
+              items: const [
+                DropdownMenuItem(value: 'morning', child: Text('Morning')),
+                DropdownMenuItem(value: 'afternoon', child: Text('Afternoon')),
+                DropdownMenuItem(value: 'evening', child: Text('Evening')),
+                DropdownMenuItem(value: 'night', child: Text('Night')),
+              ],
+              onChanged: (value) {
+                if (value != null) setState(() => _shiftType = value);
+              },
+            ),
+            const SizedBox(height: _fieldGap),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    style: SetupUi.secondaryButton,
+                    onPressed: () => _pickTime(
+                      initial: _shiftStart,
+                      onPicked: (value) => setState(() => _shiftStart = value),
+                    ),
+                    child: Text('Start ${formatApiTime(_shiftStart)}'),
+                  ),
                 ),
-                onPressed: () => _pickTime(
-                  initial: _shiftEnd,
-                  onPicked: (value) => setState(() => _shiftEnd = value),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: OutlinedButton(
+                    style: SetupUi.secondaryButton,
+                    onPressed: () => _pickTime(
+                      initial: _shiftEnd,
+                      onPicked: (value) => setState(() => _shiftEnd = value),
+                    ),
+                    child: Text('End ${formatApiTime(_shiftEnd)}'),
+                  ),
                 ),
-                child: Text(
-                  'End ${formatApiTime(_shiftEnd)}',
-                  style: const TextStyle(fontSize: 13),
+              ],
+            ),
+            const SizedBox(height: _fieldGap),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _shiftBreak,
+                    style: const TextStyle(fontSize: 14),
+                    decoration: _compactInput('Break minutes'),
+                    keyboardType: TextInputType.number,
+                  ),
                 ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: TextField(
+                    controller: _shiftCapacity,
+                    style: const TextStyle(fontSize: 14),
+                    decoration: _compactInput('Employees needed'),
+                    keyboardType: TextInputType.number,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                onPressed: _busy || !_shiftDraftValid ? null : _addShift,
+                style: _primaryButtonStyle,
+                child: const Text('Add work shift'),
               ),
             ),
           ],
-        ),
-        const SizedBox(height: _fieldGap),
-        Row(
-          children: [
-            Expanded(
-              child: TextField(
-                controller: _shiftBreak,
-                style: const TextStyle(fontSize: 14),
-                decoration: _compactInput('Break Min'),
-                keyboardType: TextInputType.number,
-              ),
-            ),
-            const SizedBox(width: 6),
-            Expanded(
-              child: TextField(
-                controller: _shiftCapacity,
-                style: const TextStyle(fontSize: 14),
-                decoration: _compactInput('Capacity'),
-                keyboardType: TextInputType.number,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 10),
-        SizedBox(
-          width: double.infinity,
-          child: FilledButton(
-            onPressed: _busy || !_shiftDraftValid ? null : _addShift,
-            style: _primaryButtonStyle,
-            child: const Text('Add Shift'),
-          ),
         ),
         if (_shifts.isNotEmpty) ...[
-          const SizedBox(height: 10),
+          const SizedBox(height: 14),
+          const SetupListLabel('Added shifts'),
           ..._shifts.map(
-            (shift) => Card(
-              margin: const EdgeInsets.only(bottom: 6),
-              child: ListTile(
-                dense: true,
-                visualDensity: VisualDensity.compact,
-                contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
-                title: Text(
-                  '${shift['name']} (${shift['start_time']}–${shift['end_time']})',
-                  style: const TextStyle(fontSize: 13),
+            (shift) => SetupListTileCard(
+              leadingIcon: Icons.schedule_rounded,
+              title: '${shift['name']}',
+              subtitle: '${shift['start_time']} – ${shift['end_time']}',
+              trailing: TextButton(
+                style: SetupUi.ghostButton.copyWith(
+                  foregroundColor:
+                      const WidgetStatePropertyAll(AppColors.danger),
                 ),
-                trailing: TextButton(
-                  style: TextButton.styleFrom(
-                    visualDensity: VisualDensity.compact,
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                  ),
-                  onPressed:
-                      _busy ? null : () => _removeShift('${shift['id']}'),
-                  child: const Text('Remove', style: TextStyle(fontSize: 13)),
-                ),
+                onPressed:
+                    _busy ? null : () => _removeShift('${shift['id']}'),
+                child: const Text('Remove'),
               ),
             ),
           ),
@@ -1062,75 +904,75 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        SetupPanel(
+          title: 'Add a job role',
+          icon: Icons.badge_outlined,
+          subtitle: 'Set the role name and daily pay for this position.',
           children: [
-            Expanded(
-              flex: 3,
-              child: TextField(
-                controller: _positionTitle,
-                style: const TextStyle(fontSize: 14),
-                decoration: _compactInput('Position Name'),
-                onChanged: (_) => setState(() {}),
-              ),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  flex: 3,
+                  child: TextField(
+                    controller: _positionTitle,
+                    style: const TextStyle(fontSize: 14),
+                    decoration: _compactInput('Job role name'),
+                    onChanged: (_) => setState(() {}),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  flex: 2,
+                  child: TextField(
+                    controller: _positionRate,
+                    style: const TextStyle(fontSize: 14),
+                    decoration: _compactInput('Daily pay (₱)'),
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
+                    onChanged: (_) => setState(() {}),
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(width: 6),
-            Expanded(
-              flex: 2,
-              child: TextField(
-                controller: _positionRate,
-                style: const TextStyle(fontSize: 14),
-                decoration: _compactInput('Daily Rate (₱)'),
-                keyboardType:
-                    const TextInputType.numberWithOptions(decimal: true),
-                onChanged: (_) => setState(() {}),
+            const SizedBox(height: _fieldGap),
+            TextField(
+              controller: _positionDescription,
+              style: const TextStyle(fontSize: 14),
+              decoration: _compactInput('Description'),
+              onChanged: (_) => setState(() {}),
+            ),
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                onPressed: _busy || !_positionDraftValid
+                    ? null
+                    : () {
+                        _addPosition();
+                      },
+                style: _primaryButtonStyle,
+                child: const Text('Add job role'),
               ),
             ),
           ],
         ),
-        const SizedBox(height: _fieldGap),
-        TextField(
-          controller: _positionDescription,
-          style: const TextStyle(fontSize: 14),
-          decoration: _compactInput('Description'),
-          onChanged: (_) => setState(() {}),
-        ),
-        const SizedBox(height: 10),
-        SizedBox(
-          width: double.infinity,
-          child: FilledButton(
-            onPressed: _busy || !_positionDraftValid
-                ? null
-                : () {
-                    _addPosition();
-                  },
-            style: _primaryButtonStyle,
-            child: const Text('Add Position'),
-          ),
-        ),
         if (_positions.isNotEmpty) ...[
-          const SizedBox(height: 10),
+          const SizedBox(height: 14),
+          const SetupListLabel('Added roles'),
           ..._positions.map(
-            (position) => Card(
-              margin: const EdgeInsets.only(bottom: 6),
-              child: ListTile(
-                dense: true,
-                visualDensity: VisualDensity.compact,
-                contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
-                title: Text(
-                  '${position['title']} — ₱${position['daily_rate']}/day',
-                  style: const TextStyle(fontSize: 13),
+            (position) => SetupListTileCard(
+              leadingIcon: Icons.badge_outlined,
+              title: '${position['title']}',
+              subtitle: '₱${position['daily_rate']}/day',
+              trailing: TextButton(
+                style: SetupUi.ghostButton.copyWith(
+                  foregroundColor:
+                      const WidgetStatePropertyAll(AppColors.danger),
                 ),
-                trailing: TextButton(
-                  style: TextButton.styleFrom(
-                    visualDensity: VisualDensity.compact,
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                  ),
-                  onPressed:
-                      _busy ? null : () => _removePosition('${position['id']}'),
-                  child: const Text('Remove', style: TextStyle(fontSize: 13)),
-                ),
+                onPressed:
+                    _busy ? null : () => _removePosition('${position['id']}'),
+                child: const Text('Remove'),
               ),
             ),
           ),
@@ -1143,49 +985,85 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        DropdownButtonFormField<String>(
-          initialValue: _payPeriodType,
-          isDense: true,
-          decoration: _compactInput('Pay Period Type'),
-          items: const [
-            DropdownMenuItem(value: 'weekly', child: Text('Weekly')),
-            DropdownMenuItem(
-              value: 'semi_monthly',
-              child: Text('Semi-Monthly'),
+        SetupPanel(
+          title: 'Pay schedule',
+          icon: Icons.calendar_month_outlined,
+          subtitle: 'Choose how often employees get paid.',
+          children: [
+            DropdownButtonFormField<String>(
+              initialValue: _payPeriodType,
+              isDense: true,
+              decoration: _compactInput('How often employees get paid'),
+              items: const [
+                DropdownMenuItem(value: 'weekly', child: Text('Weekly')),
+                DropdownMenuItem(
+                  value: 'semi_monthly',
+                  child: Text('Twice a month'),
+                ),
+                DropdownMenuItem(value: 'monthly', child: Text('Monthly')),
+              ],
+              onChanged: (value) {
+                if (value != null) setState(() => _payPeriodType = value);
+              },
             ),
-            DropdownMenuItem(value: 'monthly', child: Text('Monthly')),
+            const SizedBox(height: _fieldGap),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton(
+                style: SetupUi.secondaryButton,
+                onPressed: _pickPayday,
+                child: Text(
+                  _nextPaydayDate == null
+                      ? 'Choose next payday'
+                      : 'Next payday: ${formatApiDate(_nextPaydayDate!)}',
+                ),
+              ),
+            ),
+            const SizedBox(height: 4),
+            _compactSwitch(
+              title: 'Start a new pay period after payday',
+              value: _autoResetPayrollCycle,
+              onChanged: (value) =>
+                  setState(() => _autoResetPayrollCycle = value),
+            ),
           ],
-          onChanged: (value) {
-            if (value != null) setState(() => _payPeriodType = value);
-          },
         ),
-        const SizedBox(height: _fieldGap),
-        SizedBox(
-          width: double.infinity,
-          child: OutlinedButton(
-            style: OutlinedButton.styleFrom(
-              visualDensity: VisualDensity.compact,
-              padding: const EdgeInsets.symmetric(vertical: 10),
+        const SizedBox(height: 10),
+        SetupPanel(
+          title: 'Holiday pay rules',
+          icon: Icons.celebration_outlined,
+          subtitle: 'Philippine labor rules or custom company policy.',
+          children: [
+            DropdownButtonFormField<String>(
+              initialValue: _holidayRulesMode,
+              isDense: true,
+              decoration: _compactInput('Holiday rules'),
+              items: const [
+                DropdownMenuItem(
+                  value: 'philippine_labor',
+                  child: Text('Philippine labor rules'),
+                ),
+                DropdownMenuItem(
+                  value: 'custom_company',
+                  child: Text('Custom company rules'),
+                ),
+              ],
+              onChanged: (value) {
+                if (value != null) {
+                  setState(() => _holidayRulesMode = value);
+                }
+              },
             ),
-            onPressed: _pickPayday,
-            child: Text(
-              _nextPaydayDate == null
-                  ? 'Pick Next Payday Date'
-                  : 'Next Payday: ${formatApiDate(_nextPaydayDate!)}',
-              style: const TextStyle(fontSize: 13),
-            ),
-          ),
+          ],
         ),
-        _compactSwitch(
-          title: 'Auto-reset payroll cycle after payday',
-          value: _autoResetPayrollCycle,
-          onChanged: (value) => setState(() => _autoResetPayrollCycle = value),
-        ),
-        _compactPanel(
-          title: 'Pay Rules',
+        const SizedBox(height: 10),
+        SetupPanel(
+          title: 'Pay rules',
+          icon: Icons.rule_outlined,
+          subtitle: 'Control late deductions and overtime pay.',
           children: [
             _compactSwitch(
-              title: 'Enable late deduction',
+              title: 'Pay less when late',
               value: _payrollLateDeductionEnabled,
               onChanged: (value) =>
                   setState(() => _payrollLateDeductionEnabled = value),
@@ -1194,13 +1072,13 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
               controller: _payrollLateDeductionRate,
               enabled: _payrollLateDeductionEnabled,
               style: const TextStyle(fontSize: 14),
-              decoration: _compactInput('Late Deduction (₱/min)'),
+              decoration: _compactInput('Amount per late minute (₱)'),
               keyboardType:
                   const TextInputType.numberWithOptions(decimal: true),
             ),
             const SizedBox(height: 4),
             _compactSwitch(
-              title: 'Enable overtime pay',
+              title: 'Pay for overtime',
               value: _payrollOvertimeEnabled,
               onChanged: (value) =>
                   setState(() => _payrollOvertimeEnabled = value),
@@ -1209,9 +1087,25 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
               controller: _payrollOvertimeRate,
               enabled: _payrollOvertimeEnabled,
               style: const TextStyle(fontSize: 14),
-              decoration: _compactInput('Overtime Rate (₱/min)'),
+              decoration: _compactInput('Extra pay per overtime minute (₱)'),
               keyboardType:
                   const TextInputType.numberWithOptions(decimal: true),
+            ),
+            const SizedBox(height: 4),
+            _compactSwitch(
+              title: 'Late–OT Balancing',
+              value: _payrollLateOtBalancing && _payrollOvertimeEnabled,
+              onChanged: (value) {
+                if (!_payrollOvertimeEnabled) return;
+                setState(() => _payrollLateOtBalancing = value);
+              },
+            ),
+            Text(
+              'When enabled, overtime minutes are first used to recover late '
+              'arrival. Only the remaining overtime minutes are paid.',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: const Color(0xFF6B7280),
+                  ),
             ),
           ],
         ),
@@ -1223,7 +1117,7 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
           child: FilledButton(
             onPressed: _busy || !_payrollFormValid ? null : _savePayroll,
             style: _primaryButtonStyle,
-            child: const Text('Save Payroll Configuration'),
+            child: const Text('Save Pay Settings'),
           ),
         ),
       ],
@@ -1234,39 +1128,99 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
+        SetupPanel(
+          title: 'Clock-in rules',
+          icon: Icons.fact_check_outlined,
+          subtitle:
+              'Configure early, late, absent, half-day, overtime, and incomplete cutoffs.',
           children: [
-            Expanded(
-              child: _labeledNumberField(
-                'Early Clock-In (min)',
-                _attEarlyClockIn,
-              ),
+            Row(
+              children: [
+                Expanded(
+                  child: _labeledNumberField(
+                    'Early clock-in window (min)',
+                    _attEarlyClockIn,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: _labeledNumberField(
+                    'Extra minutes before late',
+                    _attOnTimeGrace,
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(width: 6),
-            Expanded(
-              child:
-                  _labeledNumberField('On-Time Grace (min)', _attOnTimeGrace),
+            const SizedBox(height: _fieldGap),
+            Row(
+              children: [
+                Expanded(
+                  child: _labeledNumberField(
+                    'Absent if under (% of shift)',
+                    _attAbsentPercent,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: _labeledNumberField(
+                    'Half-day if under (% of shift)',
+                    _attHalfDayPercent,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: _fieldGap),
+            Row(
+              children: [
+                Expanded(
+                  child: _labeledNumberField(
+                    'Payroll half-day cutoff (min)',
+                    _attHalfDay,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: _labeledNumberField(
+                    'Payroll absent cutoff (min)',
+                    _attAbsent,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: _fieldGap),
+            Row(
+              children: [
+                Expanded(
+                  child: _labeledNumberField(
+                    'Minimum overtime minutes',
+                    _attOvertimeMinimum,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: _labeledNumberField(
+                    'Maximum overtime duration (min)',
+                    _attMaximumOvertime,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Maximum overtime duration: how long an employee may stay '
+              'clocked in after shift end before attendance becomes Incomplete.',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: const Color(0xFF6B7280),
+                  ),
             ),
           ],
         ),
-        const SizedBox(height: _fieldGap),
-        Row(
-          children: [
-            Expanded(
-              child: _labeledNumberField('Half-Day (min)', _attHalfDay),
-            ),
-            const SizedBox(width: 6),
-            Expanded(
-              child: _labeledNumberField('Absent (min)', _attAbsent),
-            ),
-          ],
-        ),
-        const SizedBox(height: _fieldGap),
-        _labeledNumberField('Min Overtime (min)', _attOvertimeMinimum),
         const SizedBox(height: _fieldGap),
         _infoBox(
-          'Overtime uses payroll: ₱${_payrollOvertimeRate.text}/min '
-          '(${_payrollOvertimeEnabled ? 'enabled' : 'disabled'}).',
+          'Absent/half-day status use percent of each scheduled shift. '
+          'Maximum overtime duration is an attendance cutoff only. '
+          'Overtime pay uses ₱${_payrollOvertimeRate.text} per minute '
+          '(${_payrollOvertimeEnabled ? 'turned on' : 'turned off'} in pay settings).',
         ),
         const SizedBox(height: 10),
         SizedBox(
@@ -1274,7 +1228,7 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
           child: FilledButton(
             onPressed: _busy ? null : _saveAttendance,
             style: _primaryButtonStyle,
-            child: const Text('Save Attendance Policy'),
+            child: const Text('Save Clock-In Settings'),
           ),
         ),
       ],
@@ -1282,18 +1236,16 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
   }
 
   Widget _buildRestDayFields() {
-    return _compactPanel(
-      title: 'Rest Day Pay',
+    return SetupPanel(
+      title: 'Extra pay on rest days',
+      icon: Icons.weekend_outlined,
+      subtitle:
+          'Set the extra pay when an employee works on an approved rest day.',
       children: [
-        const Text(
-          'Set the premium rate for shifts marked as approved rest day work on the schedule.',
-          style: TextStyle(fontSize: 12, color: Color(0xFF6B7280)),
-        ),
-        const SizedBox(height: 8),
         TextField(
           controller: _restPremiumPercent,
           style: const TextStyle(fontSize: 14),
-          decoration: _compactInput('Premium (%)'),
+          decoration: _compactInput('Extra pay (%)'),
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
         ),
       ],
@@ -1307,64 +1259,98 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _infoBox(
-          'Set your work site on the map and choose a geofence radius so '
-          'employees can clock in.',
+        const SetupInfoBanner(
+          'Set your workplace on the map and choose how close employees must '
+          'be before they can clock in or clock out.',
         ),
         const SizedBox(height: _fieldGap),
-        OutlinedButton.icon(
-          onPressed:
-              _locationLocating || _busy ? null : _useWizardCurrentLocation,
-          icon: _locationLocating
-              ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Icon(Icons.my_location_rounded, size: 18),
-          label: const Text('Use my current location'),
-        ),
-        const SizedBox(height: _fieldGap),
-        BusinessLocationMapPicker(
-          latitude: latitude,
-          longitude: longitude,
-          geofenceRadiusM: _locationGeofence.round(),
-          onPositionChanged: _onWizardMapPositionChanged,
-          height: 220,
-        ),
-        if (latitude != null && longitude != null) ...[
-          const SizedBox(height: 6),
-          Text(
-            'Coordinates: ${latitude.toStringAsFixed(6)}, '
-            '${longitude.toStringAsFixed(6)}',
-            style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
-          ),
-        ],
-        const SizedBox(height: _fieldGap),
-        TextField(
-          controller: _locationAddress,
-          style: const TextStyle(fontSize: 14),
-          decoration: _compactInput('Address', hint: '123 Main St, Manila'),
-          onChanged: (_) => setState(() {
-            _locationAddressEditedManually = true;
-          }),
-        ),
-        const SizedBox(height: 6),
-        Text(
-          'Geofence: ${_locationGeofence.round()}m',
-          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-        ),
-        Slider(
-          value: _locationGeofence,
-          min: kMinGeofenceRadiusM.toDouble(),
-          max: kMaxGeofenceRadiusM.toDouble(),
-          divisions: kMaxGeofenceRadiusM - kMinGeofenceRadiusM,
-          label: '${_locationGeofence.round()}m',
-          onChanged: (value) => setState(() => _locationGeofence = value),
-        ),
-        Text(
-          'Range: ${kMinGeofenceRadiusM}m – ${kMaxGeofenceRadiusM}m',
-          style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+        SetupPanel(
+          title: 'Workplace on map',
+          icon: Icons.location_on_outlined,
+          subtitle: 'Pin your business and set the attendance distance.',
+          children: [
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                style: SetupUi.secondaryButton,
+                onPressed: _locationLocating || _busy
+                    ? null
+                    : _useWizardCurrentLocation,
+                icon: _locationLocating
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: SetupUi.navy,
+                        ),
+                      )
+                    : const Icon(Icons.my_location_rounded, size: 18),
+                label: const Text('Use my current location'),
+              ),
+            ),
+            const SizedBox(height: _fieldGap),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(SetupUi.panelRadius),
+              child: BusinessLocationMapPicker(
+                latitude: latitude,
+                longitude: longitude,
+                geofenceRadiusM: _locationGeofence.round(),
+                onPositionChanged: _onWizardMapPositionChanged,
+                height: 220,
+              ),
+            ),
+            const SizedBox(height: _fieldGap),
+            TextField(
+              controller: _locationAddress,
+              style: const TextStyle(fontSize: 14),
+              decoration:
+                  _compactInput('Address', hint: '123 Main St, Manila'),
+              onChanged: (_) => setState(() {
+                _locationAddressEditedManually = true;
+              }),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Allowed work area: ${_locationGeofence.round()}m',
+              style: const TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w700,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            SliderTheme(
+              data: SliderTheme.of(context).copyWith(
+                activeTrackColor: SetupUi.navy,
+                inactiveTrackColor: const Color(0xFFE8EEF4),
+                thumbColor: SetupUi.navy,
+                overlayColor: SetupUi.navy.withValues(alpha: 0.12),
+                valueIndicatorColor: SetupUi.navy,
+              ),
+              child: Slider(
+                value: _locationGeofence,
+                min: kMinGeofenceRadiusM.toDouble(),
+                max: kMaxGeofenceRadiusM.toDouble(),
+                divisions: kMaxGeofenceRadiusM - kMinGeofenceRadiusM,
+                label: '${_locationGeofence.round()}m',
+                onChanged: (value) =>
+                    setState(() => _locationGeofence = value),
+              ),
+            ),
+            Text(
+              'Allowed distance: ${kMinGeofenceRadiusM}m – ${kMaxGeofenceRadiusM}m',
+              style: appMutedStyle().copyWith(fontSize: 11.5),
+            ),
+            if (isSmallGeofenceRadius(_locationGeofence)) ...[
+              const SizedBox(height: 8),
+              const SetupInfoBanner(
+                'Tip: A very small work area (under 20 m) can be hard for phones '
+                'to match because location can drift. Place the pin outdoors when '
+                'possible. 25–50 m is usually more reliable.',
+                tone: SetupBannerTone.warning,
+              ),
+            ],
+          ],
         ),
         const SizedBox(height: 10),
         SizedBox(
@@ -1372,7 +1358,7 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
           child: FilledButton(
             onPressed: _busy || !_locationCanSave ? null : _saveLocation,
             style: _primaryButtonStyle,
-            child: const Text('Save Location'),
+            child: const Text('Save Workplace Location'),
           ),
         ),
       ],
@@ -1382,36 +1368,26 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
   Widget _buildBusinessInfoStep() {
     final data = _businessSettings ?? const {};
     final fields = [
-      ('Business Name', data['business_name']),
-      ('Business Code', data['business_code']),
-      ('Business Type', data['business_type']),
-      ('Address', data['address']),
+      ('Business Name', data['business_name'], Icons.store_outlined),
+      ('Business Code', data['business_code'], Icons.qr_code_2_rounded),
+      ('Business Type', data['business_type'], Icons.category_outlined),
+      ('Address', data['address'], Icons.place_outlined),
     ];
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        for (final field in fields) ...[
-          Text(
-            field.$1,
-            style: const TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              color: Color(0xFF6B7280),
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            field.$2 == null || '${field.$2}'.trim().isEmpty
+        for (final field in fields)
+          SetupListTileCard(
+            leadingIcon: field.$3,
+            title: field.$1,
+            subtitle: field.$2 == null || '${field.$2}'.trim().isEmpty
                 ? 'Not set'
                 : '${field.$2}',
-            style: const TextStyle(fontSize: 14),
           ),
-          const SizedBox(height: 10),
-        ],
-        _infoBox(
-          'Business profile details are managed during registration. '
-          'Use Settings for account and payroll preferences.',
+        const SetupInfoBanner(
+          'Your business details were set during registration. '
+          'Use Settings anytime to update your account or pay preferences.',
         ),
       ],
     );
@@ -1430,33 +1406,33 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _infoBox(
-          'Review your setup and finish when required steps are complete.',
+        const SetupInfoBanner(
+          'Review your setup and finish when the required steps are done.',
         ),
         const SizedBox(height: _fieldGap),
         ...steps.map(
-          (step) => Padding(
-            padding: const EdgeInsets.only(bottom: 4),
-            child: Text(
-              '${step['complete'] == true ? '✓' : '✗'} ${step['label']}',
-              style: const TextStyle(fontSize: 13),
-            ),
-          ),
+          (step) {
+            final complete = step['complete'] == true;
+            return SetupListTileCard(
+              leadingIcon: complete
+                  ? Icons.check_circle_rounded
+                  : Icons.radio_button_unchecked_rounded,
+              iconColor: complete
+                  ? const Color(0xFF059669)
+                  : const Color(0xFFC2410C),
+              iconBackground: complete
+                  ? const Color(0xFFECFDF5)
+                  : const Color(0xFFFFF7ED),
+              title: '${step['label']}',
+              subtitle: complete ? 'Completed' : 'Incomplete',
+            );
+          },
         ),
         if (!ready && missingItems.isNotEmpty) ...[
-          const SizedBox(height: 8),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: const Color(0xFFFFFBEB),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: const Color(0xFFFDE68A)),
-            ),
-            child: Text(
-              'Required: ${missingItems.join(', ')}',
-              style: const TextStyle(color: Color(0xFF92400E), fontSize: 12),
-            ),
+          const SizedBox(height: 4),
+          SetupInfoBanner(
+            'Still needed: ${missingItems.join(', ')}',
+            tone: SetupBannerTone.warning,
           ),
         ],
         const SizedBox(height: 12),
@@ -1465,20 +1441,16 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
           child: FilledButton(
             onPressed: _busy || !ready ? null : _finishSetup,
             style: _primaryButtonStyle,
-            child: const Text('Mark Setup Complete'),
+            child: const Text('Finish Setup'),
           ),
         ),
-        const SizedBox(height: 6),
+        const SizedBox(height: 8),
         SizedBox(
           width: double.infinity,
           child: OutlinedButton(
-            style: OutlinedButton.styleFrom(
-              visualDensity: VisualDensity.compact,
-              padding: const EdgeInsets.symmetric(vertical: 10),
-            ),
+            style: SetupUi.secondaryButton,
             onPressed: () => context.go('/owner/home'),
-            child:
-                const Text('Go to Dashboard', style: TextStyle(fontSize: 13)),
+            child: const Text('Go to Dashboard'),
           ),
         ),
       ],
@@ -1494,37 +1466,38 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
     return SafeArea(
       top: false,
       child: Container(
-        padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-        decoration: BoxDecoration(
+        padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+        decoration: const BoxDecoration(
           color: Colors.white,
-          border: Border(top: BorderSide(color: Colors.grey.shade200)),
+          border: Border(top: BorderSide(color: AppColors.border)),
+          boxShadow: [
+            BoxShadow(
+              color: Color(0x0A000000),
+              blurRadius: 10,
+              offset: Offset(0, -2),
+            ),
+          ],
         ),
         child: Row(
           children: [
             const Spacer(),
             TextButton(
-              style: TextButton.styleFrom(
-                visualDensity: VisualDensity.compact,
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-              ),
+              style: SetupUi.ghostButton,
               onPressed: _busy
                   ? null
                   : () => setState(
                         () => _step = clampSetupStep(_step + 1),
                       ),
-              child: const Text('Skip for Now', style: TextStyle(fontSize: 13)),
+              child: const Text('Skip for Now'),
             ),
             if (_currentStepCanContinue()) ...[
-              const SizedBox(width: 6),
+              const SizedBox(width: 8),
               FilledButton(
                 onPressed: _busy ? null : _handleContinue,
-                style: _primaryButtonStyle.copyWith(
-                  minimumSize: const WidgetStatePropertyAll(Size(0, 38)),
-                  padding: const WidgetStatePropertyAll(
-                    EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                  ),
+                style: SetupUi.primaryButton.copyWith(
+                  minimumSize: const WidgetStatePropertyAll(Size(0, 40)),
                 ),
-                child: const Text('Continue', style: TextStyle(fontSize: 13)),
+                child: const Text('Continue'),
               ),
             ],
           ],
@@ -1542,19 +1515,5 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
     );
   }
 
-  Widget _infoBox(String text) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF3F6FA),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Text(
-        text,
-        style:
-            TextStyle(fontSize: 11, height: 1.35, color: Colors.grey.shade600),
-      ),
-    );
-  }
+  Widget _infoBox(String text) => SetupInfoBanner(text);
 }

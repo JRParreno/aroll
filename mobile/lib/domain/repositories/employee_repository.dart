@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:aroll_mobile/domain/entities/employee_portal.dart';
 import 'package:aroll_mobile/domain/entities/face_liveness.dart';
+import 'package:aroll_mobile/domain/entities/leave_request.dart';
 
 abstract class EmployeeRepository {
   Future<EmployeeDashboard> getDashboard();
@@ -25,9 +26,12 @@ abstract class EmployeeRepository {
 
   Future<List<AttendanceCorrectionRequest>> getAttendanceCorrections();
 
-  Future<EmployeePayroll> getPayroll();
+  Future<EmployeePayroll> getPayroll({
+    DateTime? asOf,
+    int historyLimit = 6,
+  });
 
-  Future<EmployeePayslip> getPayslip();
+  Future<EmployeePayslip> getPayslip({DateTime? asOf});
 
   Future<FaceStatus> getFaceStatus();
 
@@ -53,4 +57,38 @@ abstract class EmployeeRepository {
     required double longitude,
     required FaceQuickCapture capture,
   });
+
+  Future<List<LeaveRequestItem>> getLeaveRequests({String? status});
+
+  Future<LeaveRequestItem> getLeaveRequest(String requestId);
+
+  Future<LeaveRequestItem> createLeaveRequest({
+    required String leaveType,
+    required DateTime startDate,
+    required DateTime endDate,
+    required String reason,
+    String? supportingDocument,
+  });
+
+  Future<LeaveRequestItem> updateLeaveRequest({
+    required String requestId,
+    required String leaveType,
+    required DateTime startDate,
+    required DateTime endDate,
+    required String reason,
+    String? supportingDocument,
+  });
+
+  Future<LeaveRequestItem> cancelLeaveRequest(String requestId);
+
+  Future<List<Map<String, dynamic>>> notifications({
+    bool unreadOnly = false,
+    int limit = 50,
+  });
+
+  Future<int> unreadNotificationCount();
+
+  Future<void> markNotificationRead(String notificationId);
+
+  Future<void> markAllNotificationsRead();
 }

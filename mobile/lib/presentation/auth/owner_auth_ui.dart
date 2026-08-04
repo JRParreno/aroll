@@ -3,11 +3,16 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 abstract final class OwnerAuthColors {
-  static const background = Color(0xFFF4F6F8);
+  /// Matches Employee Login / Role Landing / Splash.
+  static const background = Color(0xFF1E466E);
   static const primary = Color(0xFF1E3A5F);
   static const primaryDark = Color(0xFF284B73);
+  /// Soft light blue accent (replaces green theme highlights).
+  static const softBlue = Color(0xFFB9D8EE);
   static const accentSurface = Color(0xFFEAF2FB);
   static const textPrimary = Color(0xFF111827);
+  static const textOnNavy = Colors.white;
+  static const textMutedOnNavy = Color(0xFFC8D8E7);
   static const textSecondary = Color(0xFF1F2937);
   static const textMuted = Color(0xFF6B7280);
   static const border = Color(0xFFE5E7EB);
@@ -31,61 +36,78 @@ class OwnerAuthScaffold extends StatelessWidget {
     required this.child,
     this.subtitle,
     this.badgeLabel,
+    this.onBack,
   });
 
   final String title;
   final String? subtitle;
   final String? badgeLabel;
   final Widget child;
+  final VoidCallback? onBack;
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: OwnerAuthColors.background,
-      appBar: AppBar(
+    final softBlueTheme = Theme.of(context).copyWith(
+      colorScheme: ColorScheme.fromSeed(
+        seedColor: OwnerAuthColors.softBlue,
+        primary: OwnerAuthColors.primary,
+        secondary: OwnerAuthColors.softBlue,
+        surface: Colors.white,
+        brightness: Brightness.light,
+      ),
+    );
+
+    return Theme(
+      data: softBlueTheme,
+      child: Scaffold(
         backgroundColor: OwnerAuthColors.background,
-        elevation: 0,
-        scrolledUnderElevation: 0,
-        leading: IconButton(
-          tooltip: 'Back',
-          onPressed: () => ownerAuthBack(context),
-          icon: const Icon(
-            Icons.arrow_back_rounded,
-            color: OwnerAuthColors.textPrimary,
+        appBar: AppBar(
+          backgroundColor: OwnerAuthColors.background,
+          elevation: 0,
+          scrolledUnderElevation: 0,
+          foregroundColor: OwnerAuthColors.textOnNavy,
+          leading: IconButton(
+            tooltip: 'Back',
+            onPressed: onBack ?? () => ownerAuthBack(context),
+            icon: const Icon(
+              Icons.arrow_back_rounded,
+              color: OwnerAuthColors.textOnNavy,
+            ),
           ),
         ),
-      ),
-      body: SafeArea(
-        top: false,
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(20, 0, 20, 28),
-          children: [
-            if (badgeLabel != null) ...[
-              OwnerAuthBadge(label: badgeLabel!),
-              const SizedBox(height: 14),
-            ],
-            Text(
-              title,
-              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.w700,
-                    color: OwnerAuthColors.textPrimary,
-                    height: 1.15,
-                  ),
-            ),
-            if (subtitle != null) ...[
-              const SizedBox(height: 8),
+        body: SafeArea(
+          top: false,
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 28),
+            children: [
+              if (badgeLabel != null) ...[
+                OwnerAuthBadge(label: badgeLabel!),
+                const SizedBox(height: 14),
+              ],
               Text(
-                subtitle!,
-                style: const TextStyle(
-                  color: OwnerAuthColors.textMuted,
-                  fontSize: 14,
-                  height: 1.5,
-                ),
+                title,
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: OwnerAuthColors.textOnNavy,
+                      height: 1.15,
+                    ),
               ),
+              if (subtitle != null) ...[
+                const SizedBox(height: 8),
+                Text(
+                  subtitle!,
+                  style: const TextStyle(
+                    color: OwnerAuthColors.textMutedOnNavy,
+                    fontSize: 14,
+                    height: 1.5,
+                    fontWeight: FontWeight.w400,
+                  ),
+                ),
+              ],
+              const SizedBox(height: 22),
+              child,
             ],
-            const SizedBox(height: 22),
-            child,
-          ],
+          ),
         ),
       ),
     );
@@ -251,8 +273,8 @@ class _OwnerAuthFieldState extends State<OwnerAuthField> {
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
                 borderSide: const BorderSide(
-                  color: OwnerAuthColors.primary,
-                  width: 1.5,
+                  color: OwnerAuthColors.softBlue,
+                  width: 1.8,
                 ),
               ),
             ),
@@ -285,9 +307,12 @@ class OwnerAuthPrimaryButton extends StatelessWidget {
       child: FilledButton(
         onPressed: loading ? null : onPressed,
         style: FilledButton.styleFrom(
-          backgroundColor: OwnerAuthColors.primary,
-          foregroundColor: Colors.white,
-          disabledBackgroundColor: OwnerAuthColors.primary.withValues(alpha: 0.6),
+          backgroundColor: OwnerAuthColors.softBlue,
+          foregroundColor: OwnerAuthColors.primary,
+          disabledBackgroundColor:
+              OwnerAuthColors.softBlue.withValues(alpha: 0.55),
+          disabledForegroundColor:
+              OwnerAuthColors.primary.withValues(alpha: 0.7),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(14),
           ),
@@ -299,7 +324,7 @@ class OwnerAuthPrimaryButton extends StatelessWidget {
                 width: 20,
                 child: CircularProgressIndicator(
                   strokeWidth: 2,
-                  color: Colors.white,
+                  color: OwnerAuthColors.primary,
                 ),
               )
             : Row(
@@ -426,7 +451,7 @@ class OwnerAuthDocumentTile extends StatelessWidget {
               borderRadius: BorderRadius.circular(16),
               border: Border.all(
                 color: uploaded
-                    ? const Color(0xFFBBF7D0)
+                    ? OwnerAuthColors.softBlue
                     : OwnerAuthColors.border,
               ),
             ),
@@ -443,9 +468,7 @@ class OwnerAuthDocumentTile extends StatelessWidget {
                     uploaded
                         ? Icons.check_circle_rounded
                         : Icons.upload_file_rounded,
-                    color: uploaded
-                        ? OwnerAuthColors.success
-                        : OwnerAuthColors.primary,
+                    color: OwnerAuthColors.primary,
                   ),
                 ),
                 const SizedBox(width: 12),

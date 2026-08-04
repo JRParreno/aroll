@@ -1,4 +1,9 @@
-"""Missed clock-in/out correction requests and approval."""
+"""Attendance correction requests and approval.
+
+Employees may request corrected clock-in/out times for a specific shift.
+Owners/managers approve or reject; approval updates the attendance record.
+Payroll and reports recompute from attendance (single source of truth).
+"""
 
 from __future__ import annotations
 
@@ -8,7 +13,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
-from app.core.timezone import get_business_tz
+from app.core.timezone import business_today, get_business_tz
 from app.models.attendance import AttendanceRecord
 from app.models.attendance_correction import AttendanceCorrectionRequest
 from app.models.attendance_policy import BusinessAttendancePolicy
@@ -17,11 +22,8 @@ from app.models.employee import Employee
 from app.models.enums import AttendanceCorrectionStatus, AttendanceStatus
 from app.models.scheduling import Shift, ShiftAssignment
 from app.models.user import User
-from app.services.attendance_clock import (
-    _attendance_policy,
-    _clock_in_status,
-    _scheduled_start,
-)
+from app.services.attendance_clock import _attendance_policy
+from app.services.attendance_status import resolve_closed_attendance_status
 
 
 def _iso(value: datetime | None) -> str | None:
@@ -83,15 +85,6 @@ def _load_assignment_bundle(
     return assignment, shift, record
 
 
-def _missing_punches(record: AttendanceRecord | None) -> tuple[bool, bool]:
-    """Return (needs_time_in, needs_time_out)."""
-    if record is None:
-        return True, True
-    needs_in = record.time_in is None
-    needs_out = record.time_out is None
-    return needs_in, needs_out
-
-
 def _recompute_status(
     *,
     time_in: datetime,
@@ -101,31 +94,16 @@ def _recompute_status(
     policy: BusinessAttendancePolicy,
     business_timezone: str | None,
 ) -> AttendanceStatus:
-    local_in = _to_business_local(time_in, business_timezone)
-    scheduled_start = _scheduled_start(assignment.work_date, shift)
-    late_or_ok = _clock_in_status(
-        now_local=local_in,
-        scheduled_start=scheduled_start,
-        grace_minutes=policy.on_time_grace_minutes,
+    """Recompute presence status relative to the assigned shift duration."""
+    return resolve_closed_attendance_status(
+        time_in=time_in,
+        time_out=time_out,
+        assignment=assignment,
+        shift=shift,
+        policy=policy,
+        business_timezone=business_timezone,
+        local_time_in=_to_business_local(time_in, business_timezone),
     )
-
-    if time_out is None:
-        # Still open after correction of only clock-in.
-        return (
-            AttendanceStatus.late
-            if late_or_ok == AttendanceStatus.late
-            else AttendanceStatus.in_progress
-        )
-
-    worked_minutes = max((time_out - time_in).total_seconds() / 60.0, 0.0)
-    absent_bar = min(
-        policy.half_day_threshold_minutes, policy.absent_threshold_minutes
-    )
-    if worked_minutes < absent_bar:
-        return AttendanceStatus.absent
-    if late_or_ok == AttendanceStatus.late:
-        return AttendanceStatus.late
-    return AttendanceStatus.complete
 
 
 def serialize_correction(
@@ -163,6 +141,7 @@ def serialize_correction(
         "business_id": str(request.business_id),
         "employee_id": str(request.employee_id),
         "employee_name": employee.full_name if employee else "Employee",
+        "profile_image_url": employee.profile_image_url if employee else None,
         "shift_assignment_id": str(request.shift_assignment_id),
         "attendance_record_id": (
             str(request.attendance_record_id)
@@ -202,12 +181,10 @@ def create_correction_request(
         employee_id=employee.id,
         business_id=employee.business_id,
     )
-    needs_in, needs_out = _missing_punches(record)
-    if not needs_in and not needs_out:
-        raise HTTPException(
-            400,
-            "This shift already has clock-in and clock-out. No correction is needed.",
-        )
+
+    today = business_today(business.timezone)
+    if assignment.work_date > today:
+        raise HTTPException(400, "Cannot request a correction for a future shift.")
 
     pending = (
         db.query(AttendanceCorrectionRequest)
@@ -227,23 +204,36 @@ def create_correction_request(
     time_in_utc = _as_utc(requested_time_in) if requested_time_in else None
     time_out_utc = _as_utc(requested_time_out) if requested_time_out else None
 
-    if time_in_utc is not None and not needs_in:
+    # Incomplete attendance: official clock-in is locked; employee may only
+    # submit a corrected clock-out (+ reason). Managers correct clock-in.
+    if record is not None and record.status == AttendanceStatus.incomplete:
+        if record.time_in is None:
+            raise HTTPException(
+                400,
+                "Incomplete attendance is missing a recorded clock-in.",
+            )
+        official_in = _as_utc(record.time_in)
+        if time_out_utc is None:
+            raise HTTPException(
+                400,
+                "Please provide the corrected clock-out time.",
+            )
+        if time_in_utc is not None and abs(
+            (time_in_utc - official_in).total_seconds()
+        ) > 60:
+            raise HTTPException(
+                400,
+                "Clock-in cannot be changed for incomplete attendance. "
+                "Contact your manager if the recorded clock-in is wrong.",
+            )
+        time_in_utc = official_in
+    elif time_in_utc is None or time_out_utc is None:
+        # Non-incomplete corrections still require both punches.
         raise HTTPException(
             400,
-            "Clock-in is already recorded for this shift. Only request a missing clock-out.",
+            "Please provide corrected clock-in and clock-out times.",
         )
-    if time_out_utc is not None and not needs_out:
-        raise HTTPException(
-            400,
-            "Clock-out is already recorded for this shift.",
-        )
-    if needs_in and time_in_utc is None:
-        raise HTTPException(400, "Please provide the actual clock-in time.")
-    if needs_out and not needs_in and time_out_utc is None:
-        raise HTTPException(400, "Please provide the actual clock-out time.")
-
-    # When both are missing, allow clock-in only (still open) or both.
-    if time_in_utc is not None and time_out_utc is not None and time_out_utc <= time_in_utc:
+    if time_out_utc <= time_in_utc:
         raise HTTPException(400, "Clock-out must be after clock-in.")
 
     # Validate times fall on/near the work date (allow overnight).
@@ -255,8 +245,6 @@ def create_correction_request(
     ) - timedelta(hours=12)
     window_end = work_start_local.astimezone(timezone.utc) + timedelta(hours=36)
     for label, punch in (("Clock-in", time_in_utc), ("Clock-out", time_out_utc)):
-        if punch is None:
-            continue
         if punch < window_start or punch > window_end:
             raise HTTPException(
                 400,
@@ -276,6 +264,40 @@ def create_correction_request(
     db.add(request)
     db.commit()
     db.refresh(request)
+    try:
+        from app.services.notifications import notify_business_owners, notify_user_once
+
+        notify_business_owners(
+            db,
+            business_id=employee.business_id,
+            type="attendance_correction_submitted",
+            title="Attendance Correction",
+            message=f"{employee.full_name} submitted an attendance correction.",
+            entity_type="attendance_correction",
+            entity_id=request.id,
+            deep_link=f"/owner/attendance?correctionId={request.id}",
+        )
+        if employee.user_id is not None:
+            emp_user = db.get(User, employee.user_id)
+            if emp_user is not None:
+                notify_user_once(
+                    db,
+                    user=emp_user,
+                    type="attendance_correction_submitted",
+                    title="Correction Submitted",
+                    message=(
+                        "Your attendance correction was submitted and is "
+                        "awaiting approval."
+                    ),
+                    entity_type="attendance_correction",
+                    entity_id=request.id,
+                    deep_link=(
+                        f"/shift-history?shift_assignment_id="
+                        f"{request.shift_assignment_id}"
+                    ),
+                )
+    except Exception:
+        pass
     return serialize_correction(
         db,
         request,
@@ -353,6 +375,13 @@ def approve_correction(
 
     final_in = request.requested_time_in or (record.time_in if record else None)
     final_out = request.requested_time_out or (record.time_out if record else None)
+    # Preserve official clock-in when approving an incomplete-attendance fix.
+    if (
+        record is not None
+        and record.time_in is not None
+        and record.status == AttendanceStatus.incomplete
+    ):
+        final_in = record.time_in
     if final_in is None:
         raise HTTPException(400, "Approved correction is missing a clock-in time.")
     if final_out is not None and final_out <= final_in:
@@ -381,7 +410,9 @@ def approve_correction(
         db.flush()
         request.attendance_record_id = record.id
     else:
-        record.time_in = final_in
+        # Keep official clock-in for incomplete fixes; only apply corrected out.
+        if record.status != AttendanceStatus.incomplete:
+            record.time_in = final_in
         record.time_out = final_out
         record.status = status
         request.attendance_record_id = record.id
@@ -393,6 +424,29 @@ def approve_correction(
     db.commit()
     db.refresh(request)
     employee = db.get(Employee, request.employee_id)
+    if employee and employee.user_id:
+        try:
+            from app.services.notifications import notify_user_once
+
+            emp_user = db.get(User, employee.user_id)
+            if emp_user is not None:
+                notify_user_once(
+                    db,
+                    user=emp_user,
+                    type="attendance_correction_approved",
+                    title="Correction Approved",
+                    message="Your attendance correction was approved.",
+                    entity_type="attendance_correction",
+                    entity_id=request.id,
+                    deep_link=(
+                        f"/shift-history?shift_assignment_id="
+                        f"{request.shift_assignment_id}"
+                        f"&attendance_record_id="
+                        f"{request.attendance_record_id or ''}"
+                    ),
+                )
+        except Exception:
+            pass
     return serialize_correction(
         db,
         request,
@@ -421,9 +475,44 @@ def reject_correction(
     request.reviewed_by = reviewer.id
     request.reviewed_at = datetime.now(timezone.utc)
     request.review_note = review_note.strip()
+
+    # Keep forgotten clock-outs as Incomplete Attendance after rejection.
+    if request.attendance_record_id is not None:
+        record = db.get(AttendanceRecord, request.attendance_record_id)
+        if (
+            record is not None
+            and record.time_out is None
+            and record.time_in is not None
+        ):
+            record.status = AttendanceStatus.incomplete
+
     db.commit()
     db.refresh(request)
-    return serialize_correction(db, request)
+    employee = db.get(Employee, request.employee_id)
+    if employee and employee.user_id:
+        try:
+            from app.services.notifications import notify_user_once
+
+            emp_user = db.get(User, employee.user_id)
+            if emp_user is not None:
+                notify_user_once(
+                    db,
+                    user=emp_user,
+                    type="attendance_correction_rejected",
+                    title="Correction Rejected",
+                    message="Your attendance correction was rejected.",
+                    entity_type="attendance_correction",
+                    entity_id=request.id,
+                    deep_link=(
+                        f"/shift-history?shift_assignment_id="
+                        f"{request.shift_assignment_id}"
+                        f"&attendance_record_id="
+                        f"{request.attendance_record_id or ''}"
+                    ),
+                )
+        except Exception:
+            pass
+    return serialize_correction(db, request, employee=employee)
 
 
 def latest_corrections_by_assignment(

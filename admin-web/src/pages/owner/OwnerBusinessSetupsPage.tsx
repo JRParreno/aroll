@@ -2,6 +2,7 @@ import {
   BadgeDollarSign,
   Building2,
   CalendarDays,
+  CalendarOff,
   ChevronRight,
   Clock3,
   FileText,
@@ -56,6 +57,12 @@ const setupSections = [
     description: "Company holidays, paid leave, and special non-working days.",
     to: "/owner/setup-wizard?step=4",
     icon: CalendarDays,
+  },
+  {
+    title: "Leave Policy",
+    description: "Set which leave types are Paid Leave or Unpaid Leave.",
+    to: "/owner/settings/leave-policy",
+    icon: CalendarOff,
   },
   {
     title: "Account Settings",

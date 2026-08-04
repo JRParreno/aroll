@@ -1,7 +1,9 @@
 import 'package:aroll_mobile/core/di/injection.dart';
 import 'package:aroll_mobile/data/repositories/owner_repository.dart';
 import 'package:aroll_mobile/presentation/employee/employee_ui.dart';
+import 'package:aroll_mobile/presentation/owner/owner_shell.dart';
 import 'package:aroll_mobile/presentation/owner/payroll/owner_payroll_format.dart';
+import 'package:aroll_mobile/presentation/shared/app_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
@@ -16,16 +18,32 @@ class _OwnerPayrollListScreenState extends State<OwnerPayrollListScreen> {
   final _repo = sl<OwnerRepository>();
 
   bool _loading = true;
+  bool _finalizing = false;
   String? _error;
+  String? _finalizeMessage;
   String _selectedEmployeeId = '';
+  late int _selectedYear;
+  late int _selectedMonth;
   List<Map<String, dynamic>> _items = const [];
   List<Map<String, dynamic>> _employees = const [];
   Map<String, String> _profileImages = const {};
+  int _incompleteCount = 0;
+  bool _canFinalize = false;
+  bool _isFinalized = false;
 
   @override
   void initState() {
     super.initState();
+    final now = DateTime.now();
+    _selectedYear = now.year;
+    _selectedMonth = now.month;
     _load();
+  }
+
+  DateTime get _asOf {
+    final lastDay = DateTime(_selectedYear, _selectedMonth + 1, 0).day;
+    final day = DateTime.now().day.clamp(1, lastDay);
+    return DateTime(_selectedYear, _selectedMonth, day);
   }
 
   Future<void> _load() async {
@@ -35,7 +53,7 @@ class _OwnerPayrollListScreenState extends State<OwnerPayrollListScreen> {
     });
     try {
       final results = await Future.wait([
-        _repo.payroll(),
+        _repo.payroll(asOf: _asOf),
         _repo.employees(),
       ]);
       final payroll = results[0] as Map<String, dynamic>;
@@ -55,6 +73,10 @@ class _OwnerPayrollListScreenState extends State<OwnerPayrollListScreen> {
             .toList();
         _employees = employees;
         _profileImages = images;
+        _incompleteCount =
+            (payroll['incomplete_attendance_count'] as num?)?.toInt() ?? 0;
+        _canFinalize = payroll['can_finalize'] == true;
+        _isFinalized = payroll['is_finalized'] == true;
         _loading = false;
       });
     } catch (_) {
@@ -62,6 +84,32 @@ class _OwnerPayrollListScreenState extends State<OwnerPayrollListScreen> {
       setState(() {
         _loading = false;
         _error = 'Unable to load payroll summary.';
+      });
+    }
+  }
+
+  Future<void> _finalize() async {
+    if (_finalizing || _isFinalized || _incompleteCount > 0 || !_canFinalize) {
+      return;
+    }
+    setState(() {
+      _finalizing = true;
+      _finalizeMessage = null;
+    });
+    try {
+      await _repo.finalizePayroll(asOf: _asOf);
+      if (!mounted) return;
+      setState(() {
+        _finalizing = false;
+        _finalizeMessage = 'Payroll period finalized successfully.';
+      });
+      await _load();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _finalizing = false;
+        _finalizeMessage =
+            'Payroll cannot be finalized. Resolve incomplete attendance first.';
       });
     }
   }
@@ -84,27 +132,28 @@ class _OwnerPayrollListScreenState extends State<OwnerPayrollListScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFF4F6F8),
-      appBar: AppBar(
-        backgroundColor: const Color(0xFFF4F6F8),
-        elevation: 0,
-        title: const Text(
-          'Payroll Summary',
-          style: TextStyle(fontWeight: FontWeight.w700),
-        ),
-        actions: [
-          IconButton(
-            tooltip: 'Refresh',
-            onPressed: _loading ? null : _load,
-            icon: const Icon(Icons.refresh_rounded),
+    return OwnerShell(
+      selectedIndex: 0,
+      showBackButton: true,
+      title: 'Payroll Summary',
+      actions: [
+        IconButton(
+          tooltip: 'Refresh',
+          constraints: const BoxConstraints(
+            minWidth: AppSizes.minTap,
+            minHeight: AppSizes.minTap,
           ),
-        ],
-      ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
+          onPressed: _loading ? null : _load,
+          icon: const Icon(Icons.refresh_rounded, size: AppSizes.iconLg),
+        ),
+      ],
+      child: _loading
+          ? appLoadingView(cardCount: 4)
           : _error != null
-              ? _ErrorState(message: _error!, onRetry: _load)
+              ? AppErrorState(
+                  message: _error!,
+                  onRetry: _load,
+                )
               : RefreshIndicator(
                   onRefresh: _load,
                   child: ListView(
@@ -113,23 +162,101 @@ class _OwnerPayrollListScreenState extends State<OwnerPayrollListScreen> {
                       _FilterCard(
                         employees: _employees,
                         selectedEmployeeId: _selectedEmployeeId,
+                        selectedYear: _selectedYear,
+                        selectedMonth: _selectedMonth,
                         periodStart: _periodStart,
                         periodEnd: _periodEnd,
                         onEmployeeChanged: (value) =>
                             setState(() => _selectedEmployeeId = value ?? ''),
+                        onYearChanged: (year) {
+                          setState(() => _selectedYear = year);
+                          _load();
+                        },
+                        onMonthChanged: (month) {
+                          setState(() => _selectedMonth = month);
+                          _load();
+                        },
                       ),
-                      const SizedBox(height: 16),
-                      const Text(
-                        'Employee Salary Overview',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w700,
-                          color: Color(0xFF1E466E),
+                      const SizedBox(height: 14),
+                      if (_incompleteCount > 0)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 10),
+                          child: Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFFFBEB),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: const Color(0xFFFDE68A)),
+                            ),
+                            child: Text(
+                              'Payroll cannot be finalized because there are '
+                              'employees with incomplete attendance '
+                              '($_incompleteCount). Resolve all attendance '
+                              'corrections first. You can still preview payslips.',
+                              style: const TextStyle(
+                                fontSize: 12.5,
+                                height: 1.4,
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFF92400E),
+                              ),
+                            ),
+                          ),
+                        ),
+                      if (_finalizeMessage != null)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 10),
+                          child: Text(
+                            _finalizeMessage!,
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w600,
+                              color: _incompleteCount > 0
+                                  ? const Color(0xFFB91C1C)
+                                  : const Color(0xFF166534),
+                            ),
+                          ),
+                        ),
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: SizedBox(
+                          width: double.infinity,
+                          child: FilledButton(
+                            onPressed: (_finalizing ||
+                                    _isFinalized ||
+                                    _incompleteCount > 0 ||
+                                    !_canFinalize)
+                                ? null
+                                : _finalize,
+                            child: Text(
+                              _finalizing
+                                  ? 'Finalizing…'
+                                  : _isFinalized
+                                      ? 'Payroll Finalized'
+                                      : 'Finalize Payroll',
+                            ),
+                          ),
                         ),
                       ),
-                      const SizedBox(height: 12),
+                      if (_filteredItems.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 10),
+                          child: Text(
+                            '${_filteredItems.length} employee'
+                            '${_filteredItems.length == 1 ? '' : 's'}',
+                            style: appMutedStyle().copyWith(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
                       if (_filteredItems.isEmpty)
-                        const _EmptyPayrollCard()
+                        const OwnerEmptyState(
+                          'No payroll history yet',
+                          description:
+                              'Payroll summaries will appear here once attendance is recorded.',
+                          icon: Icons.payments_outlined,
+                        )
                       else
                         ..._filteredItems.map(
                           (item) => _EmployeePayrollCard(
@@ -137,7 +264,8 @@ class _OwnerPayrollListScreenState extends State<OwnerPayrollListScreen> {
                             profileImageUrl:
                                 _profileImages['${item['employee_id']}'],
                             onViewDetails: () => context.push(
-                              '/owner/payroll/${item['employee_id']}',
+                              '/owner/payroll/${item['employee_id']}'
+                              '?as_of=${_dateParam(_asOf)}',
                             ),
                           ),
                         ),
@@ -148,16 +276,29 @@ class _OwnerPayrollListScreenState extends State<OwnerPayrollListScreen> {
   }
 }
 
+String _dateParam(DateTime value) =>
+    '${value.year.toString().padLeft(4, '0')}-'
+    '${value.month.toString().padLeft(2, '0')}-'
+    '${value.day.toString().padLeft(2, '0')}';
+
 class _FilterCard extends StatelessWidget {
   const _FilterCard({
     required this.employees,
     required this.selectedEmployeeId,
+    required this.selectedYear,
+    required this.selectedMonth,
     required this.periodStart,
     required this.periodEnd,
     required this.onEmployeeChanged,
+    required this.onYearChanged,
+    required this.onMonthChanged,
   });
 
   final List<Map<String, dynamic>> employees;
+  final int selectedYear;
+  final int selectedMonth;
+  final ValueChanged<int> onYearChanged;
+  final ValueChanged<int> onMonthChanged;
   final String selectedEmployeeId;
   final String? periodStart;
   final String? periodEnd;
@@ -165,93 +306,152 @@ class _FilterCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          children: [
-            DropdownButtonFormField<String>(
-              initialValue: selectedEmployeeId,
-              isExpanded: true,
-              isDense: true,
-              decoration: InputDecoration(
-                isDense: true,
-                prefixIcon: const Icon(Icons.search, size: 20),
-                hintText: 'Select employee',
-                border: OutlineInputBorder(
+    return OwnerCard(
+      padding: const EdgeInsets.all(AppSpacing.md),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: AppColors.iconWell,
                   borderRadius: BorderRadius.circular(10),
                 ),
-                contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                child: const Icon(
+                  Icons.filter_list_rounded,
+                  color: AppColors.primary,
+                  size: 18,
+                ),
               ),
-              items: [
-                const DropdownMenuItem(
-                  value: '',
-                  child: Text('All employees'),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Filters', style: appSectionTitleStyle()),
+                    Text(
+                      'Choose employee and pay period',
+                      style: appMutedStyle().copyWith(fontSize: 12),
+                    ),
+                  ],
                 ),
-                ...employees.map(
-                  (employee) => DropdownMenuItem(
-                    value: '${employee['id']}',
-                    child: Text('${employee['full_name']}'),
-                  ),
-                ),
-              ],
-              onChanged: (value) => onEmployeeChanged(value ?? ''),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          DropdownButtonFormField<String>(
+            initialValue: selectedEmployeeId,
+            isExpanded: true,
+            isDense: true,
+            decoration: appInputDecoration(
+              hintText: 'Select employee',
+              prefixIcon: const Icon(Icons.search_rounded, size: 20),
             ),
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                Expanded(
-                  child: _PeriodChip(
-                    label: ownerPayrollShortDate(periodStart),
-                  ),
+            items: [
+              const DropdownMenuItem(
+                value: '',
+                child: Text('All employees'),
+              ),
+              ...employees.map(
+                (employee) => DropdownMenuItem(
+                  value: '${employee['id']}',
+                  child: Text('${employee['full_name']}'),
                 ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: _PeriodChip(
-                    label: ownerPayrollShortDate(periodEnd),
+              ),
+            ],
+            onChanged: (value) => onEmployeeChanged(value ?? ''),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: DropdownButtonFormField<int>(
+                  value: selectedMonth,
+                  isExpanded: true,
+                  isDense: true,
+                  decoration: appInputDecoration(labelText: 'Month'),
+                  items: List.generate(
+                    12,
+                    (i) => DropdownMenuItem(
+                      value: i + 1,
+                      child: Text(
+                        [
+                          'Jan',
+                          'Feb',
+                          'Mar',
+                          'Apr',
+                          'May',
+                          'Jun',
+                          'Jul',
+                          'Aug',
+                          'Sep',
+                          'Oct',
+                          'Nov',
+                          'Dec',
+                        ][i],
+                      ),
+                    ),
                   ),
+                  onChanged: (value) {
+                    if (value != null) onMonthChanged(value);
+                  },
                 ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: _PeriodChip(
-                    label: ownerPayrollYear(periodStart),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: DropdownButtonFormField<int>(
+                  value: selectedYear,
+                  isExpanded: true,
+                  isDense: true,
+                  decoration: appInputDecoration(labelText: 'Year'),
+                  items: List.generate(5, (i) {
+                    final year = DateTime.now().year - i;
+                    return DropdownMenuItem(
+                      value: year,
+                      child: Text('$year'),
+                    );
+                  }),
+                  onChanged: (value) {
+                    if (value != null) onYearChanged(value);
+                  },
+                ),
+              ),
+            ],
+          ),
+          if (periodStart != null && periodEnd != null) ...[
+            const SizedBox(height: 12),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: AppColors.iconWell,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.date_range_outlined,
+                    size: 16,
+                    color: AppColors.primary,
                   ),
-                ),
-              ],
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Period ${ownerPayrollShortDate(periodStart)} – ${ownerPayrollShortDate(periodEnd)}',
+                      style: appMutedStyle().copyWith(
+                        fontSize: 12,
+                        color: AppColors.primaryDark,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ],
-        ),
-      ),
-    );
-  }
-}
-
-class _PeriodChip extends StatelessWidget {
-  const _PeriodChip({required this.label});
-
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
-      decoration: BoxDecoration(
-        border: Border.all(color: const Color(0xFFE5E7EB)),
-        borderRadius: BorderRadius.circular(10),
-        color: Colors.white,
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-            ),
-          ),
-          const Icon(Icons.unfold_more, size: 16, color: Color(0xFF9CA3AF)),
         ],
       ),
     );
@@ -271,70 +471,119 @@ class _EmployeePayrollCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
+    final netPay = ownerPayrollMoney(
+      parsePayrollAmount(item['final_net_pay'] ?? item['total_salary']),
+    );
+
+    return OwnerCard(
       margin: const EdgeInsets.only(bottom: 12),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
+      padding: EdgeInsets.zero,
+      onTap: onViewDetails,
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 14, 14, 10),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Expanded(
-                  child: Text(
-                    '${item['employee_name'] ?? 'Employee'}',
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
+                Row(
+                  children: [
+                    EmployeeAvatar(
+                      imageUrl: profileImageUrl,
+                      name: '${item['employee_name'] ?? 'Employee'}',
+                      size: 48,
+                      backgroundColor: AppColors.iconWell,
                     ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '${item['employee_name'] ?? 'Employee'}',
+                            style: appSectionTitleStyle(),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            '${item['position_title'] ?? 'Employee'}',
+                            style: appMutedStyle().copyWith(fontSize: 12),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Icon(
+                      Icons.chevron_right_rounded,
+                      color: AppColors.textMuted,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                _PayrollMetricRow(
+                  icon: Icons.calendar_month_outlined,
+                  label: 'Worked Days',
+                  value: '${item['worked_days'] ?? 0} Days',
+                ),
+                _PayrollMetricRow(
+                  icon: Icons.payments_outlined,
+                  label: ownerSalaryRateLabel(),
+                  value: ownerSalaryRate(item),
+                ),
+                _PayrollMetricRow(
+                  icon: Icons.remove_circle_outline,
+                  label: 'Deductions',
+                  value: ownerPayrollMoney(
+                    parsePayrollAmount(item['deductions']),
                   ),
                 ),
-                EmployeeAvatar(
-                  imageUrl: profileImageUrl,
-                  name: '${item['employee_name'] ?? 'Employee'}',
-                  size: 44,
-                  backgroundColor: const Color(0xFFE7EEF5),
+                _PayrollMetricRow(
+                  icon: Icons.schedule_outlined,
+                  label: 'Overtime Pay',
+                  value: ownerPayrollMoney(
+                    parsePayrollAmount(item['overtime_pay']),
+                  ),
+                ),
+                _PayrollMetricRow(
+                  icon: Icons.tune_outlined,
+                  label: 'Payroll Adjustments',
+                  value: ownerPayrollMoney(
+                    parsePayrollAmount(item['payroll_adjustments_total']),
+                  ),
                 ),
               ],
             ),
-            const SizedBox(height: 12),
-            _PayrollMetricRow(
-              icon: Icons.calendar_month_outlined,
-              label: 'Worked Days',
-              value: '${item['worked_days'] ?? 0} Days',
-            ),
-            _PayrollMetricRow(
-              icon: Icons.payments_outlined,
-              label: 'Daily Rate',
-              value: ownerPayrollMoney(parsePayrollAmount(item['daily_rate'])),
-            ),
-            _PayrollMetricRow(
-              icon: Icons.remove_circle_outline,
-              label: 'Deductions',
-              value: ownerPayrollMoney(parsePayrollAmount(item['deductions'])),
-            ),
-            _PayrollMetricRow(
-              icon: Icons.schedule_outlined,
-              label: 'Overtime Pay',
-              value:
-                  ownerPayrollMoney(parsePayrollAmount(item['overtime_pay'])),
-            ),
-            _PayrollMetricRow(
-              icon: Icons.account_balance_wallet_outlined,
-              label: 'Total Salary',
-              value:
-                  ownerPayrollMoney(parsePayrollAmount(item['total_salary'])),
-              highlight: true,
-            ),
-            Align(
-              alignment: Alignment.centerRight,
-              child: TextButton(
-                onPressed: onViewDetails,
-                child: const Text('View Details'),
+          ),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            decoration: const BoxDecoration(
+              color: Color(0xFFF0FDF4),
+              borderRadius: BorderRadius.vertical(
+                bottom: Radius.circular(18),
               ),
             ),
-          ],
-        ),
+            child: Row(
+              children: [
+                const Text(
+                  'Final Net Pay',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF166534),
+                  ),
+                ),
+                const Spacer(),
+                Text(
+                  netPay,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF16A34A),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -345,75 +594,34 @@ class _PayrollMetricRow extends StatelessWidget {
     required this.icon,
     required this.label,
     required this.value,
-    this.highlight = false,
   });
 
   final IconData icon;
   final String label;
   final String value;
-  final bool highlight;
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
+      padding: const EdgeInsets.symmetric(vertical: 5),
       child: Row(
         children: [
-          Icon(icon, size: 18, color: const Color(0xFF6B7280)),
+          Icon(icon, size: 17, color: AppColors.textMuted),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
               label,
-              style: const TextStyle(fontSize: 13, color: Color(0xFF6B7280)),
+              style: const TextStyle(fontSize: 13, color: AppColors.textMuted),
             ),
           ),
           Text(
             value,
-            style: TextStyle(
+            style: const TextStyle(
               fontSize: 13,
-              fontWeight: highlight ? FontWeight.w700 : FontWeight.w600,
-              color:
-                  highlight ? const Color(0xFF16A34A) : const Color(0xFF1F2937),
+              fontWeight: FontWeight.w600,
+              color: AppColors.textPrimary,
             ),
           ),
-        ],
-      ),
-    );
-  }
-}
-
-class _EmptyPayrollCard extends StatelessWidget {
-  const _EmptyPayrollCard();
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Text(
-          'No payroll records found.',
-          style: TextStyle(color: Colors.grey.shade600),
-        ),
-      ),
-    );
-  }
-}
-
-class _ErrorState extends StatelessWidget {
-  const _ErrorState({required this.message, required this.onRetry});
-
-  final String message;
-  final VoidCallback onRetry;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(message),
-          const SizedBox(height: 12),
-          FilledButton(onPressed: onRetry, child: const Text('Retry')),
         ],
       ),
     );

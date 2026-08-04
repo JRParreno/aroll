@@ -1,12 +1,22 @@
 import uuid
 from datetime import date, datetime
 
-from sqlalchemy import Boolean, Date, DateTime, Enum, ForeignKey, String, Text, func
+from sqlalchemy import (
+    Boolean,
+    Date,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Numeric,
+    String,
+    Text,
+    func,
+)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
-from app.models.enums import EmployeeStatus, EmploymentType
+from app.models.enums import EmployeeStatus, EmploymentType, PayBasis
 
 
 class Employee(Base):
@@ -30,6 +40,14 @@ class Employee(Base):
     employment_type: Mapped[EmploymentType] = mapped_column(
         Enum(EmploymentType), default=EmploymentType.full_time
     )
+    # Employee-owned pay. Payroll resolves these first; Position.daily_rate is
+    # legacy fallback only (see app.services.employee_pay).
+    pay_basis: Mapped[PayBasis] = mapped_column(
+        Enum(PayBasis), default=PayBasis.daily, nullable=False
+    )
+    daily_rate: Mapped[float | None] = mapped_column(Numeric(10, 2), nullable=True)
+    hourly_rate: Mapped[float | None] = mapped_column(Numeric(10, 2), nullable=True)
+    monthly_salary: Mapped[float | None] = mapped_column(Numeric(10, 2), nullable=True)
     phone: Mapped[str | None] = mapped_column(String(50), nullable=True)
     profile_image_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     hire_date: Mapped[date | None] = mapped_column(Date, nullable=True)

@@ -36,7 +36,13 @@ bool ownerShiftsOverlap(Map<String, dynamic> first, Map<String, dynamic> second)
   return aStart.compareTo(bEnd) < 0 && bStart.compareTo(aEnd) < 0;
 }
 
-enum OwnerEmployeeAvailability { available, assigned, conflict }
+enum OwnerEmployeeAvailability {
+  available,
+  leavePending,
+  onLeave,
+  assigned,
+  conflict,
+}
 
 OwnerEmployeeAvailability ownerAvailabilityFor({
   required Map<String, dynamic> employee,
@@ -44,35 +50,40 @@ OwnerEmployeeAvailability ownerAvailabilityFor({
   required List<Map<String, dynamic>> assignmentsForDate,
   required List<Map<String, dynamic>> shifts,
   String? editingAssignmentId,
+  bool onLeave = false,
+  bool leavePending = false,
 }) {
-  if (selectedShift == null) return OwnerEmployeeAvailability.available;
-
   final employeeId = '${employee['id']}';
-  final selectedShiftId = '${selectedShift['id']}';
-  final employeeAssignments = assignmentsForDate.where((assignment) {
-    return assignment['employee_id'] == employeeId &&
-        assignment['id'] != editingAssignmentId;
-  });
 
-  if (employeeAssignments.any((a) => a['shift_id'] == selectedShiftId)) {
-    return OwnerEmployeeAvailability.assigned;
+  if (selectedShift != null) {
+    final selectedShiftId = '${selectedShift['id']}';
+    final employeeAssignments = assignmentsForDate.where((assignment) {
+      return assignment['employee_id'] == employeeId &&
+          assignment['id'] != editingAssignmentId;
+    });
+
+    if (employeeAssignments.any((a) => a['shift_id'] == selectedShiftId)) {
+      return OwnerEmployeeAvailability.assigned;
+    }
+
+    final hasConflict = employeeAssignments.any((assignment) {
+      Map<String, dynamic>? assignedShift;
+      for (final shift in shifts) {
+        if (shift['id'] == assignment['shift_id']) {
+          assignedShift = shift;
+          break;
+        }
+      }
+      if (assignedShift == null) return true;
+      return ownerShiftsOverlap(assignedShift, selectedShift);
+    });
+
+    if (hasConflict) return OwnerEmployeeAvailability.conflict;
   }
 
-  final hasConflict = employeeAssignments.any((assignment) {
-    Map<String, dynamic>? assignedShift;
-    for (final shift in shifts) {
-      if (shift['id'] == assignment['shift_id']) {
-        assignedShift = shift;
-        break;
-      }
-    }
-    if (assignedShift == null) return true;
-    return ownerShiftsOverlap(assignedShift, selectedShift);
-  });
-
-  return hasConflict
-      ? OwnerEmployeeAvailability.conflict
-      : OwnerEmployeeAvailability.available;
+  if (onLeave) return OwnerEmployeeAvailability.onLeave;
+  if (leavePending) return OwnerEmployeeAvailability.leavePending;
+  return OwnerEmployeeAvailability.available;
 }
 
 List<Map<String, dynamic>> ownerBuildScheduleMatrix({
@@ -100,4 +111,20 @@ String ownerInitials(String name) {
   final parts = name.trim().split(RegExp(r'\s+'));
   if (parts.isEmpty || parts.first.isEmpty) return '?';
   return parts.take(2).map((part) => part[0].toUpperCase()).join();
+}
+
+String ownerScheduleViewerCellLabel(
+  List<Map<String, dynamic>> dayAssignments,
+) {
+  if (dayAssignments.isEmpty) return 'OFF';
+  return dayAssignments.map((assignment) {
+    final assignedDuringLeave = assignment['assigned_during_leave'] == true;
+    final onLeave = assignment['on_leave'] == true;
+    if (onLeave && !assignedDuringLeave) return 'On Leave';
+    final start = formatOwnerShiftTime('${assignment['shift_start_time']}');
+    final end = formatOwnerShiftTime('${assignment['shift_end_time']}');
+    final times = '$start-$end';
+    if (assignedDuringLeave) return '$times · Assigned During Leave';
+    return times;
+  }).join(', ');
 }

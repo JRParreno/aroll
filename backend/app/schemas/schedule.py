@@ -1,4 +1,5 @@
 from datetime import date, time
+from uuid import UUID
 
 from pydantic import BaseModel, Field
 
@@ -14,6 +15,9 @@ class ScheduleAssignmentResponse(BaseModel):
     shift_end_time: time
     shift_color: str | None
     is_rest_day_work: bool = False
+    on_leave: bool = False
+    assigned_during_leave: bool = False
+    leave_pending: bool = False
 
 
 class WeeklyScheduleResponse(BaseModel):
@@ -27,6 +31,7 @@ class ScheduleAssignRequest(BaseModel):
     work_date: date
     employee_ids: list[str] = Field(min_length=1)
     is_rest_day_work: bool = False
+    override_leave: bool = False
 
 
 class ScheduleAssignResponse(BaseModel):
@@ -38,3 +43,15 @@ class ScheduleAssignmentUpdateRequest(BaseModel):
     shift_id: str
     work_date: date
     is_rest_day_work: bool | None = None
+    override_leave: bool = False
+
+
+class EmployeeLeaveAvailabilityItem(BaseModel):
+    employee_id: UUID
+    on_leave: bool = False
+    leave_pending: bool = False
+
+
+class EmployeeLeaveAvailabilityResponse(BaseModel):
+    work_date: date
+    employees: list[EmployeeLeaveAvailabilityItem]

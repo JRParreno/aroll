@@ -11,15 +11,26 @@ Future<String> generateOwnerPayslipPdf({
 }) async {
   final doc = pw.Document();
   final employeeName = '${payslip['employee_name'] ?? 'Employee'}';
-  final dailyRate = parsePayrollAmount(payslip['daily_rate']);
   final workedDays = parsePayrollAmount(payslip['worked_days']).toInt();
-  final basicSalary = dailyRate * workedDays;
+  final basicSalary = parsePayrollAmount(payslip['regular_pay']);
   final overtimePay = parsePayrollAmount(payslip['overtime_pay']);
   final holidayPay = parsePayrollAmount(payslip['holiday_pay']);
   final restDayPay = parsePayrollAmount(payslip['rest_day_pay']);
   final grossPay = parsePayrollAmount(payslip['gross_pay']);
   final deductions = parsePayrollAmount(payslip['deductions']);
-  final netPay = parsePayrollAmount(payslip['net_pay']);
+  final lateDeductions = parsePayrollAmount(payslip['late_deductions']);
+  final undertimeDeductions =
+      parsePayrollAmount(payslip['undertime_deductions']);
+  final baseNetPay = parsePayrollAmount(
+    payslip['base_net_pay'] ?? payslip['net_pay'],
+  );
+  final finalNetPay = parsePayrollAmount(
+    payslip['final_net_pay'] ?? payslip['net_pay'],
+  );
+  final adjustments =
+      (payslip['payroll_adjustments'] as List<dynamic>? ?? const [])
+          .whereType<Map<String, dynamic>>()
+          .toList();
   final periodStart = '${payslip['period_start'] ?? ''}';
   final periodEnd = '${payslip['period_end'] ?? ''}';
   final restDayRecords =
@@ -52,7 +63,7 @@ Future<String> generateOwnerPayslipPdf({
         pw.SizedBox(height: 12),
         pw.Text('Earnings/Income', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
         pw.SizedBox(height: 6),
-        _pdfRow('Daily Rate', ownerPayrollMoney(dailyRate)),
+        _pdfRow(ownerSalaryRateLabel(), ownerSalaryRate(payslip)),
         _pdfRow('Basic Salary', ownerPayrollMoney(basicSalary)),
         _pdfRow('Overtime Pay', ownerPayrollMoney(overtimePay)),
         _pdfRow('Holiday Pay', ownerPayrollMoney(holidayPay)),
@@ -76,12 +87,29 @@ Future<String> generateOwnerPayslipPdf({
         pw.SizedBox(height: 12),
         pw.Text('Deductions', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
         pw.SizedBox(height: 6),
-        _pdfRow('Late Deductions', ownerPayrollMoney(deductions)),
-        _pdfRow('Total Deductions', ownerPayrollMoney(deductions)),
+        _pdfRow('Late Deduction', ownerPayrollMoney(lateDeductions)),
+        _pdfRow('Undertime Deduction', ownerPayrollMoney(undertimeDeductions)),
+        _pdfRow('Attendance Deduction Total', ownerPayrollMoney(deductions)),
+        pw.SizedBox(height: 12),
+        pw.Text('Payroll Adjustments',
+            style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+        pw.SizedBox(height: 6),
+        if (adjustments.isEmpty)
+          _pdfRow('Adjustments', 'None')
+        else
+          ...adjustments.map((item) {
+            final kind = '${item['kind'] ?? 'deduction'}';
+            final name = '${item['display_name'] ?? 'Adjustment'}';
+            return _pdfRow(
+              '$name${kind == 'allowance' ? ' (+)' : ' (−)'}',
+              ownerPayrollMoney(parsePayrollAmount(item['amount'])),
+            );
+          }),
         pw.SizedBox(height: 12),
         pw.Text('Net Pay', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
         pw.SizedBox(height: 6),
-        _pdfRow('Net Salary', ownerPayrollMoney(netPay)),
+        _pdfRow('Base Net Pay', ownerPayrollMoney(baseNetPay)),
+        _pdfRow('Final Net Pay', ownerPayrollMoney(finalNetPay)),
       ],
     ),
   );

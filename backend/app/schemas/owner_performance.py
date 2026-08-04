@@ -31,6 +31,7 @@ class EmployeePerformanceItem(BaseModel):
     full_name: str
     position_title: str | None
     phone: str | None
+    profile_image_url: str | None = None
     employment_type: str
     assigned_shifts: int
     attended_shifts: int

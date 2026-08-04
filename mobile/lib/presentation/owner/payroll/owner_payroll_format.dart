@@ -4,6 +4,29 @@ import 'package:intl/intl.dart';
 /// Formats [value] as Philippine pesos. Delegates to [formatPeso].
 String ownerPayrollMoney(num value) => formatPeso(value);
 
+/// Salary rate from pay_basis (+ rates). Delegates to [formatSalaryRate].
+String ownerSalaryRate(Map<String, dynamic>? payload) {
+  if (payload == null) return 'Not set';
+  return formatSalaryRate(
+    payBasis: '${payload['pay_basis'] ?? 'daily'}',
+    dailyRate: _optionalRate(payload['daily_rate']),
+    hourlyRate: _optionalRate(
+      payload['hourly_rate'] ?? payload['hourly_rate_configured'],
+    ),
+    monthlySalary: _optionalRate(
+      payload['monthly_salary'] ?? payload['monthly_salary_configured'],
+    ),
+  );
+}
+
+num? _optionalRate(Object? value) {
+  if (value == null) return null;
+  final amount = parsePayrollAmount(value);
+  return amount > 0 ? amount : null;
+}
+
+String ownerSalaryRateLabel() => salaryRateLabel();
+
 String ownerPayrollShortDate(String? isoDate) {
   if (isoDate == null || isoDate.isEmpty) return '--';
   final parsed = DateTime.tryParse(isoDate);

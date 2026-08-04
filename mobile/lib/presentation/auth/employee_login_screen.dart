@@ -5,7 +5,7 @@ import 'package:aroll_mobile/domain/repositories/employee_repository.dart';
 import 'package:aroll_mobile/presentation/auth/bloc/login_bloc/login_bloc.dart';
 import 'package:aroll_mobile/presentation/auth/bloc/login_bloc/login_event.dart';
 import 'package:aroll_mobile/presentation/auth/bloc/login_bloc/login_state.dart';
-import 'package:aroll_mobile/presentation/auth/auth_form_field.dart';
+import 'package:aroll_mobile/presentation/auth/owner_auth_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
@@ -49,6 +49,16 @@ class _EmployeeLoginScreenState extends State<EmployeeLoginScreen> {
     context.go(resolveAuthenticatedRoute(appState));
   }
 
+  void _submit(BuildContext context, bool loading) {
+    if (loading) return;
+    context.read<LoginBloc>().add(
+          SubmitLoginEvent(
+            email: _emailController.text.trim(),
+            password: _passwordController.text.trim(),
+          ),
+        );
+  }
+
   @override
   Widget build(BuildContext context) {
     return BlocProvider(
@@ -67,74 +77,45 @@ class _EmployeeLoginScreenState extends State<EmployeeLoginScreen> {
         builder: (context, state) {
           final loading = state is LoadingLoginState;
 
-          return Scaffold(
-            resizeToAvoidBottomInset: true,
-            backgroundColor: const Color(0xFF1E466E),
-            appBar: AppBar(
-              backgroundColor: Colors.transparent,
-              elevation: 0,
-              foregroundColor: Colors.white,
-              title: const Text('Employee Sign In'),
-            ),
-            body: SafeArea(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Image.asset(
-                      'assets/branding/logo.png',
-                      height: 140,
-                      fit: BoxFit.contain,
-                    ),
-                    const SizedBox(height: 32),
-                    AuthFormField(
-                      controller: _emailController,
-                      hintText: 'Username',
-                      textInputAction: TextInputAction.next,
-                    ),
-                    const SizedBox(height: 12),
-                    AuthFormField(
-                      controller: _passwordController,
-                      hintText: 'Password',
-                      obscureText: true,
-                      textInputAction: TextInputAction.done,
-                      onSubmitted: (_) => _submit(context, loading),
-                    ),
-                    const SizedBox(height: 18),
-                    AuthPrimaryButton(
-                      label: 'Sign In',
-                      loading: loading,
-                      onPressed:
-                          loading ? null : () => _submit(context, false),
-                    ),
-                    const SizedBox(height: 14),
-                    const Text(
-                      'Use the username and password provided by your employer.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        color: Color(0xFFC8D8E7),
-                        fontSize: 12,
-                        height: 1.4,
-                      ),
-                    ),
-                  ],
-                ),
+          return OwnerAuthScaffold(
+            badgeLabel: 'Employee portal',
+            title: 'Welcome back',
+            subtitle:
+                'Sign in with the username and password provided by your employer.',
+            onBack: () => context.go('/login'),
+            child: OwnerAuthCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  OwnerAuthField(
+                    controller: _emailController,
+                    label: 'Username',
+                    hintText: 'Enter your username',
+                    prefixIcon: Icons.person_outline_rounded,
+                    textInputAction: TextInputAction.next,
+                  ),
+                  OwnerAuthField(
+                    controller: _passwordController,
+                    label: 'Password',
+                    hintText: 'Enter your password',
+                    prefixIcon: Icons.lock_outline_rounded,
+                    obscureText: true,
+                    textInputAction: TextInputAction.done,
+                    onSubmitted: (_) => _submit(context, loading),
+                  ),
+                  const SizedBox(height: 4),
+                  OwnerAuthPrimaryButton(
+                    label: loading ? 'Signing in...' : 'Sign In',
+                    loading: loading,
+                    icon: Icons.arrow_forward_rounded,
+                    onPressed: loading ? null : () => _submit(context, false),
+                  ),
+                ],
               ),
             ),
           );
         },
       ),
     );
-  }
-
-  void _submit(BuildContext context, bool loading) {
-    if (loading) return;
-    context.read<LoginBloc>().add(
-          SubmitLoginEvent(
-            email: _emailController.text.trim(),
-            password: _passwordController.text.trim(),
-          ),
-        );
   }
 }

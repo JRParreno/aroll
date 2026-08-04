@@ -12,13 +12,13 @@ from app.models.scheduling import Shift
 from app.schemas.owner_setup import SetupStatusResponse, SetupStepStatus
 
 SETUP_STEPS = [
-    ("shifts", "Business Schedules"),
-    ("positions", "Positions & Salary Rates"),
-    ("payroll", "Payroll Configuration"),
-    ("attendance_policy", "Attendance Policy"),
-    ("holidays", "Holiday Management"),
-    ("location", "Business Location"),
-    ("review", "Review & Complete"),
+    ("shifts", "Work Shifts"),
+    ("positions", "Employee Job Roles"),
+    ("payroll", "Set Up Employee Pay"),
+    ("attendance_policy", "How Employees Clock In & Out"),
+    ("holidays", "Holidays Employees Will Be Paid For"),
+    ("location", "Work Location"),
+    ("review", "Review Your Setup"),
 ]
 
 REQUIRED_SETUP_KEYS = frozenset({"shifts", "positions", "payroll", "location"})
@@ -91,7 +91,7 @@ def get_setup_status(db: Session, business: Business) -> SetupStatusResponse:
         complete = _step_complete(db, business_id, key, business)
         steps.append(SetupStepStatus(key=key, label=label, complete=complete))
         if not complete and key != "review":
-            missing_items.append(f"{label} not configured")
+            missing_items.append(f"{label} not set up yet")
 
     completed_steps = sum(1 for s in steps if s.complete)
     total_steps = len(steps)
@@ -110,7 +110,7 @@ def get_setup_status(db: Session, business: Business) -> SetupStatusResponse:
 def complete_setup(db: Session, business: Business) -> None:
     status = get_setup_status(db, business)
     missing_required = [
-        f"{step.label} not configured"
+        f"{step.label} not set up yet"
         for step in status.steps
         if step.key in REQUIRED_SETUP_KEYS and not step.complete
     ]

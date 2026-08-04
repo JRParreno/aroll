@@ -6,7 +6,9 @@ import 'package:flutter/material.dart';
 import 'package:share_plus/share_plus.dart';
 
 class EmployeePayslipScreen extends StatefulWidget {
-  const EmployeePayslipScreen({super.key});
+  const EmployeePayslipScreen({super.key, this.asOf});
+
+  final DateTime? asOf;
 
   @override
   State<EmployeePayslipScreen> createState() => _EmployeePayslipScreenState();
@@ -43,7 +45,7 @@ class _EmployeePayslipScreenState extends State<EmployeePayslipScreen> {
       selectedIndex: 3,
       showBack: true,
       child: FutureBuilder<EmployeePayslip>(
-        future: sl<EmployeeRepository>().getPayslip(),
+        future: sl<EmployeeRepository>().getPayslip(asOf: widget.asOf),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return loadingView();
@@ -91,15 +93,24 @@ class _EmployeePayslipScreenState extends State<EmployeePayslipScreen> {
                       'Period Date',
                       '${shortDate(payslip.periodStart)} - ${shortDate(payslip.periodEnd)}',
                     ),
+                    _Row(
+                      'Pay Date',
+                      shortDate(payslip.payDate ?? payslip.periodEnd),
+                    ),
+                    _Row('Payroll Status', titleCase(payslip.payrollStatus)),
                     _Row('Position', payslip.positionTitle ?? 'Employee'),
                     _Row('Employment Type', titleCase(payslip.employmentType)),
+                    _Row('Hours Worked', payslip.hoursWorked.toStringAsFixed(1)),
                     const SizedBox(height: 12),
                     const _SectionTitle('Earnings/Income',
                         color: Color(0xFFFFE681)),
-                    _Row('Salary Rate (daily)', money(payslip.dailyRate)),
+                    _Row(
+                      salaryRateRowLabel(),
+                      salaryRateDisplayFromPayslip(payslip),
+                    ),
                     _Row(
                       'Basic Salary',
-                      money(payslip.dailyRate * payslip.workedDays),
+                      money(payslip.regularPay),
                     ),
                     _Row('Overtime', money(payslip.overtimePay)),
                     _Row('Holiday Pay', money(payslip.holidayPay)),
@@ -109,8 +120,7 @@ class _EmployeePayslipScreenState extends State<EmployeePayslipScreen> {
                           : 'Rest Day Premium',
                       money(payslip.restDayPay),
                     ),
-                    _Row('Total Earnings', money(payslip.grossPay),
-                        strong: true),
+                    _Row('Gross Pay', money(payslip.grossPay), strong: true),
                     if (payslip.restDayRecords.isNotEmpty) ...[
                       const SizedBox(height: 12),
                       const _SectionTitle('Rest Day Work',
@@ -174,13 +184,66 @@ class _EmployeePayslipScreenState extends State<EmployeePayslipScreen> {
                     ],
                     const SizedBox(height: 12),
                     const _SectionTitle('Deductions', color: Color(0xFFFFC5C5)),
-                    _Row('Late/Undertime', money(payslip.deductions)),
+                    _Row('Late Deduction', money(payslip.lateDeductions)),
+                    _Row(
+                      'Undertime Deduction',
+                      money(payslip.undertimeDeductions),
+                    ),
                     _Row('Absent Days', '${payslip.absentDays}'),
-                    _Row('Total Deductions', money(payslip.deductions),
-                        strong: true),
+                    _Row(
+                      'Attendance Deduction Total',
+                      money(payslip.deductions),
+                    ),
+                    const SizedBox(height: 12),
+                    const _SectionTitle(
+                      'Payroll Adjustments',
+                      color: Color(0xFFFDE68A),
+                    ),
+                    if (payslip.payrollAdjustments.isEmpty)
+                      const Padding(
+                        padding: EdgeInsets.only(bottom: 8),
+                        child: Text(
+                          'No payroll adjustments for this period.',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Color(0xFF6B7280),
+                          ),
+                        ),
+                      )
+                    else
+                      ...payslip.payrollAdjustments.map(
+                        (item) => Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _Row(
+                                '${item.displayName}${item.kind == 'allowance' ? ' (+)' : ' (−)'}',
+                                money(item.amount),
+                              ),
+                              if ((item.description ?? '').trim().isNotEmpty)
+                                Text(
+                                  item.description!,
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    color: Color(0xFF6B7280),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                      ),
                     const SizedBox(height: 12),
                     const _SectionTitle('NET PAY', color: Color(0xFFC8F7CE)),
-                    _Row('Net Pay', money(payslip.netPay), strong: true),
+                    _Row(
+                      'Base Net Pay',
+                      money(payslip.baseNetPay ?? payslip.netPay),
+                    ),
+                    _Row(
+                      'Final Net Pay',
+                      money(payslip.displayNetPay),
+                      strong: true,
+                    ),
                   ],
                 ),
               ),

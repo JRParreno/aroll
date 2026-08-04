@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:aroll_mobile/core/app_state.dart';
 import 'package:aroll_mobile/core/di/injection.dart';
+import 'package:aroll_mobile/core/theme/business_brand_theme.dart';
 import 'package:aroll_mobile/core/utils/profile_image_errors.dart';
 import 'package:aroll_mobile/domain/entities/employee_portal.dart';
 import 'package:aroll_mobile/domain/repositories/employee_repository.dart';
@@ -28,7 +29,9 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
 
   void _reloadProfile() {
     _future = sl<EmployeeRepository>().getProfile().then((profile) {
-      sl<AppState>().updateEmployeeProfileImage(profile.profileImageUrl);
+      final appState = sl<AppState>();
+      appState.updateEmployeeProfileImage(profile.profileImageUrl);
+      appState.updateBusinessBranding(profile.branding);
       return profile;
     });
   }
@@ -164,78 +167,150 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
               final avatarUrl = appState.resolveEmployeeAvatarUrl(
                 profile.profileImageUrl,
               );
+              final position = profile.position ?? 'Employee';
 
+              final brand = BrandColors.of(context);
+              final soft =
+                  Color.lerp(brand.primary, Colors.white, 0.18) ?? brand.primary;
               return ListView(
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
                 children: [
-                  Row(
-                    children: [
-                      Stack(
-                        alignment: Alignment.bottomRight,
-                        children: [
-                          EmployeeAvatar(
-                            imageUrl: avatarUrl,
-                            name: profile.fullName,
-                            size: 76,
-                          ),
-                          Material(
-                            color: EmployeeColors.primaryDark,
-                            shape: const CircleBorder(),
-                            child: InkWell(
-                              customBorder: const CircleBorder(),
-                              onTap: _uploading ? null : _chooseImageSource,
-                              child: Padding(
-                                padding: const EdgeInsets.all(7),
-                                child: _uploading
-                                    ? const SizedBox(
-                                        height: 15,
-                                        width: 15,
-                                        child: CircularProgressIndicator(
-                                          color: Colors.white,
-                                          strokeWidth: 2,
-                                        ),
-                                      )
-                                    : const Icon(
-                                        Icons.camera_alt_rounded,
-                                        color: Colors.white,
-                                        size: 15,
-                                      ),
-                              ),
-                            ),
-                          ),
-                        ],
+                  Container(
+                    padding: const EdgeInsets.fromLTRB(16, 18, 16, 18),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [soft, brand.primary],
                       ),
-                      const SizedBox(width: 14),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                      borderRadius: BorderRadius.circular(20),
+                      boxShadow: [
+                        BoxShadow(
+                          color: brand.primary.withValues(alpha: 0.18),
+                          blurRadius: 16,
+                          offset: const Offset(0, 8),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Stack(
+                          clipBehavior: Clip.none,
                           children: [
-                            Text(
-                              profile.fullName,
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .titleLarge
-                                  ?.copyWith(
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                            ),
-                            Text(titleCase(profile.employmentType)),
-                            if (avatarUrl != null) ...[
-                              const SizedBox(height: 8),
-                              TextButton(
-                                onPressed:
-                                    _uploading ? null : _confirmRemoveProfileImage,
-                                child: const Text('Remove profile picture'),
+                            Container(
+                              padding: const EdgeInsets.all(3),
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: Colors.white.withValues(alpha: 0.55),
+                                  width: 2,
+                                ),
                               ),
-                            ],
+                              child: EmployeeAvatar(
+                                imageUrl: avatarUrl,
+                                name: profile.fullName,
+                                size: 72,
+                                backgroundColor: Colors.white,
+                              ),
+                            ),
+                            Positioned(
+                              right: -2,
+                              bottom: -2,
+                              child: Material(
+                                color: brand.button,
+                                shape: const CircleBorder(),
+                                elevation: 1,
+                                child: InkWell(
+                                  customBorder: const CircleBorder(),
+                                  onTap:
+                                      _uploading ? null : _chooseImageSource,
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(7),
+                                    child: _uploading
+                                        ? const SizedBox(
+                                            height: 15,
+                                            width: 15,
+                                            child: CircularProgressIndicator(
+                                              color: Colors.white,
+                                              strokeWidth: 2,
+                                            ),
+                                          )
+                                        : const Icon(
+                                            Icons.camera_alt_rounded,
+                                            color: Colors.white,
+                                            size: 15,
+                                          ),
+                                  ),
+                                ),
+                              ),
+                            ),
                           ],
                         ),
-                      ),
-                    ],
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                profile.fullName,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.w800,
+                                  height: 1.2,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                position,
+                                style: TextStyle(
+                                  color: Colors.white.withValues(alpha: 0.88),
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                titleCase(profile.employmentType),
+                                style: TextStyle(
+                                  color: Colors.white.withValues(alpha: 0.75),
+                                  fontSize: 12,
+                                  height: 1.3,
+                                ),
+                              ),
+                              if (avatarUrl != null) ...[
+                                const SizedBox(height: 8),
+                                TextButton(
+                                  style: TextButton.styleFrom(
+                                    padding: EdgeInsets.zero,
+                                    minimumSize: Size.zero,
+                                    tapTargetSize:
+                                        MaterialTapTargetSize.shrinkWrap,
+                                    foregroundColor:
+                                        Colors.white.withValues(alpha: 0.9),
+                                    textStyle: const TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  onPressed: _uploading
+                                      ? null
+                                      : _confirmRemoveProfileImage,
+                                  child: const Text('Remove photo'),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                  const SizedBox(height: 18),
+                  const SizedBox(height: 16),
                   _Section(
                     title: 'Personal Information',
+                    accent: brand.primary,
                     children: [
                       EmployeeDetailField(
                         label: 'Name',
@@ -245,21 +320,13 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
                         label: 'Username',
                         value: profile.username ?? 'Not available',
                       ),
-                      const EmployeeDetailField(
-                        label: 'Address',
-                        value: 'Not set',
-                      ),
                       EmployeeDetailField(
                         label: 'Phone Number',
                         value: profile.phone ?? 'Not set',
                       ),
-                      const EmployeeDetailField(
-                        label: 'Date of Birth',
-                        value: 'Not set',
-                      ),
                       EmployeeDetailField(
                         label: 'Position',
-                        value: profile.position ?? 'Employee',
+                        value: position,
                       ),
                       EmployeeDetailField(
                         label: 'Employee Status',
@@ -268,65 +335,20 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
                     ],
                   ),
                   const SizedBox(height: 14),
-                  _Section(
-                    title: 'Business Information',
-                    children: [
-                      Row(
-                        children: [
-                          BusinessLogo(
-                            logoUrl: profile.branding?.logoUrl,
-                            height: 48,
-                            width: 48,
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Text(
-                              profile.businessName,
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .titleMedium
-                                  ?.copyWith(
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      EmployeeDetailField(
-                        label: 'Assigned Business',
-                        value: profile.businessName,
-                      ),
-                      EmployeeDetailField(
-                        label: 'Business Code',
-                        value: profile.businessCode,
-                      ),
-                      EmployeeDetailField(
-                        label: 'Business Type',
-                        value: profile.businessType ?? 'Not specified',
-                      ),
-                      EmployeeDetailField(
-                        label: 'Owner',
-                        value: profile.ownerName ?? 'Not available',
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 14),
-                  _Section(
-                    title: 'Face Registration',
-                    children: [
-                      EmployeeDetailField(
-                        label: 'Status',
-                        value: profile.faceRegistered
-                            ? 'Completed'
-                            : titleCase(profile.faceRegistrationStatus),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 14),
-                  EmployeeOutlinedButton(
-                    label: 'Sign Out',
+                  OutlinedButton(
                     onPressed: () => confirmEmployeeSignOut(context),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: brand.primary,
+                      side: BorderSide(color: brand.primary.withValues(alpha: 0.45)),
+                      minimumSize: const Size.fromHeight(48),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                    child: const Text(
+                      'Sign Out',
+                      style: TextStyle(fontWeight: FontWeight.w700),
+                    ),
                   ),
                 ],
               );
@@ -339,10 +361,15 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
 }
 
 class _Section extends StatelessWidget {
-  const _Section({required this.title, required this.children});
+  const _Section({
+    required this.title,
+    required this.children,
+    required this.accent,
+  });
 
   final String title;
   final List<Widget> children;
+  final Color accent;
 
   @override
   Widget build(BuildContext context) {
@@ -350,7 +377,20 @@ class _Section extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          EmployeeSectionTitle(title),
+          Row(
+            children: [
+              Container(
+                width: 4,
+                height: 18,
+                decoration: BoxDecoration(
+                  color: accent,
+                  borderRadius: BorderRadius.circular(999),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(child: EmployeeSectionTitle(title)),
+            ],
+          ),
           const SizedBox(height: 12),
           ...children,
         ],
