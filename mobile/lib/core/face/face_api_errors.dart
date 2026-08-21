@@ -51,7 +51,7 @@ String? _friendlyCode(String? code) {
     case 'identity_changed':
       return 'Please keep the same person in the frame.';
     case 'face_required':
-      return 'You’ll need face recognition to clock in or out.';
+      return 'You’ll need face recognition to time in or time out.';
     case 'face_enrollment_required':
     case 'face_model_outdated':
       return 'Please finish setting up your face first.';
@@ -62,12 +62,12 @@ String? _friendlyCode(String? code) {
     case 'mock_location':
       return 'Location spoofing isn’t allowed. Please turn off any fake GPS apps and try again.';
     case 'not_clocked_in':
-      return 'You need to clock in before you can clock out.';
+      return 'You need to time in before you can time out.';
     case 'already_clocked_out':
       return 'You’ve already completed attendance for this shift.';
     case 'incomplete_attendance':
       return 'Your shift has already ended and your attendance has been marked '
-          'as incomplete because you forgot to clock out. Please submit an '
+          'as incomplete because you forgot to time out. Please submit an '
           'attendance correction request or contact your manager.';
     default:
       return null;

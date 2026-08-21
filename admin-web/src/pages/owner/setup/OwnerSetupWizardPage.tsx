@@ -37,7 +37,7 @@ const STEPS = [
   "Work Shifts",
   "Employee Job Roles",
   "Set Up Employee Pay",
-  "How Employees Clock In & Out",
+  "How Employees Time In & Out",
   "Holidays Employees Will Be Paid For",
   "Work Location",
   "Review Your Setup",
@@ -59,12 +59,12 @@ const STEP_HELP: Record<string, string> = {
     "Add the different job roles in your business and their daily pay.",
   "Set Up Employee Pay":
     "Choose how often employees get paid and how pay is calculated.",
-  "How Employees Clock In & Out":
+  "How Employees Time In & Out":
     "Set the time rules for being on time, late, absent, and overtime.",
   "Holidays Employees Will Be Paid For":
     "Add holidays your business follows so schedules and pay stay accurate.",
   "Work Location":
-    "Set your workplace so employees can only clock in when they are nearby.",
+    "Set your workplace so employees can only time in when they are nearby.",
   "Review Your Setup":
     "Check your progress and finish when the required parts are ready.",
 };
@@ -1185,8 +1185,8 @@ export function OwnerSetupWizardPage() {
                     [
                       [
                         "early_clock_in_minutes",
-                        "Early clock-in window (min)",
-                        "How early employees may clock in before shift start.",
+                        "Early time-in window (min)",
+                        "How early employees may time in before shift start.",
                       ],
                       [
                         "on_time_grace_minutes",
@@ -1263,7 +1263,7 @@ export function OwnerSetupWizardPage() {
 
             {step === 5 && (
               <BusinessLocationSetup
-                description="Set your workplace on the map and choose how close employees must be before they can clock in or clock out."
+                description="Set your workplace on the map and choose how close employees must be before they can time in or time out."
                 mapHeightClassName="h-[280px] sm:h-[340px]"
                 saveLabel="Save Workplace Location"
               />

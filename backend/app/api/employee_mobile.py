@@ -781,8 +781,8 @@ def dashboard(
         "incomplete_attendance_reminder": {
             "show": latest_incomplete is not None,
             "message": (
-                "You forgot to clock out.\n"
-                "Please submit your correct clock-out time."
+                "You forgot to time out.\n"
+                "Please submit your correct time-out time."
             ),
             "count": len(incomplete_rows),
             "attendance_record_id": (
@@ -950,7 +950,7 @@ async def clock_in_with_face(
     shift_assignment_id: Annotated[uuid.UUID | None, Form()] = None,
     liveness_gesture: Annotated[str | None, Form()] = None,
 ):
-    """Clock in with GPS + client blink/smile gesture + server face match."""
+    """Time in with GPS + client blink/smile gesture + server face match."""
     employee, business = _current_employee(db, user)
     gesture = (liveness_gesture or "").strip().lower()
     if gesture not in ("blink", "smile"):
@@ -1116,7 +1116,7 @@ def _pdf_escape(value: object) -> str:
 
 def _simple_payslip_pdf(data: dict) -> bytes:
     lines = [
-        "SALARY SLIP",
+        "PAYSLIP",
         data["business_name"],
         f"Employee: {data['employee_name']}",
         f"Position: {data.get('position_title') or 'Employee'}",

@@ -4,7 +4,7 @@ const setupWizardStepLabels = [
   'Work Shifts',
   'Employee Job Roles',
   'Set Up Employee Pay',
-  'How Employees Clock In & Out',
+  'How Employees Time In & Out',
   'Holidays Employees Will Be Paid For',
   'Work Location',
   'Review Your Setup',
@@ -38,12 +38,12 @@ const setupStepHelp = {
   'Employee Job Roles': 'Add the different job roles in your business and their daily pay.',
   'Set Up Employee Pay':
       'Choose how often employees get paid and how pay is calculated.',
-  'How Employees Clock In & Out':
+  'How Employees Time In & Out':
       'Set the time rules for being on time, late, absent, and overtime.',
   'Holidays Employees Will Be Paid For':
       'Add holidays your business follows so schedules and pay stay accurate.',
   'Work Location':
-      'Set your workplace so employees can only clock in when they are nearby.',
+      'Set your workplace so employees can only time in when they are nearby.',
   'Business Information':
       'View your registered business profile and contact details.',
   'Review Your Setup':
@@ -95,7 +95,7 @@ const setupMenuEntries = [
     icon: Icons.payments_outlined,
   ),
   SetupMenuEntry(
-    label: 'How Employees Clock In & Out',
+    label: 'How Employees Time In & Out',
     subtitle:
         'Set the time rules for being on time, late, absent, and overtime.',
     stepIndex: 3,
@@ -113,7 +113,7 @@ const setupMenuEntries = [
   SetupMenuEntry(
     label: 'Work Location',
     subtitle:
-        'Set your workplace so employees can only clock in when they are nearby.',
+        'Set your workplace so employees can only time in when they are nearby.',
     stepIndex: 5,
     statusKey: 'location',
     icon: Icons.location_on_outlined,

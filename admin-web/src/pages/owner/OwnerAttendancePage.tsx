@@ -795,7 +795,7 @@ export function OwnerAttendancePage() {
                 </label>
                 <Input
                   onChange={(event) => setCompleteReason(event.target.value)}
-                  placeholder="Employee forgot to clock out"
+                  placeholder="Employee forgot to time out"
                   value={completeReason}
                 />
               </div>

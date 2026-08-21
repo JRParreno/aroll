@@ -29,7 +29,7 @@ from app.services.activity_logger import create_log
 
 INCOMPLETE_CLOCK_OUT_MESSAGE = (
     "Your shift has already ended and your attendance has been marked as "
-    "incomplete because you forgot to clock out. Please submit an attendance "
+    "incomplete because you forgot to time out. Please submit an attendance "
     "correction request or contact your manager."
 )
 

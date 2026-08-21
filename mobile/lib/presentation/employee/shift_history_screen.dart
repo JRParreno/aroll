@@ -735,14 +735,14 @@ class _HistoryCard extends StatelessWidget {
                   child: Column(
                     children: [
                       _MetricRow(
-                        label: 'Clock In',
+                        label: 'Time In',
                         value: timeOnly(item.timeIn),
                       ),
                       const SizedBox(height: 5),
                       const Divider(height: 1, color: Color(0xFFE8EEF4)),
                       const SizedBox(height: 5),
                       _MetricRow(
-                        label: 'Clock Out',
+                        label: 'Time Out',
                         value: timeOnly(item.timeOut),
                         emphasizeMissing: _isIncomplete && item.timeOut == null,
                       ),

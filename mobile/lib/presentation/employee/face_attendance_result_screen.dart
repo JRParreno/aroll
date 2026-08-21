@@ -42,7 +42,7 @@ class _FaceAttendanceResultScreenState
   String? _error;
 
   String get _actionLabel =>
-      widget.action == FaceAttendanceAction.clockIn ? 'Clock in' : 'Clock out';
+      widget.action == FaceAttendanceAction.clockIn ? 'Time in' : 'Time out';
 
   @override
   void initState() {
@@ -227,9 +227,9 @@ class _SuccessBody extends StatelessWidget {
     final timeValue = formatTime(stamp);
     final dateValue = formatDate(stamp);
     final statusTitle =
-        isClockIn ? 'Clock In Successful' : 'Clock Out Successful';
+        isClockIn ? 'Time In Successful' : 'Time Out Successful';
     final clockedLabel =
-        isClockIn ? 'Clocked In: $timeValue' : 'Clocked Out: $timeValue';
+        isClockIn ? 'Time In: $timeValue' : 'Time Out: $timeValue';
     final appState = sl<AppState>();
     final name = profile?.fullName ?? 'Employee';
     final position = profile?.position ?? 'Team member';
@@ -400,7 +400,7 @@ class _SuccessBody extends StatelessWidget {
         const SizedBox(height: 20),
         if (onClockOut != null) ...[
           EmployeePrimaryButton(
-            label: 'Clock Out',
+            label: 'Time Out',
             onPressed: onClockOut,
             icon: Icons.logout_rounded,
           ),

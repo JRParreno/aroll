@@ -677,7 +677,7 @@ export function OwnerSchedulePage() {
                                     {assignment.employee_name}
                                   </td>
                                   <td className="px-4 py-3 text-[#6B7280]">
-                                    {employee?.position_title ?? "Unassigned"}
+                                    {employee?.position_title ?? "Unassigned"}d
                                   </td>
                                   <td className="px-4 py-3">
                                     <div className="flex flex-wrap gap-2">

@@ -10,7 +10,7 @@ export function OwnerLocationPage() {
     <OwnerPage>
       <OwnerPageHeader
         title="Location"
-        description="Set your workplace on the map and choose how close employees must be before they can clock in or clock out."
+        description="Set your workplace on the map and choose how close employees must be before they can time in or time out."
       />
       <OwnerPageContent>
         <BusinessLocationSetup />

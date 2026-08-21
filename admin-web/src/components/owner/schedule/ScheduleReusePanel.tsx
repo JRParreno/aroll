@@ -67,6 +67,10 @@ export function ScheduleReusePanel({
     useState<ScheduleConflictMode>("merge");
   const [templateName, setTemplateName] = useState("");
   const [menuTemplateId, setMenuTemplateId] = useState<string | null>(null);
+  const [templateToDelete, setTemplateToDelete] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
 
   const { data: suggestions } = useQuery({
     queryKey: ["schedule-reuse-suggestions", weekStartKey],
@@ -146,6 +150,7 @@ export function ScheduleReusePanel({
     onSuccess: () => {
       toast.success("Template deleted");
       setMenuTemplateId(null);
+      setTemplateToDelete(null);
       qc.invalidateQueries({ queryKey: ["schedule-reuse-suggestions"] });
     },
     onError: (error) => toast.error(apiError(error, "Unable to delete template")),
@@ -311,7 +316,14 @@ export function ScheduleReusePanel({
                             <button
                               type="button"
                               className="block w-full px-3 py-2 text-left text-sm text-red-600 hover:bg-slate-50"
-                              onClick={() => deleteMutation.mutate(template.id)}
+                              onClick={() => {
+                                setMenuTemplateId(null);
+                                setOpen(false);
+                                setTemplateToDelete({
+                                  id: template.id,
+                                  name: template.name,
+                                });
+                              }}
                             >
                               Delete
                             </button>
@@ -326,6 +338,42 @@ export function ScheduleReusePanel({
           </div>
         )}
       </div>
+
+      <Dialog
+        open={Boolean(templateToDelete)}
+        onOpenChange={(open) => {
+          if (!open && !deleteMutation.isPending) setTemplateToDelete(null);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete template</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-[#6B7280]">
+            {`Are you sure you want to delete "${templateToDelete?.name ?? "this template"}"? This cannot be undone.`}
+          </p>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setTemplateToDelete(null)}
+              disabled={deleteMutation.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={!templateToDelete || deleteMutation.isPending}
+              onClick={() => {
+                if (templateToDelete) {
+                  deleteMutation.mutate(templateToDelete.id);
+                }
+              }}
+            >
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={saveOpen} onOpenChange={setSaveOpen}>
         <DialogContent>

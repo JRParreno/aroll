@@ -393,7 +393,7 @@ EmployeeDashboard _dashboardFromJson(Map<String, dynamic> json) {
         : IncompleteAttendanceReminder(
             show: reminderJson['show'] == true,
             message: reminderJson['message'] as String? ??
-                'You forgot to clock out for your previous shift.\n'
+                'You forgot to time out for your previous shift.\n'
                     'Please submit a correction request to complete your attendance.',
             count: (reminderJson['count'] as num?)?.toInt() ?? 0,
             attendanceRecordId:

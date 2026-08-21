@@ -88,9 +88,11 @@ export function OwnerDashboardInsights() {
   const pendingSetup =
     setupStatus?.steps.filter((step) => !step.complete).length ?? 0;
 
-  const payrollConfigured =
-    setupStatus?.steps.find((step) => step.key === "payroll")?.complete ??
-    Boolean(payrollReport?.period_end);
+  const payrollStepComplete = Boolean(
+    setupStatus?.steps.find((step) => step.key === "payroll")?.complete
+  );
+  const hasPayrollPeriod = Boolean(payrollReport?.period_end);
+  const payrollConfigured = payrollStepComplete || hasPayrollPeriod;
 
   const payday = payrollReport?.pay_date ?? payrollReport?.period_end ?? null;
   const paydayIn = payrollConfigured ? daysUntil(payday) : null;

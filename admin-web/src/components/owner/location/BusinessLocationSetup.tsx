@@ -41,7 +41,7 @@ type BusinessLocationSetupProps = {
 };
 
 export function BusinessLocationSetup({
-  description = "Set your workplace on the map and choose how close employees must be before they can clock in or clock out.",
+  description = "Set your workplace on the map and choose how close employees must be before they can time in or time out.",
   saveLabel = "Save Location",
   mapHeightClassName = "h-[320px] sm:h-[420px]",
   className,

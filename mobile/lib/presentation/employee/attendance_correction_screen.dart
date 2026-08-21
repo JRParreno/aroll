@@ -242,13 +242,13 @@ class _AttendanceCorrectionScreenState
                       ),
                       const SizedBox(height: 10),
                       _RecordedTimeRow(
-                        label: 'Clock In',
+                        label: 'Time In',
                         value: _recordedTime(item.timeIn),
                         missing: item.timeIn == null,
                       ),
                       const SizedBox(height: 8),
                       _RecordedTimeRow(
-                        label: 'Clock Out',
+                        label: 'Time Out',
                         value: _recordedTime(item.timeOut),
                         missing: item.timeOut == null,
                       ),
@@ -289,7 +289,7 @@ class _AttendanceCorrectionScreenState
           const SizedBox(height: 4),
           Text(
             isIncomplete
-                ? 'Tap clock-out to update it.'
+                ? 'Tap time-out to update it.'
                 : 'Tap a time to update it.',
             style: appMutedStyle().copyWith(fontSize: 12.5),
           ),
@@ -298,7 +298,7 @@ class _AttendanceCorrectionScreenState
             children: [
               Expanded(
                 child: _TimePickerCard(
-                  label: isIncomplete ? 'Clock In (locked)' : 'Clock In',
+                  label: isIncomplete ? 'Time In (locked)' : 'Time In',
                   value: _formatTod(_timeIn),
                   icon: Icons.login_rounded,
                   enabled: !_submitting && !isIncomplete,
@@ -309,7 +309,7 @@ class _AttendanceCorrectionScreenState
               const SizedBox(width: 10),
               Expanded(
                 child: _TimePickerCard(
-                  label: 'Clock Out',
+                  label: 'Time Out',
                   value: _formatTod(_timeOut),
                   icon: Icons.logout_rounded,
                   enabled: !_submitting,
@@ -340,7 +340,7 @@ class _AttendanceCorrectionScreenState
               ),
               decoration: employeeInputDecoration(
                 context,
-                hintText: 'Example: I forgot to clock out after my shift.',
+                hintText: 'Example: I forgot to time out after my shift.',
               ).copyWith(
                 filled: false,
                 border: InputBorder.none,

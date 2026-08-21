@@ -57,8 +57,8 @@ def notify_incomplete_attendance(
                     type="incomplete_attendance",
                     title="Incomplete Attendance",
                     message=(
-                        f"You forgot to clock out{date_part}. "
-                        "Please submit your correct clock-out time."
+                        f"You forgot to time out{date_part}. "
+                        "Please submit your correct time-out time."
                     ),
                     entity_type="attendance_record",
                     entity_id=record.id,

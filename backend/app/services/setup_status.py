@@ -15,7 +15,7 @@ SETUP_STEPS = [
     ("shifts", "Work Shifts"),
     ("positions", "Employee Job Roles"),
     ("payroll", "Set Up Employee Pay"),
-    ("attendance_policy", "How Employees Clock In & Out"),
+    ("attendance_policy", "How Employees Time In & Out"),
     ("holidays", "Holidays Employees Will Be Paid For"),
     ("location", "Work Location"),
     ("review", "Review Your Setup"),

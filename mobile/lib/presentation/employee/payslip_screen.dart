@@ -41,7 +41,7 @@ class _EmployeePayslipScreenState extends State<EmployeePayslipScreen> {
   @override
   Widget build(BuildContext context) {
     return EmployeeScaffold(
-      title: 'Salary Slip',
+      title: 'PAYSLIP',
       selectedIndex: 3,
       showBack: true,
       child: FutureBuilder<EmployeePayslip>(
@@ -70,7 +70,7 @@ class _EmployeePayslipScreenState extends State<EmployeePayslipScreen> {
                           borderRadius: BorderRadius.circular(999),
                         ),
                         child: const Text(
-                          'SALARY SLIP',
+                          'PAYSLIP',
                           style: TextStyle(
                             color: Colors.white,
                             fontWeight: FontWeight.w700,

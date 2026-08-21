@@ -183,7 +183,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                               const SizedBox(height: 18),
                               const _SectionLabel(
                                 title: 'Quick actions',
-                                subtitle: 'Clock in or check your current pay',
+                                subtitle: 'Time in or check your current pay',
                               ),
                               const SizedBox(height: 10),
                               Row(
@@ -191,7 +191,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                   Expanded(
                                     child: _QuickActionCard(
                                       icon: Icons.center_focus_strong_rounded,
-                                      label: 'Clock Attendance',
+                                      label: ' Attendance',
                                       helper: 'Face & GPS check',
                                       accent: employeePrimary(
                                         data.profile.branding,
@@ -866,10 +866,10 @@ class _IncompleteAttendanceBanner extends StatelessWidget {
         .toList();
     final lineOne = lines.isNotEmpty
         ? lines.first
-        : 'You forgot to clock out.';
+        : 'You forgot to time out.';
     final lineTwo = lines.length > 1
         ? lines.sublist(1).join(' ')
-        : 'Please submit your correct clock-out time.';
+        : 'Please submit your correct time-out time.';
 
     return Material(
       color: const Color(0xFFFFFBEB),

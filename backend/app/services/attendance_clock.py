@@ -152,7 +152,7 @@ def _resolve_assignment(
 
     raise HTTPException(
         400,
-        "Multiple shifts are assigned today. Open your schedule and select a shift to clock in.",
+        "Multiple shifts are assigned today. Open your schedule and select a shift to time in.",
     )
 
 
@@ -662,7 +662,7 @@ def clock_out_employee(
             400,
             detail={
                 "code": "not_clocked_in",
-                "message": "You need to clock in before you can clock out.",
+                "message": "You need to time in before you can time out.",
             },
         )
     if record.time_out is not None:

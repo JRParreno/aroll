@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { toast } from "sonner";
 import {
@@ -160,6 +160,20 @@ function statusLabel(status: LeaveRequest["status"]) {
   return "Pending Approval";
 }
 
+function tabForLeaveStatus(
+  status: LeaveRequest["status"]
+): (typeof TABS)[number]["key"] {
+  if (
+    status === "pending" ||
+    status === "cancellation_pending" ||
+    status === "approved" ||
+    status === "rejected"
+  ) {
+    return status;
+  }
+  return "all";
+}
+
 export function OwnerLeaveManagementPage() {
   const { requestId } = useParams<{ requestId?: string }>();
   const qc = useQueryClient();
@@ -173,6 +187,7 @@ export function OwnerLeaveManagementPage() {
   const [payrollIsPaid, setPayrollIsPaid] = useState(true);
   const [overrideReason, setOverrideReason] = useState("");
   const [detailLoading, setDetailLoading] = useState(false);
+  const openedDeepLinkId = useRef<string | null>(null);
 
   const selectRequest = async (request: LeaveRequest) => {
     setSelected(request);
@@ -216,19 +231,45 @@ export function OwnerLeaveManagementPage() {
       }),
   });
 
+  const listMatch = useMemo(
+    () => (requestId ? requests.find((item) => item.id === requestId) : undefined),
+    [requestId, requests]
+  );
+
+  const { data: fetchedRequest, isError: deepLinkError } = useQuery({
+    queryKey: ["owner-leave-request", requestId],
+    queryFn: () => getOwnerLeaveRequest(requestId!),
+    enabled: Boolean(requestId) && !isLoading && !listMatch,
+    retry: false,
+  });
+
   useEffect(() => {
-    if (!requestId || requests.length === 0) return;
-    const match = requests.find((item) => item.id === requestId);
-    if (match) {
-      if (match.status === "cancellation_pending") {
-        setTab("cancellation_pending");
-      } else if (match.status === "pending") {
-        setTab("pending");
-      }
-      void selectRequest(match);
+    if (!requestId) {
+      openedDeepLinkId.current = null;
+      return;
+    }
+    if (openedDeepLinkId.current === requestId) return;
+
+    const target = listMatch ?? fetchedRequest;
+    if (!target) return;
+
+    openedDeepLinkId.current = requestId;
+    setTab(tabForLeaveStatus(target.status));
+    if (listMatch) {
+      void selectRequest(listMatch);
+    } else {
+      setSelected(target);
+      setRemarks(target.owner_remarks ?? "");
+      setPayrollIsPaid(target.policy_is_paid ?? target.is_paid);
+      setOverrideReason("");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [requestId, requests]);
+  }, [requestId, listMatch, fetchedRequest]);
+
+  useEffect(() => {
+    if (!deepLinkError || listMatch) return;
+    toast.error("Could not load leave request details");
+  }, [deepLinkError, listMatch]);
 
   const invalidateLeaveQueries = () => {
     void qc.invalidateQueries({ queryKey: ["owner-leave-requests"] });

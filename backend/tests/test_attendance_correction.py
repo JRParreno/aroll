@@ -140,7 +140,7 @@ def test_create_requires_both_corrected_times():
             shift_assignment_id=assignment.id,
             requested_time_in=datetime(2026, 7, 18, 9, 0, tzinfo=TZ),
             requested_time_out=None,
-            reason="Forgot to clock in",
+            reason="Forgot to time in",
         )
     assert exc.value.status_code == 400
 
@@ -271,7 +271,7 @@ def test_incomplete_allows_clock_out_only_correction():
         shift_assignment_id=assignment.id,
         requested_time_in=None,
         requested_time_out=datetime(2026, 7, 18, 17, 0, tzinfo=TZ),
-        reason="Forgot to clock out after my shift",
+        reason="Forgot to time out after my shift",
     )
     assert result["status"] == "pending"
     added = db.add.call_args[0][0]
@@ -343,7 +343,7 @@ def test_approve_incomplete_keeps_official_clock_in():
         requested_time_out=datetime(2026, 7, 18, 17, 0, tzinfo=TZ).astimezone(
             timezone.utc
         ),
-        reason="Forgot to clock out",
+        reason="Forgot to time out",
         status=AttendanceCorrectionStatus.pending,
     )
     reviewer = User(id=uuid4())

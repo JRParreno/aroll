@@ -92,7 +92,7 @@ class _FaceAutoAttendanceScreenState extends State<FaceAutoAttendanceScreen> {
   double _lastFaceQuality = 0;
 
   String get _actionLabel =>
-      widget.action == FaceAttendanceAction.clockIn ? 'Clock in' : 'Clock out';
+      widget.action == FaceAttendanceAction.clockIn ? 'Time in' : 'Time out';
 
   @override
   void initState() {
