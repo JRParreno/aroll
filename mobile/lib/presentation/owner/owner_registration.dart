@@ -1,6 +1,7 @@
 import 'package:aroll_mobile/core/di/injection.dart';
 import 'package:aroll_mobile/data/repositories/owner_repository.dart';
 import 'package:aroll_mobile/presentation/auth/owner_auth_ui.dart';
+import 'package:aroll_mobile/presentation/shared/app_ui.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -105,7 +106,13 @@ class _OwnerRegistrationScreenState extends State<OwnerRegistrationScreen> {
       await repo.submitRegistration(registrationId);
       if (!mounted) return;
       setState(() => _registrationId = registrationId);
-      _message('Registration submitted successfully.');
+      await showAppFeedback(
+        context,
+        title: 'Business Registered',
+        message: 'Your application was submitted successfully.',
+        success: true,
+      );
+      if (!mounted) return;
       context.go('/track-registration?email=${Uri.encodeComponent(email)}');
     } on DioException catch (error) {
       _message(_detail(error) ?? 'Registration could not be submitted.');

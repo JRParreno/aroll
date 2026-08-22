@@ -1,8 +1,10 @@
 import 'package:aroll_mobile/core/di/injection.dart';
+import 'package:aroll_mobile/core/utils/data_uri_image.dart';
 import 'package:aroll_mobile/data/repositories/owner_repository.dart';
 import 'package:aroll_mobile/domain/entities/user_session.dart';
 import 'package:aroll_mobile/presentation/owner/owner_shell.dart';
 import 'package:aroll_mobile/presentation/owner/setup/setup_progress_card.dart';
+import 'package:aroll_mobile/presentation/shared/app_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
@@ -26,7 +28,11 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
 
   void _load() {
     final repo = sl<OwnerRepository>();
-    _future = Future.wait([repo.performance(), repo.setupStatus()]);
+    _future = Future.wait([
+      repo.performance(),
+      repo.setupStatus(),
+      repo.accountSettings(),
+    ]);
   }
 
   Future<void> _refresh() async {
@@ -43,70 +49,104 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
         future: _future,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
+            return appLoadingView(cardCount: 4);
           }
           if (snapshot.hasError) {
             return OwnerErrorState(onRetry: _refresh);
           }
           final performance = snapshot.data![0];
           final setup = snapshot.data![1];
+          final account = snapshot.data![2];
           final summary =
               performance['summary'] as Map<String, dynamic>? ?? const {};
+          final ownerName = _ownerDisplayName(
+            session: widget.session,
+            account: account,
+          );
+          final logoUrl = _ownerLogoUrl(
+            session: widget.session,
+            account: account,
+          );
           return RefreshIndicator(
+            color: AppColors.primaryDark,
             onRefresh: _refresh,
             child: ListView(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 28),
               children: [
-                _OwnerHeader(session: widget.session),
+                _DashboardHeader(
+                  session: widget.session,
+                  ownerName: ownerName,
+                  logoUrl: logoUrl,
+                ),
                 if (setup['setup_completed_at'] == null) ...[
-                  const SizedBox(height: 14),
+                  const SizedBox(height: 16),
                   SetupProgressCard(data: setup),
                 ],
-                const SizedBox(height: 14),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 10),
-                  child: OwnerPerformanceChart(summary: summary),
+                const SizedBox(height: 20),
+                const _SectionLabel(
+                  title: 'Performance overview',
+                  subtitle: 'Attendance breakdown across recent shifts',
+                ),
+                const SizedBox(height: 12),
+                _PerformanceOverviewCard(summary: summary),
+                const SizedBox(height: 20),
+                const _SectionLabel(
+                  title: 'Team insights',
+                  subtitle: 'Tap a card to explore more detail',
+                ),
+                const SizedBox(height: 12),
+                _InsightCards(summary: summary),
+                const SizedBox(height: 20),
+                const _SectionLabel(
+                  title: 'Quick actions',
+                  subtitle: 'Jump into everyday business tasks',
+                ),
+                const SizedBox(height: 12),
+                _PrimaryActionCard(
+                  title: 'Set Schedule',
+                  subtitle: 'Assign shifts and plan the coming week',
+                  icon: Icons.event_available_rounded,
+                  gradient: const [
+                    AppColors.primary,
+                    AppColors.primaryDark,
+                  ],
+                  onTap: () => context.push('/owner/schedule'),
                 ),
                 const SizedBox(height: 10),
-                _DashboardSummaryCards(summary: summary),
-                const SizedBox(height: 12),
-                OwnerActionCard(
-                  title: 'Set Schedule',
-                  subtitle: 'Assign shifts and organize the coming week.',
-                  icon: Icons.event_available_rounded,
-                  onTap: () => context.push('/owner/schedule'),
-                  prominent: true,
+                _PrimaryActionCard(
+                  title: 'Leave Management',
+                  subtitle: 'Review pending leave requests',
+                  icon: Icons.event_busy_rounded,
+                  gradient: const [
+                    Color(0xFF3B6D96),
+                    Color(0xFF2A5680),
+                  ],
+                  onTap: () => context.push('/owner/leave'),
                 ),
                 const SizedBox(height: 12),
                 Row(
                   children: [
                     Expanded(
-                      child: _DashboardManagementCard(
-                        label: 'Manage Employees',
+                      child: _QuickActionTile(
+                        label: 'Employees',
                         icon: Icons.groups_rounded,
-                        backgroundColor: const Color(0xFFFFE8D6),
-                        iconColor: const Color(0xFF1E466E),
                         onTap: () => context.push('/owner/employees'),
                       ),
                     ),
                     const SizedBox(width: 10),
                     Expanded(
-                      child: _DashboardManagementCard(
-                        label: 'Setup Location',
-                        icon: Icons.location_on_outlined,
-                        backgroundColor: const Color(0xFFFFE1E8),
-                        iconColor: const Color(0xFFE11D48),
-                        onTap: () => context.push('/owner/location'),
+                      child: _QuickActionTile(
+                        label: 'Payroll',
+                        icon: Icons.payments_outlined,
+                        onTap: () => context.push('/owner/payroll'),
                       ),
                     ),
                     const SizedBox(width: 10),
                     Expanded(
-                      child: _DashboardManagementCard(
-                        label: 'Employee Payroll',
-                        icon: Icons.account_balance_wallet_outlined,
-                        backgroundColor: const Color(0xFFDBEAFE),
-                        iconColor: const Color(0xFF1E466E),
-                        onTap: () => context.push('/owner/payroll'),
+                      child: _QuickActionTile(
+                        label: 'Location',
+                        icon: Icons.location_on_outlined,
+                        onTap: () => context.push('/owner/location'),
                       ),
                     ),
                   ],
@@ -120,45 +160,227 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
   }
 }
 
-class _OwnerHeader extends StatelessWidget {
-  const _OwnerHeader({required this.session});
+String _ownerDisplayName({
+  required UserSession session,
+  required Map<String, dynamic> account,
+}) {
+  final fromAccount = '${account['owner_name'] ?? ''}'.trim();
+  if (fromAccount.isNotEmpty) return fromAccount;
 
-  final UserSession session;
+  final fromSession = session.fullName.trim();
+  if (fromSession.isNotEmpty && !fromSession.contains('@')) {
+    return fromSession;
+  }
+
+  final fromEmail = (session.email ?? '').trim();
+  if (fromEmail.isNotEmpty) {
+    final local = fromEmail.split('@').first.trim();
+    if (local.isNotEmpty) return local;
+  }
+  return 'Business Owner';
+}
+
+String? _ownerLogoUrl({
+  required UserSession session,
+  required Map<String, dynamic> account,
+}) {
+  final branding = account['branding'];
+  if (branding is Map) {
+    final logo = '${branding['logo_url'] ?? ''}'.trim();
+    if (logo.isNotEmpty) return logo;
+  }
+  final sessionLogo = session.branding?.logoUrl?.trim();
+  if (sessionLogo != null && sessionLogo.isNotEmpty) return sessionLogo;
+  return null;
+}
+
+class _SectionLabel extends StatelessWidget {
+  const _SectionLabel({
+    required this.title,
+    this.subtitle,
+  });
+
+  final String title;
+  final String? subtitle;
 
   @override
-  Widget build(BuildContext context) => Row(
-        children: [
-          CircleAvatar(
-            radius: 24,
-            backgroundColor: const Color(0xFFE7EEF5),
-            backgroundImage: session.branding?.logoUrl != null
-                ? NetworkImage(session.branding!.logoUrl!)
-                : null,
-            child: session.branding?.logoUrl == null
-                ? const Icon(Icons.storefront_rounded,
-                    size: 24, color: Color(0xFF1E466E))
-                : null,
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(title, style: appSectionTitleStyle()),
+        if (subtitle != null) ...[
+          const SizedBox(height: 2),
+          Text(
+            subtitle!,
+            style: appMutedStyle().copyWith(fontSize: 12),
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              session.fullName.isEmpty ? 'Business Owner' : session.fullName,
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.w700,
+        ],
+      ],
+    );
+  }
+}
+
+class _DashboardHeader extends StatelessWidget {
+  const _DashboardHeader({
+    required this.session,
+    required this.ownerName,
+    this.logoUrl,
+  });
+
+  final UserSession session;
+  final String ownerName;
+  final String? logoUrl;
+
+  String get _greeting {
+    final hour = DateTime.now().hour;
+    if (hour < 12) return 'Good morning';
+    if (hour < 18) return 'Good afternoon';
+    return 'Good evening';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final business = session.businessName.trim();
+    final resolvedLogoUrl = logoUrl?.trim();
+    final logoBytes = dataUriBytes(resolvedLogoUrl);
+    final networkLogo = resolvedLogoUrl != null &&
+            resolvedLogoUrl.isNotEmpty &&
+            logoBytes == null &&
+            (resolvedLogoUrl.startsWith('http://') ||
+                resolvedLogoUrl.startsWith('https://'))
+        ? resolvedLogoUrl
+        : null;
+    final hasLogo = logoBytes != null || networkLogo != null;
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 16, 10, 16),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            AppColors.primary,
+            AppColors.primaryDark,
+          ],
+        ),
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.primaryDark.withValues(alpha: 0.22),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 56,
+            height: 56,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: Colors.white.withValues(alpha: 0.35),
+                width: 2,
+              ),
+            ),
+            clipBehavior: Clip.antiAlias,
+            alignment: Alignment.center,
+            child: hasLogo
+                ? (logoBytes != null
+                    ? Image.memory(
+                        logoBytes,
+                        width: 56,
+                        height: 56,
+                        fit: BoxFit.cover,
+                      )
+                    : Image.network(
+                        networkLogo!,
+                        width: 56,
+                        height: 56,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => const Icon(
+                          Icons.storefront_rounded,
+                          size: 26,
+                          color: AppColors.primary,
+                        ),
+                      ))
+                : const Icon(
+                    Icons.storefront_rounded,
+                    size: 26,
+                    color: AppColors.primary,
                   ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _greeting,
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.78),
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  ownerName,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
+                    height: 1.25,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'Business Owner',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.88),
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                if (business.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    business,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.78),
+                      fontSize: 13,
+                    ),
+                  ),
+                ],
+              ],
             ),
           ),
           IconButton(
             tooltip: 'Settings',
             onPressed: () => context.push('/owner/settings'),
+            style: IconButton.styleFrom(
+              backgroundColor: Colors.white.withValues(alpha: 0.12),
+              foregroundColor: Colors.white,
+            ),
             icon: const Icon(Icons.settings_outlined),
           ),
         ],
-      );
+      ),
+    );
+  }
 }
 
-class _DashboardSummaryCards extends StatelessWidget {
-  const _DashboardSummaryCards({required this.summary});
+class _InsightCards extends StatelessWidget {
+  const _InsightCards({required this.summary});
 
   final Map<String, dynamic> summary;
 
@@ -170,53 +392,27 @@ class _DashboardSummaryCards extends StatelessWidget {
         ownerParseInt(summary['productivity_score']).clamp(0, 100);
     final punctuality =
         ownerParseInt(summary['punctuality_rate']).clamp(0, 100);
-    final remaining = (100 - productivity - punctuality).clamp(0, 100);
 
     return Row(
       children: [
         Expanded(
-          child: _DashboardSummaryCard(
-            label: 'Productivity Insights',
-            child: OwnerDonutChart(
-              values: [
-                productivity.toDouble(),
-                punctuality.toDouble(),
-                remaining.toDouble(),
-              ],
-              colors: const [
-                Color(0xFF3B82F6),
-                Color(0xFFF59E0B),
-                Color(0xFF22C55E),
-              ],
-            ),
+          child: _InsightCard(
+            title: 'Productivity',
+            value: '$productivity%',
+            caption: 'Team score',
+            progress: productivity / 100,
+            accent: AppColors.primary,
+            onTap: () => context.push('/owner/productivity'),
           ),
         ),
         const SizedBox(width: 10),
         Expanded(
-          child: _DashboardSummaryCard(
-            label: "Today's Attendance",
-            child: SizedBox(
-              height: 58,
-              width: 58,
-              child: Stack(
-                alignment: Alignment.center,
-                children: [
-                  CircularProgressIndicator(
-                    value: attendance / 100,
-                    strokeWidth: 6,
-                    backgroundColor: const Color(0xFFE5E7EB),
-                    color: const Color(0xFF22C55E),
-                  ),
-                  Text(
-                    '$attendance%',
-                    style: const TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ],
-              ),
-            ),
+          child: _InsightCard(
+            title: 'Attendance',
+            value: '$attendance%',
+            caption: 'Punctuality $punctuality%',
+            progress: attendance / 100,
+            accent: AppColors.success,
           ),
         ),
       ],
@@ -224,79 +420,339 @@ class _DashboardSummaryCards extends StatelessWidget {
   }
 }
 
-class _DashboardSummaryCard extends StatelessWidget {
-  const _DashboardSummaryCard({
-    required this.label,
-    required this.child,
+class _InsightCard extends StatelessWidget {
+  const _InsightCard({
+    required this.title,
+    required this.value,
+    required this.caption,
+    required this.progress,
+    required this.accent,
+    this.onTap,
   });
 
-  final String label;
-  final Widget child;
+  final String title;
+  final String value;
+  final String caption;
+  final double progress;
+  final Color accent;
+  final VoidCallback? onTap;
 
   @override
-  Widget build(BuildContext context) => OwnerCard(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+  Widget build(BuildContext context) {
+    return AppPressable(
+      onTap: onTap ?? () {},
+      enabled: onTap != null,
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(12, 10, 10, 10),
+        decoration: BoxDecoration(
+          color: AppColors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: AppColors.border),
+          boxShadow: appCardShadow,
+        ),
         child: Column(
-          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            child,
-            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textBody,
+                    ),
+                  ),
+                ),
+                if (onTap != null)
+                  Icon(
+                    Icons.chevron_right_rounded,
+                    size: 16,
+                    color: AppColors.textMuted.withValues(alpha: 0.8),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 8),
             Text(
-              label,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-                color: Color(0xFF374151),
+              value,
+              style: TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.w700,
+                color: accent,
+                height: 1,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              caption,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: appMutedStyle().copyWith(fontSize: 11),
+            ),
+            const SizedBox(height: 8),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(999),
+              child: LinearProgressIndicator(
+                value: progress.clamp(0, 1),
+                minHeight: 4,
+                backgroundColor: accent.withValues(alpha: 0.12),
+                color: accent,
               ),
             ),
           ],
         ),
-      );
+      ),
+    );
+  }
 }
 
-class _DashboardManagementCard extends StatelessWidget {
-  const _DashboardManagementCard({
+class _PerformanceOverviewCard extends StatelessWidget {
+  const _PerformanceOverviewCard({required this.summary});
+
+  final Map<String, dynamic> summary;
+
+  @override
+  Widget build(BuildContext context) {
+    final values = [
+      (
+        'On time',
+        ownerParseInt(summary['on_time_clock_ins']),
+        AppColors.success,
+      ),
+      (
+        'Late',
+        ownerParseInt(summary['late_clock_ins']),
+        AppColors.warning,
+      ),
+      (
+        'Undertime',
+        ownerParseInt(summary['undertime_shifts']),
+        const Color(0xFFEA580C),
+      ),
+      (
+        'Overtime',
+        ownerParseInt(summary['overtime_shifts']),
+        AppColors.primary,
+      ),
+      (
+        'Absent',
+        ownerParseInt(summary['absent_shifts']),
+        AppColors.danger,
+      ),
+    ];
+    final maxValue = values
+        .map((entry) => entry.$2)
+        .fold<int>(1, (prev, value) => value > prev ? value : prev);
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
+      decoration: BoxDecoration(
+        color: AppColors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: AppColors.border),
+        boxShadow: appCardShadow,
+      ),
+      child: SizedBox(
+        height: 150,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            for (final entry in values)
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  child: Column(
+                    children: [
+                      Text(
+                        '${entry.$2}',
+                        style: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          height: 1.2,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Expanded(
+                        child: Align(
+                          alignment: Alignment.bottomCenter,
+                          child: FractionallySizedBox(
+                            widthFactor: 1,
+                            heightFactor: (entry.$2 / maxValue).clamp(0.18, 1),
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  begin: Alignment.bottomCenter,
+                                  end: Alignment.topCenter,
+                                  colors: [
+                                    entry.$3,
+                                    entry.$3.withValues(alpha: 0.72),
+                                  ],
+                                ),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        entry.$1,
+                        textAlign: TextAlign.center,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: appMutedStyle().copyWith(
+                          fontSize: 10,
+                          height: 1.2,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PrimaryActionCard extends StatelessWidget {
+  const _PrimaryActionCard({
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+    required this.onTap,
+    this.gradient = const [AppColors.primary, AppColors.primaryDark],
+  });
+
+  final String title;
+  final String subtitle;
+  final IconData icon;
+  final VoidCallback onTap;
+  final List<Color> gradient;
+
+  @override
+  Widget build(BuildContext context) {
+    final shadowColor = gradient.last;
+    return AppPressable(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(18),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.centerLeft,
+            end: Alignment.centerRight,
+            colors: gradient,
+          ),
+          borderRadius: BorderRadius.circular(18),
+          boxShadow: [
+            BoxShadow(
+              color: shadowColor.withValues(alpha: 0.2),
+              blurRadius: 14,
+              offset: const Offset(0, 6),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 46,
+              height: 46,
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.16),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Icon(icon, color: Colors.white, size: 24),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.78),
+                      fontSize: 12,
+                      height: 1.3,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(
+              Icons.arrow_forward_rounded,
+              color: Colors.white.withValues(alpha: 0.9),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _QuickActionTile extends StatelessWidget {
+  const _QuickActionTile({
     required this.label,
     required this.icon,
-    required this.backgroundColor,
-    required this.iconColor,
     required this.onTap,
   });
 
   final String label;
   final IconData icon;
-  final Color backgroundColor;
-  final Color iconColor;
   final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context) => OwnerCard(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 14),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(12),
-          onTap: onTap,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              CircleAvatar(
-                radius: 22,
-                backgroundColor: backgroundColor,
-                child: Icon(icon, color: iconColor, size: 22),
-              ),
-              const SizedBox(height: 10),
-              Text(
-                label,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  fontSize: 10,
-                  fontWeight: FontWeight.w600,
-                  color: Color(0xFF374151),
-                  height: 1.25,
-                ),
-              ),
-            ],
-          ),
+  Widget build(BuildContext context) {
+    return AppPressable(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 16),
+        decoration: BoxDecoration(
+          color: AppColors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: AppColors.border),
+          boxShadow: appCardShadow,
         ),
-      );
+        child: Column(
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: AppColors.iconWell,
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Icon(icon, color: AppColors.primary, size: 22),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              label,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textBody,
+                height: 1.25,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }

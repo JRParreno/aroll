@@ -1,8 +1,10 @@
 from datetime import date, datetime, time
+from uuid import UUID
 
 from pydantic import BaseModel, Field, model_validator
 
 from app.models.enums import (
+    HolidayRulesMode,
     HolidayType,
     MissingClockOutPolicy,
     PayPeriodType,
@@ -79,10 +81,12 @@ class PayrollConfigResponse(BaseModel):
     late_deduction_per_minute: float
     overtime_enabled: bool
     overtime_per_minute: float
+    enable_late_overtime_balancing: bool
     weekly_payday_weekday: str | None
     semi_monthly_payday_1: int | None
     semi_monthly_payday_2: int | None
     monthly_payday_day: int | None
+    holiday_rules_mode: str
 
 
 class PayrollConfigUpdate(BaseModel):
@@ -93,10 +97,14 @@ class PayrollConfigUpdate(BaseModel):
     late_deduction_per_minute: float = 1.0
     overtime_enabled: bool = True
     overtime_per_minute: float = 1.0
+    # Optional so older clients do not reset an existing setting.
+    enable_late_overtime_balancing: bool | None = None
     weekly_payday_weekday: Weekday | None = None
     semi_monthly_payday_1: int | None = Field(default=None, ge=1, le=31)
     semi_monthly_payday_2: int | None = Field(default=None, ge=1, le=31)
     monthly_payday_day: int | None = Field(default=None, ge=1, le=31)
+    # Optional so older clients do not reset an existing custom mode.
+    holiday_rules_mode: HolidayRulesMode | None = None
 
     @model_validator(mode="after")
     def _validate_schedule(self) -> "PayrollConfigUpdate":
@@ -122,10 +130,13 @@ class AttendancePolicyResponse(BaseModel):
     on_time_grace_minutes: int
     half_day_threshold_minutes: int
     absent_threshold_minutes: int
+    absent_threshold_percent: int
+    half_day_threshold_percent: int
     early_out_deduction_enabled: bool
     early_out_deduction_per_minute: float
     overtime_enabled: bool
     overtime_minimum_minutes: int
+    maximum_overtime_minutes: int
     overtime_rate_per_minute: float
     missing_clock_out_policy: str
     attendance_based_salary_enabled: bool
@@ -136,15 +147,27 @@ class AttendancePolicyUpdate(BaseModel):
     on_time_grace_minutes: int = Field(default=10, ge=0)
     half_day_threshold_minutes: int = Field(default=120, ge=0)
     absent_threshold_minutes: int = Field(default=240, ge=0)
+    absent_threshold_percent: int = Field(default=25, ge=0, le=100)
+    half_day_threshold_percent: int = Field(default=50, ge=0, le=100)
     early_out_deduction_enabled: bool = False
     early_out_deduction_per_minute: float = 2.0
     overtime_enabled: bool = True
     overtime_minimum_minutes: int = Field(default=30, ge=0)
+    maximum_overtime_minutes: int = Field(default=180, ge=0)
     overtime_rate_per_minute: float = 1.0
     missing_clock_out_policy: MissingClockOutPolicy = (
         MissingClockOutPolicy.auto_clock_out
     )
     attendance_based_salary_enabled: bool = True
+
+    @model_validator(mode="after")
+    def _percent_order(self):
+        if self.absent_threshold_percent > self.half_day_threshold_percent:
+            raise ValueError(
+                "Absent threshold percent must be less than or equal to "
+                "half-day threshold percent."
+            )
+        return self
 
 
 class RestDayPolicyResponse(BaseModel):
@@ -153,6 +176,24 @@ class RestDayPolicyResponse(BaseModel):
 
 class RestDayPolicyUpdate(BaseModel):
     rest_day_premium_percent: float = 30.0
+
+
+class LeavePolicyItem(BaseModel):
+    leave_type: str
+    leave_type_label: str
+    is_paid: bool
+    payroll_treatment: str
+
+
+class LeavePolicyResponse(BaseModel):
+    business_id: UUID
+    items: list[LeavePolicyItem]
+    treatments: dict[str, bool]
+    updated_at: datetime | None = None
+
+
+class LeavePolicyUpdate(BaseModel):
+    treatments: dict[str, bool]
 
 
 class HolidayCreate(BaseModel):

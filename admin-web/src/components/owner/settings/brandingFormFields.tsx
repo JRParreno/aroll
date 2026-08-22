@@ -8,11 +8,13 @@ export function ImageUploadField({
   value,
   onChange,
   helper,
+  circularPreview = false,
 }: {
   label: string;
   value: string | null;
   onChange: (value: string | null) => void;
   helper?: string;
+  circularPreview?: boolean;
 }) {
   function handleFile(file: File | null) {
     if (!file) return;
@@ -28,9 +30,21 @@ export function ImageUploadField({
         <p className="text-xs text-muted-foreground">{helper}</p>
       ) : null}
       <div className="rounded-2xl border border-slate-200 bg-[#FAFBFC] p-4">
-        <div className="flex h-24 items-center justify-center overflow-hidden rounded-xl bg-white">
+        <div
+          className={`flex items-center justify-center overflow-hidden bg-white ${
+            circularPreview
+              ? "mx-auto h-24 w-24 rounded-full ring-1 ring-slate-200"
+              : "h-24 rounded-xl"
+          }`}
+        >
           {value ? (
-            <img className="h-full w-full object-contain p-2" src={value} alt={label} />
+            <img
+              className={`h-full w-full ${
+                circularPreview ? "object-cover" : "object-contain p-2"
+              }`}
+              src={value}
+              alt={label}
+            />
           ) : (
             <span className="text-xs text-muted-foreground">No image</span>
           )}
@@ -100,6 +114,7 @@ export function BusinessLogoAndThemeFields({
         helper="Shown in the owner sidebar and employee mobile app."
         value={branding.logo_url}
         onChange={(logo_url) => onChange({ ...branding, logo_url })}
+        circularPreview
       />
       <div className="grid gap-4 md:grid-cols-2">
         <ColorField

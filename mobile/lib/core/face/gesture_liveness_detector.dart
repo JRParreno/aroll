@@ -3,7 +3,7 @@ import 'package:aroll_mobile/core/face/blink_detector.dart';
 enum FaceGesture { blink, smile }
 
 /// Client-side blink or smile detector (ML Kit probabilities).
-/// Used to decide *when* to capture; server still checks identity.
+/// Used only to decide *when* to capture; server still verifies identity.
 class GestureLivenessDetector {
   GestureLivenessDetector({
     this.smileThreshold = 0.55,

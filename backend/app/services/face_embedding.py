@@ -27,16 +27,18 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 
 EMBEDDING_DIM = 512
-MODEL_VERSION = "arcface_r50_v1"
+# v2: corrected YuNet→ArcFace landmark mapping (v1 mirrored every aligned face).
+MODEL_VERSION = "arcface_r50_v2"
 
 _MODELS_DIR = Path(__file__).resolve().parent.parent.parent / "models"
 _DETECTOR_PATH = _MODELS_DIR / "face_detection_yunet_2023mar.onnx"
 _RECOGNIZER_PATH = _MODELS_DIR / "arcface_w600k_r50.onnx"
 
 # YuNet score threshold; detections below this are ignored.
-_DETECT_SCORE_THRESHOLD = 0.7
+# Slightly below 0.7 so phone-cam probes with soft lighting still detect.
+_DETECT_SCORE_THRESHOLD = 0.6
 # Cap the longer image side before detection to keep inference fast.
-_MAX_DETECT_SIDE = 1280
+_MAX_DETECT_SIDE = 960
 
 # ArcFace canonical 5-point template (112x112), order:
 # left_eye, right_eye, nose, left_mouth, right_mouth.
@@ -161,20 +163,35 @@ def _yaw_from_landmarks(
     return float((nose[0] - eye_mid_x) / inter_eye)
 
 
-def _arcface_embedding(image: np.ndarray, face: np.ndarray) -> np.ndarray:
-    """Align the face to the ArcFace template and return a 512-d feature."""
-    # YuNet landmark order: right_eye, left_eye, nose, right_mouth, left_mouth.
-    # Reorder to the ArcFace template order.
-    src = np.array(
+def _yunet_to_arcface_landmarks(face: np.ndarray) -> np.ndarray:
+    """Map YuNet anatomical landmarks to ArcFace image-side template order."""
+    return np.array(
         [
-            [face[6], face[7]],  # left_eye
-            [face[4], face[5]],  # right_eye
+            [face[4], face[5]],  # YuNet right eye → ArcFace image-left eye
+            [face[6], face[7]],  # YuNet left eye  → ArcFace image-right eye
             [face[8], face[9]],  # nose
-            [face[12], face[13]],  # left_mouth
-            [face[10], face[11]],  # right_mouth
+            [face[10], face[11]],  # YuNet right mouth → ArcFace image-left mouth
+            [face[12], face[13]],  # YuNet left mouth  → ArcFace image-right mouth
         ],
         dtype=np.float32,
     )
+
+
+def _arcface_embedding(image: np.ndarray, face: np.ndarray) -> np.ndarray:
+    """Align the face to the ArcFace template and return a 512-d feature.
+
+    YuNet landmark order (OpenCV FaceDetectorYN):
+      right_eye, left_eye, nose, right_mouth, left_mouth
+    where "right/left" are anatomical (person's right eye ≈ image-left on a
+    frontal face).
+
+    ArcFace 5-point template order (InsightFace):
+      left_eye, right_eye, nose, left_mouth, right_mouth
+    where "left/right" are *image* sides (left_eye ≈ x=38, right_eye ≈ x=73).
+
+    Therefore YuNet right_eye → ArcFace left_eye (image-left), etc.
+    """
+    src = _yunet_to_arcface_landmarks(face)
     matrix, _ = cv2.estimateAffinePartial2D(src, _ARCFACE_REF, method=cv2.LMEDS)
     if matrix is None:
         raise FacePipelineError(
@@ -192,9 +209,60 @@ def _arcface_embedding(image: np.ndarray, face: np.ndarray) -> np.ndarray:
     return np.asarray(feature, dtype=np.float64).ravel()
 
 
+def gallery_centroid(gallery: list[list[float]]) -> list[float]:
+    """L2-normalized mean of enrolled samples — robust reference vector."""
+    if not gallery:
+        return []
+    mat = np.asarray(gallery, dtype=np.float64)
+    centroid = mat.mean(axis=0)
+    norm = float(np.linalg.norm(centroid))
+    if norm < 1e-12:
+        return gallery[0]
+    return (centroid / norm).tolist()
+
+
+def centroid_match_score(
+    probe: list[float],
+    gallery: list[list[float]],
+) -> float:
+    """Cosine similarity of the probe to the gallery centroid."""
+    center = gallery_centroid(gallery)
+    if not center:
+        return 0.0
+    return cosine_similarity(probe, center)
+
+
 def detect_and_observe(image_bytes: bytes) -> FaceObservation:
     """Detect the most prominent face and return embedding + landmarks."""
     image = _decode_image(image_bytes)
+    return _observe_bgr(image)
+
+
+def detect_and_observe_mirror_aware(
+    image_bytes: bytes,
+) -> tuple[FaceObservation, list[float]]:
+    """Embed the live frame and its horizontal mirror.
+
+    Front-camera selfies are often mirrored relative to enrollment photos.
+    ArcFace is not mirror-invariant, so callers should score both embeddings
+    and keep the stronger gallery match.
+    """
+    image = _decode_image(image_bytes)
+    primary = _observe_bgr(image)
+    try:
+        mirrored = _observe_bgr(cv2.flip(image, 1))
+    except FacePipelineError:
+        return primary, primary.embedding
+    return primary, mirrored.embedding
+
+
+def observe_mirrored_embedding(image_bytes: bytes) -> list[float]:
+    """Embed only the horizontally mirrored image (fallback after primary fail)."""
+    image = _decode_image(image_bytes)
+    return _observe_bgr(cv2.flip(image, 1)).embedding
+
+
+def _observe_bgr(image: np.ndarray) -> FaceObservation:
     faces = _detect_faces(image)
 
     if faces.shape[0] == 0:
@@ -203,7 +271,11 @@ def detect_and_observe(image_bytes: bytes) -> FaceObservation:
             "No face detected. Face the camera with good lighting and try again.",
         )
     if faces.shape[0] > 1:
-        logger.info("Multiple faces detected (%s); using largest.", faces.shape[0])
+        # Never silently pick a face — attendance / enrollment must be 1:1.
+        raise FacePipelineError(
+            "multiple_faces",
+            "Only one person should be visible during attendance.",
+        )
 
     face = _largest_face(faces)
     # YuNet face row: x, y, w, h, right_eye_x, right_eye_y, left_eye_x, left_eye_y,
@@ -247,8 +319,10 @@ def detect_and_embed(image_bytes: bytes) -> list[float]:
 
 
 def cosine_similarity(a: list[float] | np.ndarray, b: list[float] | np.ndarray) -> float:
-    va = np.asarray(a, dtype=np.float64)
-    vb = np.asarray(b, dtype=np.float64)
+    va = np.asarray(a, dtype=np.float64).ravel()
+    vb = np.asarray(b, dtype=np.float64).ravel()
+    if va.shape != vb.shape or va.size == 0:
+        return 0.0
     denom = float(np.linalg.norm(va) * np.linalg.norm(vb))
     if denom < 1e-12:
         return 0.0
@@ -280,6 +354,89 @@ def mean_match_score(
     return float(sum(scores) / len(scores))
 
 
+def min_match_score(
+    probe: list[float],
+    gallery: list[list[float]],
+) -> float:
+    """Lowest similarity to any enrolled sample."""
+    if not gallery:
+        return 0.0
+    return min(cosine_similarity(probe, sample) for sample in gallery)
+
+
+def gallery_pairwise_consistency(gallery: list[list[float]]) -> float:
+    """Mean pairwise cosine among enrolled samples (same-person quality)."""
+    if len(gallery) < 2:
+        return 1.0
+    scores: list[float] = []
+    for i in range(len(gallery)):
+        for j in range(i + 1, len(gallery)):
+            scores.append(cosine_similarity(gallery[i], gallery[j]))
+    return float(sum(scores) / len(scores))
+
+
+def robust_match_score(
+    probe: list[float],
+    gallery: list[list[float]],
+) -> float:
+    """Mean of the strongest enrollment matches.
+
+    Kept for diagnostics / Strong liveness continuity; attendance identity
+    uses mean_match_score + min_match_score against the calibrated threshold.
+    """
+    if not gallery:
+        return 0.0
+    scores = sorted(
+        (cosine_similarity(probe, sample) for sample in gallery),
+        reverse=True,
+    )
+    k = max(1, (len(scores) * 2 + 2) // 3)
+    top = scores[:k]
+    return float(sum(top) / len(top))
+
+
 def match_passed(score: float, threshold: float | None = None) -> bool:
     limit = settings.face_match_threshold if threshold is None else threshold
     return score >= limit
+
+
+def identity_match_passed(
+    *,
+    mean_score: float | None = None,
+    min_score: float | None = None,
+    centroid_score: float | None = None,
+    threshold: float | None = None,
+    min_threshold: float | None = None,
+    # Backward-compatible aliases used by older call sites / tests.
+    robust_score: float | None = None,
+    best_score: float | None = None,
+    best_threshold: float | None = None,
+) -> bool:
+    """Accept only when the live face matches the enrolled gallery strongly.
+
+    Requires (same probe orientation — never mix scores across mirrors):
+      - mean cosine across gallery >= face_match_threshold
+      - min cosine across gallery  >= face_min_match_threshold
+      - centroid cosine (if provided) >= face_match_threshold
+
+    Mean alone can pass a lookalike that luckily hits most samples; min blocks
+    that. Centroid is a robust single reference built from all samples.
+    """
+    mean_value = mean_score if mean_score is not None else robust_score
+    min_value = min_score if min_score is not None else best_score
+    if mean_value is None or min_value is None:
+        return False
+    mean_limit = settings.face_match_threshold if threshold is None else threshold
+    min_limit = (
+        settings.face_min_match_threshold
+        if min_threshold is None
+        else min_threshold
+    )
+    if best_threshold is not None and min_threshold is None and min_score is None:
+        # Legacy dual-gate callers passed best_threshold; treat as min floor.
+        min_limit = best_threshold
+    if mean_value < mean_limit or min_value < min_limit:
+        return False
+    if centroid_score is not None and centroid_score < mean_limit:
+        return False
+    return True

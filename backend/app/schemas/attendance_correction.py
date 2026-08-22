@@ -21,12 +21,13 @@ class AttendanceCorrectionCreateRequest(BaseModel):
         return cleaned
 
     @model_validator(mode="after")
-    def _require_at_least_one_time(self):
-        if self.requested_time_in is None and self.requested_time_out is None:
-            raise ValueError("Provide at least a clock-in or clock-out time.")
+    def _validate_times(self):
+        # Clock-out is always required. Clock-in may be omitted for incomplete
+        # attendance fixes (server locks the recorded clock-in).
+        if self.requested_time_out is None:
+            raise ValueError("Provide corrected clock-out time.")
         if (
             self.requested_time_in is not None
-            and self.requested_time_out is not None
             and self.requested_time_out <= self.requested_time_in
         ):
             raise ValueError("Clock-out must be after clock-in.")
@@ -43,6 +44,19 @@ class AttendanceCorrectionRejectRequest(BaseModel):
         if len(cleaned) < 3:
             raise ValueError("Rejection reason must be at least 3 characters.")
         return cleaned
+
+
+class OwnerCompleteAttendanceRequest(BaseModel):
+    time_out: datetime
+    reason: str | None = Field(default=None, max_length=500)
+
+    @field_validator("reason")
+    @classmethod
+    def _trim_reason(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        return cleaned or None
 
 
 class AttendanceCorrectionResponse(BaseModel):

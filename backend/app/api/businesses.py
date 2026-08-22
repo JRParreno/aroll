@@ -1,12 +1,13 @@
 from typing import Annotated
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.core.deps import require_roles
 from app.core.profile_image import validate_profile_image_data
+from app.core.request_meta import audit_meta_from_request
 from app.db.session import get_db
 from app.models.attendance_policy import BusinessAttendancePolicy
 from app.models.business import Business, BusinessLocation, BusinessRegistration
@@ -32,11 +33,18 @@ from app.schemas.profile_image import (
 from app.schemas.owner_setup import (
     AttendancePolicyResponse,
     AttendancePolicyUpdate,
+    LeavePolicyResponse,
+    LeavePolicyUpdate,
     PayrollConfigResponse,
     PayrollConfigUpdate,
     RestDayPolicyResponse,
     RestDayPolicyUpdate,
     SetupStatusResponse,
+)
+from app.services.leave_policy import (
+    get_or_create_leave_policy,
+    serialize_leave_policy,
+    update_leave_policy,
 )
 from app.services.setup_status import (
     SetupIncompleteError,
@@ -68,10 +76,19 @@ def _attendance_policy_response(
             on_time_grace_minutes=policy.on_time_grace_minutes,
             half_day_threshold_minutes=policy.half_day_threshold_minutes,
             absent_threshold_minutes=policy.absent_threshold_minutes,
+            absent_threshold_percent=getattr(
+                policy, "absent_threshold_percent", 25
+            ),
+            half_day_threshold_percent=getattr(
+                policy, "half_day_threshold_percent", 50
+            ),
             early_out_deduction_enabled=policy.early_out_deduction_enabled,
             early_out_deduction_per_minute=float(policy.early_out_deduction_per_minute),
             overtime_enabled=policy.overtime_enabled,
             overtime_minimum_minutes=policy.overtime_minimum_minutes,
+            maximum_overtime_minutes=getattr(
+                policy, "maximum_overtime_minutes", 180
+            ),
             overtime_rate_per_minute=float(policy.overtime_rate_per_minute),
             missing_clock_out_policy=policy.missing_clock_out_policy.value,
             attendance_based_salary_enabled=policy.attendance_based_salary_enabled,
@@ -83,10 +100,13 @@ def _attendance_policy_response(
         on_time_grace_minutes=10,
         half_day_threshold_minutes=120,
         absent_threshold_minutes=240,
+        absent_threshold_percent=25,
+        half_day_threshold_percent=50,
         early_out_deduction_enabled=False,
         early_out_deduction_per_minute=2.0,
         overtime_enabled=payroll_cfg.overtime_enabled if payroll_cfg else True,
         overtime_minimum_minutes=30,
+        maximum_overtime_minutes=180,
         overtime_rate_per_minute=float(payroll_cfg.overtime_per_minute)
         if payroll_cfg
         else 1.0,
@@ -162,12 +182,20 @@ def get_payroll_config(
         late_deduction_per_minute=float(cfg.late_deduction_per_minute),
         overtime_enabled=cfg.overtime_enabled,
         overtime_per_minute=float(cfg.overtime_per_minute),
+        enable_late_overtime_balancing=bool(
+            getattr(cfg, "enable_late_overtime_balancing", False)
+        ),
         weekly_payday_weekday=(
             cfg.weekly_payday_weekday.value if cfg.weekly_payday_weekday else None
         ),
         semi_monthly_payday_1=cfg.semi_monthly_payday_1,
         semi_monthly_payday_2=cfg.semi_monthly_payday_2,
         monthly_payday_day=cfg.monthly_payday_day,
+        holiday_rules_mode=(
+            cfg.holiday_rules_mode.value
+            if cfg.holiday_rules_mode is not None
+            else "philippine_labor"
+        ),
     )
 
 
@@ -191,10 +219,14 @@ def update_payroll_config(
     cfg.late_deduction_per_minute = body.late_deduction_per_minute
     cfg.overtime_enabled = body.overtime_enabled
     cfg.overtime_per_minute = body.overtime_per_minute
+    if body.enable_late_overtime_balancing is not None:
+        cfg.enable_late_overtime_balancing = body.enable_late_overtime_balancing
     cfg.weekly_payday_weekday = body.weekly_payday_weekday
     cfg.semi_monthly_payday_1 = body.semi_monthly_payday_1
     cfg.semi_monthly_payday_2 = body.semi_monthly_payday_2
     cfg.monthly_payday_day = body.monthly_payday_day
+    if body.holiday_rules_mode is not None:
+        cfg.holiday_rules_mode = body.holiday_rules_mode
     db.commit()
 
     policy = db.get(BusinessAttendancePolicy, user.business_id)
@@ -270,6 +302,37 @@ def update_rest_day_policy(
     policy.custom_premium_percent = None
     db.commit()
     return {"status": "ok"}
+
+
+@router.get("/me/leave-policy", response_model=LeavePolicyResponse)
+def get_leave_policy(
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(require_roles(UserRole.owner, UserRole.manager))],
+):
+    if user.business_id is None:
+        raise HTTPException(400, "No business context")
+    policy = get_or_create_leave_policy(db, user.business_id)
+    return serialize_leave_policy(policy)
+
+
+@router.put("/me/leave-policy", response_model=LeavePolicyResponse)
+def put_leave_policy(
+    body: LeavePolicyUpdate,
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(require_roles(UserRole.owner, UserRole.manager))],
+):
+    if user.business_id is None:
+        raise HTTPException(400, "No business context")
+    meta = audit_meta_from_request(request)
+    policy = update_leave_policy(
+        db,
+        business_id=user.business_id,
+        treatments=body.treatments,
+        actor=user,
+        **meta,
+    )
+    return serialize_leave_policy(policy)
 
 
 @router.get("/me/location", response_model=LocationResponse)

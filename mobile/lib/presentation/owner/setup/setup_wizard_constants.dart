@@ -1,13 +1,13 @@
 import 'package:flutter/material.dart';
 
 const setupWizardStepLabels = [
-  'Shifts',
-  'Positions',
-  'Payroll',
-  'Attendance Policy',
-  'Holidays',
-  'Location',
-  'Review',
+  'Work Shifts',
+  'Employee Job Roles',
+  'Set Up Employee Pay',
+  'How Employees Time In & Out',
+  'Holidays Employees Will Be Paid For',
+  'Work Location',
+  'Review Your Setup',
 ];
 
 const setupWizardBusinessInfoStep = 7;
@@ -34,20 +34,20 @@ const setupWizardStepOrder = [
 const requiredSetupKeys = {'shifts', 'positions', 'payroll', 'location'};
 
 const setupStepHelp = {
-  'Shifts': 'Add the work shifts your employees can be assigned to.',
-  'Positions': 'Create job roles and daily rates for payroll calculations.',
-  'Payroll':
-      'Set pay schedules, deductions, overtime, and rest day premium rules.',
-  'Attendance Policy':
-      'Choose the time rules used for lateness, absences, and overtime.',
-  'Holidays':
-      'Add the holidays your business follows. This helps schedules and pay stay accurate.',
-  'Location':
-      'Set your business work site so attendance can be checked by location.',
+  'Work Shifts': 'Add the times your team usually works.',
+  'Employee Job Roles': 'Add the different job roles in your business and their daily pay.',
+  'Set Up Employee Pay':
+      'Choose how often employees get paid and how pay is calculated.',
+  'How Employees Time In & Out':
+      'Set the time rules for being on time, late, absent, and overtime.',
+  'Holidays Employees Will Be Paid For':
+      'Add holidays your business follows so schedules and pay stay accurate.',
+  'Work Location':
+      'Set your workplace so employees can only time in when they are nearby.',
   'Business Information':
-      'Review your registered business profile and contact details.',
-  'Review':
-      'Check your setup progress and finish when the required parts are ready.',
+      'View your registered business profile and contact details.',
+  'Review Your Setup':
+      'Check your progress and finish when the required parts are ready.',
 };
 
 class SetupMenuEntry {
@@ -69,51 +69,51 @@ class SetupMenuEntry {
 const setupMenuEntries = [
   SetupMenuEntry(
     label: 'Business Information',
-    subtitle: 'Review your registered business profile and contact details.',
+    subtitle: 'View your registered business profile and contact details.',
     stepIndex: setupWizardBusinessInfoStep,
     icon: Icons.business_rounded,
   ),
   SetupMenuEntry(
-    label: 'Positions',
-    subtitle: 'Create job roles and daily rates for payroll calculations.',
+    label: 'Employee Job Roles',
+    subtitle: 'Add the different job roles in your business and their daily pay.',
     stepIndex: 1,
     statusKey: 'positions',
     icon: Icons.badge_outlined,
   ),
   SetupMenuEntry(
-    label: 'Shifts',
-    subtitle: 'Add the work shifts your employees can be assigned to.',
+    label: 'Work Shifts',
+    subtitle: 'Add the times your team usually works.',
     stepIndex: 0,
     statusKey: 'shifts',
     icon: Icons.schedule_rounded,
   ),
   SetupMenuEntry(
-    label: 'Payroll',
-    subtitle: 'Set when employees are paid and how pay rules are applied.',
+    label: 'Set Up Employee Pay',
+    subtitle: 'Choose how often employees get paid and how pay is calculated.',
     stepIndex: 2,
     statusKey: 'payroll',
     icon: Icons.payments_outlined,
   ),
   SetupMenuEntry(
-    label: 'Attendance Policy',
+    label: 'How Employees Time In & Out',
     subtitle:
-        'Choose the time rules used for lateness, absences, and overtime.',
+        'Set the time rules for being on time, late, absent, and overtime.',
     stepIndex: 3,
     statusKey: 'attendance_policy',
     icon: Icons.fact_check_outlined,
   ),
   SetupMenuEntry(
-    label: 'Holidays',
+    label: 'Holidays Employees Will Be Paid For',
     subtitle:
-        'Add the holidays your business follows. This helps schedules and pay stay accurate.',
+        'Add holidays your business follows so schedules and pay stay accurate.',
     stepIndex: 4,
     statusKey: 'holidays',
     icon: Icons.event_outlined,
   ),
   SetupMenuEntry(
-    label: 'Location',
+    label: 'Work Location',
     subtitle:
-        'Set your business work site so attendance can be checked by location.',
+        'Set your workplace so employees can only time in when they are nearby.',
     stepIndex: 5,
     statusKey: 'location',
     icon: Icons.location_on_outlined,
@@ -121,7 +121,7 @@ const setupMenuEntries = [
 ];
 
 String setupWizardScreenTitle(int step) {
-  if (step < 0) return 'Business Setup Wizard';
+  if (step < 0) return 'Set Up Your Business';
   if (step == setupWizardBusinessInfoStep) return 'Business Information';
   return setupWizardStepLabels[step];
 }

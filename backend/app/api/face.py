@@ -27,10 +27,11 @@ from app.schemas.face import (
 )
 from app.services.face_embedding import (
     MODEL_VERSION,
-    best_match_score,
+    centroid_match_score,
     detect_and_embed,
-    match_passed,
+    identity_match_passed,
     mean_match_score,
+    min_match_score,
 )
 from app.services.face_enrollment import enroll_face_sample_bytes, face_status_for_employee
 from app.services.face_liveness import (
@@ -169,9 +170,15 @@ async def verify_face(
     probe = detect_and_embed(await file.read())
     gallery = [list(row.embedding) for row in samples]
     score = mean_match_score(probe, gallery)
-    passed = match_passed(score)
+    min_score = min_match_score(probe, gallery)
+    centroid = centroid_match_score(probe, gallery)
+    passed = identity_match_passed(
+        mean_score=score,
+        min_score=min_score,
+        centroid_score=centroid,
+    )
     threshold = settings.face_match_threshold
-    best = best_match_score(probe, gallery)
+    min_threshold = settings.face_min_match_threshold
 
     return FaceVerifyResponse(
         employee_id=str(emp.id),
@@ -182,14 +189,14 @@ async def verify_face(
         liveness_checked=False,
         message=(
             (
-                f"Identity match passed (mean {score:.3f}, best {best:.3f}). "
-                "Blink/smile is client-side only — use Strong head-turn for "
-                "server-verified liveness."
+                f"Identity match passed "
+                f"(mean {score:.3f}, min {min_score:.3f}, centroid {centroid:.3f})."
             )
             if passed
             else (
-                f"Face match failed (mean {score:.3f} < {threshold:.3f}; "
-                f"best {best:.3f})."
+                f"Face does not match the registered employee "
+                f"(mean {score:.3f} / min {min_score:.3f}; "
+                f"need ≥ {threshold:.3f} / {min_threshold:.3f})."
             )
         ),
     )

@@ -7,11 +7,14 @@ Shift windows (early clock-in, grace, late) use the business IANA timezone
 
 from __future__ import annotations
 
+import logging
 import uuid
 from datetime import date, datetime, timedelta, timezone
 
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
+
+attendance_log = logging.getLogger("aroll.attendance")
 
 from app.core.geofence import geofence_check
 from app.core.timezone import business_now, business_today
@@ -30,8 +33,8 @@ class GeofenceValidationError(HTTPException):
             detail={
                 "code": "outside_geofence",
                 "message": (
-                    "You must be within the business geofence to clock attendance. "
-                    f"You are {distance_m:.0f}m away; allowed radius is {allowed_radius_m:.0f}m."
+                    "You’re currently outside your workplace’s allowed attendance "
+                    "area. Please move closer and try again."
                 ),
                 "distance_m": distance_m,
                 "allowed_radius_m": allowed_radius_m,
@@ -149,7 +152,7 @@ def _resolve_assignment(
 
     raise HTTPException(
         400,
-        "Multiple shifts are assigned today. Open your schedule and select a shift to clock in.",
+        "Multiple shifts are assigned today. Open your schedule and select a shift to time in.",
     )
 
 
@@ -167,10 +170,15 @@ def _active_record(
         )
         .all()
     ]
+    # Incomplete (forgotten clock-out) stays open for correction but must not
+    # block a new day's clock-in / clock-out flow.
     query = db.query(AttendanceRecord).filter(
         AttendanceRecord.business_id == employee.business_id,
         AttendanceRecord.employee_id == employee.id,
         AttendanceRecord.time_out.is_(None),
+        AttendanceRecord.status.in_(
+            (AttendanceStatus.in_progress, AttendanceStatus.late)
+        ),
     )
     if assignment_ids:
         query = query.filter(AttendanceRecord.shift_assignment_id.in_(assignment_ids))
@@ -210,22 +218,63 @@ def verify_employee_face_match(
     db: Session,
     employee: Employee,
     face_image_bytes: bytes,
+    *,
+    attendance_action: str | None = None,
 ) -> float:
-    """Match probe image against enrolled samples; raise on failure."""
+    """Match probe image against *this* employee's enrolled samples only.
+
+    Pipeline:
+      1) Load gallery for the logged-in employee only (never 1:N search)
+      2) Detect exactly one live face
+      3) Build ArcFace embedding (original + mirror selfie)
+      4) Cosine-compare mean + min against enrolled samples per orientation
+      5) Accept only if one orientation clears both calibrated thresholds
+
+    Face detection alone never grants attendance.
+    """
+    import logging
+    import time
+
     from app.core.config import settings
     from app.models.face_embedding import EmployeeFaceEmbedding
     from app.services.face_embedding import (
-        detect_and_embed,
-        match_passed,
+        MODEL_VERSION,
+        best_match_score,
+        centroid_match_score,
+        detect_and_observe,
+        gallery_pairwise_consistency,
+        identity_match_passed,
         mean_match_score,
+        min_match_score,
+        observe_mirrored_embedding,
+        robust_match_score,
     )
+
+    face_log = logging.getLogger("aroll.face")
+    employee_id = str(employee.id)
+    action = (attendance_action or "unknown").strip().lower() or "unknown"
+    mean_threshold = settings.face_match_threshold
+    min_threshold = settings.face_min_match_threshold
+    t0 = time.perf_counter()
 
     samples = (
         db.query(EmployeeFaceEmbedding)
         .filter(EmployeeFaceEmbedding.employee_id == employee.id)
+        .order_by(EmployeeFaceEmbedding.sample_index.asc())
         .all()
     )
     if not samples:
+        face_log.warning(
+            "FACE_ATTENDANCE action=%s employee_id=%s registered_embedding=NO "
+            "live_embedding=NO similarity=N/A "
+            "threshold_mean=%.4f threshold_min=%.4f decision=NO_MATCH "
+            "attendance=NO reason=not_enrolled elapsed_ms=%.0f",
+            action,
+            employee_id,
+            mean_threshold,
+            min_threshold,
+            (time.perf_counter() - t0) * 1000,
+        )
         raise HTTPException(
             400,
             detail={
@@ -234,22 +283,215 @@ def verify_employee_face_match(
             },
         )
 
-    probe = detect_and_embed(face_image_bytes)
-    score = mean_match_score(probe, [list(row.embedding) for row in samples])
-    if not match_passed(score):
+    stored_version = samples[0].model_version or ""
+    if stored_version != MODEL_VERSION:
+        face_log.warning(
+            "FACE_ATTENDANCE action=%s employee_id=%s registered_embedding=YES "
+            "model_stored=%s model_current=%s decision=NO_MATCH attendance=NO "
+            "reason=face_model_outdated elapsed_ms=%.0f",
+            action,
+            employee_id,
+            stored_version,
+            MODEL_VERSION,
+            (time.perf_counter() - t0) * 1000,
+        )
+        raise HTTPException(
+            400,
+            detail={
+                "code": "face_enrollment_required",
+                "message": (
+                    "Your face registration needs to be updated for the improved "
+                    "recognition model. Please re-enroll your face, then try again."
+                ),
+            },
+        )
+
+    gallery = [list(row.embedding) for row in samples]
+    if any(len(vec) != 512 for vec in gallery):
+        face_log.error(
+            "FACE_ATTENDANCE action=%s employee_id=%s registered_embedding=YES "
+            "decision=NO_MATCH attendance=NO reason=bad_gallery dims=%s "
+            "elapsed_ms=%.0f",
+            action,
+            employee_id,
+            [len(v) for v in gallery],
+            (time.perf_counter() - t0) * 1000,
+        )
+        raise HTTPException(
+            500,
+            detail={
+                "code": "embedding_error",
+                "message": "Stored face data is invalid. Please re-enroll your face.",
+            },
+        )
+
+    consistency = gallery_pairwise_consistency(gallery)
+    if consistency < settings.face_enrollment_consistency_min:
+        face_log.warning(
+            "FACE_ATTENDANCE action=%s employee_id=%s registered_embedding=YES "
+            "gallery_consistency=%.4f decision=NO_MATCH attendance=NO "
+            "reason=poor_enrollment elapsed_ms=%.0f",
+            action,
+            employee_id,
+            consistency,
+            (time.perf_counter() - t0) * 1000,
+        )
+        raise HTTPException(
+            400,
+            detail={
+                "code": "face_enrollment_quality",
+                "message": (
+                    "Your enrolled face samples are inconsistent. "
+                    "Please re-enroll your face before clocking in."
+                ),
+            },
+        )
+
+    try:
+        # Fast path: embed once, then only mirror if the primary orientation fails.
+        observation = detect_and_observe(face_image_bytes)
+    except Exception as exc:
+        detail = getattr(exc, "detail", None)
+        code = detail.get("code") if isinstance(detail, dict) else "detect_failed"
+        face_log.warning(
+            "FACE_ATTENDANCE action=%s employee_id=%s registered_embedding=YES "
+            "live_embedding=NO similarity=N/A threshold_mean=%.4f "
+            "threshold_min=%.4f decision=NO_MATCH attendance=NO reason=%s "
+            "elapsed_ms=%.0f",
+            action,
+            employee_id,
+            mean_threshold,
+            min_threshold,
+            code,
+            (time.perf_counter() - t0) * 1000,
+        )
+        raise
+
+    face_quality = float(observation.score)
+    if observation.face_count != 1:
+        face_log.warning(
+            "FACE_ATTENDANCE action=%s employee_id=%s registered_embedding=YES "
+            "live_face=YES face_count=%s face_quality=%.3f live_embedding=NO "
+            "decision=NO_MATCH attendance=NO reason=multiple_faces elapsed_ms=%.0f",
+            action,
+            employee_id,
+            observation.face_count,
+            face_quality,
+            (time.perf_counter() - t0) * 1000,
+        )
+        raise HTTPException(
+            403,
+            detail={
+                "code": "multiple_faces",
+                "message": "Only one person should be visible during attendance.",
+            },
+        )
+
+    face_log.info(
+        "FACE_ATTENDANCE action=%s employee_id=%s registered_embedding=YES "
+        "gallery_loaded=%s live_embedding=YES face_quality=%.3f",
+        action,
+        employee_id,
+        len(gallery),
+        face_quality,
+    )
+
+    def _score_probe(probe: list[float]) -> tuple[float, float, float, float, float, bool]:
+        probe_mean = mean_match_score(probe, gallery)
+        probe_min = min_match_score(probe, gallery)
+        probe_centroid = centroid_match_score(probe, gallery)
+        probe_best = best_match_score(probe, gallery)
+        probe_robust = robust_match_score(probe, gallery)
+        ok = identity_match_passed(
+            mean_score=probe_mean,
+            min_score=probe_min,
+            centroid_score=probe_centroid,
+            threshold=mean_threshold,
+            min_threshold=min_threshold,
+        )
+        return (
+            probe_mean,
+            probe_min,
+            probe_centroid,
+            probe_best,
+            probe_robust,
+            ok,
+        )
+
+    # Score primary orientation first (1:1 vs this employee only).
+    mean_score, min_score, centroid_score, best_hit, robust_hit, passed = _score_probe(
+        observation.embedding
+    )
+
+    # Mirror selfie fallback — only when primary fails (keeps ~1–2s path when match is clear).
+    if not passed:
+        try:
+            mirrored_embedding = observe_mirrored_embedding(face_image_bytes)
+            (
+                mirror_mean,
+                mirror_min,
+                mirror_centroid,
+                mirror_best,
+                mirror_robust,
+                mirror_ok,
+            ) = _score_probe(mirrored_embedding)
+            if mirror_ok or mirror_mean > mean_score or (
+                mirror_mean == mean_score and mirror_min > min_score
+            ):
+                mean_score = mirror_mean
+                min_score = mirror_min
+                centroid_score = mirror_centroid
+                best_hit = mirror_best
+                robust_hit = mirror_robust
+                passed = mirror_ok
+        except Exception:
+            pass
+
+    elapsed_ms = (time.perf_counter() - t0) * 1000
+
+    face_log.info(
+        "FACE_ATTENDANCE action=%s employee_id=%s registered_embedding=YES "
+        "live_embedding=YES face_count=1 face_quality=%.3f "
+        "gallery=%s model=%s gallery_consistency=%.4f "
+        "similarity_mean=%.4f similarity_min=%.4f similarity_centroid=%.4f "
+        "similarity_best=%.4f similarity_robust=%.4f "
+        "threshold_mean=%.4f threshold_min=%.4f "
+        "decision=%s attendance=%s elapsed_ms=%.0f",
+        action,
+        employee_id,
+        face_quality,
+        len(gallery),
+        MODEL_VERSION,
+        consistency,
+        mean_score,
+        min_score,
+        centroid_score,
+        best_hit,
+        robust_hit,
+        mean_threshold,
+        min_threshold,
+        "MATCH" if passed else "NO_MATCH",
+        "YES" if passed else "NO",
+        elapsed_ms,
+    )
+
+    if not passed:
         raise HTTPException(
             403,
             detail={
                 "code": "face_mismatch",
                 "message": (
-                    f"Face did not match enrolled samples "
-                    f"(mean score {score:.3f} < {settings.face_match_threshold:.3f})."
+                    "We couldn’t verify your face. Please make sure your face "
+                    "is clearly visible and try again."
                 ),
-                "match_score": round(score, 4),
-                "threshold": settings.face_match_threshold,
+                "match_score": round(mean_score, 4),
+                "min_score": round(min_score, 4),
+                "centroid_score": round(centroid_score, 4),
+                "threshold": mean_threshold,
+                "min_threshold": min_threshold,
             },
         )
-    return score
+    return mean_score
 
 
 def clock_in_employee(
@@ -264,14 +506,17 @@ def clock_in_employee(
     liveness_passed: bool | None = None,
     face_match_score: float | None = None,
 ) -> dict:
+    from app.services.leave_requests import raise_if_on_approved_leave
+
+    today = business_today(business_timezone)
+    raise_if_on_approved_leave(db, employee=employee, work_date=today)
+
     location = _primary_location(db, employee.business_id)
     geofence = _validate_geofence(location, latitude, longitude)
 
     resolved_score = face_match_score
     if face_image_bytes is not None and resolved_score is None:
         resolved_score = verify_employee_face_match(db, employee, face_image_bytes)
-
-    today = business_today(business_timezone)
     assignment, shift = _resolve_assignment(
         db, employee, today, shift_assignment_id
     )
@@ -323,6 +568,20 @@ def clock_in_employee(
     db.commit()
     db.refresh(record)
 
+    attendance_log.info(
+        "ATTENDANCE_AUDIT action=clock_in employee_id=%s result=OK "
+        "timestamp=%s face_score=%s lat=%s lng=%s distance_m=%s radius_m=%s "
+        "inside_geofence=%s",
+        employee.id,
+        now_utc.isoformat(),
+        resolved_score,
+        latitude,
+        longitude,
+        geofence.get("distance_m"),
+        geofence.get("allowed_radius_m"),
+        geofence.get("inside_geofence"),
+    )
+
     message = (
         "Clocked in successfully."
         if status == AttendanceStatus.in_progress
@@ -364,13 +623,56 @@ def clock_out_employee(
     face_match_score: float | None = None,
     liveness_passed: bool | None = None,
 ) -> dict:
+    from app.services.leave_requests import raise_if_on_approved_leave
+    from app.services.missing_clock_out import raise_if_incomplete_clock_out
+
+    today = business_today(business_timezone)
+    raise_if_on_approved_leave(db, employee=employee, work_date=today)
+
     location = _primary_location(db, employee.business_id)
     geofence = _validate_geofence(location, latitude, longitude)
 
-    today = business_today(business_timezone)
+    # If open punch is past end + maximum_overtime_minutes, mark incomplete.
+    open_any = (
+        db.query(AttendanceRecord)
+        .filter(
+            AttendanceRecord.business_id == employee.business_id,
+            AttendanceRecord.employee_id == employee.id,
+            AttendanceRecord.time_out.is_(None),
+            AttendanceRecord.time_in.is_not(None),
+            AttendanceRecord.status.in_(
+                (
+                    AttendanceStatus.in_progress,
+                    AttendanceStatus.late,
+                    AttendanceStatus.incomplete,
+                )
+            ),
+        )
+        .order_by(AttendanceRecord.created_at.desc())
+        .first()
+    )
+    if open_any is not None:
+        raise_if_incomplete_clock_out(
+            db, open_any, business_timezone=business_timezone
+        )
+
     record = _active_record(db, employee, today)
     if record is None or record.time_in is None:
-        raise HTTPException(400, "You are not clocked in yet.")
+        raise HTTPException(
+            400,
+            detail={
+                "code": "not_clocked_in",
+                "message": "You need to time in before you can time out.",
+            },
+        )
+    if record.time_out is not None:
+        raise HTTPException(
+            400,
+            detail={
+                "code": "already_clocked_out",
+                "message": "You’ve already completed attendance for this shift.",
+            },
+        )
 
     policy = _attendance_policy(db, employee.business_id)
     shift_name = None
@@ -399,23 +701,32 @@ def clock_out_employee(
         record.liveness_passed = False
 
     was_late = record.status == AttendanceStatus.late
-    worked_minutes = max(
-        (now_utc - record.time_in).total_seconds() / 60.0,
-        0.0,
-    )
+    if shift is not None and assignment is not None:
+        from app.services.attendance_status import resolve_closed_attendance_status
 
-    # Absent if worked time is below the stricter of the two thresholds.
-    # Half-day pay (between thresholds) is applied in payslip math; status
-    # stays late/complete so reports still show presence.
-    absent_bar = min(
-        policy.half_day_threshold_minutes, policy.absent_threshold_minutes
-    )
-    if worked_minutes < absent_bar:
-        record.status = AttendanceStatus.absent
-    elif was_late:
-        record.status = AttendanceStatus.late
+        record.status = resolve_closed_attendance_status(
+            time_in=record.time_in,
+            time_out=now_utc,
+            assignment=assignment,
+            shift=shift,
+            policy=policy,
+            business_timezone=business_timezone,
+        )
     else:
-        record.status = AttendanceStatus.complete
+        # No assigned shift: fall back to legacy fixed-minute absent bar.
+        worked_minutes = max(
+            (now_utc - record.time_in).total_seconds() / 60.0,
+            0.0,
+        )
+        absent_bar = min(
+            policy.half_day_threshold_minutes, policy.absent_threshold_minutes
+        )
+        if worked_minutes < absent_bar:
+            record.status = AttendanceStatus.absent
+        elif was_late:
+            record.status = AttendanceStatus.late
+        else:
+            record.status = AttendanceStatus.complete
 
     early_out_minutes = 0.0
     if (
@@ -430,6 +741,20 @@ def clock_out_employee(
 
     db.commit()
     db.refresh(record)
+
+    attendance_log.info(
+        "ATTENDANCE_AUDIT action=clock_out employee_id=%s result=OK "
+        "timestamp=%s face_score=%s lat=%s lng=%s distance_m=%s radius_m=%s "
+        "inside_geofence=%s",
+        employee.id,
+        now_utc.isoformat(),
+        face_match_score,
+        latitude,
+        longitude,
+        geofence.get("distance_m"),
+        geofence.get("allowed_radius_m"),
+        geofence.get("inside_geofence"),
+    )
 
     message = "Clocked out successfully."
     if record.status == AttendanceStatus.late:

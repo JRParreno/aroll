@@ -82,7 +82,8 @@ def test_recompute_status_late_then_complete():
     )
 
 
-def test_create_rejects_when_both_punches_exist():
+def test_create_allows_correction_when_both_punches_exist():
+    """Completed shifts can still request corrected clock-in/out times."""
     business, employee = _employee_business()
     assignment, shift = _assignment(employee.id, business.id)
     record = AttendanceRecord(
@@ -99,20 +100,35 @@ def test_create_rejects_when_both_punches_exist():
         assignment,
         shift,
     )
-    # Second query for attendance record
-    def _query(model):
-        q = MagicMock()
-        if model is ShiftAssignment or model.__name__ == "ShiftAssignment":
-            pass
-        return q
+    db.query.return_value.filter.return_value.order_by.return_value.first.return_value = (
+        record
+    )
+    db.query.return_value.filter.return_value.first.return_value = None
 
-    # Simpler: patch _load_assignment_bundle path via query chain for join
+    result = create_correction_request(
+        db,
+        employee=employee,
+        business=business,
+        shift_assignment_id=assignment.id,
+        requested_time_in=datetime(2026, 7, 18, 9, 0, tzinfo=TZ),
+        requested_time_out=datetime(2026, 7, 18, 17, 0, tzinfo=TZ),
+        reason="Wrong recorded times",
+    )
+    assert result["status"] == "pending"
+    assert db.add.called
+    assert db.commit.called
+
+
+def test_create_requires_both_corrected_times():
+    business, employee = _employee_business()
+    assignment, shift = _assignment(employee.id, business.id)
+    db = MagicMock()
     db.query.return_value.join.return_value.filter.return_value.first.return_value = (
         assignment,
         shift,
     )
     db.query.return_value.filter.return_value.order_by.return_value.first.return_value = (
-        record
+        None
     )
     db.query.return_value.filter.return_value.first.return_value = None
 
@@ -124,7 +140,7 @@ def test_create_rejects_when_both_punches_exist():
             shift_assignment_id=assignment.id,
             requested_time_in=datetime(2026, 7, 18, 9, 0, tzinfo=TZ),
             requested_time_out=None,
-            reason="Forgot to clock in",
+            reason="Forgot to time in",
         )
     assert exc.value.status_code == 400
 
@@ -222,3 +238,148 @@ def test_reject_requires_pending():
             review_note="Already reviewed",
         )
     assert exc.value.status_code == 400
+
+
+def test_incomplete_allows_clock_out_only_correction():
+    """Incomplete attendance: employee may submit clock-out (+ reason) only."""
+    business, employee = _employee_business()
+    assignment, shift = _assignment(employee.id, business.id)
+    official_in = datetime(2026, 7, 18, 1, 0, tzinfo=timezone.utc)
+    record = AttendanceRecord(
+        id=uuid4(),
+        business_id=business.id,
+        employee_id=employee.id,
+        shift_assignment_id=assignment.id,
+        time_in=official_in,
+        time_out=None,
+        status=AttendanceStatus.incomplete,
+    )
+    db = MagicMock()
+    db.query.return_value.join.return_value.filter.return_value.first.return_value = (
+        assignment,
+        shift,
+    )
+    db.query.return_value.filter.return_value.order_by.return_value.first.return_value = (
+        record
+    )
+    db.query.return_value.filter.return_value.first.return_value = None
+
+    result = create_correction_request(
+        db,
+        employee=employee,
+        business=business,
+        shift_assignment_id=assignment.id,
+        requested_time_in=None,
+        requested_time_out=datetime(2026, 7, 18, 17, 0, tzinfo=TZ),
+        reason="Forgot to time out after my shift",
+    )
+    assert result["status"] == "pending"
+    added = db.add.call_args[0][0]
+    assert added.requested_time_in == official_in
+    assert added.requested_time_out is not None
+    assert db.commit.called
+
+
+def test_incomplete_rejects_changed_clock_in():
+    """Official clock-in cannot be modified via employee incomplete correction."""
+    business, employee = _employee_business()
+    assignment, shift = _assignment(employee.id, business.id)
+    official_in = datetime(2026, 7, 18, 1, 0, tzinfo=timezone.utc)
+    record = AttendanceRecord(
+        id=uuid4(),
+        business_id=business.id,
+        employee_id=employee.id,
+        shift_assignment_id=assignment.id,
+        time_in=official_in,
+        time_out=None,
+        status=AttendanceStatus.incomplete,
+    )
+    db = MagicMock()
+    db.query.return_value.join.return_value.filter.return_value.first.return_value = (
+        assignment,
+        shift,
+    )
+    db.query.return_value.filter.return_value.order_by.return_value.first.return_value = (
+        record
+    )
+    db.query.return_value.filter.return_value.first.return_value = None
+
+    with pytest.raises(HTTPException) as exc:
+        create_correction_request(
+            db,
+            employee=employee,
+            business=business,
+            shift_assignment_id=assignment.id,
+            requested_time_in=datetime(2026, 7, 18, 10, 0, tzinfo=TZ),
+            requested_time_out=datetime(2026, 7, 18, 17, 0, tzinfo=TZ),
+            reason="Trying to change clock-in",
+        )
+    assert exc.value.status_code == 400
+    assert "Clock-in cannot be changed" in str(exc.value.detail)
+
+
+def test_approve_incomplete_keeps_official_clock_in():
+    business, employee = _employee_business()
+    assignment, shift = _assignment(employee.id, business.id)
+    official_in = datetime(2026, 7, 18, 1, 5, tzinfo=timezone.utc)
+    record = AttendanceRecord(
+        id=uuid4(),
+        business_id=business.id,
+        employee_id=employee.id,
+        shift_assignment_id=assignment.id,
+        time_in=official_in,
+        time_out=None,
+        status=AttendanceStatus.incomplete,
+    )
+    request = AttendanceCorrectionRequest(
+        id=uuid4(),
+        business_id=business.id,
+        employee_id=employee.id,
+        shift_assignment_id=assignment.id,
+        attendance_record_id=record.id,
+        requested_time_in=datetime(2026, 7, 18, 10, 0, tzinfo=TZ).astimezone(
+            timezone.utc
+        ),
+        requested_time_out=datetime(2026, 7, 18, 17, 0, tzinfo=TZ).astimezone(
+            timezone.utc
+        ),
+        reason="Forgot to time out",
+        status=AttendanceCorrectionStatus.pending,
+    )
+    reviewer = User(id=uuid4())
+    db = MagicMock()
+    db.query.return_value.join.return_value.filter.return_value.first.return_value = (
+        assignment,
+        shift,
+    )
+    db.query.return_value.filter.return_value.order_by.return_value.first.return_value = (
+        record
+    )
+
+    def get_side_effect(model, key):
+        if model is AttendanceCorrectionRequest:
+            return request
+        if model is Employee:
+            return employee
+        if model is BusinessAttendancePolicy:
+            return BusinessAttendancePolicy(
+                business_id=business.id,
+                on_time_grace_minutes=10,
+                half_day_threshold_minutes=240,
+                absent_threshold_minutes=120,
+            )
+        return None
+
+    db.get.side_effect = get_side_effect
+
+    result = approve_correction(
+        db,
+        request_id=request.id,
+        reviewer=reviewer,
+        business=business,
+    )
+    assert result["status"] == "approved"
+    assert record.time_in == official_in
+    assert record.time_out is not None
+    assert record.status != AttendanceStatus.incomplete
+    assert db.commit.called

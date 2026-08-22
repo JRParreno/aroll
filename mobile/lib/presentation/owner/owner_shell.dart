@@ -1,5 +1,8 @@
 import 'dart:math' as math;
 
+import 'package:aroll_mobile/core/di/injection.dart';
+import 'package:aroll_mobile/data/repositories/owner_repository.dart';
+import 'package:aroll_mobile/presentation/shared/app_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
@@ -7,7 +10,7 @@ import 'package:go_router/go_router.dart';
 // Navigation shell
 // ─────────────────────────────────────────────────────────────────────────────
 
-class OwnerShell extends StatelessWidget {
+class OwnerShell extends StatefulWidget {
   const OwnerShell({
     super.key,
     required this.selectedIndex,
@@ -15,6 +18,9 @@ class OwnerShell extends StatelessWidget {
     required this.child,
     this.actions,
     this.showBackButton = false,
+    this.showAppBar = true,
+    this.backgroundColor,
+    this.showNotificationBell = true,
   });
 
   final int selectedIndex;
@@ -22,6 +28,9 @@ class OwnerShell extends StatelessWidget {
   final Widget child;
   final List<Widget>? actions;
   final bool showBackButton;
+  final bool showAppBar;
+  final Color? backgroundColor;
+  final bool showNotificationBell;
 
   static const _routes = [
     '/owner/home',
@@ -29,44 +38,132 @@ class OwnerShell extends StatelessWidget {
     '/owner/profile',
   ];
 
+  @override
+  State<OwnerShell> createState() => _OwnerShellState();
+}
+
+class _OwnerShellState extends State<OwnerShell> with WidgetsBindingObserver {
+  int _unread = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _refreshUnread();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _refreshUnread();
+  }
+
+  Future<void> _refreshUnread() async {
+    if (!widget.showNotificationBell) return;
+    try {
+      final count = await sl<OwnerRepository>().unreadCount();
+      if (mounted) setState(() => _unread = count);
+    } catch (_) {}
+  }
+
   void _onBack(BuildContext context) {
-    if (context.canPop()) {
-      context.pop();
-    } else {
-      context.go('/owner/home');
-    }
+    appNavigateBack(context, fallbackRoute: '/owner/home');
   }
 
   @override
   Widget build(BuildContext context) {
+    final mergedActions = <Widget>[
+      ...?widget.actions,
+      if (widget.showNotificationBell)
+        IconButton(
+          tooltip: 'Notifications',
+          onPressed: () async {
+            await context.push('/owner/notifications');
+            if (mounted) _refreshUnread();
+          },
+          icon: Badge(
+            isLabelVisible: _unread > 0,
+            label: Text(_unread > 99 ? '99+' : '$_unread'),
+            child: const Icon(Icons.notifications_outlined),
+          ),
+        ),
+    ];
+
     return Scaffold(
-      backgroundColor: const Color(0xFFF4F6F8),
-      appBar: AppBar(
-        backgroundColor: const Color(0xFFF4F6F8),
-        automaticallyImplyLeading: showBackButton,
-        leading: showBackButton
-            ? IconButton(
-                tooltip: 'Back',
-                onPressed: () => _onBack(context),
-                icon: const Icon(Icons.arrow_back_rounded),
-              )
-            : null,
-        title: Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
-        actions: actions,
-      ),
-      body: SafeArea(child: child),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: selectedIndex,
-        height: 70,
-        labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
-        onDestinationSelected: (index) => context.go(_routes[index]),
-        destinations: const [
-          NavigationDestination(icon: Icon(Icons.home_rounded), label: 'Home'),
-          NavigationDestination(
-              icon: Icon(Icons.fact_check_rounded), label: 'Attendance'),
-          NavigationDestination(
-              icon: Icon(Icons.person_rounded), label: 'Profile'),
-        ],
+      backgroundColor: widget.backgroundColor ?? AppColors.scaffold,
+      appBar: widget.showAppBar
+          ? AppBar(
+              backgroundColor: AppColors.scaffold,
+              elevation: 0,
+              scrolledUnderElevation: 0,
+              automaticallyImplyLeading: false,
+              titleSpacing:
+                  widget.showBackButton ? 0 : NavigationToolbar.kMiddleSpacing,
+              leading: widget.showBackButton
+                  ? IconButton(
+                      tooltip: 'Back',
+                      constraints: const BoxConstraints(
+                        minWidth: AppSizes.minTap,
+                        minHeight: AppSizes.minTap,
+                      ),
+                      onPressed: () => _onBack(context),
+                      icon: const Icon(
+                        Icons.arrow_back_rounded,
+                        size: AppSizes.iconLg,
+                      ),
+                    )
+                  : null,
+              title: Text(widget.title, style: appPageTitleStyle()),
+              centerTitle: false,
+              actions: mergedActions,
+            )
+          : null,
+      body: widget.showAppBar ? SafeArea(child: widget.child) : widget.child,
+      bottomNavigationBar: Material(
+        color: AppColors.white,
+        child: Container(
+          decoration: const BoxDecoration(
+            color: AppColors.white,
+            border: Border(
+              top: BorderSide(color: AppColors.border),
+            ),
+          ),
+          child: NavigationBar(
+            selectedIndex: widget.selectedIndex,
+            height: AppSizes.navHeight,
+            backgroundColor: AppColors.white,
+            surfaceTintColor: Colors.transparent,
+            indicatorColor: AppColors.iconWell,
+            labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+            onDestinationSelected: (index) =>
+                context.go(OwnerShell._routes[index]),
+            destinations: const [
+              NavigationDestination(
+                icon: Icon(Icons.home_outlined, size: AppSizes.iconLg),
+                selectedIcon:
+                    Icon(Icons.home_rounded, size: AppSizes.iconLg),
+                label: 'Home',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.fact_check_outlined, size: AppSizes.iconLg),
+                selectedIcon:
+                    Icon(Icons.fact_check_rounded, size: AppSizes.iconLg),
+                label: 'Attendance',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.person_outline_rounded, size: AppSizes.iconLg),
+                selectedIcon:
+                    Icon(Icons.person_rounded, size: AppSizes.iconLg),
+                label: 'Profile',
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -84,26 +181,33 @@ class OwnerSecondaryScreen extends StatelessWidget {
     required this.title,
     required this.future,
     required this.builder,
+    this.selectedIndex = 0,
+    this.backgroundColor,
+    this.padding = const EdgeInsets.fromLTRB(16, 12, 16, 28),
   });
 
   final String title;
   final Future<dynamic> future;
   final List<Widget> Function(dynamic) builder;
+  final int selectedIndex;
+  final Color? backgroundColor;
+  final EdgeInsetsGeometry padding;
 
   @override
   Widget build(BuildContext context) => OwnerShell(
-        selectedIndex: 0,
+        selectedIndex: selectedIndex,
         showBackButton: true,
         title: title,
+        backgroundColor: backgroundColor,
         child: FutureBuilder<dynamic>(
           future: future,
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(child: CircularProgressIndicator());
+              return appLoadingView();
             }
             if (snapshot.hasError) return const OwnerErrorState();
             return ListView(
-              padding: const EdgeInsets.all(16),
+              padding: padding,
               children: builder(snapshot.data),
             );
           },
@@ -138,13 +242,18 @@ class OwnerDataScreen extends StatelessWidget {
           future: load(),
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(child: CircularProgressIndicator());
+              return appLoadingView();
             }
             if (snapshot.hasError) return const OwnerErrorState();
             final items = snapshot.data ?? const [];
-            if (items.isEmpty) return OwnerEmptyState(emptyText);
+            if (items.isEmpty) {
+              return OwnerEmptyState(
+                emptyText,
+                description: 'New records will appear here automatically.',
+              );
+            }
             return ListView.separated(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(AppSpacing.lg),
               itemCount: items.length,
               separatorBuilder: (_, __) => const SizedBox(height: 10),
               itemBuilder: (_, index) =>
@@ -185,7 +294,7 @@ class OwnerMapListScreen extends StatelessWidget {
           future: load(),
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(child: CircularProgressIndicator());
+              return appLoadingView();
             }
             if (snapshot.hasError) return const OwnerErrorState();
             final data = snapshot.data ?? const {};
@@ -193,14 +302,19 @@ class OwnerMapListScreen extends StatelessWidget {
                 .whereType<Map<String, dynamic>>()
                 .toList();
             return ListView(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(AppSpacing.lg),
               children: [
                 if (headerBuilder != null) ...[
                   headerBuilder!(data),
                   const SizedBox(height: 14),
                 ],
                 if (items.isEmpty)
-                  const OwnerEmptyState('No records are available yet.')
+                  const OwnerEmptyState(
+                    'No records yet',
+                    description:
+                        'When activity starts, it will show up here.',
+                    icon: Icons.inbox_outlined,
+                  )
                 else
                   ...items.map(
                     (item) => OwnerCard(
@@ -220,52 +334,46 @@ class OwnerMapListScreen extends StatelessWidget {
 // ─────────────────────────────────────────────────────────────────────────────
 
 class OwnerCard extends StatelessWidget {
-  const OwnerCard({super.key, required this.child, this.margin, this.padding});
+  const OwnerCard({
+    super.key,
+    required this.child,
+    this.margin,
+    this.padding,
+    this.onTap,
+  });
 
   final Widget child;
   final EdgeInsets? margin;
   final EdgeInsets? padding;
+  final VoidCallback? onTap;
 
   @override
-  Widget build(BuildContext context) => Container(
-        width: double.infinity,
+  Widget build(BuildContext context) => AppCard(
         margin: margin,
-        padding: padding ?? const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: const Color(0xFFE5E7EB)),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: .035),
-              blurRadius: 14,
-              offset: const Offset(0, 7),
-            ),
-          ],
-        ),
+        padding: padding ?? const EdgeInsets.all(AppSpacing.lg),
+        onTap: onTap,
         child: child,
       );
 }
 
 class OwnerEmptyState extends StatelessWidget {
-  const OwnerEmptyState(this.message, {super.key});
+  const OwnerEmptyState(
+    this.message, {
+    super.key,
+    this.description,
+    this.icon = Icons.inbox_outlined,
+  });
 
   final String message;
+  final String? description;
+  final IconData icon;
 
   @override
-  Widget build(BuildContext context) => Center(
-        child: Padding(
-          padding: const EdgeInsets.all(32),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.inbox_outlined,
-                  size: 44, color: Color(0xFF6B7280)),
-              const SizedBox(height: 12),
-              Text(message, textAlign: TextAlign.center),
-            ],
-          ),
-        ),
+  Widget build(BuildContext context) => AppEmptyState(
+        title: message,
+        description: description ??
+            'Nothing here yet — check back once activity starts.',
+        icon: icon,
       );
 }
 
@@ -275,19 +383,9 @@ class OwnerErrorState extends StatelessWidget {
   final Future<void> Function()? onRetry;
 
   @override
-  Widget build(BuildContext context) => Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text('Unable to load owner data. Please try again.'),
-              if (onRetry != null)
-                TextButton(
-                    onPressed: onRetry, child: const Text('Retry')),
-            ],
-          ),
-        ),
+  Widget build(BuildContext context) => AppErrorState(
+        message: 'Unable to load owner data. Please try again.',
+        onRetry: onRetry,
       );
 }
 
@@ -308,29 +406,48 @@ class OwnerActionCard extends StatelessWidget {
   final bool prominent;
 
   @override
-  Widget build(BuildContext context) => Card(
-        margin: const EdgeInsets.only(bottom: 10),
-        color: prominent ? const Color(0xFF1E466E) : Colors.white,
-        child: ListTile(
-          contentPadding: const EdgeInsets.all(14),
-          leading: CircleAvatar(
-            backgroundColor:
-                prominent ? Colors.white24 : const Color(0xFFE7EEF5),
-            child: Icon(icon,
-                color: prominent ? Colors.white : const Color(0xFF1E466E)),
+  Widget build(BuildContext context) => AppPressable(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(AppRadii.card),
+        child: Card(
+          margin: const EdgeInsets.only(bottom: 10),
+          elevation: 0,
+          color: prominent ? AppColors.primary : AppColors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppRadii.card),
+            side: BorderSide(
+              color: AppColors.border.withValues(alpha: prominent ? 0 : 1),
+            ),
           ),
-          title: Text(title,
+          child: ListTile(
+            contentPadding: const EdgeInsets.all(14),
+            leading: CircleAvatar(
+              backgroundColor:
+                  prominent ? Colors.white24 : AppColors.iconWell,
+              child: Icon(
+                icon,
+                size: AppSizes.iconLg,
+                color: prominent ? AppColors.white : AppColors.primary,
+              ),
+            ),
+            title: Text(
+              title,
               style: TextStyle(
                 fontWeight: FontWeight.w700,
-                color: prominent ? Colors.white : null,
-              )),
-          subtitle: Text(subtitle,
+                color: prominent ? AppColors.white : AppColors.textPrimary,
+              ),
+            ),
+            subtitle: Text(
+              subtitle,
               style: TextStyle(
-                color: prominent ? Colors.white70 : const Color(0xFF6B7280),
-              )),
-          trailing: Icon(Icons.chevron_right_rounded,
-              color: prominent ? Colors.white : null),
-          onTap: onTap,
+                color: prominent ? Colors.white70 : AppColors.textMuted,
+              ),
+            ),
+            trailing: Icon(
+              Icons.chevron_right_rounded,
+              color: prominent ? AppColors.white : AppColors.textMuted,
+            ),
+          ),
         ),
       );
 }
@@ -357,13 +474,15 @@ class OwnerPerformanceChart extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Performance Overview',
-              style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w700,
-                  )),
+          Text(
+            'Performance Overview',
+            style: appSectionTitleStyle(),
+          ),
           const SizedBox(height: 2),
-          const Text('Live attendance and shift activity.',
-              style: TextStyle(color: Color(0xFF6B7280), fontSize: 11)),
+          Text(
+            'Live attendance and shift activity.',
+            style: appMutedStyle().copyWith(fontSize: 12),
+          ),
           const SizedBox(height: 10),
           SizedBox(
             height: 108,
@@ -377,15 +496,16 @@ class OwnerPerformanceChart extends StatelessWidget {
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.end,
                           children: [
-                            Text('${entry.$2}',
-                                style: const TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w600,
-                                )),
+                            Text(
+                              '${entry.$2}',
+                              style: const TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
                             const SizedBox(height: 3),
                             Container(
-                              height:
-                                  math.max(7, 70 * entry.$2 / maxValue),
+                              height: math.max(7, 70 * entry.$2 / maxValue),
                               decoration: BoxDecoration(
                                 color: entry.$3,
                                 borderRadius: const BorderRadius.vertical(
@@ -394,9 +514,11 @@ class OwnerPerformanceChart extends StatelessWidget {
                               ),
                             ),
                             const SizedBox(height: 4),
-                            Text(entry.$1,
-                                textAlign: TextAlign.center,
-                                style: const TextStyle(fontSize: 9)),
+                            Text(
+                              entry.$1,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(fontSize: 9),
+                            ),
                           ],
                         ),
                       ),

@@ -1,17 +1,21 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   BriefcaseBusiness,
+  CalendarDays,
   Check,
   Copy,
   Eye,
   EyeOff,
   Filter,
+  IdCard,
+  KeyRound,
   Phone,
   Plus,
   ScanFace,
   Search,
+  UserPlus,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -39,8 +43,10 @@ import {
   reactivateEmployee,
   updateEmployee,
   type Employee,
+  type PayBasis,
 } from "@/lib/api";
 import { getWeekStart, toDateKey } from "@/components/owner/schedule/scheduleUtils";
+import { cn } from "@/lib/utils";
 
 type EmployeeForm = {
   fullName: string;
@@ -48,6 +54,10 @@ type EmployeeForm = {
   positionId: string;
   employmentType: "full_time" | "part_time";
   phone: string;
+  payBasis: PayBasis;
+  dailyRate: string;
+  hourlyRate: string;
+  monthlySalary: string;
 };
 
 const emptyForm: EmployeeForm = {
@@ -56,7 +66,38 @@ const emptyForm: EmployeeForm = {
   positionId: "",
   employmentType: "full_time",
   phone: "",
+  payBasis: "daily",
+  dailyRate: "",
+  hourlyRate: "",
+  monthlySalary: "",
 };
+
+function ratePayload(form: EmployeeForm) {
+  const daily =
+    form.payBasis === "daily" && form.dailyRate.trim()
+      ? Number(form.dailyRate)
+      : null;
+  const hourly =
+    form.payBasis === "hourly" && form.hourlyRate.trim()
+      ? Number(form.hourlyRate)
+      : null;
+  const monthly =
+    form.payBasis === "monthly" && form.monthlySalary.trim()
+      ? Number(form.monthlySalary)
+      : null;
+  return {
+    pay_basis: form.payBasis,
+    daily_rate: daily,
+    hourly_rate: hourly,
+    monthly_salary: monthly,
+  };
+}
+
+function formPayReady(form: EmployeeForm) {
+  if (form.payBasis === "daily") return Number(form.dailyRate) > 0;
+  if (form.payBasis === "hourly") return Number(form.hourlyRate) > 0;
+  return Number(form.monthlySalary) > 0;
+}
 
 function initials(name: string) {
   return name
@@ -71,6 +112,12 @@ function employmentLabel(value: Employee["employment_type"]) {
   return value === "part_time" ? "Part Timer" : "Full Timer";
 }
 
+function accountStatusLabel(employee: Pick<Employee, "status" | "must_change_password">) {
+  if (employee.status === "inactive") return "Disabled";
+  if (employee.must_change_password) return "Pending Activation";
+  return "Active";
+}
+
 function EmployeeAvatar({
   employee,
   className = "h-16 w-16 text-base",
@@ -80,7 +127,10 @@ function EmployeeAvatar({
 }) {
   return (
     <div
-      className={`flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#d8d8d8] font-extrabold text-[#333] ${className}`}
+      className={cn(
+        "flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#d8d8d8] font-extrabold text-[#333] ring-2 ring-white shadow-sm",
+        className
+      )}
     >
       {employee.profile_image_url ? (
         <img
@@ -91,6 +141,30 @@ function EmployeeAvatar({
       ) : (
         initials(employee.full_name)
       )}
+    </div>
+  );
+}
+
+function DetailInfoRow({
+  icon,
+  label,
+  value,
+}: {
+  icon: ReactNode;
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="flex items-start gap-3 px-1 py-2.5">
+      <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-[#EEF3F8] text-[#1F456B]">
+        {icon}
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-[#9CA3AF]">
+          {label}
+        </p>
+        <p className="mt-0.5 truncate text-sm font-medium text-[#111827]">{value}</p>
+      </div>
     </div>
   );
 }
@@ -172,13 +246,38 @@ export function OwnerEmployeesPage() {
 
   function pickPosition(nextPositionId: string, target: "create" | "edit") {
     const selected = positions.find((position) => position.id === nextPositionId);
-    const update = (current: EmployeeForm) => ({
-      ...current,
-      positionId: nextPositionId,
-      positionTitle: selected?.title ?? "",
+    if (target === "create") {
+      setForm((current) => ({
+        ...current,
+        positionId: nextPositionId,
+        positionTitle: selected?.title ?? "",
+        // Prefill Position default; owner may override before save.
+        dailyRate:
+          current.payBasis === "daily" && selected?.daily_rate != null
+            ? String(selected.daily_rate)
+            : current.dailyRate,
+      }));
+      return;
+    }
+    // Edit: suggest Position default only when daily pay and rate still empty /
+    // still matches the previous position default — never silently overwrite.
+    setEditForm((current) => {
+      const prev = positions.find((p) => p.id === current.positionId);
+      const stillDefault =
+        current.payBasis === "daily" &&
+        (!current.dailyRate.trim() ||
+          (prev?.daily_rate != null &&
+            Number(current.dailyRate) === Number(prev.daily_rate)));
+      return {
+        ...current,
+        positionId: nextPositionId,
+        positionTitle: selected?.title ?? "",
+        dailyRate:
+          stillDefault && selected?.daily_rate != null
+            ? String(selected.daily_rate)
+            : current.dailyRate,
+      };
     });
-    if (target === "create") setForm(update);
-    else setEditForm(update);
   }
 
   const create = useMutation({
@@ -189,6 +288,7 @@ export function OwnerEmployeesPage() {
         position_id: form.positionId || undefined,
         employment_type: form.employmentType,
         phone: form.phone.trim() || undefined,
+        ...ratePayload(form),
       }),
     onSuccess: (employee) => {
       toast.success("Employee added");
@@ -208,6 +308,7 @@ export function OwnerEmployeesPage() {
         position_id: editForm.positionId || undefined,
         employment_type: editForm.employmentType,
         phone: editForm.phone.trim() || null,
+        ...ratePayload(editForm),
       });
     },
     onSuccess: () => {
@@ -263,13 +364,25 @@ export function OwnerEmployeesPage() {
   });
 
   function openEdit(employee: Employee) {
+    const matchedPosition =
+      positions.find((position) => position.id === (employee.position_id ?? "")) ??
+      positions.find(
+        (position) => position.title === (employee.position_title ?? "")
+      );
     setEditingEmployee(employee);
     setEditForm({
       fullName: employee.full_name,
       positionTitle: employee.position_title ?? "",
-      positionId: "",
-      employmentType: employee.employment_type,
+      positionId: matchedPosition?.id ?? employee.position_id ?? "",
+      employmentType: employee.employment_type as EmployeeForm["employmentType"],
       phone: employee.phone ?? "",
+      payBasis: employee.pay_basis ?? "daily",
+      dailyRate:
+        employee.daily_rate != null ? String(employee.daily_rate) : "",
+      hourlyRate:
+        employee.hourly_rate != null ? String(employee.hourly_rate) : "",
+      monthlySalary:
+        employee.monthly_salary != null ? String(employee.monthly_salary) : "",
     });
   }
 
@@ -284,16 +397,21 @@ export function OwnerEmployeesPage() {
     }
   }
 
-  const createReady = form.fullName.trim() && form.positionTitle.trim();
-  const editReady = editForm.fullName.trim() && editForm.positionTitle.trim();
+  const createReady =
+    form.fullName.trim() && form.positionTitle.trim() && formPayReady(form);
+  const editReady =
+    editForm.fullName.trim() &&
+    editForm.positionTitle.trim() &&
+    formPayReady(editForm);
 
   return (
     <OwnerPage>
       <OwnerPageHeader
         title="Employees"
+        description="Search your team, open a profile, or enroll a new employee."
         actions={
           <Button
-            className="h-9 rounded-xl bg-[#1E3A5F] px-3 font-medium text-white hover:bg-[#284B73]"
+            className="h-9 gap-1.5 rounded-xl px-3 font-medium"
             onClick={() => setFormOpen(true)}
           >
             <Plus className="h-4 w-4" />
@@ -303,28 +421,31 @@ export function OwnerEmployeesPage() {
       />
 
       <OwnerPageContent>
-        <div className="mb-8 flex h-12 items-center gap-4 rounded-2xl border border-slate-200 bg-white px-4 shadow-sm">
-          <Search className="h-5 w-5 shrink-0 text-[#777]" />
+        <div className="owner-card flex h-12 items-center gap-3 px-4">
+          <Search className="h-4 w-4 shrink-0 text-[#9CA3AF]" />
           <input
-            className="h-full flex-1 bg-transparent text-sm outline-none"
-            placeholder="Search employees..."
+            className="h-full flex-1 bg-transparent text-sm text-[#1F2937] outline-none placeholder:text-[#9CA3AF]"
+            placeholder="Search by name, role, phone, or username..."
             value={query}
             onChange={(event) => {
               setQuery(event.target.value);
               setPage(1);
             }}
           />
-          <Filter className="h-5 w-5 text-[#777]" />
+          <span className="hidden items-center gap-1 rounded-lg bg-[#F3F6FA] px-2 py-1 text-[11px] font-medium text-[#6B7280] sm:inline-flex">
+            <Filter className="h-3.5 w-3.5" />
+            Search
+          </span>
         </div>
 
         {isLoading ? (
-          <p className="text-sm text-muted-foreground">Loading employees...</p>
+          <p className="text-sm text-[#6B7280]">Loading employees...</p>
         ) : visibleEmployees.length === 0 ? (
-          <div className="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-muted-foreground shadow-sm">
+          <div className="owner-card p-8 text-center text-sm text-[#6B7280]">
             No employees found.
           </div>
         ) : (
-          <div className="grid gap-x-12 gap-y-4 xl:grid-cols-2">
+          <div className="grid gap-4 xl:grid-cols-2">
             {visibleEmployees.map((employee) => {
               const workdays = Array.from(
                 assignedWorkdays.get(employee.id) ?? []
@@ -332,29 +453,33 @@ export function OwnerEmployeesPage() {
 
               return (
                 <button
-                  className="rounded-2xl border border-slate-200 bg-white text-left shadow-sm transition hover:shadow-md"
+                  className="owner-card group text-left transition hover:-translate-y-0.5 hover:shadow-[0_8px_28px_rgba(15,23,42,0.08)]"
                   key={employee.id}
                   onClick={() => setDetailsEmployee(employee)}
                   type="button"
                 >
-                  <div className="flex gap-3 px-3 pt-3">
+                  <div className="flex gap-3 px-4 pt-4">
                     <EmployeeAvatar employee={employee} />
                     <div className="min-w-0 flex-1">
-                      <h2 className="truncate text-sm font-semibold text-[#1F2937]">
+                      <h2 className="truncate text-sm font-semibold text-[#1F2937] group-hover:text-[#1E3A5F]">
                         {employee.full_name}
                       </h2>
-                      <div className="mt-2 flex items-center gap-2 text-[11px] font-semibold text-[#4f4f4f]">
-                        <Phone className="h-4 w-4" />
-                        {employee.phone || "No contact number"}
+                      <div className="mt-2 flex items-center gap-2 text-[11px] font-medium text-[#6B7280]">
+                        <Phone className="h-3.5 w-3.5 shrink-0 text-[#9CA3AF]" />
+                        <span className="truncate">
+                          {employee.phone || "No contact number"}
+                        </span>
                       </div>
-                      <div className="mt-1 flex items-center gap-2 text-[11px] font-semibold text-[#4f4f4f]">
-                        <BriefcaseBusiness className="h-4 w-4" />
-                        {workdays || "No assigned workdays this week"}
+                      <div className="mt-1 flex items-center gap-2 text-[11px] font-medium text-[#6B7280]">
+                        <BriefcaseBusiness className="h-3.5 w-3.5 shrink-0 text-[#9CA3AF]" />
+                        <span className="truncate">
+                          {workdays || "No assigned workdays this week"}
+                        </span>
                       </div>
                     </div>
                   </div>
-                  <div className="mt-3 flex items-center justify-between border-t px-3 py-1.5">
-                    <span className="text-[10px] font-semibold text-[#5e5e5e]">
+                  <div className="mt-3 flex items-center justify-between border-t border-slate-100 px-4 py-2.5">
+                    <span className="truncate text-[11px] font-medium text-[#6B7280]">
                       {employee.position_title ?? "No role"}
                     </span>
                     <Badge
@@ -373,21 +498,23 @@ export function OwnerEmployeesPage() {
           </div>
         )}
 
-        <div className="mt-6 flex items-center justify-end gap-2">
+        <div className="flex items-center justify-end gap-2">
           <Button
             variant="outline"
             size="sm"
+            className="rounded-xl"
             disabled={page <= 1}
             onClick={() => setPage((current) => Math.max(current - 1, 1))}
           >
             Previous
           </Button>
-          <span className="text-sm text-muted-foreground">
+          <span className="text-sm text-[#6B7280]">
             Page {page} of {totalPages}
           </span>
           <Button
             variant="outline"
             size="sm"
+            className="rounded-xl"
             disabled={page >= totalPages}
             onClick={() =>
               setPage((current) => Math.min(current + 1, totalPages))
@@ -398,26 +525,79 @@ export function OwnerEmployeesPage() {
         </div>
       </OwnerPageContent>
 
-      <Dialog open={formOpen} onOpenChange={setFormOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Add Employee</DialogTitle>
+      <Dialog
+        open={formOpen}
+        onOpenChange={(open) => {
+          if (!open) resetForm();
+          else setFormOpen(true);
+        }}
+      >
+        <DialogContent className="max-h-[90vh] gap-0 overflow-y-auto p-0 sm:max-w-lg sm:rounded-2xl">
+          <DialogHeader className="border-b border-slate-100 px-6 pb-4 pt-6">
+            <DialogTitle className="text-[#111827]">Add Employee</DialogTitle>
           </DialogHeader>
-          <EmployeeFields
-            form={form}
-            positions={positions}
-            onChange={setForm}
-            onPositionChange={(id) => pickPosition(id, "create")}
-          />
-          <DialogFooter>
-            <Button variant="outline" onClick={resetForm}>
+          <div className="space-y-5 px-6 py-5">
+            <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#1F456B] to-[#2A5A84] p-4 text-white shadow-sm">
+              <div className="pointer-events-none absolute -right-8 -top-10 h-32 w-32 rounded-full bg-white/10" />
+              <div className="pointer-events-none absolute -bottom-10 right-10 h-24 w-24 rounded-full bg-[#B9D8EE]/20" />
+              <div className="relative flex items-center gap-4">
+                <EmployeeAvatar
+                  className="h-[72px] w-[72px] text-lg ring-[#B9D8EE]/50"
+                  employee={{
+                    full_name: form.fullName.trim() || "New Employee",
+                    profile_image_url: null,
+                  }}
+                />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-lg font-semibold tracking-tight">
+                    {form.fullName.trim() || "New team member"}
+                  </p>
+                  <p className="mt-0.5 truncate text-sm text-white/80">
+                    {form.positionTitle.trim() || "Choose a role to continue"}
+                  </p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <span
+                      className={cn(
+                        "rounded-full px-2.5 py-1 text-[11px] font-semibold text-[#111827]",
+                        form.employmentType === "full_time"
+                          ? "bg-[#b7fa84]"
+                          : "bg-[#ffe27c]"
+                      )}
+                    >
+                      {employmentLabel(form.employmentType)}
+                    </span>
+                    <span className="inline-flex items-center gap-1 rounded-full bg-white/15 px-2.5 py-1 text-[11px] font-semibold text-white">
+                      <UserPlus className="h-3.5 w-3.5" />
+                      Enrolling
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-[#FAFBFC] p-4 shadow-sm">
+              <EmployeeFields
+                form={form}
+                positions={positions}
+                onChange={setForm}
+                onPositionChange={(id) => pickPosition(id, "create")}
+              />
+            </div>
+          </div>
+          <DialogFooter className="gap-2 border-t border-slate-100 px-6 py-4 sm:justify-end">
+            <Button
+              className="rounded-xl"
+              variant="outline"
+              onClick={resetForm}
+            >
               Cancel
             </Button>
             <Button
+              className="rounded-xl bg-[#1F456B] hover:bg-[#2A5A84]"
               onClick={() => create.mutate()}
               disabled={!createReady || create.isPending}
             >
-              Add Employee
+              {create.isPending ? "Adding..." : "Add Employee"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -429,26 +609,73 @@ export function OwnerEmployeesPage() {
           if (!open) setEditingEmployee(null);
         }}
       >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Edit Employee</DialogTitle>
+        <DialogContent className="max-h-[90vh] gap-0 overflow-y-auto p-0 sm:rounded-2xl">
+          <DialogHeader className="border-b border-slate-100 px-6 pb-4 pt-6">
+            <DialogTitle className="text-[#111827]">Edit Employee</DialogTitle>
           </DialogHeader>
-          <EmployeeFields
-            editing
-            form={editForm}
-            positions={positions}
-            onChange={setEditForm}
-            onPositionChange={(id) => pickPosition(id, "edit")}
-          />
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setEditingEmployee(null)}>
+          {editingEmployee && (
+            <div className="space-y-5 px-6 py-5">
+              <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#1F456B] to-[#2A5A84] p-4 text-white shadow-sm">
+                <div className="pointer-events-none absolute -right-8 -top-10 h-32 w-32 rounded-full bg-white/10" />
+                <div className="pointer-events-none absolute -bottom-10 right-10 h-24 w-24 rounded-full bg-[#B9D8EE]/20" />
+                <div className="relative flex items-center gap-4">
+                  <EmployeeAvatar
+                    className="h-[72px] w-[72px] text-lg ring-[#B9D8EE]/50"
+                    employee={editingEmployee}
+                  />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-lg font-semibold tracking-tight">
+                      {editForm.fullName.trim() || editingEmployee.full_name}
+                    </p>
+                    <p className="mt-0.5 truncate text-sm text-white/80">
+                      {editForm.positionTitle.trim() ||
+                        editingEmployee.position_title ||
+                        "No role"}
+                    </p>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <span
+                        className={cn(
+                          "rounded-full px-2.5 py-1 text-[11px] font-semibold text-[#111827]",
+                          editForm.employmentType === "full_time"
+                            ? "bg-[#b7fa84]"
+                            : "bg-[#ffe27c]"
+                        )}
+                      >
+                        {employmentLabel(editForm.employmentType)}
+                      </span>
+                      <span className="rounded-full bg-white/15 px-2.5 py-1 text-[11px] font-semibold text-white">
+                        Editing profile
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-[#FAFBFC] p-4 shadow-sm">
+                <EmployeeFields
+                  editing
+                  form={editForm}
+                  positions={positions}
+                  onChange={setEditForm}
+                  onPositionChange={(id) => pickPosition(id, "edit")}
+                />
+              </div>
+            </div>
+          )}
+          <DialogFooter className="gap-2 border-t border-slate-100 px-6 py-4 sm:justify-end">
+            <Button
+              className="rounded-xl"
+              variant="outline"
+              onClick={() => setEditingEmployee(null)}
+            >
               Cancel
             </Button>
             <Button
+              className="rounded-xl bg-[#1F456B] text-white hover:bg-[#17395D]"
               onClick={() => update.mutate()}
               disabled={!editReady || update.isPending}
             >
-              Save Changes
+              {update.isPending ? "Saving…" : "Save Changes"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -457,147 +684,207 @@ export function OwnerEmployeesPage() {
       <Dialog
         open={Boolean(detailsEmployee)}
         onOpenChange={(open) => {
-          if (!open) setDetailsEmployee(null);
+          if (!open) {
+            setDetailsEmployee(null);
+            setShowDetailsPassword(false);
+          }
         }}
       >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Employee Details</DialogTitle>
+        <DialogContent className="max-h-[90vh] gap-0 overflow-y-auto p-0 sm:rounded-2xl">
+          <DialogHeader className="border-b border-slate-100 px-6 pb-4 pt-6">
+            <DialogTitle className="text-[#111827]">Employee Details</DialogTitle>
           </DialogHeader>
           {detailsEmployee && (
-            <div className="space-y-3 text-sm">
-              <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-[#FAFBFC] p-3">
-                <EmployeeAvatar
-                  employee={detailsEmployee}
-                  className="h-16 w-16 text-base"
-                />
-                <div className="min-w-0">
-                  <p className="truncate text-base font-semibold text-[#1F2937]">
-                    {detailsEmployee.full_name}
-                  </p>
-                  <p className="text-xs text-[#6B7280]">
-                    {detailsEmployee.position_title ?? "No role"}
-                  </p>
-                </div>
-              </div>
-              <p>
-                <span className="font-semibold">Name:</span>{" "}
-                {detailsEmployee.full_name}
-              </p>
-              <p>
-                <span className="font-semibold">Username:</span>{" "}
-                {detailsEmployee.username}
-              </p>
-              <p>
-                <span className="font-semibold">Contact:</span>{" "}
-                {detailsEmployee.phone || "No contact number"}
-              </p>
-              <p>
-                <span className="font-semibold">Role:</span>{" "}
-                {detailsEmployee.position_title ?? "No role"}
-              </p>
-              <p>
-                <span className="font-semibold">Employment:</span>{" "}
-                {employmentLabel(detailsEmployee.employment_type)}
-              </p>
-              <p>
-                <span className="font-semibold">Status:</span>{" "}
-                {detailsEmployee.status}
-              </p>
+            <div className="space-y-5 px-6 py-5">
+              {(() => {
+                const statusLabel = accountStatusLabel(detailsEmployee);
+                const workdays =
+                  Array.from(assignedWorkdays.get(detailsEmployee.id) ?? [])
+                    .join(", ") || "No assigned workdays this week";
 
-              <div className="pt-3">
-                <h3 className="mb-3 text-sm font-semibold text-[#1F2937]">
-                  Login Credentials
-                </h3>
-                <div className="space-y-3 rounded-2xl border border-slate-200 bg-[#FAFBFC] p-4">
-                  <CredentialRow
-                    label="Username"
-                    value={detailsEmployee.username}
-                    onCopy={() =>
-                      copyCredential(
-                        detailsEmployee.username,
-                        "Username copied",
-                        "username"
-                      )
-                    }
-                    copied={copiedField === "username"}
-                  />
-                  <CredentialRow
-                    label="Temporary Password"
-                    value={
-                      detailsEmployee.temporary_password
-                        ? showDetailsPassword
-                          ? detailsEmployee.temporary_password
-                          : "********"
-                        : "Not available"
-                    }
-                    disabled={!detailsEmployee.temporary_password}
-                    onCopy={() => {
-                      if (!detailsEmployee.temporary_password) return;
-                      copyCredential(
-                        detailsEmployee.temporary_password,
-                        "Password copied",
-                        "password"
-                      );
-                    }}
-                    copied={copiedField === "password"}
-                    trailing={
-                      detailsEmployee.temporary_password ? (
-                        <button
-                          className="rounded-lg p-1.5 text-[#6B7280] transition hover:bg-white hover:text-[#1F2937]"
-                          onClick={() =>
-                            setShowDetailsPassword((current) => !current)
+                return (
+                  <>
+                    <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#1F456B] to-[#2A5A84] p-4 text-white shadow-sm">
+                      <div className="pointer-events-none absolute -right-8 -top-10 h-32 w-32 rounded-full bg-white/10" />
+                      <div className="pointer-events-none absolute -bottom-10 right-10 h-24 w-24 rounded-full bg-[#B9D8EE]/20" />
+                      <div className="relative flex items-center gap-4">
+                        <EmployeeAvatar
+                          className="h-[72px] w-[72px] text-lg ring-[#B9D8EE]/50"
+                          employee={detailsEmployee}
+                        />
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-lg font-semibold tracking-tight">
+                            {detailsEmployee.full_name}
+                          </p>
+                          <p className="mt-0.5 truncate text-sm text-white/80">
+                            {detailsEmployee.position_title ?? "No role"}
+                          </p>
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            <span
+                              className={cn(
+                                "rounded-full px-2.5 py-1 text-[11px] font-semibold text-[#111827]",
+                                detailsEmployee.employment_type === "full_time"
+                                  ? "bg-[#b7fa84]"
+                                  : "bg-[#ffe27c]"
+                              )}
+                            >
+                              {employmentLabel(detailsEmployee.employment_type)}
+                            </span>
+                            <span
+                              className={cn(
+                                "rounded-full px-2.5 py-1 text-[11px] font-semibold",
+                                statusLabel === "Active" &&
+                                  "bg-emerald-100 text-emerald-800",
+                                statusLabel === "Pending Activation" &&
+                                  "bg-amber-100 text-amber-900",
+                                statusLabel === "Disabled" &&
+                                  "bg-slate-200 text-slate-700"
+                              )}
+                            >
+                              {statusLabel}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="divide-y divide-slate-100 rounded-2xl border border-slate-200 bg-[#FAFBFC] px-3 py-1">
+                      <DetailInfoRow
+                        icon={<Phone className="h-4 w-4" />}
+                        label="Contact"
+                        value={detailsEmployee.phone || "No contact number"}
+                      />
+                      <DetailInfoRow
+                        icon={<BriefcaseBusiness className="h-4 w-4" />}
+                        label="Role"
+                        value={detailsEmployee.position_title ?? "No role"}
+                      />
+                      <DetailInfoRow
+                        icon={<IdCard className="h-4 w-4" />}
+                        label="Employment"
+                        value={employmentLabel(detailsEmployee.employment_type)}
+                      />
+                      <DetailInfoRow
+                        icon={<CalendarDays className="h-4 w-4" />}
+                        label="Work days"
+                        value={workdays}
+                      />
+                      <DetailInfoRow
+                        icon={<KeyRound className="h-4 w-4" />}
+                        label="Username"
+                        value={detailsEmployee.username}
+                      />
+                    </div>
+
+                    <div>
+                      <h3 className="mb-2 text-sm font-semibold text-[#111827]">
+                        Login Credentials
+                      </h3>
+                      <div className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                        <CredentialRow
+                          label="Username"
+                          value={detailsEmployee.username}
+                          onCopy={() =>
+                            copyCredential(
+                              detailsEmployee.username,
+                              "Username copied",
+                              "username"
+                            )
                           }
-                          type="button"
-                        >
-                          {showDetailsPassword ? (
-                            <EyeOff className="h-4 w-4" />
-                          ) : (
-                            <Eye className="h-4 w-4" />
-                          )}
-                        </button>
-                      ) : null
-                    }
-                  />
-                  <div>
-                    <p className="text-xs font-medium text-[#6B7280]">
-                      Account Status
-                    </p>
-                    <p className="mt-1 text-sm font-medium text-[#1F2937]">
-                      {detailsEmployee.status === "inactive"
-                        ? "Disabled"
-                        : detailsEmployee.must_change_password
-                          ? "Pending Activation"
-                          : "Active"}
-                    </p>
-                  </div>
-                </div>
-              </div>
+                          copied={copiedField === "username"}
+                        />
+                        <CredentialRow
+                          label="Temporary Password"
+                          value={
+                            detailsEmployee.temporary_password
+                              ? showDetailsPassword
+                                ? detailsEmployee.temporary_password
+                                : "********"
+                              : "Not available"
+                          }
+                          disabled={!detailsEmployee.temporary_password}
+                          onCopy={() => {
+                            if (!detailsEmployee.temporary_password) return;
+                            copyCredential(
+                              detailsEmployee.temporary_password,
+                              "Password copied",
+                              "password"
+                            );
+                          }}
+                          copied={copiedField === "password"}
+                          trailing={
+                            detailsEmployee.temporary_password ? (
+                              <button
+                                className="rounded-lg p-1.5 text-[#6B7280] transition hover:bg-[#F3F6FA] hover:text-[#1F2937]"
+                                onClick={() =>
+                                  setShowDetailsPassword((current) => !current)
+                                }
+                                type="button"
+                              >
+                                {showDetailsPassword ? (
+                                  <EyeOff className="h-4 w-4" />
+                                ) : (
+                                  <Eye className="h-4 w-4" />
+                                )}
+                              </button>
+                            ) : null
+                          }
+                        />
+                        <div className="flex items-center justify-between rounded-xl bg-[#F8FAFC] px-3 py-2.5">
+                          <p className="text-xs font-medium text-[#6B7280]">
+                            Account Status
+                          </p>
+                          <span
+                            className={cn(
+                              "rounded-full px-2.5 py-1 text-[11px] font-semibold",
+                              statusLabel === "Active" &&
+                                "bg-emerald-100 text-emerald-800",
+                              statusLabel === "Pending Activation" &&
+                                "bg-amber-100 text-amber-900",
+                              statusLabel === "Disabled" &&
+                                "bg-slate-200 text-slate-700"
+                            )}
+                          >
+                            {statusLabel}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                );
+              })()}
             </div>
           )}
-          <DialogFooter>
+          <DialogFooter className="gap-2 border-t border-slate-100 px-6 py-4 sm:justify-between">
             {detailsEmployee && (
               <>
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    openEdit(detailsEmployee);
-                    setDetailsEmployee(null);
-                  }}
-                >
-                  Edit
-                </Button>
-                <Button variant="outline" asChild>
-                  <Link
-                    to={`/owner/face-demo?employeeId=${detailsEmployee.id}`}
-                    onClick={() => setDetailsEmployee(null)}
+                <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+                  <Button
+                    className="rounded-xl bg-[#1F456B] text-white hover:bg-[#17395D]"
+                    onClick={() => {
+                      openEdit(detailsEmployee);
+                      setDetailsEmployee(null);
+                    }}
                   >
-                    <ScanFace className="mr-2 h-4 w-4" />
-                    Enroll face
-                  </Link>
-                </Button>
+                    Edit
+                  </Button>
+                  <Button
+                    className="rounded-xl"
+                    variant="outline"
+                    asChild
+                  >
+                    <Link
+                      to={`/owner/face-demo?employeeId=${detailsEmployee.id}`}
+                      onClick={() => setDetailsEmployee(null)}
+                    >
+                      <ScanFace className="mr-2 h-4 w-4" />
+                      Enroll face
+                    </Link>
+                  </Button>
+                </div>
                 {detailsEmployee.status === "inactive" ? (
                   <Button
+                    className="rounded-xl bg-[#1F456B] text-white hover:bg-[#17395D]"
                     onClick={() => restore.mutate(detailsEmployee.id)}
                     disabled={restore.isPending}
                   >
@@ -605,6 +892,7 @@ export function OwnerEmployeesPage() {
                   </Button>
                 ) : (
                   <Button
+                    className="rounded-xl"
                     variant="destructive"
                     onClick={() => setEmployeeToDelete(detailsEmployee)}
                     disabled={remove.isPending}
@@ -659,34 +947,61 @@ export function OwnerEmployeesPage() {
           if (!open) setNewCredentials(null);
         }}
       >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Employee Login Credentials</DialogTitle>
+        <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-md sm:rounded-2xl">
+          <DialogHeader className="border-b border-slate-100 px-6 pb-4 pt-6">
+            <DialogTitle className="text-[#111827]">
+              Employee Login Credentials
+            </DialogTitle>
           </DialogHeader>
           {newCredentials && (
-            <div className="space-y-4 rounded-2xl border border-slate-200 bg-[#FAFBFC] p-4 text-sm">
-              <p className="text-[#6B7280]">
-                Share these credentials with the employee so they can activate
-                their account.
-              </p>
-              <div>
-                <p className="text-xs font-medium text-[#6B7280]">Username</p>
-                <p className="mt-1 rounded-lg bg-white px-3 py-2 font-mono text-[#1F2937]">
-                  {newCredentials.generated_username ?? newCredentials.username}
-                </p>
+            <div className="space-y-4 px-6 py-5">
+              <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#1F456B] to-[#2A5A84] p-4 text-white">
+                <div className="pointer-events-none absolute -right-6 -top-8 h-24 w-24 rounded-full bg-white/10" />
+                <div className="relative flex items-center gap-3">
+                  <div className="flex h-11 w-11 items-center justify-center rounded-full bg-white/15 ring-2 ring-[#B9D8EE]/40">
+                    <KeyRound className="h-5 w-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="truncate font-semibold">
+                      {newCredentials.full_name}
+                    </p>
+                    <p className="text-sm text-white/75">
+                      Ready to share login details
+                    </p>
+                  </div>
+                </div>
               </div>
-              <div>
-                <p className="text-xs font-medium text-[#6B7280]">
-                  Temporary Password
+              <div className="space-y-3 rounded-2xl border border-slate-200 bg-[#FAFBFC] p-4 text-sm shadow-sm">
+                <p className="text-[13px] leading-relaxed text-[#6B7280]">
+                  Share these credentials with the employee so they can activate
+                  their account.
                 </p>
-                <p className="mt-1 rounded-lg bg-white px-3 py-2 font-mono text-[#1F2937]">
-                  {newCredentials.temporary_password ?? "Hidden"}
-                </p>
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-[#9CA3AF]">
+                    Username
+                  </p>
+                  <p className="mt-1 rounded-xl border border-slate-100 bg-white px-3 py-2.5 font-mono text-[#1F2937]">
+                    {newCredentials.generated_username ?? newCredentials.username}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-[#9CA3AF]">
+                    Temporary Password
+                  </p>
+                  <p className="mt-1 rounded-xl border border-slate-100 bg-white px-3 py-2.5 font-mono text-[#1F2937]">
+                    {newCredentials.temporary_password ?? "Hidden"}
+                  </p>
+                </div>
               </div>
             </div>
           )}
-          <DialogFooter>
-            <Button onClick={() => setNewCredentials(null)}>Done</Button>
+          <DialogFooter className="border-t border-slate-100 px-6 py-4 sm:justify-end">
+            <Button
+              className="rounded-xl bg-[#1F456B] hover:bg-[#2A5A84]"
+              onClick={() => setNewCredentials(null)}
+            >
+              Done
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -706,7 +1021,7 @@ function CredentialRow({
   value: string;
   onCopy: () => void;
   copied: boolean;
-  trailing?: React.ReactNode;
+  trailing?: ReactNode;
   disabled?: boolean;
 }) {
   return (
@@ -743,17 +1058,36 @@ function EmployeeFields({
   onChange: (form: EmployeeForm) => void;
   onPositionChange: (positionId: string) => void;
 }) {
+  const fieldClass =
+    "h-11 rounded-xl border-slate-200 bg-white shadow-sm focus-visible:ring-[#1F456B]/30";
+  const selectClass =
+    "flex h-11 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm outline-none focus:border-[#1F456B] focus:ring-2 focus:ring-[#1F456B]/20";
+
   return (
     <div className="space-y-4">
       {!editing && (
-        <p className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-800">
-          Username and temporary password are generated automatically after
-          enrollment.
-        </p>
+        <div className="flex gap-3 rounded-xl border border-[#D7E6F5] bg-[#F3F8FD] px-3.5 py-3">
+          <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-white text-[#1F456B] shadow-sm">
+            <KeyRound className="h-4 w-4" />
+          </div>
+          <p className="text-[13px] leading-relaxed text-[#334155]">
+            Username and temporary password are generated automatically after
+            enrollment. You’ll get them to share once the employee is added.
+          </p>
+        </div>
       )}
+      {editing ? (
+        <p className="text-sm text-[#6B7280]">
+          Update the employee’s profile details below. Login credentials stay the
+          same.
+        </p>
+      ) : null}
       <div className="space-y-2">
-        <Label htmlFor="employee-name">Full Name</Label>
+        <Label className="text-xs font-semibold uppercase tracking-wide text-[#9CA3AF]" htmlFor="employee-name">
+          Full Name
+        </Label>
         <Input
+          className={fieldClass}
           id="employee-name"
           value={form.fullName}
           onChange={(event) =>
@@ -762,8 +1096,11 @@ function EmployeeFields({
         />
       </div>
       <div className="space-y-2">
-        <Label htmlFor="employee-phone">Contact Number</Label>
+        <Label className="text-xs font-semibold uppercase tracking-wide text-[#9CA3AF]" htmlFor="employee-phone">
+          Contact Number
+        </Label>
         <Input
+          className={fieldClass}
           id="employee-phone"
           value={form.phone}
           onChange={(event) =>
@@ -772,11 +1109,13 @@ function EmployeeFields({
         />
       </div>
       <div className="space-y-2">
-        <Label htmlFor="employee-position">Position/Role</Label>
+        <Label className="text-xs font-semibold uppercase tracking-wide text-[#9CA3AF]" htmlFor="employee-position">
+          Position/Role
+        </Label>
         {positions.length > 0 ? (
           <select
             id="employee-position"
-            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+            className={selectClass}
             value={form.positionId}
             onChange={(event) => onPositionChange(event.target.value)}
           >
@@ -789,6 +1128,7 @@ function EmployeeFields({
           </select>
         ) : (
           <Input
+            className={fieldClass}
             id="employee-position"
             value={form.positionTitle}
             onChange={(event) =>
@@ -798,10 +1138,12 @@ function EmployeeFields({
         )}
       </div>
       <div className="space-y-2">
-        <Label htmlFor="employee-type">Employment Type</Label>
+        <Label className="text-xs font-semibold uppercase tracking-wide text-[#9CA3AF]" htmlFor="employee-type">
+          Employment Type
+        </Label>
         <select
           id="employee-type"
-          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+          className={selectClass}
           value={form.employmentType}
           onChange={(event) =>
             onChange({
@@ -814,6 +1156,105 @@ function EmployeeFields({
           <option value="part_time">Part-Time</option>
         </select>
       </div>
+      <div className="space-y-2">
+        <Label
+          className="text-xs font-semibold uppercase tracking-wide text-[#9CA3AF]"
+          htmlFor="employee-pay-basis"
+        >
+          Pay Basis
+        </Label>
+        <select
+          id="employee-pay-basis"
+          className={selectClass}
+          value={form.payBasis}
+          onChange={(event) => {
+            const payBasis = event.target.value as PayBasis;
+            const selected = positions.find((p) => p.id === form.positionId);
+            onChange({
+              ...form,
+              payBasis,
+              dailyRate:
+                payBasis === "daily" &&
+                !form.dailyRate.trim() &&
+                selected?.daily_rate != null
+                  ? String(selected.daily_rate)
+                  : form.dailyRate,
+            });
+          }}
+        >
+          <option value="daily">Daily</option>
+          <option value="hourly">Hourly</option>
+          <option value="monthly">Monthly</option>
+        </select>
+      </div>
+      {form.payBasis === "daily" ? (
+        <div className="space-y-2">
+          <Label
+            className="text-xs font-semibold uppercase tracking-wide text-[#9CA3AF]"
+            htmlFor="employee-daily-rate"
+          >
+            Daily Rate (₱)
+          </Label>
+          <Input
+            className={fieldClass}
+            id="employee-daily-rate"
+            type="number"
+            min="0"
+            step="0.01"
+            value={form.dailyRate}
+            onChange={(event) =>
+              onChange({ ...form, dailyRate: event.target.value })
+            }
+          />
+          <p className="text-xs text-[#6B7280]">
+            Prefills from the selected position. You can override it for this
+            employee. Payroll uses this employee daily rate (position rate is
+            fallback only).
+          </p>
+        </div>
+      ) : null}
+      {form.payBasis === "hourly" ? (
+        <div className="space-y-2">
+          <Label
+            className="text-xs font-semibold uppercase tracking-wide text-[#9CA3AF]"
+            htmlFor="employee-hourly-rate"
+          >
+            Hourly Rate (₱)
+          </Label>
+          <Input
+            className={fieldClass}
+            id="employee-hourly-rate"
+            type="number"
+            min="0"
+            step="0.01"
+            value={form.hourlyRate}
+            onChange={(event) =>
+              onChange({ ...form, hourlyRate: event.target.value })
+            }
+          />
+        </div>
+      ) : null}
+      {form.payBasis === "monthly" ? (
+        <div className="space-y-2">
+          <Label
+            className="text-xs font-semibold uppercase tracking-wide text-[#9CA3AF]"
+            htmlFor="employee-monthly-salary"
+          >
+            Monthly Salary (₱)
+          </Label>
+          <Input
+            className={fieldClass}
+            id="employee-monthly-salary"
+            type="number"
+            min="0"
+            step="0.01"
+            value={form.monthlySalary}
+            onChange={(event) =>
+              onChange({ ...form, monthlySalary: event.target.value })
+            }
+          />
+        </div>
+      ) : null}
     </div>
   );
 }

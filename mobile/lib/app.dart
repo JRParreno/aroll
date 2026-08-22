@@ -1,8 +1,10 @@
 import 'package:aroll_mobile/core/app_state.dart';
 import 'package:aroll_mobile/core/di/injection.dart';
 import 'package:aroll_mobile/core/router/app_router.dart';
+import 'package:aroll_mobile/core/theme/business_brand_theme.dart';
 import 'package:aroll_mobile/domain/repositories/employee_repository.dart';
 import 'package:aroll_mobile/domain/usecase/auth/restore_session_usecase.dart';
+import 'package:aroll_mobile/presentation/auth/aroll_splash_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -85,35 +87,17 @@ class _ArollAppState extends State<ArollApp> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     if (_restoring || _router == null) {
-      return MaterialApp(
+      return const MaterialApp(
         debugShowCheckedModeBanner: false,
-        home: Scaffold(
-          backgroundColor: const Color(0xFFF7F8FA),
-          body: Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  Icons.storefront_rounded,
-                  size: 48,
-                  color: Theme.of(context).colorScheme.primary,
-                ),
-                const SizedBox(height: 16),
-                const CircularProgressIndicator(),
-              ],
-            ),
-          ),
-        ),
+        home: ArollSplashScreen(),
       );
     }
 
     return AnimatedBuilder(
       animation: _appState,
       builder: (context, _) {
-        final primary = _hexColor(
-              _appState.session?.branding?.theme.primaryColor,
-            ) ??
-            const Color(0xFF2E7D32);
+        final branding = _appState.session?.branding;
+        final theme = buildBusinessThemeData(branding);
 
         return ShadApp.custom(
           themeMode: ThemeMode.light,
@@ -129,10 +113,7 @@ class _ArollAppState extends State<ArollApp> with WidgetsBindingObserver {
             return MaterialApp.router(
               title: _appState.session?.businessName ?? 'Aroll+',
               debugShowCheckedModeBanner: false,
-              theme: ThemeData(
-                colorScheme: ColorScheme.fromSeed(seedColor: primary),
-                useMaterial3: true,
-              ),
+              theme: theme,
               routerConfig: _router!,
               builder: (context, child) => ShadAppBuilder(child: child!),
             );
@@ -141,13 +122,4 @@ class _ArollAppState extends State<ArollApp> with WidgetsBindingObserver {
       },
     );
   }
-}
-
-Color? _hexColor(String? value) {
-  if (value == null || value.isEmpty) return null;
-  final normalized = value.replaceFirst('#', '');
-  if (normalized.length != 6) return null;
-  final parsed = int.tryParse('FF$normalized', radix: 16);
-  if (parsed == null) return null;
-  return Color(parsed);
 }

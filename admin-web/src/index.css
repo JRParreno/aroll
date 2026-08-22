@@ -22,6 +22,46 @@
   }
 }
 
+/* Owner portal brand tokens (scoped so login/employee primary stays green). */
+.owner-shell {
+  --primary: 213 52% 25%;
+  --primary-foreground: 0 0% 100%;
+  --ring: 213 45% 32%;
+  --owner-navy: #1e3a5f;
+  --owner-navy-soft: #284b73;
+  --owner-page: #f4f6f9;
+  --owner-soft: #eef3f8;
+  --owner-ink: #1f2937;
+  --owner-muted: #6b7280;
+  color: var(--owner-ink);
+  background:
+    radial-gradient(1200px 480px at 100% -10%, rgba(30, 58, 95, 0.06), transparent 55%),
+    radial-gradient(900px 420px at 0% 0%, rgba(40, 75, 115, 0.04), transparent 50%),
+    var(--owner-page);
+}
+
+@layer components {
+  .owner-card {
+    @apply rounded-2xl border border-slate-200/90 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_8px_24px_rgba(15,23,42,0.04)];
+  }
+
+  .owner-card-muted {
+    @apply rounded-2xl border border-slate-200/90 bg-[#FAFBFC] shadow-sm;
+  }
+
+  .owner-icon-well {
+    @apply inline-flex items-center justify-center rounded-xl bg-[#EEF3F8] text-[#1E3A5F];
+  }
+
+  .owner-section-title {
+    @apply text-lg font-semibold tracking-tight text-[#1F2937];
+  }
+
+  .owner-section-subtitle {
+    @apply text-sm text-[#6B7280];
+  }
+}
+
 @layer utilities {
   @keyframes shimmer {
     0% {

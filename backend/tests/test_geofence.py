@@ -1,4 +1,9 @@
-from app.core.geofence import geofence_check, haversine_distance_m, is_within_geofence
+from app.core.geofence import (
+    GPS_ACCURACY_TOLERANCE_M,
+    geofence_check,
+    haversine_distance_m,
+    is_within_geofence,
+)
 
 # Quezon City area — stable reference coordinates for tests.
 _CENTER_LAT = 14.6760
@@ -33,7 +38,6 @@ def test_is_within_geofence_outside():
 
 
 def test_geofence_check_boundary_inside():
-    # ~99 m north — should remain inside a 100 m radius.
     boundary_lat = _CENTER_LAT + (99 / 111_320)
     result = geofence_check(
         latitude=boundary_lat,
@@ -46,8 +50,26 @@ def test_geofence_check_boundary_inside():
     assert result["inside_geofence"] is True
 
 
-def test_geofence_check_just_outside_boundary():
-    outside_lat = _CENTER_LAT + (101 / 111_320)
+def test_geofence_allows_small_gps_tolerance():
+    # Just outside configured radius but within GPS tolerance.
+    outside_lat = _CENTER_LAT + ((_RADIUS_M + 5) / 111_320)
+    result = geofence_check(
+        latitude=outside_lat,
+        longitude=_CENTER_LNG,
+        center_latitude=_CENTER_LAT,
+        center_longitude=_CENTER_LNG,
+        radius_m=_RADIUS_M,
+    )
+    assert result["distance_m"] > _RADIUS_M
+    assert result["distance_m"] <= _RADIUS_M + GPS_ACCURACY_TOLERANCE_M
+    assert result["inside_geofence"] is True
+    assert result["allowed_radius_m"] == _RADIUS_M
+
+
+def test_geofence_check_clearly_outside():
+    outside_lat = _CENTER_LAT + (
+        (_RADIUS_M + GPS_ACCURACY_TOLERANCE_M + 20) / 111_320
+    )
     result = geofence_check(
         latitude=outside_lat,
         longitude=_CENTER_LNG,

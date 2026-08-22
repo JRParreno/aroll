@@ -115,3 +115,32 @@ def resolve_pay_period(
     period_end = _clamp_day(next_year, next_month, day)
     period_start = this_payday + timedelta(days=1)
     return period_start, period_end
+
+
+def list_pay_periods(
+    config: BusinessPayrollConfig | None,
+    *,
+    limit: int = 6,
+    today: date | None = None,
+) -> list[tuple[date, date]]:
+    """Return recent inclusive pay periods (newest first), computed live.
+
+    Walks backward from ``today`` using the same rules as ``resolve_pay_period``.
+    Does not read or write stored payroll-run rows.
+    """
+    limit = max(1, min(int(limit), 24))
+    cursor = today or date.today()
+    periods: list[tuple[date, date]] = []
+    seen: set[tuple[date, date]] = set()
+    for _ in range(limit * 48):
+        start, end = resolve_pay_period(config, today=cursor)
+        key = (start, end)
+        if key not in seen:
+            seen.add(key)
+            periods.append(key)
+            if len(periods) >= limit:
+                break
+        cursor = start - timedelta(days=1)
+        if cursor.year < 2000:
+            break
+    return periods

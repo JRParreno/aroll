@@ -156,6 +156,30 @@ class EmployeePerformanceSummary extends Equatable {
   List<Object?> get props => [hasData, onTime, late, undertime, overtime, absent];
 }
 
+class EmployeePayrollAdjustment extends Equatable {
+  const EmployeePayrollAdjustment({
+    required this.id,
+    required this.kind,
+    required this.typeKey,
+    required this.displayName,
+    required this.amount,
+    this.description,
+    this.createdAt,
+  });
+
+  final String id;
+  final String kind;
+  final String typeKey;
+  final String displayName;
+  final String? description;
+  final double amount;
+  final DateTime? createdAt;
+
+  @override
+  List<Object?> get props =>
+      [id, kind, typeKey, displayName, description, amount, createdAt];
+}
+
 class EmployeePayslip extends Equatable {
   const EmployeePayslip({
     required this.businessName,
@@ -166,7 +190,11 @@ class EmployeePayslip extends Equatable {
     required this.periodStart,
     required this.periodEnd,
     required this.dailyRate,
+    this.payBasis = 'daily',
+    this.hourlyRate,
+    this.monthlySalary,
     required this.workedDays,
+    this.regularPay = 0,
     required this.overtimeHours,
     required this.overtimePay,
     required this.holidayPay,
@@ -179,6 +207,15 @@ class EmployeePayslip extends Equatable {
     required this.absentDays,
     required this.grossPay,
     required this.netPay,
+    this.payDate,
+    this.hoursWorked = 0,
+    this.lateDeductions = 0,
+    this.undertimeDeductions = 0,
+    this.payrollStatus = 'current',
+    this.baseNetPay,
+    this.finalNetPay,
+    this.payrollAdjustments = const [],
+    this.payrollAdjustmentsTotal = 0,
   });
 
   final String businessName;
@@ -188,8 +225,15 @@ class EmployeePayslip extends Equatable {
   final String employmentType;
   final DateTime periodStart;
   final DateTime periodEnd;
+  final DateTime? payDate;
   final double dailyRate;
+  final String payBasis;
+  final double? hourlyRate;
+  final double? monthlySalary;
   final int workedDays;
+  /// Engine base earnings — source for UI Basic Salary.
+  final double regularPay;
+  final double hoursWorked;
   final double overtimeHours;
   final double overtimePay;
   final double holidayPay;
@@ -199,9 +243,18 @@ class EmployeePayslip extends Equatable {
   final String? restDayName;
   final List<EmployeeRestDayRecord> restDayRecords;
   final double deductions;
+  final double lateDeductions;
+  final double undertimeDeductions;
   final int absentDays;
   final double grossPay;
   final double netPay;
+  final double? baseNetPay;
+  final double? finalNetPay;
+  final List<EmployeePayrollAdjustment> payrollAdjustments;
+  final double payrollAdjustmentsTotal;
+  final String payrollStatus;
+
+  double get displayNetPay => finalNetPay ?? netPay;
 
   @override
   List<Object?> get props => [
@@ -212,8 +265,14 @@ class EmployeePayslip extends Equatable {
         employmentType,
         periodStart,
         periodEnd,
+        payDate,
         dailyRate,
+        payBasis,
+        hourlyRate,
+        monthlySalary,
         workedDays,
+        regularPay,
+        hoursWorked,
         overtimeHours,
         overtimePay,
         holidayPay,
@@ -223,9 +282,91 @@ class EmployeePayslip extends Equatable {
         restDayName,
         restDayRecords,
         deductions,
+        lateDeductions,
+        undertimeDeductions,
         absentDays,
         grossPay,
         netPay,
+        baseNetPay,
+        finalNetPay,
+        payrollAdjustments,
+        payrollAdjustmentsTotal,
+        payrollStatus,
+      ];
+}
+
+class EmployeePayrollHistoryItem extends Equatable {
+  const EmployeePayrollHistoryItem({
+    required this.periodStart,
+    required this.periodEnd,
+    required this.payDate,
+    required this.dailyRate,
+    this.payBasis = 'daily',
+    this.hourlyRate,
+    this.monthlySalary,
+    required this.workedDays,
+    this.regularPay = 0,
+    required this.hoursWorked,
+    required this.lateDeductions,
+    required this.undertimeDeductions,
+    required this.overtimePay,
+    required this.overtimeHours,
+    required this.grossPay,
+    required this.deductions,
+    required this.netPay,
+    required this.payrollStatus,
+    this.finalNetPay,
+    this.payrollAdjustments = const [],
+    this.payrollAdjustmentsTotal = 0,
+  });
+
+  final DateTime periodStart;
+  final DateTime periodEnd;
+  final DateTime payDate;
+  final double dailyRate;
+  final String payBasis;
+  final double? hourlyRate;
+  final double? monthlySalary;
+  final double workedDays;
+  final double regularPay;
+  final double hoursWorked;
+  final double lateDeductions;
+  final double undertimeDeductions;
+  final double overtimePay;
+  final double overtimeHours;
+  final double grossPay;
+  final double deductions;
+  final double netPay;
+  final double? finalNetPay;
+  final List<EmployeePayrollAdjustment> payrollAdjustments;
+  final double payrollAdjustmentsTotal;
+  final String payrollStatus;
+
+  double get displayNetPay => finalNetPay ?? netPay;
+
+  @override
+  List<Object?> get props => [
+        periodStart,
+        periodEnd,
+        payDate,
+        dailyRate,
+        payBasis,
+        hourlyRate,
+        monthlySalary,
+        workedDays,
+        regularPay,
+        hoursWorked,
+        lateDeductions,
+        undertimeDeductions,
+        overtimePay,
+        overtimeHours,
+        grossPay,
+        deductions,
+        netPay,
+        finalNetPay,
+        payrollAdjustments,
+        payrollAdjustmentsTotal,
+        payrollStatus,
       ];
 }
 
@@ -286,13 +427,15 @@ class EmployeePayroll extends Equatable {
   const EmployeePayroll({
     required this.summary,
     required this.rows,
+    this.history = const [],
   });
 
   final EmployeePayslip summary;
   final List<EmployeePayrollRow> rows;
+  final List<EmployeePayrollHistoryItem> history;
 
   @override
-  List<Object?> get props => [summary, rows];
+  List<Object?> get props => [summary, rows, history];
 }
 
 class EmployeeWorksite extends Equatable {
@@ -474,6 +617,31 @@ class AttendanceCorrectionRequest extends Equatable {
       ];
 }
 
+class IncompleteAttendanceReminder extends Equatable {
+  const IncompleteAttendanceReminder({
+    required this.show,
+    required this.message,
+    required this.count,
+    this.attendanceRecordId,
+    this.shiftAssignmentId,
+  });
+
+  final bool show;
+  final String message;
+  final int count;
+  final String? attendanceRecordId;
+  final String? shiftAssignmentId;
+
+  @override
+  List<Object?> get props => [
+        show,
+        message,
+        count,
+        attendanceRecordId,
+        shiftAssignmentId,
+      ];
+}
+
 class EmployeeDashboard extends Equatable {
   const EmployeeDashboard({
     required this.profile,
@@ -482,6 +650,7 @@ class EmployeeDashboard extends Equatable {
     required this.attendanceStatus,
     required this.payrollSummary,
     required this.performance,
+    this.incompleteAttendanceReminder,
   });
 
   final EmployeeProfile profile;
@@ -490,6 +659,7 @@ class EmployeeDashboard extends Equatable {
   final EmployeeAttendanceStatus attendanceStatus;
   final EmployeePayslip payrollSummary;
   final EmployeePerformanceSummary performance;
+  final IncompleteAttendanceReminder? incompleteAttendanceReminder;
 
   @override
   List<Object?> get props => [
@@ -499,5 +669,6 @@ class EmployeeDashboard extends Equatable {
         attendanceStatus,
         payrollSummary,
         performance,
+        incompleteAttendanceReminder,
       ];
 }

@@ -2,17 +2,22 @@ import 'package:aroll_mobile/core/app_state.dart';
 import 'package:aroll_mobile/core/di/injection.dart';
 import 'package:aroll_mobile/data/repositories/owner_repository.dart';
 import 'package:aroll_mobile/presentation/employee/employee_ui.dart';
+import 'package:aroll_mobile/presentation/owner/owner_shell.dart';
 import 'package:aroll_mobile/presentation/owner/payroll/owner_payroll_format.dart';
 import 'package:aroll_mobile/presentation/owner/payroll/owner_payslip_pdf.dart';
+import 'package:aroll_mobile/presentation/shared/app_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:share_plus/share_plus.dart';
+
 class OwnerPayrollDetailScreen extends StatefulWidget {
   const OwnerPayrollDetailScreen({
     super.key,
     required this.employeeId,
+    this.asOf,
   });
 
   final String employeeId;
+  final DateTime? asOf;
 
   @override
   State<OwnerPayrollDetailScreen> createState() =>
@@ -41,7 +46,7 @@ class _OwnerPayrollDetailScreenState extends State<OwnerPayrollDetailScreen> {
     });
     try {
       final results = await Future.wait([
-        _repo.employeePayslip(widget.employeeId),
+        _repo.employeePayslip(widget.employeeId, asOf: widget.asOf),
         _repo.employees(),
       ]);
       final payslip = results[0] as Map<String, dynamic>;
@@ -101,90 +106,129 @@ class _OwnerPayrollDetailScreenState extends State<OwnerPayrollDetailScreen> {
     final payslip = _payslip;
     final dailyRate = parsePayrollAmount(payslip?['daily_rate']);
     final workedDays = parsePayrollAmount(payslip?['worked_days']).toInt();
-    final basicSalary = dailyRate * workedDays;
+    final basicSalary = parsePayrollAmount(payslip?['regular_pay']);
 
-    return Scaffold(
-      backgroundColor: const Color(0xFFF4F6F8),
-      appBar: AppBar(
-        backgroundColor: const Color(0xFFF4F6F8),
-        elevation: 0,
-        title: Text(
-          payslip?['employee_name'] != null
-              ? '${payslip!['employee_name']}'
-              : 'Payroll Details',
-          style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
-        ),
-      ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
+    return OwnerShell(
+      selectedIndex: 0,
+      showBackButton: true,
+      title: payslip?['employee_name'] != null
+          ? '${payslip!['employee_name']}'
+          : 'Payroll Details',
+      child: _loading
+          ? appLoadingView(cardCount: 4)
           : _error != null
-              ? Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(_error!),
-                      const SizedBox(height: 12),
-                      FilledButton(
-                        onPressed: _load,
-                        child: const Text('Retry'),
-                      ),
-                    ],
-                  ),
-                )
+              ? OwnerErrorState(onRetry: _load)
               : payslip == null
-                  ? const Center(child: Text('Payslip not found.'))
+                  ? const OwnerEmptyState(
+                      'Payslip not found',
+                      description:
+                          'This payroll record may no longer be available.',
+                      icon: Icons.receipt_long_outlined,
+                    )
                   : ListView(
                       padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
                       children: [
-                        Card(
-                          child: Padding(
-                            padding: const EdgeInsets.all(16),
-                            child: Row(
-                              children: [
-                                EmployeeAvatar(
-                                  imageUrl: _profileImageUrl,
-                                  name: '${payslip['employee_name'] ?? 'Employee'}',
-                                  size: 60,
-                                  backgroundColor: const Color(0xFFE7EEF5),
+                        OwnerCard(
+                          padding: EdgeInsets.zero,
+                          child: Column(
+                            children: [
+                              Padding(
+                                padding: const EdgeInsets.all(16),
+                                child: Row(
+                                  children: [
+                                    EmployeeAvatar(
+                                      imageUrl: _profileImageUrl,
+                                      name:
+                                          '${payslip['employee_name'] ?? 'Employee'}',
+                                      size: 60,
+                                      backgroundColor: AppColors.iconWell,
+                                    ),
+                                    const SizedBox(width: 14),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            '${payslip['employee_name']}',
+                                            style: const TextStyle(
+                                              fontSize: 18,
+                                              fontWeight: FontWeight.w700,
+                                              color: AppColors.textPrimary,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            ownerEmploymentLabel(
+                                              '${payslip['employment_type']}',
+                                            ),
+                                            style: appMutedStyle(),
+                                          ),
+                                          Text(
+                                            '${payslip['position_title'] ?? 'Employee'}',
+                                            style: appMutedStyle(),
+                                          ),
+                                          const SizedBox(height: 6),
+                                          Text(
+                                            '${ownerPayrollShortDate('${payslip['period_start']}')} – ${ownerPayrollShortDate('${payslip['period_end']}')}',
+                                            style: appMutedStyle().copyWith(
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w600,
+                                              color: AppColors.primaryDark,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
                                 ),
-                                const SizedBox(width: 14),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        '${payslip['employee_name']}',
-                                        style: const TextStyle(
-                                          fontSize: 18,
-                                          fontWeight: FontWeight.w700,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        ownerEmploymentLabel(
-                                          '${payslip['employment_type']}',
-                                        ),
-                                        style: const TextStyle(
-                                          color: Color(0xFF6B7280),
-                                        ),
-                                      ),
-                                      Text(
-                                        '${payslip['position_title'] ?? 'Employee'}',
-                                        style: const TextStyle(
-                                          color: Color(0xFF6B7280),
-                                        ),
-                                      ),
-                                    ],
+                              ),
+                              Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 14,
+                                ),
+                                decoration: const BoxDecoration(
+                                  color: Color(0xFFF0FDF4),
+                                  borderRadius: BorderRadius.vertical(
+                                    bottom: Radius.circular(18),
                                   ),
                                 ),
-                              ],
-                            ),
+                                child: Row(
+                                  children: [
+                                    const Text(
+                                      'Final Net Pay',
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w600,
+                                        color: Color(0xFF166534),
+                                      ),
+                                    ),
+                                    const Spacer(),
+                                    Text(
+                                      ownerPayrollMoney(
+                                        parsePayrollAmount(
+                                          payslip['final_net_pay'] ??
+                                              payslip['net_pay'],
+                                        ),
+                                      ),
+                                      style: const TextStyle(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.w800,
+                                        color: Color(0xFF16A34A),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                         const SizedBox(height: 12),
                         _SectionCard(
                           title: 'Attendance Overview',
+                          icon: Icons.event_available_outlined,
                           children: [
                             _DetailRow(
                               'Worked Days',
@@ -195,6 +239,14 @@ class _OwnerPayrollDetailScreenState extends State<OwnerPayrollDetailScreen> {
                               '${payslip['absent_days'] ?? 0}',
                             ),
                             _DetailRow(
+                              'Paid Leave',
+                              '${payslip['paid_leave_days'] ?? 0}',
+                            ),
+                            _DetailRow(
+                              'Unpaid Leave',
+                              '${payslip['unpaid_leave_days'] ?? 0}',
+                            ),
+                            _DetailRow(
                               'Overtime Hours',
                               '${payslip['overtime_hours'] ?? 0}',
                             ),
@@ -203,10 +255,11 @@ class _OwnerPayrollDetailScreenState extends State<OwnerPayrollDetailScreen> {
                         const SizedBox(height: 12),
                         _SectionCard(
                           title: 'Payroll Breakdown',
+                          icon: Icons.receipt_long_outlined,
                           children: [
                             _DetailRow(
-                              'Daily Rate',
-                              ownerPayrollMoney(dailyRate),
+                              ownerSalaryRateLabel(),
+                              ownerSalaryRate(payslip),
                             ),
                             _DetailRow(
                               'Basic Salary',
@@ -243,25 +296,67 @@ class _OwnerPayrollDetailScreenState extends State<OwnerPayrollDetailScreen> {
                               ),
                             ),
                             _DetailRow(
-                              'Late Deductions',
+                              'Late Deduction',
+                              ownerPayrollMoney(
+                                parsePayrollAmount(payslip['late_deductions']),
+                              ),
+                            ),
+                            _DetailRow(
+                              'Undertime Deduction',
+                              ownerPayrollMoney(
+                                parsePayrollAmount(
+                                  payslip['undertime_deductions'],
+                                ),
+                              ),
+                            ),
+                            _DetailRow(
+                              'Attendance Deduction Total',
                               ownerPayrollMoney(
                                 parsePayrollAmount(payslip['deductions']),
                               ),
                             ),
                             _DetailRow(
-                              'Other Deductions',
-                              ownerPayrollMoney(0),
-                            ),
-                            _DetailRow(
-                              'Total Deductions',
+                              'Base Net Pay',
                               ownerPayrollMoney(
-                                parsePayrollAmount(payslip['deductions']),
+                                parsePayrollAmount(
+                                  payslip['base_net_pay'] ?? payslip['net_pay'],
+                                ),
                               ),
                             ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        _SectionCard(
+                          title: 'Payroll Adjustments',
+                          icon: Icons.tune_outlined,
+                          children: [
+                            ..._adjustmentRows(payslip),
+                            if (payslip['adjustments_editable'] == true) ...[
+                              const SizedBox(height: 10),
+                              AppPrimaryButton(
+                                label: 'Add Deduction',
+                                icon: Icons.add_rounded,
+                                onPressed: () => _openAdjustmentSheet(),
+                              ),
+                            ] else
+                              const Padding(
+                                padding: EdgeInsets.only(top: 6),
+                                child: Text(
+                                  'This pay period has ended. Adjustments are read-only.',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Color(0xFF92400E),
+                                  ),
+                                ),
+                              ),
+                            const SizedBox(height: 10),
                             _DetailRow(
-                              'Net Salary',
+                              'Final Net Pay',
                               ownerPayrollMoney(
-                                parsePayrollAmount(payslip['net_pay']),
+                                parsePayrollAmount(
+                                  payslip['final_net_pay'] ??
+                                      payslip['net_pay'],
+                                ),
                               ),
                               highlight: true,
                             ),
@@ -273,43 +368,174 @@ class _OwnerPayrollDetailScreenState extends State<OwnerPayrollDetailScreen> {
                           const SizedBox(height: 12),
                           _SectionCard(
                             title: 'Rest Day Work',
+                            icon: Icons.beach_access_outlined,
                             children: _restDayRows(payslip),
                           ),
                         ],
                         const SizedBox(height: 12),
                         _SectionCard(
                           title: 'Daily Attendance Log',
+                          icon: Icons.list_alt_rounded,
                           children: _attendanceRows(payslip, dailyRate),
                         ),
                         const SizedBox(height: 16),
-                        SizedBox(
-                          width: double.infinity,
-                          child: FilledButton.icon(
-                            onPressed: _downloading ? null : _downloadPdf,
-                            icon: _downloading
-                                ? const SizedBox(
-                                    width: 16,
-                                    height: 16,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      color: Colors.white,
-                                    ),
-                                  )
-                                : const Icon(Icons.download_outlined),
-                            label: Text(
-                              _downloading
-                                  ? 'Downloading...'
-                                  : 'Download Payslip PDF',
-                            ),
-                            style: FilledButton.styleFrom(
-                              backgroundColor: const Color(0xFF1E466E),
-                              minimumSize: const Size(0, 46),
-                            ),
-                          ),
+                        AppPrimaryButton(
+                          label: _downloading
+                              ? 'Downloading...'
+                              : 'Download Payslip PDF',
+                          loading: _downloading,
+                          icon: Icons.download_outlined,
+                          onPressed: _downloading ? null : _downloadPdf,
                         ),
                       ],
                     ),
     );
+  }
+
+  List<Widget> _adjustmentRows(Map<String, dynamic> payslip) {
+    final items = (payslip['payroll_adjustments'] as List<dynamic>? ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .toList();
+    final editable = payslip['adjustments_editable'] == true;
+    if (items.isEmpty) {
+      return const [
+        Text(
+          'No payroll adjustments for this period.',
+          style: TextStyle(fontSize: 13, color: Color(0xFF6B7280)),
+        ),
+      ];
+    }
+    return [
+      for (final item in items)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '${item['display_name'] ?? 'Adjustment'}'
+                      '${item['kind'] == 'allowance' ? ' (+)' : ' (−)'}',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                      ),
+                    ),
+                    if ('${item['description'] ?? ''}'.trim().isNotEmpty)
+                      Text(
+                        '${item['description']}',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Color(0xFF6B7280),
+                        ),
+                      ),
+                    Text(
+                      ownerPayrollMoney(parsePayrollAmount(item['amount'])),
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (editable) ...[
+                IconButton(
+                  tooltip: 'Edit',
+                  onPressed: () => _openAdjustmentSheet(existing: item),
+                  icon: const Icon(Icons.edit_outlined, size: 20),
+                ),
+                IconButton(
+                  tooltip: 'Remove',
+                  onPressed: () => _deleteAdjustment('${item['id']}'),
+                  icon: const Icon(Icons.delete_outline, size: 20),
+                ),
+              ],
+            ],
+          ),
+        ),
+    ];
+  }
+
+  Future<void> _deleteAdjustment(String id) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Remove adjustment?'),
+        content: const Text(
+          'This deduction/allowance will be removed from the payroll slip.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Remove'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await _repo.deletePayrollAdjustment(id);
+      await _load();
+    } catch (_) {
+      if (!mounted) return;
+      showAppSnack(
+        context,
+        message: 'Unable to remove adjustment.',
+        isError: true,
+      );
+    }
+  }
+
+  Future<void> _openAdjustmentSheet({Map<String, dynamic>? existing}) async {
+    final types = await _repo.payrollAdjustmentTypes();
+    if (!mounted) return;
+    final saved = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (context) => _AdjustmentFormSheet(
+        existing: existing,
+        deductionTypes:
+            (types['deduction_types'] as List<dynamic>? ?? const [])
+                .whereType<Map<String, dynamic>>()
+                .toList(),
+        allowanceTypes:
+            (types['allowance_types'] as List<dynamic>? ?? const [])
+                .whereType<Map<String, dynamic>>()
+                .toList(),
+        onSubmit: (payload) async {
+          if (existing != null) {
+            await _repo.updatePayrollAdjustment(
+              '${existing['id']}',
+              kind: payload.kind,
+              typeKey: payload.typeKey,
+              customName: payload.customName,
+              description: payload.description,
+              amount: payload.amount,
+            );
+          } else {
+            await _repo.createPayrollAdjustment(
+              widget.employeeId,
+              kind: payload.kind,
+              typeKey: payload.typeKey,
+              customName: payload.customName,
+              description: payload.description,
+              amount: payload.amount,
+              asOf: widget.asOf,
+            );
+          }
+        },
+      ),
+    );
+    if (saved == true) await _load();
   }
 
   List<Widget> _restDayRows(Map<String, dynamic> payslip) {
@@ -416,11 +642,11 @@ class _OwnerPayrollDetailScreenState extends State<OwnerPayrollDetailScreen> {
       final earned = absent ? 0.0 : dailyRate;
       return Container(
         margin: const EdgeInsets.only(bottom: 8),
-        padding: const EdgeInsets.all(10),
+        padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: const Color(0xFFFAFBFC),
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: const Color(0xFFE5E7EB)),
+          color: AppColors.fieldFill,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.border),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -470,31 +696,49 @@ class _SectionCard extends StatelessWidget {
   const _SectionCard({
     required this.title,
     required this.children,
+    this.icon,
   });
 
   final String title;
   final List<Widget> children;
+  final IconData? icon;
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              title,
-              style: const TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.w700,
-                color: Color(0xFF1E466E),
+    return OwnerCard(
+      padding: const EdgeInsets.all(14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              if (icon != null) ...[
+                Container(
+                  width: 32,
+                  height: 32,
+                  decoration: BoxDecoration(
+                    color: AppColors.iconWell,
+                    borderRadius: BorderRadius.circular(9),
+                  ),
+                  child: Icon(icon, size: 16, color: AppColors.primary),
+                ),
+                const SizedBox(width: 10),
+              ],
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.primary,
+                  ),
+                ),
               ),
-            ),
-            const SizedBox(height: 10),
-            ...children,
-          ],
-        ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          ...children,
+        ],
       ),
     );
   }
@@ -510,26 +754,228 @@ class _DetailRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 5),
+      padding: const EdgeInsets.symmetric(vertical: 6),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(
             child: Text(
               label,
-              style: const TextStyle(fontSize: 13, color: Color(0xFF6B7280)),
+              style: const TextStyle(fontSize: 13, color: AppColors.textMuted),
             ),
           ),
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: highlight ? FontWeight.w700 : FontWeight.w600,
-              color: highlight
-                  ? const Color(0xFF16A34A)
-                  : const Color(0xFF1F2937),
+          const SizedBox(width: 12),
+          Flexible(
+            child: Text(
+              value,
+              textAlign: TextAlign.right,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: highlight ? FontWeight.w700 : FontWeight.w600,
+                color: highlight ? AppColors.success : AppColors.textPrimary,
+              ),
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _AdjustmentPayload {
+  const _AdjustmentPayload({
+    required this.kind,
+    required this.typeKey,
+    this.customName,
+    this.description,
+    required this.amount,
+  });
+
+  final String kind;
+  final String typeKey;
+  final String? customName;
+  final String? description;
+  final double amount;
+}
+
+class _AdjustmentFormSheet extends StatefulWidget {
+  const _AdjustmentFormSheet({
+    required this.deductionTypes,
+    required this.allowanceTypes,
+    required this.onSubmit,
+    this.existing,
+  });
+
+  final List<Map<String, dynamic>> deductionTypes;
+  final List<Map<String, dynamic>> allowanceTypes;
+  final Map<String, dynamic>? existing;
+  final Future<void> Function(_AdjustmentPayload payload) onSubmit;
+
+  @override
+  State<_AdjustmentFormSheet> createState() => _AdjustmentFormSheetState();
+}
+
+class _AdjustmentFormSheetState extends State<_AdjustmentFormSheet> {
+  late String _kind;
+  late String _typeKey;
+  late final TextEditingController _customName;
+  late final TextEditingController _description;
+  late final TextEditingController _amount;
+  String? _error;
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final existing = widget.existing;
+    _kind = '${existing?['kind'] ?? 'deduction'}';
+    _typeKey = '${existing?['type_key'] ?? (widget.deductionTypes.isNotEmpty ? widget.deductionTypes.first['key'] : 'other')}';
+    _customName = TextEditingController(text: '${existing?['custom_name'] ?? ''}');
+    _description =
+        TextEditingController(text: '${existing?['description'] ?? ''}');
+    _amount = TextEditingController(
+      text: existing == null ? '' : '${existing['amount'] ?? ''}',
+    );
+  }
+
+  @override
+  void dispose() {
+    _customName.dispose();
+    _description.dispose();
+    _amount.dispose();
+    super.dispose();
+  }
+
+  List<Map<String, dynamic>> get _types =>
+      _kind == 'allowance' ? widget.allowanceTypes : widget.deductionTypes;
+
+  Future<void> _save() async {
+    final amount = double.tryParse(_amount.text.trim());
+    if (_typeKey.trim().isEmpty) {
+      setState(() => _error = 'Deduction type is required.');
+      return;
+    }
+    if (amount == null || amount <= 0) {
+      setState(() => _error = 'Amount must be greater than zero.');
+      return;
+    }
+    if (_typeKey == 'other' && _customName.text.trim().isEmpty) {
+      setState(() => _error = 'Enter a custom name for Other.');
+      return;
+    }
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      await widget.onSubmit(
+        _AdjustmentPayload(
+          kind: _kind,
+          typeKey: _typeKey,
+          customName: _typeKey == 'other' ? _customName.text.trim() : null,
+          description: _description.text.trim().isEmpty
+              ? null
+              : _description.text.trim(),
+          amount: amount,
+        ),
+      );
+      if (!mounted) return;
+      Navigator.pop(context, true);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _saving = false;
+        _error = 'Unable to save adjustment.';
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottom = MediaQuery.viewInsetsOf(context).bottom;
+    return Padding(
+      padding: EdgeInsets.fromLTRB(16, 0, 16, 16 + bottom),
+      child: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              widget.existing == null ? 'Add Deduction' : 'Edit Adjustment',
+              style: appSectionTitleStyle(),
+            ),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<String>(
+              value: _kind,
+              decoration: appInputDecoration(labelText: 'Kind'),
+              items: const [
+                DropdownMenuItem(value: 'deduction', child: Text('Deduction')),
+                DropdownMenuItem(value: 'allowance', child: Text('Allowance')),
+              ],
+              onChanged: (value) {
+                if (value == null) return;
+                setState(() {
+                  _kind = value;
+                  final types = _types;
+                  _typeKey = types.isNotEmpty ? '${types.first['key']}' : 'other';
+                });
+              },
+            ),
+            const SizedBox(height: 10),
+            DropdownButtonFormField<String>(
+              value: _types.any((t) => '${t['key']}' == _typeKey)
+                  ? _typeKey
+                  : (_types.isNotEmpty ? '${_types.first['key']}' : null),
+              decoration: appInputDecoration(labelText: 'Type'),
+              items: [
+                for (final type in _types)
+                  DropdownMenuItem(
+                    value: '${type['key']}',
+                    child: Text('${type['label']}'),
+                  ),
+              ],
+              onChanged: (value) {
+                if (value == null) return;
+                setState(() => _typeKey = value);
+              },
+            ),
+            if (_typeKey == 'other') ...[
+              const SizedBox(height: 10),
+              TextField(
+                controller: _customName,
+                decoration: appInputDecoration(
+                  labelText: 'Custom name',
+                  hintText: 'e.g. Lost company property',
+                ),
+              ),
+            ],
+            const SizedBox(height: 10),
+            TextField(
+              controller: _description,
+              decoration: appInputDecoration(
+                labelText: 'Description (optional)',
+              ),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: _amount,
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+              decoration: appInputDecoration(labelText: 'Amount'),
+            ),
+            if (_error != null) ...[
+              const SizedBox(height: 8),
+              Text(_error!, style: const TextStyle(color: Colors.red, fontSize: 12)),
+            ],
+            const SizedBox(height: 14),
+            AppPrimaryButton(
+              label: widget.existing == null ? 'Add Adjustment' : 'Save Changes',
+              loading: _saving,
+              onPressed: _saving ? null : _save,
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
       ),
     );
   }

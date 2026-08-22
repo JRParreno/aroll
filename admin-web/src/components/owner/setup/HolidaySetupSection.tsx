@@ -42,7 +42,7 @@ export function HolidaySetupSection() {
       qc.invalidateQueries({ queryKey: ["holidays"] });
       qc.invalidateQueries({ queryKey: ["setup-status"] });
     },
-    onError: () => toast.error("Failed to load default holidays"),
+    onError: () => toast.error("Could not load default holidays"),
   });
 
   useEffect(() => {
@@ -69,20 +69,20 @@ export function HolidaySetupSection() {
       qc.invalidateQueries({ queryKey: ["holidays"] });
       qc.invalidateQueries({ queryKey: ["setup-status"] });
     },
-    onError: () => toast.error("Failed to update holiday"),
+    onError: () => toast.error("Could not update holiday"),
   });
 
   const addCustom = useMutation({
     mutationFn: () => {
       const multiplier = Number(customForm.pay_multiplier);
       if (!customForm.name.trim()) {
-        throw new Error("Name required");
+        throw new Error("Please enter a holiday name");
       }
       if (!customForm.holiday_date) {
-        throw new Error("Date required");
+        throw new Error("Please choose a holiday date");
       }
       if (multiplier <= 0) {
-        throw new Error("Multiplier must be greater than 0");
+        throw new Error("Please enter a holiday pay rate greater than 0");
       }
       return createHoliday({
         name: customForm.name.trim(),
@@ -93,7 +93,7 @@ export function HolidaySetupSection() {
       });
     },
     onSuccess: () => {
-      toast.success("Custom holiday added");
+      toast.success("Holiday added");
       setCustomForm({
         name: "",
         holiday_date: "",
@@ -103,24 +103,24 @@ export function HolidaySetupSection() {
       qc.invalidateQueries({ queryKey: ["holidays"] });
       qc.invalidateQueries({ queryKey: ["setup-status"] });
     },
-    onError: (error: Error) => toast.error(error.message || "Failed to add holiday"),
+    onError: (error: Error) => toast.error(error.message || "Could not add holiday"),
   });
 
   const removeCustom = useMutation({
     mutationFn: deleteHoliday,
     onSuccess: () => {
-      toast.success("Custom holiday removed");
+      toast.success("Holiday removed");
       setEditingId(null);
       qc.invalidateQueries({ queryKey: ["holidays"] });
       qc.invalidateQueries({ queryKey: ["setup-status"] });
     },
-    onError: () => toast.error("Failed to delete holiday"),
+    onError: () => toast.error("Could not remove holiday"),
   });
 
   function handleMultiplierChange(holiday: Holiday, value: string) {
     const multiplier = Number(value);
     if (Number.isNaN(multiplier) || multiplier <= 0) {
-      toast.error("Pay multiplier must be greater than 0");
+      toast.error("Please enter a holiday pay rate greater than 0");
       return;
     }
     updateRow.mutate({
@@ -132,8 +132,8 @@ export function HolidaySetupSection() {
   return (
     <div className="space-y-6">
       <p className="rounded-xl bg-[#F3F6FA] px-4 py-3 text-sm text-[#6B7280]">
-        Add the holidays your business follows. This helps the system calculate
-        schedules and pay correctly.
+        Add the holidays your business follows so schedules and pay stay
+        accurate.
       </p>
 
       {isLoading && (
@@ -141,7 +141,7 @@ export function HolidaySetupSection() {
       )}
       {isError && (
         <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          Unable to load holidays.
+          Unable to load holidays. Please try again.
         </p>
       )}
 
@@ -150,10 +150,10 @@ export function HolidaySetupSection() {
           <table className="w-full min-w-[640px] text-sm">
             <thead className="bg-[#F3F6FA] text-left">
               <tr>
-                <th className="px-3 py-2 font-medium">Name</th>
+                <th className="px-3 py-2 font-medium">Holiday name</th>
                 <th className="px-3 py-2 font-medium">Date</th>
-                <th className="px-3 py-2 font-medium">Enabled</th>
-                <th className="px-3 py-2 font-medium">Pay Rate</th>
+                <th className="px-3 py-2 font-medium">Holiday pay</th>
+                <th className="px-3 py-2 font-medium">Holiday pay rate</th>
                 <th className="px-3 py-2 font-medium">Actions</th>
               </tr>
             </thead>
@@ -212,7 +212,7 @@ export function HolidaySetupSection() {
                           })
                         }
                       />
-                      <span>{holiday.is_paid ? "ON" : "OFF"}</span>
+                      <span>{holiday.is_paid ? "On" : "Off"}</span>
                     </label>
                   </td>
                   <td className="px-3 py-2">
@@ -261,7 +261,7 @@ export function HolidaySetupSection() {
       <div className="space-y-4 rounded-2xl border border-slate-200 bg-[#FAFBFC] p-4">
         <div>
           <p className="text-sm font-medium text-[#1F2937]">
-            Add Custom Holiday
+            Add your own holiday
           </p>
           <p className="mt-1 text-xs text-[#6B7280]">
             Use this for company holidays or special closure days.
@@ -269,7 +269,7 @@ export function HolidaySetupSection() {
         </div>
         <div className="grid gap-5 sm:grid-cols-2">
           <div className="space-y-2">
-            <Label>Name</Label>
+            <Label>Holiday name</Label>
             <Input
               className={`h-11 rounded-xl border-slate-200 bg-white ${
                 !customForm.is_paid ? "opacity-50" : ""
@@ -293,7 +293,7 @@ export function HolidaySetupSection() {
             />
           </div>
           <div className="space-y-2">
-            <Label>Pay Multiplier</Label>
+            <Label>Holiday pay rate (e.g. 2 = double)</Label>
             <Input
               className="h-11 rounded-xl border-slate-200 bg-white"
               type="number"
@@ -315,7 +315,7 @@ export function HolidaySetupSection() {
                   setCustomForm({ ...customForm, is_paid: e.target.checked })
                 }
               />
-              Enabled (holiday pay applies)
+              Employees get holiday pay
             </label>
           </div>
         </div>
@@ -324,7 +324,7 @@ export function HolidaySetupSection() {
           onClick={() => addCustom.mutate()}
           disabled={addCustom.isPending}
         >
-          Add Custom Holiday
+          Add holiday
         </Button>
       </div>
 
@@ -334,7 +334,7 @@ export function HolidaySetupSection() {
         onClick={() => seedDefaults.mutate()}
         disabled={seedDefaults.isPending}
       >
-        Reload Philippine Holidays
+        Load Philippine holidays
       </Button>
     </div>
   );

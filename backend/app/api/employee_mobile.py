@@ -3,7 +3,16 @@ from datetime import date, datetime, time, timezone, timedelta
 from io import BytesIO
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    Response,
+    UploadFile,
+)
 from pydantic import BaseModel
 
 from app.schemas.profile_image import ProfileImageRequest
@@ -11,6 +20,10 @@ from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
 from app.api.owner_reports import _calculate_employee_payslip
+from app.services.payroll_adjustments import (
+    apply_adjustments_to_slip,
+    list_active_adjustments,
+)
 from app.core.deps import get_current_user
 from app.core.profile_image import validate_profile_image_data
 from app.core.timezone import business_today
@@ -18,7 +31,12 @@ from app.db.session import get_db
 from app.models.attendance import AttendanceRecord
 from app.models.business import Business, BusinessLocation, BusinessRegistration
 from app.models.employee import Employee
-from app.models.enums import AttendanceStatus, EmployeeStatus, UserRole
+from app.models.enums import (
+    AttendanceStatus,
+    BusinessStatus,
+    EmployeeStatus,
+    UserRole,
+)
 from app.models.holiday import Holiday
 from app.models.scheduling import Shift, ShiftAssignment
 from app.models.user import User
@@ -28,10 +46,15 @@ from app.schemas.employee_attendance import (
     WorksiteResponse,
 )
 from app.services.attendance_clock import (
+    _active_record,
     clock_in_employee,
     clock_out_employee,
     verify_employee_face_match,
     worksite_for_business,
+)
+from app.services.missing_clock_out import (
+    ensure_incomplete_for_employee,
+    list_incomplete_for_employee,
 )
 from app.services.face_enrollment import enroll_face_sample_bytes, face_status_for_employee
 from app.services.pay_period import resolve_pay_period
@@ -64,12 +87,34 @@ def _current_employee(
     )
     if employee is None:
         raise HTTPException(404, "Employee not found")
-    if employee.status == EmployeeStatus.inactive or not employee.is_active:
-        raise HTTPException(403, "Employee account is inactive")
+    if (
+        employee.status != EmployeeStatus.active
+        or not employee.is_active
+    ):
+        raise HTTPException(
+            403,
+            detail={
+                "code": "employee_inactive",
+                "message": (
+                    "Your account isn’t active. Please contact your employer."
+                ),
+            },
+        )
 
     business = db.get(Business, user.business_id)
     if business is None:
         raise HTTPException(404, "Business not found")
+    if business.status != BusinessStatus.active:
+        raise HTTPException(
+            403,
+            detail={
+                "code": "business_inactive",
+                "message": (
+                    "This workplace isn’t active right now. "
+                    "Please contact your employer."
+                ),
+            },
+        )
     return employee, business
 
 
@@ -172,6 +217,12 @@ def _schedule_status(
     assignment: ShiftAssignment,
     today: date,
 ) -> str:
+    from app.services.leave_requests import employee_on_approved_leave
+
+    if employee_on_approved_leave(
+        db, employee_id=employee.id, work_date=assignment.work_date
+    ):
+        return "on_leave"
     if assignment.work_date > today:
         return "upcoming"
     if assignment.work_date < today:
@@ -185,6 +236,8 @@ def _schedule_status(
         .order_by(AttendanceRecord.created_at.desc())
         .first()
     )
+    if record is not None and record.status == AttendanceStatus.on_leave:
+        return "on_leave"
     if record is not None and record.status == AttendanceStatus.complete:
         return "completed"
     return "today"
@@ -283,6 +336,8 @@ def _overtime_minutes(
     assignment: ShiftAssignment | None,
     shift: Shift | None,
 ) -> float:
+    if record.status == AttendanceStatus.incomplete:
+        return 0
     if record.time_out is None or assignment is None or shift is None:
         return 0
     time_out = record.time_out.replace(tzinfo=None)
@@ -296,11 +351,22 @@ def _shift_history_rows(
     *,
     today: date | None = None,
     limit: int = 100,
+    business_timezone: str | None = None,
 ) -> list[dict]:
-    """Past and completed shift assignments with linked attendance when available."""
+    """Past and punched shift assignments with linked attendance when available.
+
+    Includes:
+    - every assignment before today (missing punches surface as absent)
+    - today's assignment once a clock-in exists (any status: in_progress, late,
+      complete, absent) so Shift History reflects the live attendance record
+      immediately after face clock-in/out — not only when status is `complete`
+    """
     from app.services.attendance_correction import latest_corrections_by_assignment
 
     work_today = today or date.today()
+    ensure_incomplete_for_employee(
+        db, employee, business_timezone=business_timezone
+    )
     holidays = _holiday_map(db, employee.business_id)
     rows = (
         db.query(ShiftAssignment, Shift, AttendanceRecord)
@@ -317,41 +383,79 @@ def _shift_history_rows(
             Shift.business_id == employee.business_id,
             or_(
                 ShiftAssignment.work_date < work_today,
-                AttendanceRecord.status == AttendanceStatus.complete,
+                # Any saved punch for today (clock-in or finished clock-out).
+                AttendanceRecord.time_in.isnot(None),
+                AttendanceRecord.status == AttendanceStatus.on_leave,
             ),
         )
-        .order_by(ShiftAssignment.work_date.desc(), Shift.start_time.desc())
+        .order_by(
+            ShiftAssignment.work_date.desc(),
+            Shift.start_time.desc(),
+            AttendanceRecord.created_at.desc(),
+        )
         .limit(limit)
         .all()
     )
 
-    assignment_ids = [assignment.id for assignment, _shift, _record in rows]
+    # One history row per assignment (prefer newest attendance if duplicates exist).
+    deduped: list[tuple[ShiftAssignment, Shift, AttendanceRecord | None]] = []
+    seen_assignments: set[uuid.UUID] = set()
+    for assignment, shift, record in rows:
+        if assignment.id in seen_assignments:
+            continue
+        seen_assignments.add(assignment.id)
+        deduped.append((assignment, shift, record))
+
+    assignment_ids = [assignment.id for assignment, _shift, _record in deduped]
     corrections = latest_corrections_by_assignment(
         db,
         employee_id=employee.id,
         assignment_ids=assignment_ids,
     )
 
+    from app.services.leave_requests import employee_on_approved_leave
+
     items = []
-    for assignment, shift, record in rows:
+    for assignment, shift, record in deduped:
         work_date = assignment.work_date
         holiday = holidays.get(work_date)
-        if record is None:
+        on_leave = (
+            (record is not None and record.status == AttendanceStatus.on_leave)
+            or employee_on_approved_leave(
+                db, employee_id=employee.id, work_date=work_date
+            )
+        )
+        if on_leave:
+            attendance_status = AttendanceStatus.on_leave.value
+            attendance_record_id = str(record.id) if record else None
+            time_in = None
+            time_out = None
+            overtime = 0.0
+        elif record is None:
             attendance_status = AttendanceStatus.absent.value
             attendance_record_id = None
             time_in = None
             time_out = None
             overtime = 0.0
-            can_correct = True
         else:
             attendance_status = record.status.value
             attendance_record_id = str(record.id)
             time_in = _dt_label(record.time_in)
             time_out = _dt_label(record.time_out)
             overtime = _overtime_minutes(record, assignment, shift)
-            can_correct = record.time_in is None or record.time_out is None
 
         correction = corrections.get(assignment.id)
+        # Allow a new correction only when none exists yet, or the latest was
+        # rejected. Hide the action once a request is pending or approved.
+        # Approved leave days do not need attendance corrections.
+        can_correct = (
+            not on_leave
+            and work_date <= work_today
+            and (
+                correction is None
+                or correction.status.value == "rejected"
+            )
+        )
         items.append(
             {
                 "id": attendance_record_id or str(assignment.id),
@@ -366,11 +470,7 @@ def _shift_history_rows(
                 "status": attendance_status,
                 "overtime_minutes": overtime,
                 "holiday_name": holiday.name if holiday else None,
-                "can_request_correction": can_correct
-                and (
-                    correction is None
-                    or correction.status.value != "pending"
-                ),
+                "can_request_correction": can_correct,
                 "correction_status": correction.status.value if correction else None,
                 "correction_id": str(correction.id) if correction else None,
                 "correction_review_note": (
@@ -381,7 +481,16 @@ def _shift_history_rows(
     return items
 
 
-def _performance_summary(db: Session, employee: Employee, days: int = 7) -> dict:
+def _performance_summary(
+    db: Session,
+    employee: Employee,
+    days: int = 7,
+    *,
+    business_timezone: str | None = None,
+) -> dict:
+    ensure_incomplete_for_employee(
+        db, employee, business_timezone=business_timezone
+    )
     since = datetime.now(timezone.utc) - timedelta(days=days)
     rows = (
         db.query(AttendanceRecord, ShiftAssignment, Shift)
@@ -400,22 +509,51 @@ def _performance_summary(db: Session, employee: Employee, days: int = 7) -> dict
         "undertime": 0,
         "overtime": 0,
         "absent": 0,
+        "incomplete": 0,
     }
+    scored = 0
     for record, assignment, shift in rows:
+        # Incomplete and approved leave are excluded from productivity metrics.
+        if record.status == AttendanceStatus.incomplete:
+            counts["incomplete"] += 1
+            continue
+        if record.status == AttendanceStatus.on_leave:
+            continue
+        scored += 1
         if record.status == AttendanceStatus.absent:
             counts["absent"] += 1
         elif record.status == AttendanceStatus.late:
             counts["late"] += 1
         else:
             counts["on_time"] += 1
-        if record.status == AttendanceStatus.incomplete:
-            counts["undertime"] += 1
         if _overtime_minutes(record, assignment, shift) > 0:
             counts["overtime"] += 1
-    return {"period": "weekly", "has_data": len(rows) > 0, **counts}
+    return {"period": "weekly", "has_data": scored > 0, **counts}
 
 
-def _today_attendance_status(db: Session, employee: Employee, today: date) -> dict:
+def _today_attendance_status(
+    db: Session,
+    employee: Employee,
+    today: date,
+    *,
+    business_timezone: str | None = None,
+) -> dict:
+    """Attendance state for dashboard / clock hub.
+
+    Open sessions use the same lookup as Clock Out so "Ready to Clock Out"
+    never disagrees with whether clock-out can find today's record.
+    """
+    ensure_incomplete_for_employee(
+        db, employee, business_timezone=business_timezone
+    )
+    open_record = _active_record(db, employee, today)
+    if open_record is not None:
+        return {
+            "status": open_record.status.value,
+            "time_in": _dt_label(open_record.time_in),
+            "time_out": None,
+        }
+
     today_start = datetime.combine(today, time.min)
     tomorrow_start = today_start + timedelta(days=1)
     assignment_ids = [
@@ -438,6 +576,11 @@ def _today_attendance_status(db: Session, employee: Employee, today: date) -> di
             AttendanceRecord.created_at >= today_start,
             AttendanceRecord.created_at < tomorrow_start,
         )
+    from app.services.leave_requests import employee_on_approved_leave
+
+    if employee_on_approved_leave(db, employee_id=employee.id, work_date=today):
+        return {"status": "on_leave", "time_in": None, "time_out": None}
+
     record = query.order_by(AttendanceRecord.created_at.desc()).first()
     if record is None:
         return {"status": "not_started", "time_in": None, "time_out": None}
@@ -448,37 +591,124 @@ def _today_attendance_status(db: Session, employee: Employee, today: date) -> di
     }
 
 
-def _current_period(db: Session, business_id: uuid.UUID) -> tuple[date, date]:
+def _current_period(
+    db: Session,
+    business_id: uuid.UUID,
+    *,
+    as_of: date | None = None,
+) -> tuple[date, date]:
     config = db.get(BusinessPayrollConfig, business_id)
-    return resolve_pay_period(config)
+    return resolve_pay_period(config, today=as_of)
 
 
-def _payroll_response(db: Session, employee: Employee, business: Business) -> dict:
-    period_start, period_end = _current_period(db, business.id)
-    payslip = _calculate_employee_payslip(db, employee, period_start, period_end)
+def _payroll_status(period_start: date, period_end: date, today: date) -> str:
+    if period_start <= today <= period_end:
+        return "current"
+    if period_end < today:
+        return "completed"
+    return "upcoming"
+
+
+def _payroll_response(
+    db: Session,
+    employee: Employee,
+    business: Business,
+    *,
+    as_of: date | None = None,
+    history_limit: int = 0,
+) -> dict:
+    from app.services.pay_period import list_pay_periods
+
+    config = db.get(BusinessPayrollConfig, business.id)
+    today = as_of or date.today()
+    period_start, period_end = resolve_pay_period(config, today=today)
+    payslip = apply_adjustments_to_slip(
+        _calculate_employee_payslip(db, employee, period_start, period_end),
+        list_active_adjustments(
+            db,
+            business_id=employee.business_id,
+            employee_id=employee.id,
+            period_start=period_start,
+            period_end=period_end,
+        ),
+    )
     rows = []
     for record in payslip["attendance_records"]:
-        earned = payslip["daily_rate"] if record["status"] != "absent" else 0
-        if record["holiday_name"]:
-            earned += payslip["holiday_pay"]
         rows.append(
             {
                 "date": record["date"],
                 "status": record["status"],
                 "daily_rate": _money(payslip["daily_rate"]),
-                "earned": _money(earned),
+                "earned": _money(float(record.get("earned") or 0)),
                 "holiday_name": record["holiday_name"],
             }
         )
-    return {
+    payload = {
         "business_name": business.name,
         "business_branding": _branding_response(business),
-        "pay_period_type": "current",
+        "pay_period_type": config.pay_period_type.value if config else "monthly",
         "period_start": payslip["period_start"],
         "period_end": payslip["period_end"],
-        "summary": payslip,
+        "pay_date": payslip["period_end"],
+        "payroll_status": _payroll_status(period_start, period_end, date.today()),
+        "summary": {
+            **payslip,
+            "pay_date": payslip["period_end"],
+            "payroll_status": _payroll_status(period_start, period_end, date.today()),
+            "hours_worked": round(
+                float(payslip.get("worked_days") or 0) * 8.0
+                + float(payslip.get("overtime_hours") or 0),
+                2,
+            ),
+        },
         "rows": rows,
+        "history": [],
     }
+    if history_limit > 0:
+        history = []
+        for start, end in list_pay_periods(config, limit=history_limit, today=today):
+            slip = apply_adjustments_to_slip(
+                _calculate_employee_payslip(db, employee, start, end),
+                list_active_adjustments(
+                    db,
+                    business_id=employee.business_id,
+                    employee_id=employee.id,
+                    period_start=start,
+                    period_end=end,
+                ),
+            )
+            history.append(
+                {
+                    "period_start": slip["period_start"],
+                    "period_end": slip["period_end"],
+                    "pay_date": slip["period_end"],
+                    "daily_rate": slip["daily_rate"],
+                    "pay_basis": slip.get("pay_basis", "daily"),
+                    "hourly_rate": slip.get("hourly_rate"),
+                    "monthly_salary": slip.get("monthly_salary"),
+                    "worked_days": slip["worked_days"],
+                    "hours_worked": round(
+                        float(slip.get("worked_days") or 0) * 8.0
+                        + float(slip.get("overtime_hours") or 0),
+                        2,
+                    ),
+                    "late_deductions": slip["late_deductions"],
+                    "undertime_deductions": slip["undertime_deductions"],
+                    "overtime_pay": slip["overtime_pay"],
+                    "overtime_hours": slip["overtime_hours"],
+                    "regular_pay": slip.get("regular_pay"),
+                    "gross_pay": slip["gross_pay"],
+                    "deductions": slip["deductions"],
+                    "net_pay": slip["net_pay"],
+                    "base_net_pay": slip["base_net_pay"],
+                    "final_net_pay": slip["final_net_pay"],
+                    "payroll_adjustments": slip["payroll_adjustments"],
+                    "payroll_adjustments_total": slip["payroll_adjustments_total"],
+                    "payroll_status": _payroll_status(start, end, date.today()),
+                }
+            )
+        payload["history"] = history
+    return payload
 
 
 @router.get("/profile")
@@ -524,6 +754,9 @@ def dashboard(
 ):
     employee, business = _current_employee(db, user)
     today = business_today(business.timezone)
+    ensure_incomplete_for_employee(
+        db, employee, business_timezone=business.timezone
+    )
     schedule = _employee_schedule(
         db,
         employee,
@@ -532,13 +765,35 @@ def dashboard(
         today=today,
     )
     payroll = _payroll_response(db, employee, business)
+    incomplete_rows = list_incomplete_for_employee(db, employee)
+    latest_incomplete = incomplete_rows[0] if incomplete_rows else None
     return {
         "profile": _employee_profile_response(db, employee, business),
         "today_schedule": schedule[0] if schedule else None,
         "upcoming_schedules": schedule,
-        "attendance_status": _today_attendance_status(db, employee, today),
+        "attendance_status": _today_attendance_status(
+            db, employee, today, business_timezone=business.timezone
+        ),
         "payroll_summary": payroll["summary"],
-        "performance": _performance_summary(db, employee),
+        "performance": _performance_summary(
+            db, employee, business_timezone=business.timezone
+        ),
+        "incomplete_attendance_reminder": {
+            "show": latest_incomplete is not None,
+            "message": (
+                "You forgot to time out.\n"
+                "Please submit your correct time-out time."
+            ),
+            "count": len(incomplete_rows),
+            "attendance_record_id": (
+                str(latest_incomplete.id) if latest_incomplete else None
+            ),
+            "shift_assignment_id": (
+                str(latest_incomplete.shift_assignment_id)
+                if latest_incomplete and latest_incomplete.shift_assignment_id
+                else None
+            ),
+        },
     }
 
 
@@ -557,6 +812,9 @@ def schedule(
     """
     employee, business = _current_employee(db, user)
     today = business_today(business.timezone)
+    ensure_incomplete_for_employee(
+        db, employee, business_timezone=business.timezone
+    )
     items = _employee_schedule(
         db,
         employee,
@@ -576,29 +834,75 @@ def shift_history(
 ):
     employee, business = _current_employee(db, user)
     today = business_today(business.timezone)
-    return {"items": _shift_history_rows(db, employee, today=today)}
+    return {
+        "items": _shift_history_rows(
+            db,
+            employee,
+            today=today,
+            business_timezone=business.timezone,
+        )
+    }
 
 
 @router.get("/payroll")
 def payroll(
     db: Annotated[Session, Depends(get_db)],
     user: Annotated[User, Depends(get_current_user)],
+    as_of: Annotated[
+        date | None,
+        Query(description="Resolve the pay period containing this date (YYYY-MM-DD)"),
+    ] = None,
+    history_limit: Annotated[
+        int,
+        Query(
+            ge=0,
+            le=24,
+            description="Include recent period summaries (live recompute, no stored runs)",
+        ),
+    ] = 6,
 ):
     employee, business = _current_employee(db, user)
-    return _payroll_response(db, employee, business)
+    return _payroll_response(
+        db,
+        employee,
+        business,
+        as_of=as_of,
+        history_limit=history_limit,
+    )
 
 
 @router.get("/payslip")
 def payslip(
     db: Annotated[Session, Depends(get_db)],
     user: Annotated[User, Depends(get_current_user)],
+    as_of: Annotated[
+        date | None,
+        Query(description="Resolve the pay period containing this date (YYYY-MM-DD)"),
+    ] = None,
 ):
     employee, business = _current_employee(db, user)
-    period_start, period_end = _current_period(db, business.id)
+    period_start, period_end = _current_period(db, business.id, as_of=as_of)
+    slip = apply_adjustments_to_slip(
+        _calculate_employee_payslip(db, employee, period_start, period_end),
+        list_active_adjustments(
+            db,
+            business_id=employee.business_id,
+            employee_id=employee.id,
+            period_start=period_start,
+            period_end=period_end,
+        ),
+    )
     return {
         "business_name": business.name,
         "business_branding": _branding_response(business),
-        **_calculate_employee_payslip(db, employee, period_start, period_end),
+        **slip,
+        "pay_date": slip["period_end"],
+        "payroll_status": _payroll_status(period_start, period_end, date.today()),
+        "hours_worked": round(
+            float(slip.get("worked_days") or 0) * 8.0
+            + float(slip.get("overtime_hours") or 0),
+            2,
+        ),
     }
 
 
@@ -646,9 +950,22 @@ async def clock_in_with_face(
     shift_assignment_id: Annotated[uuid.UUID | None, Form()] = None,
     liveness_gesture: Annotated[str | None, Form()] = None,
 ):
-    """Clock in with GPS + client blink/smile gesture + server face match."""
+    """Time in with GPS + client blink/smile gesture + server face match."""
     employee, business = _current_employee(db, user)
-    _ = liveness_gesture  # blink | smile — detected on device
+    gesture = (liveness_gesture or "").strip().lower()
+    if gesture not in ("blink", "smile"):
+        raise HTTPException(
+            400,
+            detail={
+                "code": "liveness_required",
+                "message": "Complete a blink or smile check before clocking in.",
+            },
+        )
+    # Identity match first (logged-in employee gallery only); then record attendance.
+    image_bytes = await file.read()
+    score = verify_employee_face_match(
+        db, employee, image_bytes, attendance_action="clock_in"
+    )
     return clock_in_employee(
         db,
         employee,
@@ -656,7 +973,7 @@ async def clock_in_with_face(
         longitude=longitude,
         shift_assignment_id=shift_assignment_id,
         business_timezone=business.timezone,
-        face_image_bytes=await file.read(),
+        face_match_score=score,
         liveness_passed=True,
     )
 
@@ -683,8 +1000,18 @@ async def clock_out_with_face(
 ):
     """Clock out with GPS + client blink/smile gesture + server face match."""
     employee, business = _current_employee(db, user)
-    _ = liveness_gesture  # blink | smile — detected on device
-    score = verify_employee_face_match(db, employee, await file.read())
+    gesture = (liveness_gesture or "").strip().lower()
+    if gesture not in ("blink", "smile"):
+        raise HTTPException(
+            400,
+            detail={
+                "code": "liveness_required",
+                "message": "Complete a blink or smile check before clocking out.",
+            },
+        )
+    score = verify_employee_face_match(
+        db, employee, await file.read(), attendance_action="clock_out"
+    )
     return clock_out_employee(
         db,
         employee,
@@ -763,7 +1090,16 @@ def payslip_pdf(
     period_start, period_end = _current_period(db, business.id)
     data = {
         "business_name": business.name,
-        **_calculate_employee_payslip(db, employee, period_start, period_end),
+        **apply_adjustments_to_slip(
+            _calculate_employee_payslip(db, employee, period_start, period_end),
+            list_active_adjustments(
+                db,
+                business_id=employee.business_id,
+                employee_id=employee.id,
+                period_start=period_start,
+                period_end=period_end,
+            ),
+        ),
     }
     pdf = _simple_payslip_pdf(data)
     filename = f"{employee.full_name.lower().replace(' ', '-')}-payslip.pdf"
@@ -780,7 +1116,7 @@ def _pdf_escape(value: object) -> str:
 
 def _simple_payslip_pdf(data: dict) -> bytes:
     lines = [
-        "SALARY SLIP",
+        "PAYSLIP",
         data["business_name"],
         f"Employee: {data['employee_name']}",
         f"Position: {data.get('position_title') or 'Employee'}",
@@ -793,8 +1129,17 @@ def _simple_payslip_pdf(data: dict) -> bytes:
         f"Rest day premium: PHP {_money(data.get('rest_day_pay', 0)):,.2f}",
         f"Gross pay: PHP {_money(data['gross_pay']):,.2f}",
         f"Deductions: PHP {_money(data['deductions']):,.2f}",
-        f"Net pay: PHP {_money(data['net_pay']):,.2f}",
+        f"Base net pay: PHP {_money(data.get('base_net_pay', data['net_pay'])):,.2f}",
     ]
+    for adj in data.get("payroll_adjustments") or []:
+        sign = "-" if adj.get("kind") == "deduction" else "+"
+        lines.append(
+            f"{adj.get('display_name')}: {sign}PHP {_money(adj.get('amount', 0)):,.2f}"
+        )
+    lines.append(
+        f"Final net pay: PHP {_money(data.get('final_net_pay', data['net_pay'])):,.2f}"
+    )
+    # Keep stream builder expecting a flat list.
     stream_lines = ["BT", "/F1 12 Tf", "72 760 Td"]
     for index, line in enumerate(lines):
         if index:

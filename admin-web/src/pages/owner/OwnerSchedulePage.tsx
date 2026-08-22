@@ -3,10 +3,12 @@ import { Download, FileSpreadsheet, Pencil, Plus, Printer, Search, Trash2, Users
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
+  DEFAULT_SCHEDULE_TABLE_COLORS,
   downloadScheduleExcel,
   downloadSchedulePdf,
   printSchedule,
 } from "@/components/owner/schedule/scheduleExport";
+import { ScheduleReusePanel } from "@/components/owner/schedule/ScheduleReusePanel";
 import {
   buildScheduleMatrix,
   formatShiftTime,
@@ -36,6 +38,7 @@ import {
   assignSchedule,
   createShift,
   deleteScheduleAssignment,
+  getLeaveAvailability,
   getMe,
   getWeeklySchedule,
   listEmployees,
@@ -48,18 +51,14 @@ import {
 } from "@/lib/api";
 import { ME_QUERY_KEY } from "@/lib/authSession";
 
-type EmployeeAvailability = "available" | "assigned" | "conflict";
+type EmployeeAvailability =
+  | "available"
+  | "leavePending"
+  | "onLeave"
+  | "assigned"
+  | "conflict";
 
-const defaultTableColors = {
-  header: "#1E3A5F",
-  row1: "#FFE5A3",
-  row2: "#FFB166",
-  row3: "#B8F28C",
-  row4: "#B9D8F7",
-  row5: "#F2A7EA",
-  off: "#F8B4B4",
-  text: "#111827",
-};
+const defaultTableColors = DEFAULT_SCHEDULE_TABLE_COLORS;
 
 function initials(name: string) {
   return name
@@ -76,8 +75,50 @@ function overlaps(first: Shift, second: Shift) {
 
 function statusTone(status: EmployeeAvailability) {
   if (status === "available") return "bg-emerald-50 text-emerald-700 border-emerald-100";
+  if (status === "leavePending") return "bg-violet-50 text-violet-700 border-violet-100";
+  if (status === "onLeave") return "bg-rose-50 text-rose-700 border-rose-100";
   if (status === "assigned") return "bg-blue-50 text-blue-700 border-blue-100";
   return "bg-amber-50 text-amber-700 border-amber-100";
+}
+
+function availabilityLabel(status: EmployeeAvailability) {
+  if (status === "available") return "Available";
+  if (status === "leavePending") return "Leave Pending";
+  if (status === "onLeave") return "On Leave";
+  if (status === "assigned") return "Already assigned";
+  return "Conflict";
+}
+
+function parseApprovedLeaveError(error: unknown) {
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "response" in error &&
+    typeof error.response === "object" &&
+    error.response !== null &&
+    "status" in error.response &&
+    error.response.status === 409 &&
+    "data" in error.response &&
+    typeof error.response.data === "object" &&
+    error.response.data !== null &&
+    "detail" in error.response.data
+  ) {
+    const detail = error.response.data.detail;
+    if (
+      typeof detail === "object" &&
+      detail !== null &&
+      "code" in detail &&
+      detail.code === "approved_leave"
+    ) {
+      return detail as {
+        code: string;
+        message: string;
+        names?: string;
+        employees?: { id: string; name: string }[];
+      };
+    }
+  }
+  return null;
 }
 
 export function OwnerSchedulePage() {
@@ -100,6 +141,8 @@ export function OwnerSchedulePage() {
   const [defaultStart, setDefaultStart] = useState("09:00");
   const [defaultEnd, setDefaultEnd] = useState("17:00");
   const [showNewShift, setShowNewShift] = useState(false);
+  const [overrideDialogOpen, setOverrideDialogOpen] = useState(false);
+  const [overrideEmployeeNames, setOverrideEmployeeNames] = useState<string[]>([]);
   const [newShift, setNewShift] = useState({
     name: "",
     start_time: "08:00",
@@ -129,6 +172,22 @@ export function OwnerSchedulePage() {
     queryKey: ["weekly-schedule", weekStartKey],
     queryFn: () => getWeeklySchedule(weekStartKey),
   });
+  const { data: leaveAvailability } = useQuery({
+    queryKey: ["schedule-leave-availability", workDate],
+    queryFn: () => getLeaveAvailability(workDate),
+    enabled: Boolean(workDate),
+  });
+
+  const leaveByEmployee = useMemo(() => {
+    const map = new Map<string, { on_leave: boolean; leave_pending: boolean }>();
+    for (const item of leaveAvailability?.employees ?? []) {
+      map.set(item.employee_id, {
+        on_leave: item.on_leave,
+        leave_pending: item.leave_pending,
+      });
+    }
+    return map;
+  }, [leaveAvailability]);
 
   const assignments = weeklySchedule?.assignments ?? [];
   const businessName =
@@ -161,6 +220,10 @@ export function OwnerSchedulePage() {
   }, [assignmentsForDate]);
 
   function availabilityFor(employee: Employee): EmployeeAvailability {
+    const leaveState = leaveByEmployee.get(employee.id);
+    if (leaveState?.on_leave) return "onLeave";
+    if (leaveState?.leave_pending) return "leavePending";
+
     if (!selectedShift) return "available";
     const employeeAssignments = assignmentsForDate.filter(
       (assignment) =>
@@ -175,6 +238,12 @@ export function OwnerSchedulePage() {
       return assignedShift ? overlaps(assignedShift, selectedShift) : true;
     });
     return hasConflict ? "conflict" : "available";
+  }
+
+  function selectedOnLeaveEmployees() {
+    return selectedEmployeeIds.filter(
+      (id) => leaveByEmployee.get(id)?.on_leave
+    );
   }
 
   const filteredEmployees = employees.filter((employee) => {
@@ -210,13 +279,35 @@ export function OwnerSchedulePage() {
     [viewerEmployees, assignments, weekStart]
   );
 
+  const modalEmployees = filteredEmployees.filter(
+    (employee) => availabilityFor(employee) !== "onLeave"
+  );
+  const onLeaveEmployees = employees.filter((employee) => {
+    const availability = availabilityFor(employee);
+    if (availability !== "onLeave") return false;
+    const matchesSearch = [
+      employee.full_name,
+      employee.position_title ?? "",
+      employee.employment_type,
+    ]
+      .join(" ")
+      .toLowerCase()
+      .includes(search.toLowerCase());
+    return (
+      matchesSearch &&
+      (positionFilter === "all" || employee.position_title === positionFilter) &&
+      (typeFilter === "all" || employee.employment_type === typeFilter)
+    );
+  });
+
   const assign = useMutation({
-    mutationFn: () =>
+    mutationFn: (overrideLeave = false) =>
       assignSchedule({
         shift_id: selectedShiftId,
         work_date: workDate,
         employee_ids: selectedEmployeeIds,
         is_rest_day_work: isRestDayWork,
+        override_leave: overrideLeave,
       }),
     onSuccess: (result) => {
       toast.success(
@@ -225,10 +316,23 @@ export function OwnerSchedulePage() {
       setSelectedEmployeeIds([]);
       setIsRestDayWork(false);
       setEmployeeModalOpen(false);
+      setOverrideDialogOpen(false);
+      setOverrideEmployeeNames([]);
       qc.invalidateQueries({ queryKey: ["weekly-schedule"] });
       qc.invalidateQueries({ queryKey: ["owner-performance"] });
+      qc.invalidateQueries({ queryKey: ["schedule-leave-availability"] });
     },
     onError: (error: unknown) => {
+      const leaveError = parseApprovedLeaveError(error);
+      if (leaveError) {
+        const names =
+          leaveError.names ??
+          leaveError.employees?.map((employee) => employee.name).join(", ") ??
+          "selected employee(s)";
+        setOverrideEmployeeNames(names.split(", ").filter(Boolean));
+        setOverrideDialogOpen(true);
+        return;
+      }
       const detail =
         typeof error === "object" &&
         error !== null &&
@@ -246,20 +350,33 @@ export function OwnerSchedulePage() {
   });
 
   const editAssignment = useMutation({
-    mutationFn: () =>
+    mutationFn: (overrideLeave = false) =>
       updateScheduleAssignment(editingAssignmentId!, {
         shift_id: selectedShiftId,
         work_date: workDate,
         is_rest_day_work: isRestDayWork,
+        override_leave: overrideLeave,
       }),
     onSuccess: () => {
       toast.success("Schedule updated");
       setEditingAssignmentId(null);
       setIsRestDayWork(false);
+      setOverrideDialogOpen(false);
       qc.invalidateQueries({ queryKey: ["weekly-schedule"] });
       qc.invalidateQueries({ queryKey: ["owner-performance"] });
+      qc.invalidateQueries({ queryKey: ["schedule-leave-availability"] });
     },
     onError: (error: unknown) => {
+      const leaveError = parseApprovedLeaveError(error);
+      if (leaveError) {
+        const names =
+          leaveError.names ??
+          leaveError.employees?.map((employee) => employee.name).join(", ") ??
+          "this employee";
+        setOverrideEmployeeNames(names.split(", ").filter(Boolean));
+        setOverrideDialogOpen(true);
+        return;
+      }
       const detail =
         typeof error === "object" &&
         error !== null &&
@@ -307,12 +424,41 @@ export function OwnerSchedulePage() {
 
   function toggleEmployee(employee: Employee) {
     const availability = availabilityFor(employee);
-    if (availability !== "available") return;
+    if (availability === "onLeave") {
+      setSelectedEmployeeIds((current) =>
+        current.includes(employee.id)
+          ? current.filter((id) => id !== employee.id)
+          : [...current, employee.id]
+      );
+      return;
+    }
+    if (availability !== "available" && availability !== "leavePending") return;
     setSelectedEmployeeIds((current) =>
       current.includes(employee.id)
         ? current.filter((id) => id !== employee.id)
         : [...current, employee.id]
     );
+  }
+
+  function saveSchedule() {
+    const onLeaveSelected = selectedOnLeaveEmployees();
+    if (onLeaveSelected.length > 0) {
+      const names = onLeaveSelected
+        .map((id) => employees.find((employee) => employee.id === id)?.full_name)
+        .filter(Boolean) as string[];
+      setOverrideEmployeeNames(names);
+      setOverrideDialogOpen(true);
+      return;
+    }
+    assign.mutate(false);
+  }
+
+  function confirmLeaveOverride() {
+    if (editingAssignmentId) {
+      editAssignment.mutate(true);
+      return;
+    }
+    assign.mutate(true);
   }
 
   function openEmployeeModal(shiftId: string) {
@@ -368,14 +514,21 @@ export function OwnerSchedulePage() {
                   <label className="mb-2 block text-sm font-medium text-[#374151]">
                     Select Date
                   </label>
-                  <Input
-                    type="date"
-                    value={workDate}
-                    onChange={(event) => {
-                      setWorkDate(event.target.value);
-                      setWeekStart(getWeekStart(new Date(`${event.target.value}T00:00:00`)));
-                    }}
-                  />
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="date"
+                      value={workDate}
+                      onChange={(event) => {
+                        setWorkDate(event.target.value);
+                        setWeekStart(getWeekStart(new Date(`${event.target.value}T00:00:00`)));
+                      }}
+                    />
+                    <ScheduleReusePanel
+                      weekStartKey={weekStartKey}
+                      weekLabel={formatWeekRange(weekStart)}
+                      assignmentCount={assignments.length}
+                    />
+                  </div>
                 </div>
                 <div>
                   <label className="mb-2 block text-sm font-medium text-[#374151]">
@@ -524,13 +677,29 @@ export function OwnerSchedulePage() {
                                     {assignment.employee_name}
                                   </td>
                                   <td className="px-4 py-3 text-[#6B7280]">
-                                    {employee?.position_title ?? "Unassigned"}
+                                    {employee?.position_title ?? "Unassigned"}d
                                   </td>
                                   <td className="px-4 py-3">
                                     <div className="flex flex-wrap gap-2">
-                                      <span className="rounded-full border border-blue-100 bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700">
-                                        Assigned
-                                      </span>
+                                      {assignment.on_leave ? (
+                                        <span className="rounded-full border border-rose-100 bg-rose-50 px-2.5 py-1 text-xs font-medium text-rose-700">
+                                          On Leave
+                                        </span>
+                                      ) : (
+                                        <span className="rounded-full border border-blue-100 bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700">
+                                          Assigned
+                                        </span>
+                                      )}
+                                      {assignment.assigned_during_leave && (
+                                        <span className="rounded-full border border-orange-100 bg-orange-50 px-2.5 py-1 text-xs font-medium text-orange-800">
+                                          Assigned During Leave
+                                        </span>
+                                      )}
+                                      {assignment.leave_pending && (
+                                        <span className="rounded-full border border-violet-100 bg-violet-50 px-2.5 py-1 text-xs font-medium text-violet-700">
+                                          Leave Pending
+                                        </span>
+                                      )}
                                       {assignment.is_rest_day_work && (
                                         <span className="rounded-full border border-sky-100 bg-sky-50 px-2.5 py-1 text-xs font-medium text-sky-800">
                                           Rest day
@@ -590,7 +759,24 @@ export function OwnerSchedulePage() {
                   <Button
                     className="bg-[#1E3A5F] hover:bg-[#284B73]"
                     disabled={!selectedShiftId || editAssignment.isPending}
-                    onClick={() => editAssignment.mutate()}
+                    onClick={() => {
+                      const employee = employees.find(
+                        (item) =>
+                          item.id ===
+                          assignments.find(
+                            (assignment) => assignment.id === editingAssignmentId
+                          )?.employee_id
+                      );
+                      if (
+                        employee &&
+                        leaveByEmployee.get(employee.id)?.on_leave
+                      ) {
+                        setOverrideEmployeeNames([employee.full_name]);
+                        setOverrideDialogOpen(true);
+                        return;
+                      }
+                      editAssignment.mutate(false);
+                    }}
                   >
                     Save Reassignment
                   </Button>
@@ -623,15 +809,57 @@ export function OwnerSchedulePage() {
                 <Button variant="outline" onClick={() => setWeekStart((current) => navigateWeek(current, "next"))}>
                   Next
                 </Button>
-                <Button variant="outline" className="gap-2" onClick={() => downloadSchedulePdf({ businessName, weekStart, rows: scheduleRows })}>
+                <Button
+                  variant="outline"
+                  className="gap-2"
+                  onClick={() =>
+                    downloadSchedulePdf({
+                      businessName,
+                      weekStart,
+                      rows: scheduleRows,
+                      colors: tableColors,
+                      visibleDays,
+                      defaultStart,
+                      defaultEnd,
+                    })
+                  }
+                >
                   <Download className="h-4 w-4" />
                   PDF
                 </Button>
-                <Button variant="outline" className="gap-2" onClick={() => downloadScheduleExcel({ businessName, weekStart, rows: scheduleRows })}>
+                <Button
+                  variant="outline"
+                  className="gap-2"
+                  onClick={() =>
+                    downloadScheduleExcel({
+                      businessName,
+                      weekStart,
+                      rows: scheduleRows,
+                      colors: tableColors,
+                      visibleDays,
+                      defaultStart,
+                      defaultEnd,
+                    })
+                  }
+                >
                   <FileSpreadsheet className="h-4 w-4" />
                   Excel
                 </Button>
-                <Button variant="outline" className="gap-2" onClick={() => printSchedule({ businessName, weekStart, rows: scheduleRows })}>
+                <Button
+                  variant="outline"
+                  className="gap-2"
+                  onClick={() =>
+                    printSchedule({
+                      businessName,
+                      weekStart,
+                      rows: scheduleRows,
+                      colors: tableColors,
+                      visibleDays,
+                      defaultStart,
+                      defaultEnd,
+                    })
+                  }
+                >
                   <Printer className="h-4 w-4" />
                   Print
                 </Button>
@@ -826,14 +1054,19 @@ export function OwnerSchedulePage() {
             <select className="h-10 rounded-md border border-input bg-background px-3 text-sm" value={availabilityFilter} onChange={(event) => setAvailabilityFilter(event.target.value)}>
               <option value="all">All availability</option>
               <option value="available">Available</option>
+              <option value="leavePending">Leave pending</option>
+              <option value="onLeave">On leave</option>
               <option value="assigned">Already assigned</option>
               <option value="conflict">Conflicts</option>
             </select>
           </div>
 
           <div className="mt-4 max-h-[420px] overflow-auto rounded-xl border border-slate-100">
+            <p className="sticky top-0 z-10 border-b border-slate-100 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-wide text-[#6B7280]">
+              Available
+            </p>
             <table className="w-full min-w-[720px] text-sm">
-              <thead className="sticky top-0 bg-[#F9FAFB] text-left text-[#6B7280]">
+              <thead className="sticky top-8 bg-[#F9FAFB] text-left text-[#6B7280]">
                 <tr>
                   <th className="px-4 py-3 font-medium">Employee</th>
                   <th className="px-4 py-3 font-medium">Position</th>
@@ -842,51 +1075,102 @@ export function OwnerSchedulePage() {
                 </tr>
               </thead>
               <tbody>
-                {filteredEmployees.map((employee) => {
-                  const availability = availabilityFor(employee);
-                  const checked = selectedEmployeeIds.includes(employee.id);
-                  return (
-                    <tr
-                      className={`border-t border-slate-100 ${availability === "available" ? "cursor-pointer hover:bg-[#FAFBFC]" : "opacity-70"}`}
-                      key={employee.id}
-                      onClick={() => toggleEmployee(employee)}
-                    >
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-3">
-                          <input
-                            checked={checked}
-                            disabled={availability !== "available"}
-                            readOnly
-                            type="checkbox"
-                          />
-                          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-[#374151]">
-                            {initials(employee.full_name)}
+                {modalEmployees.length === 0 ? (
+                  <tr>
+                    <td className="px-4 py-6 text-[#6B7280]" colSpan={4}>
+                      No available employees match your filters.
+                    </td>
+                  </tr>
+                ) : (
+                  modalEmployees.map((employee) => {
+                    const availability = availabilityFor(employee);
+                    const checked = selectedEmployeeIds.includes(employee.id);
+                    const selectable =
+                      availability === "available" || availability === "leavePending";
+                    return (
+                      <tr
+                        className={`border-t border-slate-100 ${selectable ? "cursor-pointer hover:bg-[#FAFBFC]" : "opacity-70"}`}
+                        key={employee.id}
+                        onClick={() => toggleEmployee(employee)}
+                      >
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-3">
+                            <input
+                              checked={checked}
+                              disabled={!selectable}
+                              readOnly
+                              type="checkbox"
+                            />
+                            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-[#374151]">
+                              {initials(employee.full_name)}
+                            </div>
+                            <span className="font-medium text-[#1F2937]">
+                              {employee.full_name}
+                            </span>
                           </div>
-                          <span className="font-medium text-[#1F2937]">
-                            {employee.full_name}
+                        </td>
+                        <td className="px-4 py-3 text-[#6B7280]">
+                          {employee.position_title ?? "Unassigned"}
+                        </td>
+                        <td className="px-4 py-3 text-[#6B7280]">
+                          {employee.employment_type === "full_time" ? "Full-Time" : "Part-Time"}
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className={`rounded-full border px-2.5 py-1 text-xs font-medium ${statusTone(availability)}`}>
+                            {availabilityLabel(availability)}
                           </span>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 text-[#6B7280]">
-                        {employee.position_title ?? "Unassigned"}
-                      </td>
-                      <td className="px-4 py-3 text-[#6B7280]">
-                        {employee.employment_type === "full_time" ? "Full-Time" : "Part-Time"}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className={`rounded-full border px-2.5 py-1 text-xs font-medium ${statusTone(availability)}`}>
-                          {availability === "available"
-                            ? "Available"
-                            : availability === "assigned"
-                              ? "Already assigned"
-                              : "Conflict"}
-                        </span>
-                      </td>
-                    </tr>
-                  );
-                })}
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
               </tbody>
             </table>
+
+            {onLeaveEmployees.length > 0 ? (
+              <>
+                <p className="sticky top-0 z-10 border-y border-slate-100 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-wide text-[#6B7280]">
+                  Employees On Leave
+                </p>
+                <table className="w-full min-w-[720px] text-sm">
+                  <tbody>
+                    {onLeaveEmployees.map((employee) => {
+                      const checked = selectedEmployeeIds.includes(employee.id);
+                      return (
+                        <tr
+                          className="cursor-pointer border-t border-slate-100 hover:bg-[#FAFBFC]"
+                          key={employee.id}
+                          onClick={() => toggleEmployee(employee)}
+                        >
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-3">
+                              <input checked={checked} readOnly type="checkbox" />
+                              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-rose-50 text-xs font-semibold text-rose-700">
+                                {initials(employee.full_name)}
+                              </div>
+                              <span className="font-medium text-[#1F2937]">
+                                {employee.full_name}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 text-[#6B7280]">
+                            {employee.position_title ?? "Unassigned"}
+                          </td>
+                          <td className="px-4 py-3 text-[#6B7280]">
+                            {employee.employment_type === "full_time" ? "Full-Time" : "Part-Time"}
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className={`rounded-full border px-2.5 py-1 text-xs font-medium ${statusTone("onLeave")}`}>
+                              On Leave
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </>
+            ) : null}
           </div>
 
           <DialogFooter className="flex-col items-stretch gap-3 sm:flex-col">
@@ -905,11 +1189,41 @@ export function OwnerSchedulePage() {
               <Button
                 className="bg-[#1E3A5F] hover:bg-[#284B73]"
                 disabled={!selectedShiftId || selectedEmployeeIds.length === 0 || assign.isPending}
-                onClick={() => assign.mutate()}
+                onClick={saveSchedule}
               >
                 Save Schedule
               </Button>
             </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={overrideDialogOpen} onOpenChange={setOverrideDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Assign During Approved Leave?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-[#6B7280]">
+            {overrideEmployeeNames.join(", ")} {overrideEmployeeNames.length === 1 ? "is" : "are"} on
+            approved leave for {workDate}. Assigning a shift will override leave for this date.
+          </p>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setOverrideDialogOpen(false);
+                setOverrideEmployeeNames([]);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              className="bg-[#1E3A5F] hover:bg-[#284B73]"
+              disabled={assign.isPending || editAssignment.isPending}
+              onClick={confirmLeaveOverride}
+            >
+              Assign Anyway
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -963,10 +1277,16 @@ function ColorScheduleTable({
   function cellLabel(cells: ScheduleCell) {
     if (cells.length === 0) return "OFF";
     return cells
-      .map(
-        (cell) =>
-          `${formatShiftTime(cell.shift_start_time)}-${formatShiftTime(cell.shift_end_time)}`
-      )
+      .map((cell) => {
+        if (cell.on_leave && !cell.assigned_during_leave) {
+          return "On Leave";
+        }
+        const times = `${formatShiftTime(cell.shift_start_time)}-${formatShiftTime(cell.shift_end_time)}`;
+        if (cell.assigned_during_leave) {
+          return `${times} · Assigned During Leave`;
+        }
+        return times;
+      })
       .join(", ");
   }
 
@@ -1012,13 +1332,23 @@ function ColorScheduleTable({
                   {employee.full_name}
                 </td>
                 {visibleIndexes.map(({ index }) => {
-                  const label = cellLabel(cells[index]);
+                  const dayCells = cells[index];
+                  const label = cellLabel(dayCells);
                   const isOff = label === "OFF";
+                  const onLeaveOnly =
+                    dayCells.length > 0 &&
+                    dayCells.every((cell) => cell.on_leave && !cell.assigned_during_leave);
                   return (
                     <td
                       className="border border-white/40 px-3 py-2 text-center"
                       key={`${employee.id}-${index}`}
-                      style={isOff ? { backgroundColor: colors.off } : undefined}
+                      style={
+                        isOff
+                          ? { backgroundColor: colors.off }
+                          : onLeaveOnly
+                            ? { backgroundColor: "#FECACA" }
+                            : undefined
+                      }
                     >
                       {isOff
                         ? "OFF"

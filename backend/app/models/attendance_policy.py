@@ -16,14 +16,22 @@ class BusinessAttendancePolicy(Base):
     )
     early_clock_in_minutes: Mapped[int] = mapped_column(Integer, default=15)
     on_time_grace_minutes: Mapped[int] = mapped_column(Integer, default=10)
+    # Legacy fixed-minute cutoffs: still used by payroll half-day math and as a
+    # fallback when an attendance row has no usable scheduled shift duration.
     half_day_threshold_minutes: Mapped[int] = mapped_column(Integer, default=120)
     absent_threshold_minutes: Mapped[int] = mapped_column(Integer, default=240)
+    # Status cutoffs as percent of assigned shift duration (0–100).
+    absent_threshold_percent: Mapped[int] = mapped_column(Integer, default=25)
+    half_day_threshold_percent: Mapped[int] = mapped_column(Integer, default=50)
     early_out_deduction_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     early_out_deduction_per_minute: Mapped[float] = mapped_column(
         Numeric(10, 2), default=2.0
     )
     overtime_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     overtime_minimum_minutes: Mapped[int] = mapped_column(Integer, default=30)
+    # Attendance cutoff only: minutes after shift end before open punches become
+    # incomplete. Not used by payroll OT formulas or absence/no-show timing.
+    maximum_overtime_minutes: Mapped[int] = mapped_column(Integer, default=180)
     overtime_rate_per_minute: Mapped[float] = mapped_column(Numeric(10, 2), default=1.0)
     missing_clock_out_policy: Mapped[MissingClockOutPolicy] = mapped_column(
         Enum(MissingClockOutPolicy), default=MissingClockOutPolicy.auto_clock_out

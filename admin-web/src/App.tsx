@@ -20,6 +20,8 @@ import { OwnerDashboardPage } from "@/pages/owner/OwnerDashboardPage";
 import { OwnerChangePasswordPage } from "@/pages/owner/OwnerChangePasswordPage";
 import { OwnerSchedulePage } from "@/pages/owner/OwnerSchedulePage";
 import { OwnerAttendancePage } from "@/pages/owner/OwnerAttendancePage";
+import { OwnerLeaveManagementPage } from "@/pages/owner/OwnerLeaveManagementPage";
+import { OwnerNotificationsPage } from "@/pages/owner/OwnerNotificationsPage";
 import { OwnerPayrollPage } from "@/pages/owner/OwnerPayrollPage";
 import { OwnerProductivityPage } from "@/pages/owner/OwnerProductivityPage";
 import { OwnerLocationPage } from "@/pages/owner/OwnerLocationPage";
@@ -30,6 +32,7 @@ import { OwnerPersonalSettingsPage } from "@/pages/owner/OwnerPersonalSettingsPa
 import { OwnerAccountSettingsPage } from "@/pages/owner/OwnerAccountSettingsPage";
 import { OwnerBusinessSettingsPage } from "@/pages/owner/OwnerBusinessSettingsPage";
 import { OwnerBusinessSetupsPage } from "@/pages/owner/OwnerBusinessSetupsPage";
+import { OwnerLeavePolicyPage } from "@/pages/owner/OwnerLeavePolicyPage";
 import { OwnerHelpPage } from "@/pages/owner/OwnerHelpPage";
 import { OwnerProfilePage } from "@/pages/owner/OwnerProfilePage";
 import { OwnerFaceDemoPage } from "@/pages/owner/OwnerFaceDemoPage";
@@ -78,6 +81,9 @@ export default function App() {
         <Route path="face-demo" element={<OwnerFaceDemoPage />} />
         <Route path="schedule" element={<OwnerSchedulePage />} />
         <Route path="attendance" element={<OwnerAttendancePage />} />
+        <Route path="leave" element={<OwnerLeaveManagementPage />} />
+        <Route path="leave/:requestId" element={<OwnerLeaveManagementPage />} />
+        <Route path="notifications" element={<OwnerNotificationsPage />} />
         <Route path="payroll" element={<OwnerPayrollPage />} />
         <Route path="productivity" element={<OwnerProductivityPage />} />
         <Route path="location" element={<OwnerLocationPage />} />
@@ -94,6 +100,7 @@ export default function App() {
         <Route path="settings/account" element={<OwnerAccountSettingsPage />} />
         <Route path="settings/business" element={<OwnerBusinessSettingsPage />} />
         <Route path="settings/setup" element={<OwnerBusinessSetupsPage />} />
+        <Route path="settings/leave-policy" element={<OwnerLeavePolicyPage />} />
         <Route path="profile" element={<OwnerProfilePage />} />
         <Route path="help" element={<OwnerHelpPage />} />
         <Route index element={<Navigate to="dashboard" replace />} />

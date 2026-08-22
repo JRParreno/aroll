@@ -22,6 +22,14 @@ export default {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
         },
+        owner: {
+          navy: "#1E3A5F",
+          soft: "#284B73",
+          page: "#F4F6F9",
+          well: "#EEF3F8",
+          ink: "#1F2937",
+          muted: "#6B7280",
+        },
       },
       borderRadius: {
         lg: "var(--radius)",

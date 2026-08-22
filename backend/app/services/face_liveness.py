@@ -16,11 +16,12 @@ from app.models.face_embedding import EmployeeFaceEmbedding
 from app.models.face_liveness import FaceLivenessChallenge
 from app.services.face_embedding import (
     FaceObservation,
-    best_match_score,
+    centroid_match_score,
     cosine_similarity,
     detect_and_observe,
-    match_passed,
+    identity_match_passed,
     mean_match_score,
+    min_match_score,
 )
 
 DIRECTIONS = ("turn_left", "turn_right")
@@ -226,17 +227,23 @@ def validate_liveness_sequence(
     cont_tr = _require_continuity(turn, ret, pair="turn/return")
 
     gallery = [list(row.embedding) for row in samples]
-    # Use the return-to-center frame as the identity probe for enrollment match.
-    # Mean across enrolled samples is stricter against lookalike/sibling luck.
+    # Return-to-center frame is the identity probe (logged-in employee gallery).
     match_score = mean_match_score(ret.embedding, gallery)
+    min_score = min_match_score(ret.embedding, gallery)
+    centroid = centroid_match_score(ret.embedding, gallery)
     threshold = settings.face_match_threshold
-    if not match_passed(match_score, threshold):
+    min_threshold = settings.face_min_match_threshold
+    if not identity_match_passed(
+        mean_score=match_score,
+        min_score=min_score,
+        centroid_score=centroid,
+    ):
         raise LivenessError(
             "face_mismatch",
             (
-                f"Face did not match enrolled samples "
-                f"(mean score {match_score:.3f} < {threshold:.3f}; "
-                f"best {best_match_score(ret.embedding, gallery):.3f})."
+                "Face does not match the registered employee "
+                f"(mean {match_score:.3f} / min {min_score:.3f}; "
+                f"need ≥ {threshold:.3f} / {min_threshold:.3f})."
             ),
             status_code=403,
             match_score=round(match_score, 4),
@@ -343,8 +350,29 @@ def observe_pose(
             "Face is not enrolled. Complete face registration first.",
         )
 
-    obs = detect_and_observe(frame_bytes)
-    if obs.face_count > 1:
+    from app.services.face_embedding import FacePipelineError
+
+    try:
+        obs = detect_and_observe(frame_bytes)
+    except FacePipelineError as exc:
+        detail = exc.detail if isinstance(exc.detail, dict) else {}
+        code = detail.get("code")
+        if code == "multiple_faces":
+            return PoseObserveResult(
+                ready=False,
+                step=step,
+                direction=challenge.direction,
+                face_detected=True,
+                face_count=2,
+                yaw=0.0,
+                detection_score=0.0,
+                guidance="Only one face should be in frame.",
+                reason_code="multiple_faces",
+            )
+        raise
+
+    # detect_and_observe rejects multi-face; this branch is defensive only.
+    if obs.face_count != 1:
         return PoseObserveResult(
             ready=False,
             step=step,

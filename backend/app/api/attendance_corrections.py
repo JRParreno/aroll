@@ -1,4 +1,4 @@
-"""Employee and owner APIs for missed attendance corrections."""
+"""Employee and owner APIs for attendance correction requests."""
 
 from __future__ import annotations
 
@@ -18,6 +18,7 @@ from app.schemas.attendance_correction import (
     AttendanceCorrectionCreateRequest,
     AttendanceCorrectionRejectRequest,
     AttendanceCorrectionResponse,
+    OwnerCompleteAttendanceRequest,
 )
 from app.services.attendance_correction import (
     approve_correction,
@@ -26,6 +27,7 @@ from app.services.attendance_correction import (
     list_owner_corrections,
     reject_correction,
 )
+from app.services.missing_clock_out import complete_incomplete_attendance
 
 employee_router = APIRouter(prefix="/employee", tags=["employee-mobile"])
 owner_router = APIRouter(prefix="/owner", tags=["owner-attendance-corrections"])
@@ -155,3 +157,33 @@ def owner_reject_attendance_correction(
         business_id=user.business_id,
         review_note=body.review_note,
     )
+
+
+@owner_router.post("/attendance-records/{record_id}/complete")
+def owner_complete_attendance(
+    record_id: uuid.UUID,
+    body: OwnerCompleteAttendanceRequest,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(require_roles(UserRole.owner, UserRole.manager))],
+):
+    """Manually complete an Incomplete Attendance record with a clock-out time."""
+    if user.business_id is None:
+        raise HTTPException(400, "No business context")
+    business = db.get(Business, user.business_id)
+    if business is None:
+        raise HTTPException(404, "Business not found")
+    record = complete_incomplete_attendance(
+        db,
+        record_id=record_id,
+        reviewer=user,
+        business=business,
+        time_out=body.time_out,
+        reason=body.reason,
+    )
+    return {
+        "id": str(record.id),
+        "employee_id": str(record.employee_id),
+        "status": record.status.value,
+        "time_in": record.time_in.isoformat() if record.time_in else None,
+        "time_out": record.time_out.isoformat() if record.time_out else None,
+    }
