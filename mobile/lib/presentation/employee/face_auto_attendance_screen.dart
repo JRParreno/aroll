@@ -338,7 +338,7 @@ class _FaceAutoAttendanceScreenState extends State<FaceAutoAttendanceScreen> {
         _lastFaceQuality = 0;
         _updateGuidance(
           faces.isEmpty
-              ? 'Look at the camera'
+              ? 'Look at the camera. Glasses and makeup are OK.'
               : 'Only one person should be visible during attendance.',
         );
         return;
