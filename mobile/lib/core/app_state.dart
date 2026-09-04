@@ -8,11 +8,14 @@ class AppState extends ChangeNotifier {
   String? employeeProfileImageUrl;
   /// null = unknown / not loaded yet; false = must enroll; true = completed.
   bool? faceEnrolled;
+  /// UI-only DEMO01 research notice. Not a demo-mode security flag.
+  bool researchEvalAcknowledged = false;
 
   void setSession(UserSession s, {required bool mustChange}) {
     session = s;
     isLoggedIn = true;
     mustChangePassword = mustChange;
+    researchEvalAcknowledged = false;
     if (s.isEmployee) {
       employeeProfileImageUrl = s.profileImageUrl;
       // Locked until server confirms enrollment (login, restore, or resume).
@@ -38,6 +41,7 @@ class AppState extends ChangeNotifier {
     mustChangePassword = false;
     employeeProfileImageUrl = null;
     faceEnrolled = null;
+    researchEvalAcknowledged = false;
     notifyListeners();
   }
 
@@ -77,8 +81,15 @@ class AppState extends ChangeNotifier {
         mustChangePassword: current.mustChangePassword,
         branding: current.branding,
         profileImageUrl: imageUrl,
+        isDemo: current.isDemo,
+        isInternalTest: current.isInternalTest,
       );
     }
+    notifyListeners();
+  }
+
+  void acknowledgeResearchEvaluation() {
+    researchEvalAcknowledged = true;
     notifyListeners();
   }
 

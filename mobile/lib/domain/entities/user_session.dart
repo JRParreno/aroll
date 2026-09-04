@@ -15,6 +15,8 @@ class UserSession extends Equatable {
     this.mustChangePassword = false,
     this.branding,
     this.profileImageUrl,
+    this.isDemo = false,
+    this.isInternalTest = false,
   });
 
   final String userId;
@@ -30,6 +32,8 @@ class UserSession extends Equatable {
   final bool mustChangePassword;
   final BusinessBrandingSettings? branding;
   final String? profileImageUrl;
+  final bool isDemo;
+  final bool isInternalTest;
 
   bool get isOwner => role == 'owner' || role == 'manager';
   bool get isEmployee => role == 'employee';
@@ -39,6 +43,8 @@ class UserSession extends Equatable {
     DateTime? setupCompletedAt,
     BusinessBrandingSettings? branding,
     String? profileImageUrl,
+    bool? isDemo,
+    bool? isInternalTest,
   }) {
     return UserSession(
       userId: userId,
@@ -54,6 +60,8 @@ class UserSession extends Equatable {
       mustChangePassword: mustChangePassword ?? this.mustChangePassword,
       branding: branding ?? this.branding,
       profileImageUrl: profileImageUrl ?? this.profileImageUrl,
+      isDemo: isDemo ?? this.isDemo,
+      isInternalTest: isInternalTest ?? this.isInternalTest,
     );
   }
 
@@ -72,6 +80,8 @@ class UserSession extends Equatable {
         mustChangePassword,
         branding,
         profileImageUrl,
+        isDemo,
+        isInternalTest,
       ];
 }
 

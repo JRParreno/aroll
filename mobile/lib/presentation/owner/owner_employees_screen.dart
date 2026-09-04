@@ -1,4 +1,6 @@
+import 'package:aroll_mobile/core/app_state.dart';
 import 'package:aroll_mobile/core/di/injection.dart';
+import 'package:aroll_mobile/presentation/shared/tenant_mode_banner.dart';
 import 'package:aroll_mobile/data/repositories/owner_repository.dart';
 import 'package:aroll_mobile/presentation/employee/employee_ui.dart';
 import 'package:aroll_mobile/presentation/owner/owner_shell.dart';
@@ -112,7 +114,15 @@ class _OwnerEmployeesScreenState extends State<OwnerEmployeesScreen> {
     }).toList(growable: false);
   }
 
-  void _openAddEmployee() {
+  Future<void> _openAddEmployee() async {
+    var positions = _positions;
+    try {
+      positions = await _repo.positions();
+      if (mounted) {
+        setState(() => _positions = positions);
+      }
+    } catch (_) {}
+    if (!mounted) return;
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -122,7 +132,7 @@ class _OwnerEmployeesScreenState extends State<OwnerEmployeesScreen> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
       ),
       builder: (context) => _EmployeeFormSheet(
-        positions: _positions,
+        positions: positions,
         onSubmit: (form) async {
           final employee = await _repo.createEmployee(
             fullName: form.fullName,
@@ -586,6 +596,10 @@ class _EmployeeCard extends StatelessWidget {
                               fontSize: 15,
                             ),
                           ),
+                          if (sl<AppState>().session?.isDemo == true) ...[
+                            const SizedBox(height: 6),
+                            const SimulatedChip(label: 'Demo Employee'),
+                          ],
                           const SizedBox(height: 8),
                           _InfoRow(
                             icon: Icons.phone_outlined,
@@ -822,15 +836,10 @@ class _EmployeeFormSheetState extends State<_EmployeeFormSheet> {
         }
       }
     }
-    if (!widget.editing &&
-        _payBasis == 'daily' &&
-        _dailyRate.text.isEmpty &&
-        _positionId.isNotEmpty) {
-      for (final position in widget.positions) {
-        if ('${position['id']}' == _positionId) {
-          _dailyRate.text = '${position['daily_rate'] ?? ''}';
-          break;
-        }
+    if (!widget.editing) {
+      final selected = _positionById(_positionId);
+      if (selected != null) {
+        _applyPositionRates(selected, overwritePositionDefault: true);
       }
     }
     _fullName.addListener(() => setState(() {}));
@@ -838,6 +847,92 @@ class _EmployeeFormSheetState extends State<_EmployeeFormSheet> {
     _dailyRate.addListener(() => setState(() {}));
     _hourlyRate.addListener(() => setState(() {}));
     _monthlySalary.addListener(() => setState(() {}));
+  }
+
+  Map<String, dynamic>? _positionById(String id) {
+    if (id.isEmpty) return null;
+    for (final position in widget.positions) {
+      if ('${position['id']}' == id) return position;
+    }
+    return null;
+  }
+
+  String _peso(dynamic value) {
+    if (value == null) return '';
+    final parsed = value is num ? value.toDouble() : double.tryParse('$value');
+    if (parsed == null) return '$value';
+    if (parsed == parsed.roundToDouble()) return parsed.toInt().toString();
+    return parsed.toString();
+  }
+
+  String _positionMenuLabel(Map<String, dynamic> position) {
+    final title = '${position['title']}';
+    final daily = _peso(position['daily_rate']);
+    final hourly =
+        position['hourly_rate'] == null ? '' : _peso(position['hourly_rate']);
+    if (hourly.isNotEmpty && daily.isNotEmpty) {
+      return '$title · ₱$daily/day · ₱$hourly/hr';
+    }
+    if (daily.isNotEmpty) {
+      return '$title · ₱$daily/day';
+    }
+    return title;
+  }
+
+  bool _matchesPreviousPositionDefault({
+    required String field,
+    required String currentText,
+    required String selectedId,
+  }) {
+    for (final position in widget.positions) {
+      if ('${position['id']}' == selectedId) continue;
+      final value = field == 'hourly'
+          ? position['hourly_rate']
+          : position['daily_rate'];
+      if (value == null && currentText.trim().isEmpty) return true;
+      if (value != null && currentText.trim() == _peso(value)) return true;
+    }
+    return false;
+  }
+
+  void _applyPositionRates(
+    Map<String, dynamic> selected, {
+    required bool overwritePositionDefault,
+  }) {
+    if (_payBasis == 'daily') {
+      final next = _peso(selected['daily_rate']);
+      final shouldFill = !widget.editing ||
+          overwritePositionDefault ||
+          _dailyRate.text.trim().isEmpty ||
+          _matchesPreviousPositionDefault(
+            field: 'daily',
+            currentText: _dailyRate.text,
+            selectedId: '${selected['id']}',
+          );
+      if (shouldFill && next.isNotEmpty) {
+        _dailyRate.text = next;
+      }
+    }
+    if (_payBasis == 'hourly') {
+      final next = selected['hourly_rate'] == null
+          ? ''
+          : _peso(selected['hourly_rate']);
+      final matchesPrevious = _matchesPreviousPositionDefault(
+        field: 'hourly',
+        currentText: _hourlyRate.text,
+        selectedId: '${selected['id']}',
+      );
+      final shouldFill = !widget.editing ||
+          overwritePositionDefault ||
+          _hourlyRate.text.trim().isEmpty ||
+          matchesPrevious;
+      if (!shouldFill) return;
+      if (next.isNotEmpty) {
+        _hourlyRate.text = next;
+      } else if (matchesPrevious) {
+        _hourlyRate.text = '';
+      }
+    }
   }
 
   @override
@@ -864,7 +959,7 @@ class _EmployeeFormSheetState extends State<_EmployeeFormSheet> {
   bool get _ready =>
       _fullName.text.trim().isNotEmpty &&
       (widget.positions.isNotEmpty
-          ? _positionId.isNotEmpty || _positionTitle.text.trim().isNotEmpty
+          ? _positionId.isNotEmpty
           : _positionTitle.text.trim().isNotEmpty) &&
       _payReady;
 
@@ -872,11 +967,7 @@ class _EmployeeFormSheetState extends State<_EmployeeFormSheet> {
     if (!_ready || _submitting) return;
     setState(() => _submitting = true);
     try {
-      final selectedPosition =
-          widget.positions.cast<Map<String, dynamic>?>().firstWhere(
-                (position) => position?['id'] == _positionId,
-                orElse: () => null,
-              );
+      final selectedPosition = _positionById(_positionId);
       await widget.onSubmit(
         _EmployeeForm(
           fullName: _fullName.text.trim(),
@@ -985,42 +1076,30 @@ class _EmployeeFormSheetState extends State<_EmployeeFormSheet> {
         const SizedBox(height: 12),
         if (widget.positions.isNotEmpty)
           DropdownButtonFormField<String>(
-            initialValue: _positionId.isEmpty ? null : _positionId,
-            decoration: _fieldDecoration('Position/Role'),
+            initialValue: _positionById(_positionId) == null ? null : _positionId,
+            isExpanded: true,
+            decoration: _fieldDecoration('Position'),
+            hint: const Text('Select position'),
             items: [
               for (final position in widget.positions)
                 DropdownMenuItem(
                   value: '${position['id']}',
-                  child: Text('${position['title']}'),
+                  child: Text(
+                    _positionMenuLabel(position),
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
             ],
             onChanged: (value) {
               setState(() {
                 _positionId = value ?? '';
-                final selected = widget.positions.firstWhere(
-                  (position) => '${position['id']}' == value,
-                  orElse: () => const {},
-                );
-                if (selected.isNotEmpty) {
+                final selected = _positionById(_positionId);
+                if (selected != null) {
                   _positionTitle.text = '${selected['title']}';
-                  final positionRate = '${selected['daily_rate'] ?? ''}';
-                  if (_payBasis == 'daily') {
-                    final previous = widget.positions.cast<Map<String, dynamic>?>().firstWhere(
-                          (p) =>
-                              p != null &&
-                              '${p['id']}' != value &&
-                              _dailyRate.text.trim() ==
-                                  '${p['daily_rate'] ?? ''}',
-                          orElse: () => null,
-                        );
-                    // Prefill on create, or when rate still matches prior
-                    // position default — never overwrite a custom rate.
-                    if (!widget.editing ||
-                        _dailyRate.text.trim().isEmpty ||
-                        previous != null) {
-                      _dailyRate.text = positionRate;
-                    }
-                  }
+                  _applyPositionRates(
+                    selected,
+                    overwritePositionDefault: !widget.editing,
+                  );
                 }
               });
             },
@@ -1028,7 +1107,25 @@ class _EmployeeFormSheetState extends State<_EmployeeFormSheet> {
         else
           TextField(
             controller: _positionTitle,
-            decoration: _fieldDecoration('Position/Role'),
+            decoration: _fieldDecoration('Position'),
+          ),
+        if (widget.positions.isNotEmpty)
+          const Padding(
+            padding: EdgeInsets.only(top: 6, left: 2),
+            child: Text(
+              'Rates prefill from this job role. You can still change them '
+              'for this employee.',
+              style: TextStyle(fontSize: 12, color: Color(0xFF6B7280), height: 1.35),
+            ),
+          )
+        else
+          const Padding(
+            padding: EdgeInsets.only(top: 6, left: 2),
+            child: Text(
+              'No job roles yet. Add them in Business Setup, or type a '
+              'position name here.',
+              style: TextStyle(fontSize: 12, color: Color(0xFF6B7280), height: 1.35),
+            ),
           ),
         const SizedBox(height: 12),
         DropdownButtonFormField<String>(
@@ -1053,15 +1150,19 @@ class _EmployeeFormSheetState extends State<_EmployeeFormSheet> {
           onChanged: (value) {
             setState(() {
               _payBasis = value ?? 'daily';
-              if (_payBasis == 'daily' &&
-                  _dailyRate.text.trim().isEmpty &&
-                  _positionId.isNotEmpty) {
-                for (final position in widget.positions) {
-                  if ('${position['id']}' == _positionId) {
-                    _dailyRate.text = '${position['daily_rate'] ?? ''}';
-                    break;
-                  }
-                }
+              final selected = _positionById(_positionId);
+              if (selected == null) return;
+              if (_payBasis == 'daily' && _dailyRate.text.trim().isEmpty) {
+                _applyPositionRates(
+                  selected,
+                  overwritePositionDefault: true,
+                );
+              }
+              if (_payBasis == 'hourly' && _hourlyRate.text.trim().isEmpty) {
+                _applyPositionRates(
+                  selected,
+                  overwritePositionDefault: true,
+                );
               }
             });
           },
@@ -1084,6 +1185,15 @@ class _EmployeeFormSheetState extends State<_EmployeeFormSheet> {
             controller: _monthlySalary,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
             decoration: _fieldDecoration('Monthly Salary (₱)'),
+          ),
+        if (_payBasis == 'hourly' &&
+            _positionById(_positionId)?['hourly_rate'] == null)
+          const Padding(
+            padding: EdgeInsets.only(top: 6, left: 2),
+            child: Text(
+              'This position has no hourly rate configured. Enter it manually.',
+              style: TextStyle(fontSize: 12, color: Color(0xFF6B7280), height: 1.35),
+            ),
           ),
       ],
     );

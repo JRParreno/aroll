@@ -30,7 +30,7 @@ class OwnerSetupScreen extends StatelessWidget {
   String _subtitleForKey(String key) {
     return switch (key) {
       'shifts' => 'Add the times your team usually works.',
-      'positions' => 'Add job roles and their daily pay.',
+      'positions' => 'Add job roles, daily pay, and optional hourly pay.',
       'payroll' => 'Choose pay frequency and pay rules.',
       'attendance_policy' => 'Set on-time, late, absent, and overtime rules.',
       'holidays' => 'Add holidays your business follows.',

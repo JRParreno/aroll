@@ -21,6 +21,7 @@ import {
 } from "@/components/detail/DetailLayout";
 import { Button } from "@/components/ui/button";
 import { BusinessRegistrationDocumentsSection } from "@/components/business/BusinessRegistrationDocumentsSection";
+import { TenantKindBadge } from "@/components/tenant/SimulatedBadge";
 import { getBusiness } from "@/lib/api";
 
 export function BusinessDetailPage() {
@@ -68,7 +69,15 @@ export function BusinessDetailPage() {
           backLabel="Approved businesses"
           title={data.name}
           description="Overview of this approved business, its owner, and configured locations."
-          badge={<StatusBadge status={data.status} />}
+          badge={
+            <span className="flex flex-wrap items-center gap-2">
+              <StatusBadge status={data.status} />
+              <TenantKindBadge
+                isDemo={data.is_demo}
+                isInternalTest={data.is_internal_test}
+              />
+            </span>
+          }
         />
 
         <div className="grid gap-4 sm:grid-cols-3">
@@ -120,6 +129,17 @@ export function BusinessDetailPage() {
                 label="Status"
                 value={<StatusBadge status={data.status} />}
               />
+              {(data.is_demo || data.is_internal_test) && (
+                <DetailField
+                  label="Account type"
+                  value={
+                    <TenantKindBadge
+                      isDemo={data.is_demo}
+                      isInternalTest={data.is_internal_test}
+                    />
+                  }
+                />
+              )}
             </DetailSection>
 
             {data.owner && (

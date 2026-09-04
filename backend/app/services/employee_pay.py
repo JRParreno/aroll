@@ -1,10 +1,11 @@
-"""Resolve employee-specific pay with Position.daily_rate fallback.
+"""Resolve employee-specific pay with Position rate fallback.
 
 Phase 2: payroll reads daily pay from Employee first. Position.daily_rate is
 legacy fallback / default template only.
 
 Phase 3: hourly employees use Employee.hourly_rate via PayrollPayContext
-(minute_rate + scheduled_day_value). Daily formulas stay identical.
+(minute_rate + scheduled_day_value). Position.hourly_rate is the hourly
+template / fallback. Daily formulas stay identical.
 """
 
 from __future__ import annotations
@@ -69,7 +70,12 @@ def resolve_employee_pay(
     2. Position.daily_rate when employee rate missing
     3. None (callers treat as 0.0 for payslip math)
 
-    Hourly / monthly are returned from the employee only (no Position fallback).
+    Hourly payroll rate preference:
+    1. Employee.hourly_rate when set and > 0
+    2. Position.hourly_rate when employee rate missing
+    3. None (callers treat as 0.0 for payslip math)
+
+    Monthly is returned from the employee only (no Position fallback).
     """
     raw_basis = getattr(employee, "pay_basis", None) or PayBasis.daily
     if isinstance(raw_basis, PayBasis):
@@ -81,9 +87,14 @@ def resolve_employee_pay(
             pay_basis = PayBasis.daily
 
     employee_daily = _positive(_as_float(getattr(employee, "daily_rate", None)))
+    employee_hourly = _positive(_as_float(getattr(employee, "hourly_rate", None)))
     position_daily = None
+    position_hourly = None
     if position is not None:
         position_daily = _positive(_as_float(getattr(position, "daily_rate", None)))
+        position_hourly = _positive(
+            _as_float(getattr(position, "hourly_rate", None))
+        )
 
     used_fallback = False
     if employee_daily is not None:
@@ -94,10 +105,18 @@ def resolve_employee_pay(
     else:
         daily_rate = None
 
+    if employee_hourly is not None:
+        hourly_rate = employee_hourly
+    elif position_hourly is not None:
+        hourly_rate = position_hourly
+        used_fallback = True
+    else:
+        hourly_rate = None
+
     return ResolvedEmployeePay(
         pay_basis=pay_basis,
         daily_rate=daily_rate,
-        hourly_rate=_positive(_as_float(getattr(employee, "hourly_rate", None))),
+        hourly_rate=hourly_rate,
         monthly_salary=_positive(
             _as_float(getattr(employee, "monthly_salary", None))
         ),

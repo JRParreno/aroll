@@ -42,7 +42,7 @@ class _FaceAttendanceResultScreenState
   String? _error;
 
   String get _actionLabel =>
-      widget.action == FaceAttendanceAction.clockIn ? 'Time in' : 'Time out';
+      widget.action == FaceAttendanceAction.clockIn ? 'Time In' : 'Time Out';
 
   @override
   void initState() {

@@ -197,19 +197,19 @@ class EmployeeRepositoryImpl implements EmployeeRepository {
   Future<AttendanceClockResult> clockInWithFace({
     required double latitude,
     required double longitude,
-    required FaceQuickCapture capture,
+    FaceQuickCapture? capture,
     String? shiftAssignmentId,
   }) async {
     final form = FormData.fromMap({
-      // Full WGS84 precision as strings avoids multipart numeric truncation.
       'latitude': latitude.toStringAsFixed(7),
       'longitude': longitude.toStringAsFixed(7),
-      'liveness_gesture': capture.gesture,
+      if (capture != null) 'liveness_gesture': capture.gesture,
       if (shiftAssignmentId != null) 'shift_assignment_id': shiftAssignmentId,
-      'file': await MultipartFile.fromFile(
-        capture.imagePath,
-        filename: 'face.jpg',
-      ),
+      if (capture != null)
+        'file': await MultipartFile.fromFile(
+          capture.imagePath,
+          filename: 'face.jpg',
+        ),
     });
     final res = await _api.dio.post<Map<String, dynamic>>(
       '/employee/attendance/clock-in-face',
@@ -222,16 +222,17 @@ class EmployeeRepositoryImpl implements EmployeeRepository {
   Future<AttendanceClockResult> clockOutWithFace({
     required double latitude,
     required double longitude,
-    required FaceQuickCapture capture,
+    FaceQuickCapture? capture,
   }) async {
     final form = FormData.fromMap({
       'latitude': latitude.toStringAsFixed(7),
       'longitude': longitude.toStringAsFixed(7),
-      'liveness_gesture': capture.gesture,
-      'file': await MultipartFile.fromFile(
-        capture.imagePath,
-        filename: 'face.jpg',
-      ),
+      if (capture != null) 'liveness_gesture': capture.gesture,
+      if (capture != null)
+        'file': await MultipartFile.fromFile(
+          capture.imagePath,
+          filename: 'face.jpg',
+        ),
     });
     final res = await _api.dio.post<Map<String, dynamic>>(
       '/employee/attendance/clock-out-face',
@@ -409,6 +410,7 @@ EmployeeAttendanceStatus _attendanceStatusFromJson(Map<String, dynamic> json) {
     status: json['status'] as String? ?? 'not_started',
     timeIn: _dateTime(json['time_in'] as String?),
     timeOut: _dateTime(json['time_out'] as String?),
+    shiftAssignmentId: json['shift_assignment_id'] as String?,
   );
 }
 

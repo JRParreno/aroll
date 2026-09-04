@@ -505,14 +505,16 @@ class EmployeeAttendanceStatus extends Equatable {
     required this.status,
     required this.timeIn,
     required this.timeOut,
+    this.shiftAssignmentId,
   });
 
   final String status;
   final DateTime? timeIn;
   final DateTime? timeOut;
+  final String? shiftAssignmentId;
 
   @override
-  List<Object?> get props => [status, timeIn, timeOut];
+  List<Object?> get props => [status, timeIn, timeOut, shiftAssignmentId];
 }
 
 class EmployeeShiftHistoryItem extends Equatable {

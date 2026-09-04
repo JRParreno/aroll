@@ -5,6 +5,7 @@ import 'package:aroll_mobile/domain/entities/employee_portal.dart';
 import 'package:aroll_mobile/domain/entities/user_session.dart';
 import 'package:aroll_mobile/domain/repositories/employee_repository.dart';
 import 'package:aroll_mobile/presentation/employee/employee_ui.dart';
+import 'package:aroll_mobile/presentation/shared/tenant_mode_banner.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
@@ -125,6 +126,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                             padding: const EdgeInsets.fromLTRB(16, 0, 16, 28),
                             children: [
                               _DashboardHeader(profile: data.profile),
+                              if (widget.session.isDemo) ...[
+                                const SizedBox(height: 10),
+                                const PrototypeNoticeCard(),
+                              ],
                               if (data.incompleteAttendanceReminder?.show ==
                                   true) ...[
                                 const SizedBox(height: _sectionGap),
@@ -192,7 +197,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                     child: _QuickActionCard(
                                       icon: Icons.center_focus_strong_rounded,
                                       label: ' Attendance',
-                                      helper: 'Face & GPS check',
+                                      helper: widget.session.isDemo
+                                          ? 'Demo identity · fictional location'
+                                          : 'Face & GPS check',
                                       accent: employeePrimary(
                                         data.profile.branding,
                                         context,
@@ -204,16 +211,20 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                   Expanded(
                                     child: _SalaryCard(
                                       value: data.payrollSummary.netPay,
+                                      sample: widget.session.isDemo,
                                       onTap: () => context.go('/payroll'),
                                     ),
                                   ),
                                 ],
                               ),
                               const SizedBox(height: 18),
-                              const _SectionLabel(
-                                title: 'Your performance',
-                                subtitle:
-                                    'Attendance breakdown from recent shifts',
+                              _SectionLabel(
+                                title: widget.session.isDemo
+                                    ? 'Simulated attendance'
+                                    : 'Your performance',
+                                subtitle: widget.session.isDemo
+                                    ? 'Demo records only — not a real performance evaluation'
+                                    : 'Attendance breakdown from recent shifts',
                               ),
                               const SizedBox(height: 10),
                               EmployeePerformanceChart(
@@ -407,8 +418,8 @@ class _AttendanceStatusCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final color = statusColor(status.status);
     final label = switch (status.status) {
-      'not_started' => 'Not clocked in yet',
-      'in_progress' => 'Clocked in',
+      'not_started' => 'Not timed in yet',
+      'in_progress' => 'Timed in',
       'completed' => 'Shift completed',
       'on_leave' => 'On Leave',
       _ => titleCase(status.status),
@@ -767,10 +778,15 @@ class _QuickActionCard extends StatelessWidget {
 }
 
 class _SalaryCard extends StatelessWidget {
-  const _SalaryCard({required this.value, required this.onTap});
+  const _SalaryCard({
+    required this.value,
+    required this.onTap,
+    this.sample = false,
+  });
 
   final double value;
   final VoidCallback onTap;
+  final bool sample;
 
   @override
   Widget build(BuildContext context) {
@@ -820,8 +836,8 @@ class _SalaryCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 10),
-              const Text(
-                'Current Salary',
+              Text(
+                sample ? 'Sample net pay' : 'Current Salary',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
@@ -832,8 +848,8 @@ class _SalaryCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 2),
-              const Text(
-                'View payslip',
+              Text(
+                sample ? 'View sample payslip' : 'View payslip',
                 maxLines: 1,
                 style: TextStyle(
                   color: EmployeeColors.textMuted,

@@ -49,12 +49,14 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
       context.go('/owner/home');
       return;
     }
-    // Employees must complete face registration before any other screen.
-    try {
-      final face = await sl<EmployeeRepository>().getFaceStatus();
-      appState.setFaceEnrolled(face.isCompleted);
-    } catch (_) {
-      appState.setFaceEnrolled(false);
+    if (!clearedSession.isDemo) {
+      // Employees must complete face registration before any other screen.
+      try {
+        final face = await sl<EmployeeRepository>().getFaceStatus();
+        appState.setFaceEnrolled(face.isCompleted);
+      } catch (_) {
+        appState.setFaceEnrolled(false);
+      }
     }
     if (!mounted) return;
     context.go(resolveAuthenticatedRoute(appState));

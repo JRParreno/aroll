@@ -35,7 +35,8 @@ const requiredSetupKeys = {'shifts', 'positions', 'payroll', 'location'};
 
 const setupStepHelp = {
   'Work Shifts': 'Add the times your team usually works.',
-  'Employee Job Roles': 'Add the different job roles in your business and their daily pay.',
+  'Employee Job Roles':
+      'Add the different job roles in your business, their daily pay, and optional hourly pay.',
   'Set Up Employee Pay':
       'Choose how often employees get paid and how pay is calculated.',
   'How Employees Time In & Out':
@@ -44,8 +45,6 @@ const setupStepHelp = {
       'Add holidays your business follows so schedules and pay stay accurate.',
   'Work Location':
       'Set your workplace so employees can only time in when they are nearby.',
-  'Business Information':
-      'View your registered business profile and contact details.',
   'Review Your Setup':
       'Check your progress and finish when the required parts are ready.',
 };
@@ -68,14 +67,8 @@ class SetupMenuEntry {
 
 const setupMenuEntries = [
   SetupMenuEntry(
-    label: 'Business Information',
-    subtitle: 'View your registered business profile and contact details.',
-    stepIndex: setupWizardBusinessInfoStep,
-    icon: Icons.business_rounded,
-  ),
-  SetupMenuEntry(
     label: 'Employee Job Roles',
-    subtitle: 'Add the different job roles in your business and their daily pay.',
+    subtitle: 'Add the different job roles in your business, their daily pay, and optional hourly pay.',
     stepIndex: 1,
     statusKey: 'positions',
     icon: Icons.badge_outlined,

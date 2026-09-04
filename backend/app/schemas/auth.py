@@ -47,6 +47,8 @@ class TokenResponse(BaseModel):
     position: str | None = None
     role: str | None = None
     business_name: str | None = None
+    is_demo: bool = False
+    is_internal_test: bool = False
 
 
 class UserMeResponse(BaseModel):
@@ -63,3 +65,5 @@ class UserMeResponse(BaseModel):
     setup_completed_at: datetime | None = None
     branding: BusinessBrandingSettings | None = None
     profile_image_url: str | None = None
+    is_demo: bool = False
+    is_internal_test: bool = False

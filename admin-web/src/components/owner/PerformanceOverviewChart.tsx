@@ -75,7 +75,7 @@ export function PerformanceOverviewChart({
             No attendance records yet.
           </p>
           <p className="mt-1 text-xs text-[#6B7280]">
-            Charts will automatically update once employees start clocking in.
+            Charts will automatically update once employees start timing in.
           </p>
         </div>
       )}

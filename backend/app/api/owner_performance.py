@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.core.deps import require_roles
+from app.core.timezone import business_now, business_today, to_business_naive
 from app.db.session import get_db
 from app.models.attendance import AttendanceRecord
 from app.models.attendance_policy import BusinessAttendancePolicy
@@ -42,28 +43,22 @@ def _shift_end_at(work_date: date, shift: Shift) -> datetime:
     return end_at
 
 
-def _employee_reasons(
-    assigned: int,
-    absent: int,
-    undertime: int,
-    late: int,
-    on_time: int,
-    completed: int,
-) -> list[str]:
-    reasons: list[str] = []
-    if assigned == 0:
-        return ["No scheduled shifts in the selected period"]
-    if absent == 0:
-        reasons.append("No absences")
-    if undertime == 0:
-        reasons.append("No undertime or early logouts")
-    if late == 0 and on_time > 0:
-        reasons.append("Consistent on-time clock-ins")
-    if completed == assigned:
-        reasons.append("Completed all assigned shifts")
-    if not reasons:
-        reasons.append("Performance is based on actual attendance records")
-    return reasons
+def _unpunched_noshow_due(
+    *,
+    now_local: datetime,
+    work_date: date,
+    shift: Shift,
+    cutoff_minutes: int,
+) -> bool:
+    """True when an unpunched shift should count as a no-show Absent.
+
+    Payroll Absent Cutoff (``absent_threshold_minutes``) is minutes after
+    scheduled start. This is separate from worked-minutes absent, which only
+    applies after a Time In exists.
+    """
+    scheduled_start = _combine(work_date, shift.start_time)
+    deadline = scheduled_start + timedelta(minutes=max(int(cutoff_minutes), 0))
+    return now_local.replace(tzinfo=None) > deadline
 
 
 @router.get("", response_model=OwnerPerformanceResponse)
@@ -74,22 +69,23 @@ def get_owner_performance(
     year: Annotated[int | None, Query(ge=2000, le=2100)] = None,
     month: Annotated[int | None, Query(ge=1, le=12)] = None,
 ):
-    """Owner productivity analytics.
+    """Owner attendance performance analytics.
 
-    Prefer ``year`` + ``month`` for a calendar-month window (Owner Mobile filters).
-    When omitted, fall back to a rolling ``days`` window (Owner Web default).
+    Prefer ``year`` + ``month`` for a calendar-month window.
+    When omitted, fall back to a rolling ``days`` window (Owner Dashboard default).
     """
     if user.business_id is None:
         raise HTTPException(400, "No business context")
 
     business = db.get(Business, user.business_id)
+    tz_name = getattr(business, "timezone", None) if business is not None else None
     ensure_incomplete_for_business(
         db,
         business_id=user.business_id,
-        business_timezone=business.timezone if business else None,
+        business_timezone=tz_name,
     )
 
-    today = date.today()
+    today = business_today(tz_name)
     if year is not None and month is not None:
         start_date = date(year, month, 1)
         if month == 12:
@@ -107,6 +103,14 @@ def get_owner_performance(
     policy = db.get(BusinessAttendancePolicy, user.business_id)
     grace_minutes = policy.on_time_grace_minutes if policy else 10
     overtime_minimum = policy.overtime_minimum_minutes if policy else 30
+    raw_absent_cutoff = (
+        getattr(policy, "absent_threshold_minutes", None) if policy is not None else None
+    )
+    # Model default when unset — never a chart-specific hardcoded cutoff.
+    absent_cutoff_minutes = (
+        int(raw_absent_cutoff) if raw_absent_cutoff is not None else 240
+    )
+    now_local = business_now(tz_name).replace(tzinfo=None)
 
     employees = (
         db.query(Employee)
@@ -133,7 +137,6 @@ def get_owner_performance(
                 attendance_rate=0.0,
                 punctuality_rate=0.0,
                 total_overtime_hours=0.0,
-                productivity_score=0.0,
             ),
             trend=[],
             employees=[],
@@ -189,11 +192,23 @@ def get_owner_performance(
         if record is not None and record.status == AttendanceStatus.on_leave:
             continue
 
+        has_time_in = record is not None and record.time_in is not None
+        if not has_time_in:
+            # Upcoming / still-within-cutoff shifts are not Absent and are
+            # excluded from assigned so they do not depress attendance rate.
+            if not _unpunched_noshow_due(
+                now_local=now_local,
+                work_date=assignment.work_date,
+                shift=shift,
+                cutoff_minutes=absent_cutoff_minutes,
+            ):
+                continue
+
         employee_stat = stats[assignment.employee_id]
         employee_stat["assigned"] += 1
         label = assignment.work_date.strftime("%b %d")
 
-        if record is None or record.status == AttendanceStatus.absent or record.time_in is None:
+        if not has_time_in or record.status == AttendanceStatus.absent:
             employee_stat["absent"] += 1
             trend[label]["absent"] += 1
             continue
@@ -201,8 +216,9 @@ def get_owner_performance(
         employee_stat["attended"] += 1
         scheduled_start = _combine(assignment.work_date, shift.start_time)
         scheduled_end = _shift_end_at(assignment.work_date, shift)
+        time_in_local = to_business_naive(record.time_in, tz_name)
 
-        if record.time_in.replace(tzinfo=None) <= scheduled_start + timedelta(minutes=grace_minutes):
+        if time_in_local <= scheduled_start + timedelta(minutes=grace_minutes):
             employee_stat["on_time"] += 1
             trend[label]["on_time"] += 1
         else:
@@ -211,7 +227,7 @@ def get_owner_performance(
 
         if record.time_out is not None:
             employee_stat["completed"] += 1
-            time_out = record.time_out.replace(tzinfo=None)
+            time_out = to_business_naive(record.time_out, tz_name)
             if time_out < scheduled_end:
                 employee_stat["undertime"] += 1
                 trend[label]["undertime"] += 1
@@ -236,25 +252,8 @@ def get_owner_performance(
         attendance_rate = _percent(completed, assigned)
         # Punctuality = on-time attendances ÷ total attendances (late is not punctual)
         punctuality_rate = _percent(on_time, attended)
-        completion_rate = _percent(completed, assigned)
-        overtime_bonus = min(overtime_hours * 2, 10)
-        penalty = min((late + absent + undertime) * 3, 30)
-        productivity_score = round(
-            max(
-                0,
-                min(
-                    100,
-                    attendance_rate * 0.35
-                    + punctuality_rate * 0.3
-                    + completion_rate * 0.25
-                    + overtime_bonus
-                    - penalty,
-                ),
-            ),
-            1,
-        )
 
-        # Skip employees with no schedule in this period from ranked lists.
+        # Skip employees with no schedule in this period.
         if assigned == 0:
             continue
 
@@ -276,17 +275,10 @@ def get_owner_performance(
                 overtime_hours=overtime_hours,
                 attendance_rate=attendance_rate,
                 punctuality_rate=punctuality_rate,
-                productivity_score=productivity_score,
-                reasons=_employee_reasons(
-                    assigned, absent, undertime, late, on_time, completed
-                ),
             )
         )
 
-    employee_items.sort(
-        key=lambda item: (item.productivity_score, item.attended_shifts),
-        reverse=True,
-    )
+    employee_items.sort(key=lambda item: item.full_name.lower())
 
     total_assigned = sum(int(item["assigned"]) for item in stats.values())
     total_attended = sum(int(item["attended"]) for item in stats.values())
@@ -297,14 +289,6 @@ def get_owner_performance(
     total_undertime = sum(int(item["undertime"]) for item in stats.values())
     total_overtime_minutes = sum(float(item["overtime_minutes"]) for item in stats.values())
     total_overtime_shifts = sum(int(item["overtime_shifts"]) for item in stats.values())
-    average_productivity = (
-        round(
-            sum(item.productivity_score for item in employee_items) / len(employee_items),
-            1,
-        )
-        if employee_items
-        else 0.0
-    )
 
     trend_items = [
         OwnerPerformanceTrendItem(
@@ -336,7 +320,6 @@ def get_owner_performance(
             attendance_rate=_percent(total_completed, total_assigned),
             punctuality_rate=_percent(total_on_time, total_attended),
             total_overtime_hours=round(total_overtime_minutes / 60, 2),
-            productivity_score=average_productivity,
         ),
         trend=trend_items,
         employees=employee_items,

@@ -34,6 +34,7 @@ def _run_payslip(
     daily_rate: float | None = None,
     hourly_rate: float | None = 100.0,
     position_daily_rate: float = 650.0,
+    position_hourly_rate: float | None = None,
     status: AttendanceStatus = AttendanceStatus.complete,
     time_in: datetime | None = None,
     time_out: datetime | None = None,
@@ -67,7 +68,10 @@ def _run_payslip(
         hourly_rate=hourly_rate,
         monthly_salary=None,
     )
-    position = SimpleNamespace(daily_rate=position_daily_rate)
+    position = SimpleNamespace(
+        daily_rate=position_daily_rate,
+        hourly_rate=position_hourly_rate,
+    )
     business = SimpleNamespace(timezone="Asia/Manila")
     att_policy = SimpleNamespace(
         business_id=business_id,
@@ -339,6 +343,17 @@ def test_hourly_ignores_position_daily_rate():
     assert slip["gross_pay"] == 800.0
 
 
+def test_hourly_falls_back_to_position_hourly_rate():
+    slip = _run_payslip(
+        hourly_rate=None,
+        daily_rate=None,
+        position_hourly_rate=100.0,
+        position_daily_rate=9999.0,
+    )
+    assert slip["net_pay"] == 800.0
+    assert slip["gross_pay"] == 800.0
+
+
 def test_daily_payroll_unchanged_vs_phase2_shape():
     """Daily shortfall math identical: credit daily_rate, deduct unpaid × rate."""
     slip = _run_payslip(
@@ -356,3 +371,181 @@ def test_daily_payroll_unchanged_vs_phase2_shape():
     assert slip["unpaid_minutes"] == 130.0
     assert abs(slip["deductions"] - (130.0 * (720.0 / 540.0))) < 0.01
     assert abs(slip["gross_pay"] - 720.0) < 0.01
+
+
+def test_hourly_two_shifts_same_day_are_paid_independently():
+    """Morning 4h + evening 5h on one date each contribute their own scheduled pay."""
+    business_id = uuid4()
+    employee_id = uuid4()
+    position_id = uuid4()
+    work_date = date(2026, 8, 4)
+    hourly_rate = 100.0
+
+    employee = SimpleNamespace(
+        id=employee_id,
+        business_id=business_id,
+        full_name="Split Shift Emp",
+        position_title="Cashier",
+        position_id=position_id,
+        employment_type=EmploymentType.part_time,
+        pay_basis=PayBasis.hourly,
+        daily_rate=None,
+        hourly_rate=hourly_rate,
+        monthly_salary=None,
+    )
+    position = SimpleNamespace(daily_rate=650.0, hourly_rate=None)
+    business = SimpleNamespace(timezone="Asia/Manila")
+    att_policy = SimpleNamespace(
+        business_id=business_id,
+        on_time_grace_minutes=10,
+        overtime_minimum_minutes=30,
+        half_day_threshold_minutes=240,
+        overtime_enabled=True,
+    )
+    config = SimpleNamespace(
+        overtime_per_minute=1.0,
+        late_deduction_per_minute=1.0,
+        late_deduction_enabled=True,
+        overtime_enabled=True,
+        enable_late_overtime_balancing=False,
+        holiday_rules_mode=None,
+    )
+
+    morning_shift = Shift(
+        id=uuid4(),
+        business_id=business_id,
+        name="Morning",
+        start_time=time(8, 30),
+        end_time=time(12, 30),
+    )
+    evening_shift = Shift(
+        id=uuid4(),
+        business_id=business_id,
+        name="Evening",
+        start_time=time(18, 0),
+        end_time=time(23, 0),
+    )
+    morning_assignment = ShiftAssignment(
+        id=uuid4(),
+        shift_id=morning_shift.id,
+        employee_id=employee_id,
+        work_date=work_date,
+        is_rest_day_work=False,
+    )
+    evening_assignment = ShiftAssignment(
+        id=uuid4(),
+        shift_id=evening_shift.id,
+        employee_id=employee_id,
+        work_date=work_date,
+        is_rest_day_work=False,
+    )
+    morning_record = AttendanceRecord(
+        id=uuid4(),
+        business_id=business_id,
+        employee_id=employee_id,
+        shift_assignment_id=morning_assignment.id,
+        time_in=_ph(8, 30),
+        time_out=_ph(12, 30),
+        status=AttendanceStatus.complete,
+    )
+    evening_record = AttendanceRecord(
+        id=uuid4(),
+        business_id=business_id,
+        employee_id=employee_id,
+        shift_assignment_id=evening_assignment.id,
+        time_in=_ph(18, 0),
+        time_out=_ph(23, 0),
+        status=AttendanceStatus.complete,
+    )
+    rows = [
+        (morning_record, morning_assignment, morning_shift),
+        (evening_record, evening_assignment, evening_shift),
+    ]
+
+    db = MagicMock()
+
+    def db_get(model, key=None):
+        if model is BusinessPayrollConfig:
+            return config
+        if model is BusinessAttendancePolicy:
+            return att_policy
+        if model is Business:
+            return business
+        if model is BusinessRestDayPolicy:
+            return None
+        if model is Position:
+            return position
+        return None
+
+    db.get.side_effect = db_get
+    attendance_query = MagicMock()
+    attendance_query.outerjoin.return_value.outerjoin.return_value.filter.return_value.all.return_value = (
+        rows
+    )
+    scheduled_query = MagicMock()
+    scheduled_query.join.return_value.filter.return_value.all.return_value = [
+        (morning_assignment, morning_shift),
+        (evening_assignment, evening_shift),
+    ]
+    holiday_query = MagicMock()
+    holiday_query.filter.return_value.all.return_value = []
+
+    def real_query(*models):
+        if models[0] is AttendanceRecord:
+            return attendance_query
+        if models[0] is ShiftAssignment:
+            return scheduled_query
+        if models[0] is Holiday:
+            return holiday_query
+        return MagicMock()
+
+    db.query.side_effect = real_query
+
+    with ExitStack() as stack:
+        stack.enter_context(patch("app.api.owner_reports.ensure_incomplete_for_employee"))
+        stack.enter_context(
+            patch("app.api.owner_reports.employee_on_approved_leave", return_value=False)
+        )
+        stack.enter_context(
+            patch("app.api.owner_reports.approved_leave_dates_for_employee", return_value=[])
+        )
+        stack.enter_context(
+            patch("app.api.owner_reports.business_today", return_value=date(2026, 8, 5))
+        )
+        stack.enter_context(
+            patch(
+                "app.api.owner_reports.business_now",
+                return_value=datetime(2026, 8, 5, 12, 0),
+            )
+        )
+        stack.enter_context(
+            patch(
+                "app.api.owner_reports.resolve_holiday_rules_mode",
+                return_value="philippine_labor",
+            )
+        )
+        stack.enter_context(
+            patch("app.api.owner_reports.is_past_clock_out_deadline", return_value=True)
+        )
+        slip = _calculate_employee_payslip(
+            db, employee, date(2026, 8, 1), date(2026, 8, 31)
+        )
+
+    assignment_ids = {
+        row.get("shift_assignment_id") for row in slip["attendance_records"]
+    }
+    assert assignment_ids == {
+        str(morning_assignment.id),
+        str(evening_assignment.id),
+    }
+    assert {row.get("shift_name") for row in slip["attendance_records"]} == {
+        "Morning",
+        "Evening",
+    }
+    assert slip["worked_days"] == 2.0
+    # 4h × ₱100 + 5h × ₱100
+    assert abs(slip["gross_pay"] - 900.0) < 0.01
+    assert abs(slip["net_pay"] - 900.0) < 0.01
+    dates = {row["date"] for row in slip["attendance_records"]}
+    assert dates == {"2026-08-04"}
+

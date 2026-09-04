@@ -92,6 +92,11 @@ cd ..
 
 Seed creates platform admin: **admin@example.com** / **changeme123**
 
+It also upserts two isolated tenants (see [DEMO-AND-TEST-ACCOUNTS.md](DEMO-AND-TEST-ACCOUNTS.md)):
+
+- **AROLL+ Demo Café** (`DEMO01`) — research/defense simulated data
+- **AROLL+ Dev Lab** (`DEVTEST`) — internal development only; not used in defense
+
 ### 3.5 Admin web
 
 ```powershell

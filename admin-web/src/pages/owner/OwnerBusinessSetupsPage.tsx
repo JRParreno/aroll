@@ -36,7 +36,7 @@ const setupSections = [
   },
   {
     title: "Positions & Salary Rates",
-    description: "Define job roles and daily pay rates for your team.",
+    description: "Define job roles with daily pay and optional hourly rates.",
     to: "/owner/setup-wizard?step=1",
     icon: BadgeDollarSign,
   },
@@ -48,7 +48,7 @@ const setupSections = [
   },
   {
     title: "Attendance Policies",
-    description: "Clock-in rules, grace periods, overtime, and deductions.",
+    description: "Time-in rules, grace periods, overtime, and deductions.",
     to: "/owner/setup-wizard?step=3",
     icon: ShieldCheck,
   },

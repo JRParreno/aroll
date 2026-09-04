@@ -30,14 +30,6 @@ class OwnerAccountInformationScreen extends StatelessWidget {
         final phone = account['contact_phone'] ?? business['owner_phone'];
 
         return [
-          const SetupSurfaceCard(
-            child: SetupSectionHeader(
-              icon: Icons.badge_outlined,
-              title: 'Account Information',
-              subtitle:
-                  'View your owner profile and registered business details.',
-            ),
-          ),
           const SizedBox(height: 14),
           OwnerInfoSection(
             title: 'Owner Information',

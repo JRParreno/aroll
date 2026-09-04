@@ -40,6 +40,12 @@ def _business_branding_response(business: Business | None):
     )
 
 
+def _tenant_flags(business: Business | None) -> tuple[bool, bool]:
+    if business is None:
+        return False, False
+    return bool(business.is_demo), bool(business.is_internal_test)
+
+
 def _employee_auth_context(
     user: User, db: Session
 ) -> dict[str, str | None]:
@@ -80,9 +86,13 @@ def _token_response(user: User, db: Session) -> TokenResponse:
             "business_id": str(user.business_id) if user.business_id else None,
         },
     )
+    business = db.get(Business, user.business_id) if user.business_id else None
+    is_demo, is_internal_test = _tenant_flags(business)
     return TokenResponse(
         access_token=token,
         must_change_password=user.must_change_password,
+        is_demo=is_demo,
+        is_internal_test=is_internal_test,
         **_employee_auth_context(user, db),
     )
 
@@ -268,6 +278,7 @@ def me(
         if business:
             business_code = business.business_code
             setup_completed_at = business.setup_completed_at
+    is_demo, is_internal_test = _tenant_flags(business)
     db.refresh(user)
     return UserMeResponse(
         id=str(user.id),
@@ -283,4 +294,6 @@ def me(
         setup_completed_at=setup_completed_at,
         branding=_business_branding_response(business),
         profile_image_url=ctx["profile_image_url"],
+        is_demo=is_demo,
+        is_internal_test=is_internal_test,
     )

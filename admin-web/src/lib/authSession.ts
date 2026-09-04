@@ -38,4 +38,9 @@ export function setAuthSession(token: string) {
 export function clearAuthSession() {
   localStorage.removeItem(TOKEN_KEY);
   clearOwnerSessionData();
+  try {
+    sessionStorage.removeItem("aroll_research_eval_ack");
+  } catch {
+    // sessionStorage may be unavailable in some test environments.
+  }
 }

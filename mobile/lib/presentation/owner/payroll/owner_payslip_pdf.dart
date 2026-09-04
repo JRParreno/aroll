@@ -8,6 +8,7 @@ import 'package:pdf/widgets.dart' as pw;
 Future<String> generateOwnerPayslipPdf({
   required Map<String, dynamic> payslip,
   required String businessName,
+  bool sample = false,
 }) async {
   final doc = pw.Document();
   final employeeName = '${payslip['employee_name'] ?? 'Employee'}';
@@ -43,9 +44,33 @@ Future<String> generateOwnerPayslipPdf({
       pageFormat: PdfPageFormat.a4,
       margin: const pw.EdgeInsets.all(32),
       build: (context) => [
+        if (sample) ...[
+          pw.Center(
+            child: pw.Text(
+              'SAMPLE — DEMONSTRATION ONLY',
+              style: pw.TextStyle(
+                fontSize: 12,
+                fontWeight: pw.FontWeight.bold,
+                color: PdfColor.fromInt(0xFF9A3412),
+              ),
+            ),
+          ),
+          pw.SizedBox(height: 4),
+          pw.Center(
+            child: pw.Text(
+              'NOT FOR ACTUAL SALARY PAYMENT',
+              style: pw.TextStyle(
+                fontSize: 11,
+                fontWeight: pw.FontWeight.bold,
+                color: PdfColor.fromInt(0xFFC2410C),
+              ),
+            ),
+          ),
+          pw.SizedBox(height: 12),
+        ],
         pw.Center(
           child: pw.Text(
-            'Payslip',
+            sample ? 'Sample Payslip' : 'Payslip',
             style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold),
           ),
         ),

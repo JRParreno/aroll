@@ -11,6 +11,8 @@ import 'package:aroll_mobile/domain/repositories/employee_repository.dart';
 import 'package:aroll_mobile/presentation/employee/employee_ui.dart';
 import 'package:aroll_mobile/presentation/employee/face_attendance_result_screen.dart';
 import 'package:aroll_mobile/presentation/employee/face_auto_attendance_screen.dart';
+import 'package:aroll_mobile/core/tenant_mode.dart';
+import 'package:aroll_mobile/presentation/shared/tenant_mode_banner.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
@@ -82,7 +84,10 @@ class _ScanAttendanceScreenState extends State<ScanAttendanceScreen> {
         _loading = false;
       });
       // Start GPS immediately — do not wait for the camera / face path.
-      unawaited(_warmupGps());
+      // Demo Café never uses participant device GPS.
+      if (sl<AppState>().session?.isDemo != true) {
+        unawaited(_warmupGps());
+      }
       final completed = dashboard.attendanceStatus.timeOut != null;
       final clockedIn = dashboard.attendanceStatus.timeIn != null &&
           dashboard.attendanceStatus.timeOut == null;
@@ -109,6 +114,7 @@ class _ScanAttendanceScreenState extends State<ScanAttendanceScreen> {
   }
 
   Future<void> _warmupGps() async {
+    if (sl<AppState>().session?.isDemo == true) return;
     // Light warmup only — do not run a full multi-sample collect here
     // (that races/competes with attendance and wastes time).
     try {
@@ -137,31 +143,46 @@ class _ScanAttendanceScreenState extends State<ScanAttendanceScreen> {
   }
 
   String? get _resolvedShiftAssignmentId {
-    return widget.shiftAssignmentId ?? _todaySchedule?.assignmentId;
+    return widget.shiftAssignmentId ??
+        _attendanceStatus?.shiftAssignmentId ??
+        _todaySchedule?.assignmentId;
   }
 
   String get _statusHeadline {
     if (_isCompleted) return 'Already Completed';
-    if (_isClockedIn) return 'Ready to Clock Out';
-    return 'Ready to Clock In';
+    if (_isClockedIn) return 'Ready to Time Out';
+    return 'Ready to Time In';
   }
 
   String get _statusDetail {
     if (_isCompleted) return 'Time Out';
     if (_isClockedIn) return 'Time In';
-    return 'Not clocked in yet';
+    return 'Not timed in yet';
   }
 
+  bool get _isDemo => sl<AppState>().session?.isDemo == true;
+
   String get _primaryButtonLabel {
+    if (_isDemo) {
+      if (_submitting) return 'Recording demo attendance…';
+      if (_isCompleted) return 'Attendance already completed';
+      if (_isClockedIn) return 'Demo Time Out';
+      return 'Demo Time In';
+    }
     if (_submitting) return 'Opening camera…';
     if (_isCompleted) return 'Attendance already completed';
-    if (_isClockedIn) return 'Look at camera to Clock Out';
-    return 'Look at camera to Clock In';
+    if (_isClockedIn) return 'Look at camera to Time Out';
+    return 'Look at camera to Time In';
   }
 
   String get _primaryButtonHelper {
+    if (_isDemo) {
+      if (_submitting) return 'Using seeded demo identity and fictional location…';
+      if (_isCompleted) return 'You already finished this shift.';
+      return 'No camera or personal location is required.';
+    }
     if (_submitting) return 'Preparing face check and location…';
-    if (_isCompleted) return 'You already finished today’s attendance.';
+    if (_isCompleted) return 'You already finished this shift.';
     if (_isClockedIn) return 'Stay in the work area, then look at the camera.';
     return 'Stay in the work area, then look at the camera.';
   }
@@ -214,6 +235,12 @@ class _ScanAttendanceScreenState extends State<ScanAttendanceScreen> {
         return;
       }
       setState(() => _worksite = worksite);
+
+      final isDemo = sl<AppState>().session?.isDemo == true;
+      if (isDemo) {
+        await _submitDemoAttendance(action, worksite);
+        return;
+      }
 
       final outcome = await Navigator.of(context).push<Object?>(
         MaterialPageRoute(
@@ -269,6 +296,36 @@ class _ScanAttendanceScreenState extends State<ScanAttendanceScreen> {
     }
   }
 
+  Future<void> _submitDemoAttendance(
+    FaceAttendanceAction action,
+    EmployeeWorksite worksite,
+  ) async {
+    final result = action == FaceAttendanceAction.clockIn
+        ? await _repo.clockInWithFace(
+            latitude: worksite.latitude,
+            longitude: worksite.longitude,
+            shiftAssignmentId: _resolvedShiftAssignmentId,
+          )
+        : await _repo.clockOutWithFace(
+            latitude: worksite.latitude,
+            longitude: worksite.longitude,
+          );
+    if (!mounted) return;
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        fullscreenDialog: true,
+        builder: (_) => FaceAttendanceResultScreen(
+          action: action,
+          profile: _profile,
+          insideWorkArea: true,
+          initialResult: result,
+        ),
+      ),
+    );
+    if (!mounted) return;
+    await _load();
+  }
+
   bool _isValidWorksite(EmployeeWorksite worksite) {
     return worksite.latitude.abs() > 0.0001 &&
         worksite.longitude.abs() > 0.0001 &&
@@ -319,6 +376,40 @@ class _ScanAttendanceScreenState extends State<ScanAttendanceScreen> {
                           businessName: profile?.businessName ?? 'Attendance',
                           logoUrl: profile?.branding?.logoUrl,
                         ),
+                        const TenantModeBanner(),
+                        if (_isDemo) ...[
+                          const SizedBox(height: 8),
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(14),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFFFBEB),
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(color: const Color(0xFFFDE68A)),
+                            ),
+                            child: const Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  TenantModeCopy.demoAttendanceTitle,
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w800,
+                                    color: Color(0xFF78350F),
+                                  ),
+                                ),
+                                SizedBox(height: 6),
+                                Text(
+                                  TenantModeCopy.demoAttendanceBody,
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    height: 1.4,
+                                    color: Color(0xFF92400E),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                         const SizedBox(height: 16),
                         if (_actionError != null) ...[
                           _SoftBanner(message: _actionError!),
@@ -434,7 +525,7 @@ class _AttendanceHeader extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text(
-                'Clock Attendance',
+                'Attendance',
                 style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.w800,

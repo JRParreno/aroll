@@ -49,8 +49,8 @@ class EmploymentType(str, enum.Enum):
 class PayBasis(str, enum.Enum):
     """How an employee's base pay is expressed.
 
-    Phase 2: daily payroll uses Employee.daily_rate (Position fallback).
-    Hourly / monthly payroll formulas are Phase 3+.
+    Daily payroll uses Employee.daily_rate (Position.daily_rate fallback).
+    Hourly payroll uses Employee.hourly_rate (Position.hourly_rate fallback).
     """
 
     daily = "daily"

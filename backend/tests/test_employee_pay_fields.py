@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 import pytest
+from fastapi import HTTPException
 from pydantic import ValidationError
 
 from app.api.employees import create_employee, update_employee, _employee_response
@@ -243,3 +244,253 @@ def test_create_hourly_without_rate_fails_at_schema():
             pay_basis=PayBasis.hourly,
             hourly_rate=None,
         )
+
+
+def test_employee_create_schema_allows_missing_hourly_when_position_set():
+    body = EmployeeCreate(
+        full_name="Jane Doe",
+        position_title="Barista",
+        position_id=str(uuid4()),
+        pay_basis=PayBasis.hourly,
+        hourly_rate=None,
+    )
+    assert body.hourly_rate is None
+
+
+def test_create_employee_prefills_hourly_rate_from_position():
+    business_id = uuid4()
+    position_id = uuid4()
+    pos = Position(
+        id=position_id,
+        business_id=business_id,
+        title="Server",
+        daily_rate=650.0,
+        hourly_rate=80.0,
+    )
+    owner = SimpleNamespace(business_id=business_id, id=uuid4())
+    body = EmployeeCreate(
+        full_name="Pat Server",
+        position_title="Server",
+        position_id=str(position_id),
+        employment_type=EmploymentType.part_time,
+        pay_basis=PayBasis.hourly,
+        hourly_rate=None,
+    )
+    db = MagicMock()
+    db.get.return_value = pos
+    db.query.return_value.filter.return_value.first.return_value = None
+    created = {}
+
+    def add(obj):
+        if hasattr(obj, "full_name"):
+            created["employee"] = obj
+            obj.id = uuid4()
+        if hasattr(obj, "password_hash"):
+            obj.id = uuid4()
+            obj.must_change_password = True
+            obj.pending_temporary_password = "temp"
+            obj.email = "pat.server"
+
+    db.add.side_effect = add
+    db.refresh.side_effect = lambda obj: None
+
+    with patch("app.api.employees.generate_temporary_password", return_value="temp"):
+        with patch("app.api.employees.hash_password", return_value="hashed"):
+            result = create_employee(body, db, owner)  # type: ignore[arg-type]
+
+    assert created["employee"].hourly_rate == 80.0
+    assert created["employee"].pay_basis == PayBasis.hourly
+    assert result.hourly_rate == 80.0
+    assert result.pay_basis == "hourly"
+
+
+def test_create_employee_allows_override_hourly_rate():
+    business_id = uuid4()
+    position_id = uuid4()
+    pos = Position(
+        id=position_id,
+        business_id=business_id,
+        title="Chef",
+        daily_rate=700.0,
+        hourly_rate=100.0,
+    )
+    owner = SimpleNamespace(business_id=business_id, id=uuid4())
+    body = EmployeeCreate(
+        full_name="Alex Chef",
+        position_title="Chef",
+        position_id=str(position_id),
+        pay_basis=PayBasis.hourly,
+        hourly_rate=120.0,
+    )
+    db = MagicMock()
+    db.get.return_value = pos
+    db.query.return_value.filter.return_value.first.return_value = None
+    created = {}
+
+    def add(obj):
+        if hasattr(obj, "full_name"):
+            created["employee"] = obj
+            obj.id = uuid4()
+        if hasattr(obj, "password_hash"):
+            obj.id = uuid4()
+            obj.must_change_password = True
+            obj.pending_temporary_password = "temp"
+            obj.email = "alex.chef"
+
+    db.add.side_effect = add
+    db.refresh.side_effect = lambda obj: None
+
+    with patch("app.api.employees.generate_temporary_password", return_value="temp"):
+        with patch("app.api.employees.hash_password", return_value="hashed"):
+            result = create_employee(body, db, owner)  # type: ignore[arg-type]
+
+    assert created["employee"].hourly_rate == 120.0
+    assert result.hourly_rate == 120.0
+
+
+def test_create_hourly_without_position_hourly_requires_manual_rate():
+    business_id = uuid4()
+    position_id = uuid4()
+    pos = Position(
+        id=position_id,
+        business_id=business_id,
+        title="Server",
+        daily_rate=650.0,
+        hourly_rate=None,
+    )
+    owner = SimpleNamespace(business_id=business_id, id=uuid4())
+    body = EmployeeCreate(
+        full_name="Sam Server",
+        position_title="Server",
+        position_id=str(position_id),
+        pay_basis=PayBasis.hourly,
+        hourly_rate=None,
+    )
+    db = MagicMock()
+    db.get.return_value = pos
+    db.query.return_value.filter.return_value.first.return_value = None
+
+    with pytest.raises(HTTPException) as exc_info:
+        create_employee(body, db, owner)  # type: ignore[arg-type]
+    assert "hourly_rate" in str(exc_info.value.detail).lower()
+
+
+def test_update_position_does_not_overwrite_custom_hourly_rate():
+    business_id = uuid4()
+    old_pos_id = uuid4()
+    new_pos_id = uuid4()
+    emp = SimpleNamespace(
+        id=uuid4(),
+        business_id=business_id,
+        position_id=old_pos_id,
+        position_title="Server",
+        full_name="Pat",
+        employment_type=EmploymentType.part_time,
+        pay_basis=PayBasis.hourly,
+        daily_rate=None,
+        hourly_rate=95.0,
+        monthly_salary=None,
+        phone=None,
+        profile_image_url=None,
+        status=SimpleNamespace(value="active"),
+    )
+    linked = SimpleNamespace(
+        email="pat",
+        must_change_password=False,
+        pending_temporary_password=None,
+    )
+    new_pos = Position(
+        id=new_pos_id,
+        business_id=business_id,
+        title="Senior Server",
+        daily_rate=700.0,
+        hourly_rate=110.0,
+    )
+    owner = SimpleNamespace(business_id=business_id)
+    db = MagicMock()
+    db.get.return_value = new_pos
+
+    with patch(
+        "app.api.employees._get_business_employee",
+        return_value=(emp, linked),
+    ):
+        body = EmployeeUpdate(position_id=str(new_pos_id))
+        result = update_employee(emp.id, body, db, owner)  # type: ignore[arg-type]
+
+    assert emp.hourly_rate == 95.0
+    assert emp.position_id == new_pos_id
+    assert result.hourly_rate == 95.0
+
+
+def test_create_employee_rejects_inactive_position():
+    business_id = uuid4()
+    position_id = uuid4()
+    pos = Position(
+        id=position_id,
+        business_id=business_id,
+        title="Chef",
+        daily_rate=700.0,
+        hourly_rate=100.0,
+        is_active=False,
+    )
+    owner = SimpleNamespace(business_id=business_id, id=uuid4())
+    body = EmployeeCreate(
+        full_name="Alex Chef",
+        position_title="Chef",
+        position_id=str(position_id),
+        pay_basis=PayBasis.daily,
+        daily_rate=700.0,
+    )
+    db = MagicMock()
+    db.get.return_value = pos
+    db.query.return_value.filter.return_value.first.return_value = None
+
+    with pytest.raises(HTTPException) as exc:
+        create_employee(body, db, owner)  # type: ignore[arg-type]
+
+    assert exc.value.status_code == 400
+    assert "Invalid position" in str(exc.value.detail)
+
+
+def test_create_employee_hourly_manual_when_position_has_no_hourly():
+    business_id = uuid4()
+    position_id = uuid4()
+    pos = Position(
+        id=position_id,
+        business_id=business_id,
+        title="Chef",
+        daily_rate=700.0,
+        hourly_rate=None,
+    )
+    owner = SimpleNamespace(business_id=business_id, id=uuid4())
+    body = EmployeeCreate(
+        full_name="Alex Chef",
+        position_title="Chef",
+        position_id=str(position_id),
+        pay_basis=PayBasis.hourly,
+        hourly_rate=90.0,
+    )
+    db = MagicMock()
+    db.get.return_value = pos
+    db.query.return_value.filter.return_value.first.return_value = None
+    created = {}
+
+    def add(obj):
+        if hasattr(obj, "full_name"):
+            created["employee"] = obj
+            obj.id = uuid4()
+        if hasattr(obj, "password_hash"):
+            obj.id = uuid4()
+            obj.must_change_password = True
+            obj.pending_temporary_password = "temp"
+            obj.email = "alex.chef"
+
+    db.add.side_effect = add
+    db.refresh.side_effect = lambda obj: None
+
+    with patch("app.api.employees.generate_temporary_password", return_value="temp"):
+        with patch("app.api.employees.hash_password", return_value="hashed"):
+            result = create_employee(body, db, owner)  # type: ignore[arg-type]
+
+    assert created["employee"].hourly_rate == 90.0
+    assert result.hourly_rate == 90.0

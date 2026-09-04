@@ -31,6 +31,9 @@ class Position(Base):
     )
     title: Mapped[str] = mapped_column(String(100), nullable=False)
     daily_rate: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
+    hourly_rate: Mapped[float | None] = mapped_column(
+        Numeric(10, 2), nullable=True, default=None
+    )
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 

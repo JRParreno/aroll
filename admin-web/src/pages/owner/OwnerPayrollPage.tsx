@@ -30,6 +30,11 @@ import {
 } from "@/lib/api";
 import { ME_QUERY_KEY } from "@/lib/authSession";
 import {
+  PAYSLIP_SAMPLE_LINE_1,
+  PAYSLIP_SAMPLE_LINE_2,
+  sessionIsDemo,
+} from "@/lib/tenantMode";
+import {
   formatSalaryRate,
   salaryRateLabel,
 } from "@/lib/salaryRate";
@@ -117,6 +122,7 @@ export function OwnerPayrollPage() {
   const themeButtonColor = me?.branding?.theme.button_color || "#1E3A5F";
   const themeButtonHoverColor = me?.branding?.theme.secondary_color || "#284B73";
   const canEditPayslip = me?.role === "owner" || me?.role === "manager";
+  const isDemo = sessionIsDemo(me);
   const incompleteCount = data?.incomplete_attendance_count ?? 0;
   const canFinalize = Boolean(data?.can_finalize);
   const isFinalized = Boolean(data?.is_finalized);
@@ -142,7 +148,12 @@ export function OwnerPayrollPage() {
   return (
     <OwnerPage>
       <OwnerPageHeader
-        title="Payroll History"
+        title={isDemo ? "Sample Payroll" : "Payroll History"}
+        description={
+          isDemo
+            ? "Demonstration payroll only. Not for actual salary payment."
+            : undefined
+        }
       />
 
       <OwnerPageContent>
@@ -225,8 +236,12 @@ export function OwnerPayrollPage() {
               {finalizeMutation.isPending
                 ? "Finalizing…"
                 : isFinalized
-                  ? "Finalized"
-                  : "Finalize Payroll"}
+                  ? isDemo
+                    ? "Sample finalized"
+                    : "Finalized"
+                  : isDemo
+                    ? "Finalize sample payroll"
+                    : "Finalize Payroll"}
             </Button>
           </div>
           {data?.period_start && data?.period_end ? (
@@ -252,7 +267,9 @@ export function OwnerPayrollPage() {
           ) : null}
           {finalizeMutation.isSuccess && !incompleteCount ? (
             <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-800">
-              Payroll period finalized successfully.
+              {isDemo
+                ? "Sample payroll period marked complete for demonstration."
+                : "Payroll period finalized successfully."}
             </div>
           ) : null}
         </section>
@@ -386,7 +403,11 @@ export function OwnerPayrollPage() {
         <DialogContent className="flex max-h-[92vh] max-w-5xl flex-col overflow-hidden">
           <DialogHeader>
             <DialogTitle>
-              {payslip ? `Payslip · ${payslip.employee_name}` : "Payslip"}
+              {payslip
+                ? `${isDemo ? "Sample payslip" : "Payslip"} · ${payslip.employee_name}`
+                : isDemo
+                  ? "Sample payslip"
+                  : "Payslip"}
             </DialogTitle>
             {payslip ? (
               <p className="text-sm text-[#6B7280]">
@@ -414,6 +435,7 @@ export function OwnerPayrollPage() {
                     businessLogo={businessLogo}
                     payslip={payslip}
                     settings={payslipSettings}
+                    sample={isDemo}
                   />
                   <PayrollAdjustmentsPanel
                     payslip={payslip}
@@ -459,7 +481,8 @@ export function OwnerPayrollPage() {
                   payslip,
                   businessName,
                   payslipSettings,
-                  businessLogo
+                  businessLogo,
+                  isDemo
                 )
               }
               onMouseEnter={(event) => {
@@ -514,14 +537,26 @@ function PayslipPreview({
   businessName,
   businessLogo,
   settings,
+  sample = false,
 }: {
   payslip: EmployeePayslip;
   businessName: string;
   businessLogo: string | null;
   settings: PayslipSettings;
+  sample?: boolean;
 }) {
   return (
     <div className="mx-auto max-w-md rounded-2xl border border-slate-200 bg-white p-6 text-sm shadow-sm">
+      {sample ? (
+        <div className="mb-4 rounded-xl border border-orange-200 bg-orange-50 px-3 py-2 text-center">
+          <p className="text-xs font-bold tracking-wide text-orange-900">
+            {PAYSLIP_SAMPLE_LINE_1}
+          </p>
+          <p className="text-[11px] font-semibold text-orange-800">
+            {PAYSLIP_SAMPLE_LINE_2}
+          </p>
+        </div>
+      ) : null}
       <div
         className="mx-auto mb-4 w-44 rounded-full py-2 text-center text-sm font-semibold text-[#374151]"
         style={{ backgroundColor: settings.headerColor }}
@@ -1048,10 +1083,20 @@ function downloadPayslip(
   payslip: EmployeePayslip,
   businessName: string,
   settings: PayslipSettings,
-  businessLogo: string | null
+  businessLogo: string | null,
+  sample = false
 ) {
   const doc = new jsPDF();
   let y = 16;
+  if (sample) {
+    doc.setFontSize(11);
+    doc.setTextColor(154, 52, 18);
+    doc.text(PAYSLIP_SAMPLE_LINE_1, 105, y, { align: "center" });
+    y += 6;
+    doc.text(PAYSLIP_SAMPLE_LINE_2, 105, y, { align: "center" });
+    y += 10;
+    doc.setTextColor(0, 0, 0);
+  }
   if (businessLogo?.startsWith("data:image/")) {
     try {
       const imageType = businessLogo.startsWith("data:image/jpeg")

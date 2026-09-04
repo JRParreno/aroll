@@ -1,4 +1,6 @@
+import 'package:aroll_mobile/core/app_state.dart';
 import 'package:aroll_mobile/core/di/injection.dart';
+import 'package:aroll_mobile/core/tenant_mode.dart';
 import 'package:aroll_mobile/data/repositories/owner_repository.dart';
 import 'package:aroll_mobile/presentation/employee/employee_ui.dart';
 import 'package:aroll_mobile/presentation/owner/owner_shell.dart';
@@ -135,7 +137,9 @@ class _OwnerPayrollListScreenState extends State<OwnerPayrollListScreen> {
     return OwnerShell(
       selectedIndex: 0,
       showBackButton: true,
-      title: 'Payroll Summary',
+      title: sl<AppState>().session?.isDemo == true
+          ? TenantModeCopy.samplePayroll
+          : 'Payroll Summary',
       actions: [
         IconButton(
           tooltip: 'Refresh',
@@ -232,8 +236,12 @@ class _OwnerPayrollListScreenState extends State<OwnerPayrollListScreen> {
                               _finalizing
                                   ? 'Finalizing…'
                                   : _isFinalized
-                                      ? 'Payroll Finalized'
-                                      : 'Finalize Payroll',
+                                      ? (sl<AppState>().session?.isDemo == true
+                                          ? 'Sample finalized'
+                                          : 'Payroll Finalized')
+                                      : (sl<AppState>().session?.isDemo == true
+                                          ? 'Finalize sample payroll'
+                                          : 'Finalize Payroll'),
                             ),
                           ),
                         ),

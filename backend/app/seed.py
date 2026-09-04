@@ -77,6 +77,14 @@ def seed():
     finally:
         db.close()
 
+    from app.seed_demo import seed_demo
+    from app.seed_internal_test import seed_internal_test
+
+    demo = seed_demo()
+    print(f"Seeded demo tenant: {demo.name} / {demo.business_code}")
+    lab = seed_internal_test()
+    print(f"Seeded internal-test tenant: {lab.name} / {lab.business_code}")
+
 
 def reset_owner_login(email: str) -> bool:
     """Reset a business owner to first-login credentials (business code as password)."""

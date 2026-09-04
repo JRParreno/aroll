@@ -26,7 +26,6 @@ NOTIFICATION_TYPES = {
     "attendance_correction_approved",
     "attendance_correction_rejected",
     "incomplete_attendance",
-    "employee_of_the_month",
     "payroll_generated",
     "schedule_conflict",
     "business_setup_reminder",

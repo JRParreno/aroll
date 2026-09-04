@@ -25,12 +25,12 @@ class AttendanceCorrectionCreateRequest(BaseModel):
         # Clock-out is always required. Clock-in may be omitted for incomplete
         # attendance fixes (server locks the recorded clock-in).
         if self.requested_time_out is None:
-            raise ValueError("Provide corrected clock-out time.")
+            raise ValueError("Provide corrected Time Out.")
         if (
             self.requested_time_in is not None
             and self.requested_time_out <= self.requested_time_in
         ):
-            raise ValueError("Clock-out must be after clock-in.")
+            raise ValueError("Time Out must be after Time In.")
         return self
 
 

@@ -16,18 +16,11 @@ class OwnerSettingsScreen extends StatelessWidget {
       child: ListView(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
         children: [
-          const SetupSurfaceCard(
-            child: SetupSectionHeader(
-              icon: Icons.settings_outlined,
-              title: 'Settings',
-              subtitle: 'Manage your account and business setup.',
-            ),
-          ),
           const SizedBox(height: 14),
           SetupMenuCard(
             label: 'Business Setup Settings',
             subtitle:
-                'Set up work shifts, job roles, pay, clock-in rules, holidays, and work location.',
+                'Set up work shifts, job roles, pay, time-in rules, holidays, and work location.',
             icon: Icons.checklist_rounded,
             showStatus: false,
             onTap: () => context.push('/owner/setup-wizard'),

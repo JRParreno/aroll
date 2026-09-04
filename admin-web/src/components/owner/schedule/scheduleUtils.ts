@@ -8,6 +8,15 @@ import {
 } from "date-fns";
 import type { Employee, ScheduleAssignment } from "@/lib/api";
 
+export function isEmployeeFullyActivated(
+  employee: Pick<Employee, "must_change_password" | "face_registration_status">
+) {
+  return (
+    employee.must_change_password !== true &&
+    employee.face_registration_status === "completed"
+  );
+}
+
 export const WEEKDAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 export function getWeekStart(date: Date): Date {

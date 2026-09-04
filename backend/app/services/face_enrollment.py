@@ -17,6 +17,10 @@ from app.services.face_embedding import (
     gallery_pairwise_consistency,
     mean_match_score,
 )
+from app.services.demo_tenant import (
+    load_business_for_employee,
+    raise_if_demo_enrollment_locked,
+)
 
 logger = logging.getLogger("aroll.face")
 
@@ -54,8 +58,13 @@ def enroll_face_sample_bytes(
     payloads: list[bytes],
     *,
     enrolled_by: uuid.UUID | None,
+    allow_demo_seed: bool = False,
 ) -> dict:
     from app.services.face_embedding import detect_and_observe_mirror_aware
+
+    # Seed may attempt the real pipeline once; live DEMO01 enrollment stays locked.
+    if not allow_demo_seed:
+        raise_if_demo_enrollment_locked(load_business_for_employee(db, employee))
 
     min_n = settings.face_min_enrollment_samples
     max_n = settings.face_max_enrollment_samples

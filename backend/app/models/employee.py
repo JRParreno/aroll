@@ -40,8 +40,8 @@ class Employee(Base):
     employment_type: Mapped[EmploymentType] = mapped_column(
         Enum(EmploymentType), default=EmploymentType.full_time
     )
-    # Employee-owned pay. Payroll resolves these first; Position.daily_rate is
-    # legacy fallback only (see app.services.employee_pay).
+    # Employee-owned pay. Payroll resolves these first; Position.daily_rate /
+    # Position.hourly_rate are templates and fallback only.
     pay_basis: Mapped[PayBasis] = mapped_column(
         Enum(PayBasis), default=PayBasis.daily, nullable=False
     )

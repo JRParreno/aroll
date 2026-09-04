@@ -313,12 +313,12 @@ def validate_manual_clock_out(
     business_timezone: str | None,
 ) -> None:
     if time_out <= time_in:
-        raise HTTPException(400, "Clock-out time must be after the recorded clock-in.")
+        raise HTTPException(400, "Time Out must be after the recorded Time In.")
 
     now_utc = datetime.now(timezone.utc)
     out_utc = time_out if time_out.tzinfo else time_out.replace(tzinfo=timezone.utc)
     if out_utc > now_utc + timedelta(minutes=5):
-        raise HTTPException(400, "Clock-out time cannot be in the future.")
+        raise HTTPException(400, "Time Out cannot be in the future.")
 
     time_in_local = _to_business_naive(time_in, business_timezone)
     time_out_local = _to_business_naive(time_out, business_timezone)
@@ -330,11 +330,11 @@ def validate_manual_clock_out(
     if time_out_local > max_out:
         raise HTTPException(
             400,
-            "Clock-out time is outside a reasonable range for this shift. "
+            "Time Out is outside a reasonable range for this shift. "
             "Please enter a time closer to the scheduled shift end.",
         )
     if time_out_local < time_in_local:
-        raise HTTPException(400, "Clock-out time must be after the recorded clock-in.")
+        raise HTTPException(400, "Time Out must be after the recorded Time In.")
 
 
 def complete_incomplete_attendance(
@@ -363,7 +363,7 @@ def complete_incomplete_attendance(
             "Complete Attendance is only available for Incomplete Attendance records.",
         )
     if record.time_in is None:
-        raise HTTPException(400, "Attendance record is missing a clock-in time.")
+        raise HTTPException(400, "Attendance record is missing a Time In.")
 
     bundle = _load_assignment_shift(db, record)
     if bundle is None:

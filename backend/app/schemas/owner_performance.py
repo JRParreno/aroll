@@ -14,7 +14,6 @@ class OwnerPerformanceSummary(BaseModel):
     attendance_rate: float
     punctuality_rate: float
     total_overtime_hours: float
-    productivity_score: float
 
 
 class OwnerPerformanceTrendItem(BaseModel):
@@ -43,8 +42,6 @@ class EmployeePerformanceItem(BaseModel):
     overtime_hours: float
     attendance_rate: float
     punctuality_rate: float
-    productivity_score: float
-    reasons: list[str]
 
 
 class OwnerPerformanceResponse(BaseModel):

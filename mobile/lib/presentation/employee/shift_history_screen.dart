@@ -792,7 +792,7 @@ class _HistoryCard extends StatelessWidget {
                         SizedBox(width: 6),
                         Expanded(
                           child: Text(
-                            'Clock-out missing. Submit a correction to complete this attendance.',
+                            'Time Out missing. Submit a correction to complete this attendance.',
                             style: TextStyle(
                               fontSize: 11,
                               height: 1.3,

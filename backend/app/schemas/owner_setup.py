@@ -52,12 +52,14 @@ class ShiftResponse(BaseModel):
 class PositionCreate(BaseModel):
     title: str = Field(min_length=1, max_length=100)
     daily_rate: float = Field(gt=0)
+    hourly_rate: float | None = Field(default=None, gt=0)
     description: str | None = None
 
 
 class PositionUpdate(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=100)
     daily_rate: float | None = Field(default=None, gt=0)
+    hourly_rate: float | None = Field(default=None, gt=0)
     description: str | None = None
     is_active: bool | None = None
 
@@ -66,6 +68,7 @@ class PositionResponse(BaseModel):
     id: str
     title: str
     daily_rate: float
+    hourly_rate: float | None = None
     description: str | None
     is_active: bool
 

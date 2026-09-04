@@ -55,6 +55,8 @@ class AuthRepositoryImpl implements AuthRepository {
       mustChangePassword: mustChangePassword,
       branding: _brandingFromJson(m),
       profileImageUrl: m['profile_image_url'] as String?,
+      isDemo: m['is_demo'] as bool? ?? false,
+      isInternalTest: m['is_internal_test'] as bool? ?? false,
     );
   }
 

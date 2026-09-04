@@ -47,10 +47,16 @@ from app.schemas.employee_attendance import (
 )
 from app.services.attendance_clock import (
     _active_record,
+    _list_assignment_candidates,
+    _records_by_assignment,
     clock_in_employee,
     clock_out_employee,
     verify_employee_face_match,
     worksite_for_business,
+)
+from app.services.demo_tenant import (
+    business_is_demo,
+    verify_demo_seeded_identity,
 )
 from app.services.missing_clock_out import (
     ensure_incomplete_for_employee,
@@ -225,8 +231,6 @@ def _schedule_status(
         return "on_leave"
     if assignment.work_date > today:
         return "upcoming"
-    if assignment.work_date < today:
-        return "completed"
     record = (
         db.query(AttendanceRecord)
         .filter(
@@ -238,7 +242,23 @@ def _schedule_status(
     )
     if record is not None and record.status == AttendanceStatus.on_leave:
         return "on_leave"
-    if record is not None and record.status == AttendanceStatus.complete:
+    if record is not None and (
+        record.time_out is not None
+        or record.status
+        in (
+            AttendanceStatus.complete,
+            AttendanceStatus.absent,
+            AttendanceStatus.incomplete,
+        )
+    ):
+        return "completed"
+    if assignment.work_date < today:
+        # Overnight still in progress after midnight stays actionable.
+        if record is not None and record.time_out is None and record.status in (
+            AttendanceStatus.in_progress,
+            AttendanceStatus.late,
+        ):
+            return "today"
         return "completed"
     return "today"
 
@@ -513,7 +533,7 @@ def _performance_summary(
     }
     scored = 0
     for record, assignment, shift in rows:
-        # Incomplete and approved leave are excluded from productivity metrics.
+        # Incomplete and approved leave are excluded from attendance metrics.
         if record.status == AttendanceStatus.incomplete:
             counts["incomplete"] += 1
             continue
@@ -538,10 +558,12 @@ def _today_attendance_status(
     *,
     business_timezone: str | None = None,
 ) -> dict:
-    """Attendance state for dashboard / clock hub.
+    """Attendance state for dashboard / Time In hub, evaluated per shift.
 
-    Open sessions use the same lookup as Clock Out so "Ready to Clock Out"
-    never disagrees with whether clock-out can find today's record.
+    Open sessions use the same lookup as Time Out so "Ready to Time Out"
+    never disagrees with whether Time Out can find today's record.
+    After Time Out from one shift, status resets to not_started for the next
+    scheduled shift instead of treating the calendar day as finished.
     """
     ensure_incomplete_for_employee(
         db, employee, business_timezone=business_timezone
@@ -552,42 +574,96 @@ def _today_attendance_status(
             "status": open_record.status.value,
             "time_in": _dt_label(open_record.time_in),
             "time_out": None,
+            "shift_assignment_id": (
+                str(open_record.shift_assignment_id)
+                if open_record.shift_assignment_id
+                else None
+            ),
         }
 
-    today_start = datetime.combine(today, time.min)
-    tomorrow_start = today_start + timedelta(days=1)
-    assignment_ids = [
-        row.id
-        for row in db.query(ShiftAssignment)
-        .filter(
-            ShiftAssignment.employee_id == employee.id,
-            ShiftAssignment.work_date == today,
-        )
-        .all()
-    ]
-    query = db.query(AttendanceRecord).filter(
-        AttendanceRecord.business_id == employee.business_id,
-        AttendanceRecord.employee_id == employee.id,
-    )
-    if assignment_ids:
-        query = query.filter(AttendanceRecord.shift_assignment_id.in_(assignment_ids))
-    else:
-        query = query.filter(
-            AttendanceRecord.created_at >= today_start,
-            AttendanceRecord.created_at < tomorrow_start,
-        )
     from app.services.leave_requests import employee_on_approved_leave
 
     if employee_on_approved_leave(db, employee_id=employee.id, work_date=today):
-        return {"status": "on_leave", "time_in": None, "time_out": None}
+        return {
+            "status": "on_leave",
+            "time_in": None,
+            "time_out": None,
+            "shift_assignment_id": None,
+        }
 
-    record = query.order_by(AttendanceRecord.created_at.desc()).first()
-    if record is None:
-        return {"status": "not_started", "time_in": None, "time_out": None}
+    rows = _list_assignment_candidates(db, employee, today)
+    if not rows:
+        today_start = datetime.combine(today, time.min)
+        tomorrow_start = today_start + timedelta(days=1)
+        record = (
+            db.query(AttendanceRecord)
+            .filter(
+                AttendanceRecord.business_id == employee.business_id,
+                AttendanceRecord.employee_id == employee.id,
+                AttendanceRecord.created_at >= today_start,
+                AttendanceRecord.created_at < tomorrow_start,
+            )
+            .order_by(AttendanceRecord.created_at.desc())
+            .first()
+        )
+        if record is None:
+            return {
+                "status": "not_started",
+                "time_in": None,
+                "time_out": None,
+                "shift_assignment_id": None,
+            }
+        return {
+            "status": record.status.value,
+            "time_in": _dt_label(record.time_in),
+            "time_out": _dt_label(record.time_out),
+            "shift_assignment_id": (
+                str(record.shift_assignment_id) if record.shift_assignment_id else None
+            ),
+        }
+
+    records = _records_by_assignment(
+        db,
+        employee_id=employee.id,
+        assignment_ids=[assignment.id for assignment, _shift in rows],
+    )
+    remaining = next(
+        (
+            (assignment, shift)
+            for assignment, shift in rows
+            if records.get(assignment.id) is None
+        ),
+        None,
+    )
+    if remaining is not None:
+        next_assignment, _next_shift = remaining
+        return {
+            "status": "not_started",
+            "time_in": None,
+            "time_out": None,
+            "shift_assignment_id": str(next_assignment.id),
+        }
+
+    latest = None
+    for assignment, _shift in reversed(rows):
+        record = records.get(assignment.id)
+        if record is not None:
+            latest = record
+            break
+    if latest is None:
+        return {
+            "status": "not_started",
+            "time_in": None,
+            "time_out": None,
+            "shift_assignment_id": None,
+        }
     return {
-        "status": record.status.value,
-        "time_in": _dt_label(record.time_in),
-        "time_out": _dt_label(record.time_out),
+        "status": latest.status.value,
+        "time_in": _dt_label(latest.time_in),
+        "time_out": _dt_label(latest.time_out),
+        "shift_assignment_id": (
+            str(latest.shift_assignment_id) if latest.shift_assignment_id else None
+        ),
     }
 
 
@@ -760,20 +836,40 @@ def dashboard(
     schedule = _employee_schedule(
         db,
         employee,
-        start_date=today,
+        start_date=today - timedelta(days=1),
         end_date=today + timedelta(days=7),
         today=today,
     )
     payroll = _payroll_response(db, employee, business)
     incomplete_rows = list_incomplete_for_employee(db, employee)
     latest_incomplete = incomplete_rows[0] if incomplete_rows else None
+    attendance_status = _today_attendance_status(
+        db, employee, today, business_timezone=business.timezone
+    )
+    target_assignment_id = attendance_status.get("shift_assignment_id")
+    today_schedule = None
+    if target_assignment_id:
+        today_schedule = next(
+            (
+                item
+                for item in schedule
+                if item.get("assignment_id") == target_assignment_id
+            ),
+            None,
+        )
+    if today_schedule is None:
+        today_items = [
+            item for item in schedule if item.get("work_date") == today.isoformat()
+        ]
+        today_schedule = next(
+            (item for item in today_items if item.get("status") == "today"),
+            today_items[0] if today_items else (schedule[0] if schedule else None),
+        )
     return {
         "profile": _employee_profile_response(db, employee, business),
-        "today_schedule": schedule[0] if schedule else None,
+        "today_schedule": today_schedule,
         "upcoming_schedules": schedule,
-        "attendance_status": _today_attendance_status(
-            db, employee, today, business_timezone=business.timezone
-        ),
+        "attendance_status": attendance_status,
         "payroll_summary": payroll["summary"],
         "performance": _performance_summary(
             db, employee, business_timezone=business.timezone
@@ -923,7 +1019,7 @@ def _face_required() -> None:
             "code": "face_required",
             "message": (
                 "Face recognition is required for attendance. "
-                "Use the face clock-in/out flow."
+                "Use the face Time In / Time Out flow."
             ),
         },
     )
@@ -946,22 +1042,46 @@ async def clock_in_with_face(
     user: Annotated[User, Depends(get_current_user)],
     latitude: Annotated[float, Form(...)],
     longitude: Annotated[float, Form(...)],
-    file: Annotated[UploadFile, File(..., description="Face image after blink/smile")],
+    file: Annotated[UploadFile | None, File()] = None,
     shift_assignment_id: Annotated[uuid.UUID | None, Form()] = None,
     liveness_gesture: Annotated[str | None, Form()] = None,
 ):
-    """Time in with GPS + client blink/smile gesture + server face match."""
+    """Time in with GPS + client blink/smile gesture + server face match.
+
+    Demo tenants (`business.is_demo`) ignore the live probe and client GPS;
+    they resolve the seeded demo identity and the fictional worksite instead.
+    """
     employee, business = _current_employee(db, user)
+    if business_is_demo(business):
+        score = verify_demo_seeded_identity(db, employee, business)
+        return clock_in_employee(
+            db,
+            employee,
+            latitude=latitude,
+            longitude=longitude,
+            shift_assignment_id=shift_assignment_id,
+            business_timezone=business.timezone,
+            face_match_score=score,
+            liveness_passed=True,
+        )
+
     gesture = (liveness_gesture or "").strip().lower()
     if gesture not in ("blink", "smile"):
         raise HTTPException(
             400,
             detail={
                 "code": "liveness_required",
-                "message": "Complete a blink or smile check before clocking in.",
+                "message": "Complete a blink or smile check before timing in.",
             },
         )
-    # Identity match first (logged-in employee gallery only); then record attendance.
+    if file is None:
+        raise HTTPException(
+            400,
+            detail={
+                "code": "face_required",
+                "message": "A face image is required for attendance.",
+            },
+        )
     image_bytes = await file.read()
     score = verify_employee_face_match(
         db, employee, image_bytes, attendance_action="clock_in"
@@ -995,18 +1115,38 @@ async def clock_out_with_face(
     user: Annotated[User, Depends(get_current_user)],
     latitude: Annotated[float, Form(...)],
     longitude: Annotated[float, Form(...)],
-    file: Annotated[UploadFile, File(..., description="Face image after blink/smile")],
+    file: Annotated[UploadFile | None, File()] = None,
     liveness_gesture: Annotated[str | None, Form()] = None,
 ):
     """Clock out with GPS + client blink/smile gesture + server face match."""
     employee, business = _current_employee(db, user)
+    if business_is_demo(business):
+        score = verify_demo_seeded_identity(db, employee, business)
+        return clock_out_employee(
+            db,
+            employee,
+            latitude=latitude,
+            longitude=longitude,
+            business_timezone=business.timezone,
+            face_match_score=score,
+            liveness_passed=True,
+        )
+
     gesture = (liveness_gesture or "").strip().lower()
     if gesture not in ("blink", "smile"):
         raise HTTPException(
             400,
             detail={
                 "code": "liveness_required",
-                "message": "Complete a blink or smile check before clocking out.",
+                "message": "Complete a blink or smile check before timing out.",
+            },
+        )
+    if file is None:
+        raise HTTPException(
+            400,
+            detail={
+                "code": "face_required",
+                "message": "A face image is required for attendance.",
             },
         )
     score = verify_employee_face_match(
@@ -1101,7 +1241,7 @@ def payslip_pdf(
             ),
         ),
     }
-    pdf = _simple_payslip_pdf(data)
+    pdf = _simple_payslip_pdf(data, sample=business_is_demo(business))
     filename = f"{employee.full_name.lower().replace(' ', '-')}-payslip.pdf"
     return Response(
         content=pdf,
@@ -1114,23 +1254,33 @@ def _pdf_escape(value: object) -> str:
     return str(value).replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
 
 
-def _simple_payslip_pdf(data: dict) -> bytes:
-    lines = [
-        "PAYSLIP",
-        data["business_name"],
-        f"Employee: {data['employee_name']}",
-        f"Position: {data.get('position_title') or 'Employee'}",
-        f"Period: {data['period_start']} to {data['period_end']}",
-        f"Worked days: {data['worked_days']}",
-        f"Daily rate: PHP {_money(data['daily_rate']):,.2f}",
-        f"Basic salary: PHP {_money(data['daily_rate'] * data['worked_days']):,.2f}",
-        f"Overtime pay: PHP {_money(data['overtime_pay']):,.2f}",
-        f"Holiday pay: PHP {_money(data['holiday_pay']):,.2f}",
-        f"Rest day premium: PHP {_money(data.get('rest_day_pay', 0)):,.2f}",
-        f"Gross pay: PHP {_money(data['gross_pay']):,.2f}",
-        f"Deductions: PHP {_money(data['deductions']):,.2f}",
-        f"Base net pay: PHP {_money(data.get('base_net_pay', data['net_pay'])):,.2f}",
-    ]
+def _simple_payslip_pdf(data: dict, *, sample: bool = False) -> bytes:
+    lines = []
+    if sample:
+        lines.extend(
+            [
+                "SAMPLE — DEMONSTRATION ONLY",
+                "NOT FOR ACTUAL SALARY PAYMENT",
+            ]
+        )
+    lines.extend(
+        [
+            "PAYSLIP",
+            data["business_name"],
+            f"Employee: {data['employee_name']}",
+            f"Position: {data.get('position_title') or 'Employee'}",
+            f"Period: {data['period_start']} to {data['period_end']}",
+            f"Worked days: {data['worked_days']}",
+            f"Daily rate: PHP {_money(data['daily_rate']):,.2f}",
+            f"Basic salary: PHP {_money(data['daily_rate'] * data['worked_days']):,.2f}",
+            f"Overtime pay: PHP {_money(data['overtime_pay']):,.2f}",
+            f"Holiday pay: PHP {_money(data['holiday_pay']):,.2f}",
+            f"Rest day premium: PHP {_money(data.get('rest_day_pay', 0)):,.2f}",
+            f"Gross pay: PHP {_money(data['gross_pay']):,.2f}",
+            f"Deductions: PHP {_money(data['deductions']):,.2f}",
+            f"Base net pay: PHP {_money(data.get('base_net_pay', data['net_pay'])):,.2f}",
+        ]
+    )
     for adj in data.get("payroll_adjustments") or []:
         sign = "-" if adj.get("kind") == "deduction" else "+"
         lines.append(
