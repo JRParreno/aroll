@@ -186,7 +186,22 @@ def pick_assignment_for_time_in(
 
     Assignments that already have an attendance record are skipped so a completed
     morning shift does not block Time In for an evening shift on the same day.
+    If the client explicitly requests a completed assignment, reject it instead of
+    silently selecting a different open shift.
     """
+    if preferred_assignment_id is not None:
+        preferred_record = records_by_assignment_id.get(preferred_assignment_id)
+        if preferred_record is not None:
+            if (
+                preferred_record.time_in is not None
+                and preferred_record.time_out is None
+            ):
+                raise HTTPException(400, "You are already timed in for this shift.")
+            raise HTTPException(
+                400,
+                "Attendance for this shift is already complete.",
+            )
+
     open_rows = [
         (assignment, shift)
         for assignment, shift in rows

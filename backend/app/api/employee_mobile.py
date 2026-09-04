@@ -731,11 +731,6 @@ def _payroll_response(
             **payslip,
             "pay_date": payslip["period_end"],
             "payroll_status": _payroll_status(period_start, period_end, date.today()),
-            "hours_worked": round(
-                float(payslip.get("worked_days") or 0) * 8.0
-                + float(payslip.get("overtime_hours") or 0),
-                2,
-            ),
         },
         "rows": rows,
         "history": [],
@@ -763,11 +758,7 @@ def _payroll_response(
                     "hourly_rate": slip.get("hourly_rate"),
                     "monthly_salary": slip.get("monthly_salary"),
                     "worked_days": slip["worked_days"],
-                    "hours_worked": round(
-                        float(slip.get("worked_days") or 0) * 8.0
-                        + float(slip.get("overtime_hours") or 0),
-                        2,
-                    ),
+                    "hours_worked": slip["hours_worked"],
                     "late_deductions": slip["late_deductions"],
                     "undertime_deductions": slip["undertime_deductions"],
                     "overtime_pay": slip["overtime_pay"],
@@ -994,11 +985,6 @@ def payslip(
         **slip,
         "pay_date": slip["period_end"],
         "payroll_status": _payroll_status(period_start, period_end, date.today()),
-        "hours_worked": round(
-            float(slip.get("worked_days") or 0) * 8.0
-            + float(slip.get("overtime_hours") or 0),
-            2,
-        ),
     }
 
 

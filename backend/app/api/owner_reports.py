@@ -268,7 +268,9 @@ def _calculate_employee_payslip(
     }
 
     regular_pay = 0.0
-    worked_days = 0.0
+    # Display counters — independent of monetary credits (which stay per-shift).
+    worked_dates: set[date] = set()
+    actual_worked_minutes = 0.0
     overtime_minutes = 0.0
     late_minutes = 0.0
     early_out_minutes = 0.0
@@ -302,6 +304,25 @@ def _calculate_employee_payslip(
                 (record.time_out - record.time_in).total_seconds() / 60.0,
                 0.0,
             )
+
+        # Worked Days / Hours Worked are display fields from completed punches.
+        # Group by assignment.work_date (overnight stays on the start date).
+        # Do not count leave, absent, or incomplete. Do not use scheduled length.
+        if (
+            record.status
+            not in (
+                AttendanceStatus.absent,
+                AttendanceStatus.incomplete,
+                AttendanceStatus.on_leave,
+            )
+            and record.time_in is not None
+            and record.time_out is not None
+        ):
+            grouping_date = (
+                assignment.work_date if assignment is not None else work_date
+            )
+            worked_dates.add(grouping_date)
+            actual_worked_minutes += worked_minutes
 
         day_rate_factor = 0.0
         day_late_minutes = 0.0
@@ -338,7 +359,6 @@ def _calculate_employee_payslip(
                 hourly_rate = leave_ctx.hourly_rate
                 day_regular = leave_ctx.scheduled_day_value
                 day_earned = leave_ctx.scheduled_day_value
-                worked_days += 1.0
                 regular_pay += day_regular
             else:
                 unpaid_leave_days += 1
@@ -386,7 +406,6 @@ def _calculate_employee_payslip(
             day_regular = pay_ctx.scheduled_day_value
             day_earned = max(day_regular - day_shortfall, 0.0)
             day_rate_factor = 1.0
-            worked_days += 1.0
             if 0 < worked_minutes < half_day_threshold:
                 half_day_days += 1
 
@@ -447,7 +466,6 @@ def _calculate_employee_payslip(
             fallback_ctx = _pay_ctx(scheduled_minutes or DEFAULT_SCHEDULED_MINUTES)
             scheduled_minutes = fallback_ctx.scheduled_minutes
             hourly_rate = fallback_ctx.hourly_rate
-            worked_days += day_rate_factor
             day_regular = fallback_ctx.scheduled_day_value * day_rate_factor
             day_earned = day_regular
             regular_pay += day_regular
@@ -605,7 +623,6 @@ def _calculate_employee_payslip(
         leave_day_value = _pay_ctx(leave_scheduled).scheduled_day_value
         if paid:
             paid_leave_days += 1
-            worked_days += 1.0
             regular_pay += leave_day_value
         else:
             unpaid_leave_days += 1
@@ -705,7 +722,8 @@ def _calculate_employee_payslip(
         # Aliases kept for older clients.
         "hourly_rate_configured": resolved_pay.hourly_rate,
         "monthly_salary_configured": resolved_pay.monthly_salary,
-        "worked_days": round(worked_days, 2),
+        "worked_days": float(len(worked_dates)),
+        "hours_worked": round(actual_worked_minutes / 60.0, 2),
         "half_day_days": half_day_days,
         "overtime_minutes": round(overtime_minutes, 2),
         "overtime_hours": round(overtime_minutes / 60, 2),
@@ -1051,11 +1069,7 @@ def payroll_report(
                 "hourly_rate": slip.get("hourly_rate"),
                 "monthly_salary": slip.get("monthly_salary"),
                 "worked_days": slip["worked_days"],
-                "hours_worked": round(
-                    float(slip.get("worked_days") or 0) * 8.0
-                    + float(slip.get("overtime_hours") or 0),
-                    2,
-                ),
+                "hours_worked": slip["hours_worked"],
                 "late_deductions": slip["late_deductions"],
                 "undertime_deductions": slip["undertime_deductions"],
                 "overtime_pay": slip["overtime_pay"],
@@ -1243,11 +1257,6 @@ def my_payslip(
         **slip,
         "pay_date": slip["period_end"],
         "payroll_status": _payroll_status(period_start, period_end, date.today()),
-        "hours_worked": round(
-            float(slip.get("worked_days") or 0) * 8.0
-            + float(slip.get("overtime_hours") or 0),
-            2,
-        ),
     }
 
 
@@ -1295,9 +1304,4 @@ def employee_payslip(
         **slip,
         "pay_date": slip["period_end"],
         "payroll_status": _payroll_status(period_start, period_end, date.today()),
-        "hours_worked": round(
-            float(slip.get("worked_days") or 0) * 8.0
-            + float(slip.get("overtime_hours") or 0),
-            2,
-        ),
     }

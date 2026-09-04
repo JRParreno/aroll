@@ -345,7 +345,7 @@ export function OwnerPayrollPage() {
                     <Row label="Worked Days" value={`${item.worked_days} days`} />
                     <Row
                       label="Hours Worked"
-                      value={`${item.hours_worked ?? item.worked_days * 8}`}
+                      value={`${item.hours_worked ?? 0}`}
                     />
                     <Row label="Overtime Pay" value={money(item.overtime_pay)} />
                     <Row

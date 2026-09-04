@@ -308,10 +308,37 @@ def test_pick_morning_then_evening_after_morning_complete():
         {morning.id: morning_record},
         now_local=datetime(2026, 8, 28, 18, 0),
         early_clock_in_minutes=15,
-        preferred_assignment_id=morning.id,
     )
     assert second.id == evening.id
     assert second_shift.name == "Evening"
+
+
+def test_pick_rejects_explicit_completed_shift_assignment_id():
+    """A completed preferred id must not fall through to another open shift."""
+    work_date = date(2026, 8, 28)
+    (morning, morning_shift), (evening, evening_shift) = _split_day_assignments(
+        employee_id=uuid.uuid4(),
+        business_id=uuid.uuid4(),
+        work_date=work_date,
+    )
+    rows = [(morning, morning_shift), (evening, evening_shift)]
+    morning_record = AttendanceRecord(
+        employee_id=morning.employee_id,
+        shift_assignment_id=morning.id,
+        status=AttendanceStatus.complete,
+        time_in=datetime(2026, 8, 28, 8, 30, tzinfo=ZoneInfo("UTC")),
+        time_out=datetime(2026, 8, 28, 12, 30, tzinfo=ZoneInfo("UTC")),
+    )
+    with pytest.raises(HTTPException) as exc:
+        pick_assignment_for_time_in(
+            rows,
+            {morning.id: morning_record},
+            now_local=datetime(2026, 8, 28, 18, 0),
+            early_clock_in_minutes=15,
+            preferred_assignment_id=morning.id,
+        )
+    assert exc.value.status_code == 400
+    assert "already complete" in exc.value.detail
 
 
 def test_pick_rejects_duplicate_for_same_shift():

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import ExitStack, contextmanager
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -115,18 +116,23 @@ def _morning_now():
     return now.replace(hour=8, minute=15, second=0, microsecond=0)
 
 
+@contextmanager
 def _patch_demo_morning():
+    """Freeze demo Time In/Out to morning in every module that reads business time."""
     frozen = _morning_now()
-    return (
-        patch(
+    with ExitStack() as stack:
+        for target in (
             "app.services.attendance_clock.business_now",
-            return_value=frozen,
-        ),
-        patch(
-            "app.services.attendance_clock.business_today",
-            return_value=frozen.date(),
-        ),
-    )
+            "app.services.missing_clock_out.business_now",
+        ):
+            stack.enter_context(patch(target, return_value=frozen))
+        stack.enter_context(
+            patch(
+                "app.services.attendance_clock.business_today",
+                return_value=frozen.date(),
+            )
+        )
+        yield
 
 
 def test_business_is_demo_requires_real_true_flag():
@@ -284,10 +290,9 @@ def test_demo_clock_in_uses_worksite_coords_and_stays_on_demo01():
     _clear_open_punches(employee_id)
     client = TestClient(app)
     token = _login_employee(client, DEMO_EMPLOYEE_01_EMAIL, DEMO_SEED_PASSWORD)
-    now_patch, today_patch = _patch_demo_morning()
     created_id = None
     try:
-        with now_patch, today_patch, patch(
+        with _patch_demo_morning(), patch(
             "app.api.employee_mobile.verify_employee_face_match"
         ) as live_match:
             response = client.post(
@@ -353,10 +358,9 @@ def test_demo_attendance_independent_of_phase1_yunet_jpeg():
 
     client = TestClient(app)
     token = _login_employee(client, DEMO_EMPLOYEE_01_EMAIL, DEMO_SEED_PASSWORD)
-    now_patch, today_patch = _patch_demo_morning()
     created_ids: list[str] = []
     try:
-        with now_patch, today_patch, patch(
+        with _patch_demo_morning(), patch(
             "app.services.face_embedding.detect_and_embed",
             side_effect=AssertionError("YuNet must not run for DEMO01 attendance"),
         ):
@@ -414,10 +418,9 @@ def test_demo_clock_out_also_substitutes_worksite_coords():
 
     client = TestClient(app)
     token = _login_employee(client, DEMO_EMPLOYEE_01_EMAIL, DEMO_SEED_PASSWORD)
-    now_patch, today_patch = _patch_demo_morning()
     record_id = None
     try:
-        with now_patch, today_patch:
+        with _patch_demo_morning():
             clock_in = client.post(
                 "/api/v1/employee/attendance/clock-in-face",
                 data={"latitude": str(_FAR_LAT), "longitude": str(_FAR_LNG)},
