@@ -81,10 +81,13 @@ FaceQualityAssessment assessFaceQuality(
     );
   }
 
+  // Glasses and heavier makeup often hide eye landmarks in ML Kit.
+  // Do not block capture if the face box and pose are already good.
   final leftEye = face.landmarks[FaceLandmarkType.leftEye];
   final rightEye = face.landmarks[FaceLandmarkType.rightEye];
   final nose = face.landmarks[FaceLandmarkType.noseBase];
-  if (leftEye == null || rightEye == null || nose == null) {
+  final hasBothEyes = leftEye != null && rightEye != null;
+  if (nose == null && !hasBothEyes) {
     return const FaceQualityAssessment(
       ok: false,
       score: 0.32,
