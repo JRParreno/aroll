@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { Building2, ChevronRight, MapPin, Users } from "lucide-react";
 import { formatDateTime, StatusBadge } from "@/components/detail/DetailLayout";
+import { TenantKindBadge } from "@/components/tenant/SimulatedBadge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { listBusinesses } from "@/lib/api";
 
@@ -96,6 +97,10 @@ export function ApprovedBusinessPage() {
                             {business.name}
                           </p>
                           <StatusBadge status={business.status} />
+                          <TenantKindBadge
+                            isDemo={business.is_demo}
+                            isInternalTest={business.is_internal_test}
+                          />
                         </div>
                         <p className="mt-1 font-mono text-sm text-[#6B7280]">
                           {business.business_code}

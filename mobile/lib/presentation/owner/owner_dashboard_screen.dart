@@ -5,6 +5,7 @@ import 'package:aroll_mobile/domain/entities/user_session.dart';
 import 'package:aroll_mobile/presentation/owner/owner_shell.dart';
 import 'package:aroll_mobile/presentation/owner/setup/setup_progress_card.dart';
 import 'package:aroll_mobile/presentation/shared/app_ui.dart';
+import 'package:aroll_mobile/presentation/shared/tenant_mode_banner.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
@@ -78,21 +79,29 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
                   ownerName: ownerName,
                   logoUrl: logoUrl,
                 ),
+                if (widget.session.isDemo) ...[
+                  const SizedBox(height: 10),
+                  const PrototypeNoticeCard(),
+                ],
                 if (setup['setup_completed_at'] == null) ...[
                   const SizedBox(height: 16),
                   SetupProgressCard(data: setup),
                 ],
                 const SizedBox(height: 20),
-                const _SectionLabel(
-                  title: 'Performance overview',
-                  subtitle: 'Attendance breakdown across recent shifts',
+                _SectionLabel(
+                  title: widget.session.isDemo
+                      ? 'Simulated attendance overview'
+                      : 'Performance overview',
+                  subtitle: widget.session.isDemo
+                      ? 'Demo records only — not a real employee performance evaluation'
+                      : 'Attendance breakdown across recent shifts',
                 ),
                 const SizedBox(height: 12),
                 _PerformanceOverviewCard(summary: summary),
                 const SizedBox(height: 20),
                 const _SectionLabel(
                   title: 'Team insights',
-                  subtitle: 'Tap a card to explore more detail',
+                  subtitle: 'Attendance rate and punctuality',
                 ),
                 const SizedBox(height: 12),
                 _InsightCards(summary: summary),
@@ -388,34 +397,15 @@ class _InsightCards extends StatelessWidget {
   Widget build(BuildContext context) {
     final attendance =
         ownerParseInt(summary['attendance_rate']).clamp(0, 100);
-    final productivity =
-        ownerParseInt(summary['productivity_score']).clamp(0, 100);
     final punctuality =
         ownerParseInt(summary['punctuality_rate']).clamp(0, 100);
 
-    return Row(
-      children: [
-        Expanded(
-          child: _InsightCard(
-            title: 'Productivity',
-            value: '$productivity%',
-            caption: 'Team score',
-            progress: productivity / 100,
-            accent: AppColors.primary,
-            onTap: () => context.push('/owner/productivity'),
-          ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: _InsightCard(
-            title: 'Attendance',
-            value: '$attendance%',
-            caption: 'Punctuality $punctuality%',
-            progress: attendance / 100,
-            accent: AppColors.success,
-          ),
-        ),
-      ],
+    return _InsightCard(
+      title: 'Attendance',
+      value: '$attendance%',
+      caption: 'Punctuality $punctuality%',
+      progress: attendance / 100,
+      accent: AppColors.success,
     );
   }
 }
@@ -427,7 +417,6 @@ class _InsightCard extends StatelessWidget {
     required this.caption,
     required this.progress,
     required this.accent,
-    this.onTap,
   });
 
   final String title;
@@ -435,74 +424,56 @@ class _InsightCard extends StatelessWidget {
   final String caption;
   final double progress;
   final Color accent;
-  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    return AppPressable(
-      onTap: onTap ?? () {},
-      enabled: onTap != null,
-      borderRadius: BorderRadius.circular(14),
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(12, 10, 10, 10),
-        decoration: BoxDecoration(
-          color: AppColors.white,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: AppColors.border),
-          boxShadow: appCardShadow,
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    title,
-                    style: const TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.textBody,
-                    ),
-                  ),
-                ),
-                if (onTap != null)
-                  Icon(
-                    Icons.chevron_right_rounded,
-                    size: 16,
-                    color: AppColors.textMuted.withValues(alpha: 0.8),
-                  ),
-              ],
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 10, 10, 10),
+      decoration: BoxDecoration(
+        color: AppColors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.border),
+        boxShadow: appCardShadow,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: AppColors.textBody,
             ),
-            const SizedBox(height: 8),
-            Text(
-              value,
-              style: TextStyle(
-                fontSize: 22,
-                fontWeight: FontWeight.w700,
-                color: accent,
-                height: 1,
-              ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.w700,
+              color: accent,
+              height: 1,
             ),
-            const SizedBox(height: 4),
-            Text(
-              caption,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: appMutedStyle().copyWith(fontSize: 11),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            caption,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: appMutedStyle().copyWith(fontSize: 11),
+          ),
+          const SizedBox(height: 8),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(999),
+            child: LinearProgressIndicator(
+              value: progress.clamp(0, 1),
+              minHeight: 4,
+              backgroundColor: accent.withValues(alpha: 0.12),
+              color: accent,
             ),
-            const SizedBox(height: 8),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(999),
-              child: LinearProgressIndicator(
-                value: progress.clamp(0, 1),
-                minHeight: 4,
-                backgroundColor: accent.withValues(alpha: 0.12),
-                color: accent,
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -515,106 +486,12 @@ class _PerformanceOverviewCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final values = [
-      (
-        'On time',
-        ownerParseInt(summary['on_time_clock_ins']),
-        AppColors.success,
-      ),
-      (
-        'Late',
-        ownerParseInt(summary['late_clock_ins']),
-        AppColors.warning,
-      ),
-      (
-        'Undertime',
-        ownerParseInt(summary['undertime_shifts']),
-        const Color(0xFFEA580C),
-      ),
-      (
-        'Overtime',
-        ownerParseInt(summary['overtime_shifts']),
-        AppColors.primary,
-      ),
-      (
-        'Absent',
-        ownerParseInt(summary['absent_shifts']),
-        AppColors.danger,
-      ),
-    ];
-    final maxValue = values
-        .map((entry) => entry.$2)
-        .fold<int>(1, (prev, value) => value > prev ? value : prev);
-
-    return Container(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
-      decoration: BoxDecoration(
-        color: AppColors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: AppColors.border),
-        boxShadow: appCardShadow,
-      ),
-      child: SizedBox(
-        height: 150,
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            for (final entry in values)
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                  child: Column(
-                    children: [
-                      Text(
-                        '${entry.$2}',
-                        style: const TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                          height: 1.2,
-                          color: AppColors.textPrimary,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Expanded(
-                        child: Align(
-                          alignment: Alignment.bottomCenter,
-                          child: FractionallySizedBox(
-                            widthFactor: 1,
-                            heightFactor: (entry.$2 / maxValue).clamp(0.18, 1),
-                            child: DecoratedBox(
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  begin: Alignment.bottomCenter,
-                                  end: Alignment.topCenter,
-                                  colors: [
-                                    entry.$3,
-                                    entry.$3.withValues(alpha: 0.72),
-                                  ],
-                                ),
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        entry.$1,
-                        textAlign: TextAlign.center,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: appMutedStyle().copyWith(
-                          fontSize: 10,
-                          height: 1.2,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-          ],
-        ),
-      ),
+    return OwnerOverviewBarChart(
+      onTime: ownerParseInt(summary['on_time_clock_ins']),
+      late: ownerParseInt(summary['late_clock_ins']),
+      undertime: ownerParseInt(summary['undertime_shifts']),
+      overtime: ownerParseInt(summary['overtime_shifts']),
+      absent: ownerParseInt(summary['absent_shifts']),
     );
   }
 }

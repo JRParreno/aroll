@@ -25,7 +25,7 @@ abstract final class SetupUi {
       isDense: true,
       filled: true,
       fillColor: AppColors.fieldFill,
-      labelText: label,
+      labelText: label.isEmpty ? null : label,
       hintText: hint,
       labelStyle: const TextStyle(
         fontSize: 12.5,
@@ -177,10 +177,13 @@ class SetupPanel extends StatelessWidget {
                       ),
                     ),
                     if (subtitle != null) ...[
-                      const SizedBox(height: 2),
+                      const SizedBox(height: 4),
                       Text(
                         subtitle!,
-                        style: appMutedStyle().copyWith(fontSize: 11.5),
+                        style: appMutedStyle().copyWith(
+                          fontSize: 12.5,
+                          height: 1.4,
+                        ),
                       ),
                     ],
                   ],
@@ -190,6 +193,60 @@ class SetupPanel extends StatelessWidget {
           ),
           const SizedBox(height: 10),
           ...children,
+        ],
+      ),
+    );
+  }
+}
+
+class SetupLabeledSetting extends StatelessWidget {
+  const SetupLabeledSetting({
+    super.key,
+    required this.title,
+    required this.description,
+    required this.controller,
+    this.keyboardType = TextInputType.number,
+    this.inputHint,
+  });
+
+  final String title;
+  final String description;
+  final TextEditingController controller;
+  final TextInputType keyboardType;
+  final String? inputHint;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+              height: 1.3,
+              color: AppColors.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            description,
+            style: const TextStyle(
+              fontSize: 13,
+              height: 1.45,
+              color: AppColors.textMuted,
+            ),
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            controller: controller,
+            keyboardType: keyboardType,
+            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+            decoration: SetupUi.input('', hint: inputHint),
+          ),
         ],
       ),
     );

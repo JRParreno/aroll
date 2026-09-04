@@ -53,6 +53,9 @@ def _employee_response(emp: Employee, user: User) -> EmployeeResponse:
         monthly_salary=_float_or_none(getattr(emp, "monthly_salary", None)),
         status=emp.status.value,
         must_change_password=user.must_change_password,
+        face_registration_status=(
+            getattr(emp, "face_registration_status", None) or "not_registered"
+        ),
         temporary_password=(
             user.pending_temporary_password if user.must_change_password else None
         ),
@@ -84,6 +87,18 @@ def _get_business_employee(
     if row is None:
         raise HTTPException(404, "Employee not found")
     return row
+
+
+def _require_business_position(
+    db: Session, position_id: uuid.UUID, business_id: uuid.UUID
+) -> Position:
+    pos = db.get(Position, position_id)
+    if pos is None or pos.business_id != business_id:
+        raise HTTPException(400, "Invalid position")
+    # In-memory/test objects may leave is_active unset (None); treat that as active.
+    if getattr(pos, "is_active", True) is False:
+        raise HTTPException(400, "Invalid position")
+    return pos
 
 
 def _raise_pay_validation(exc: ValueError) -> None:
@@ -124,9 +139,7 @@ def create_employee(
     position_title = body.position_title.strip()
     pos: Position | None = None
     if position_id:
-        pos = db.get(Position, position_id)
-        if pos is None or pos.business_id != user.business_id:
-            raise HTTPException(400, "Invalid position")
+        pos = _require_business_position(db, position_id, user.business_id)
         if not position_title:
             position_title = pos.title
 
@@ -134,7 +147,7 @@ def create_employee(
     daily_rate = body.daily_rate
     hourly_rate = body.hourly_rate
     monthly_salary = body.monthly_salary
-    # Prefill daily rate from Position when creating (owner may override in body).
+    # Prefill from Position when creating (owner may override in body).
     if (
         pay_basis == PayBasis.daily
         and daily_rate is None
@@ -142,6 +155,13 @@ def create_employee(
         and pos.daily_rate is not None
     ):
         daily_rate = float(pos.daily_rate)
+    if (
+        pay_basis == PayBasis.hourly
+        and hourly_rate is None
+        and pos is not None
+        and getattr(pos, "hourly_rate", None) is not None
+    ):
+        hourly_rate = float(pos.hourly_rate)
 
     try:
         _validate_pay_fields(
@@ -203,9 +223,9 @@ def update_employee(
     if "position_id" in updates:
         raw_position_id = updates.pop("position_id")
         if raw_position_id:
-            pos = db.get(Position, uuid.UUID(raw_position_id))
-            if pos is None or pos.business_id != user.business_id:
-                raise HTTPException(400, "Invalid position")
+            pos = _require_business_position(
+                db, uuid.UUID(raw_position_id), user.business_id
+            )
             emp.position_id = pos.id
             if "position_title" not in updates:
                 emp.position_title = pos.title

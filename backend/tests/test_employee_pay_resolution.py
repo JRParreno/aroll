@@ -72,6 +72,51 @@ def test_hourly_context_uses_hourly_rate_not_position_daily():
     assert ctx.hourly_rate == 95.0
 
 
+def test_resolve_prefers_employee_hourly_rate():
+    employee = SimpleNamespace(
+        pay_basis=PayBasis.hourly,
+        daily_rate=None,
+        hourly_rate=120.0,
+        monthly_salary=None,
+    )
+    position = SimpleNamespace(daily_rate=650.0, hourly_rate=80.0)
+    resolved = resolve_employee_pay(employee, position=position)
+    assert resolved.hourly_rate == 120.0
+    assert resolved.daily_rate == 650.0
+
+
+def test_resolve_falls_back_to_position_hourly_rate():
+    employee = SimpleNamespace(
+        pay_basis=PayBasis.hourly,
+        daily_rate=None,
+        hourly_rate=None,
+        monthly_salary=None,
+    )
+    position = SimpleNamespace(daily_rate=650.0, hourly_rate=80.0)
+    resolved = resolve_employee_pay(employee, position=position)
+    assert resolved.hourly_rate == 80.0
+    assert resolved.used_position_fallback is True
+    ctx = resolve_employee_pay_context(
+        employee, 480.0, position=position, resolved=resolved
+    )
+    assert ctx.hourly_rate == 80.0
+    assert ctx.minute_rate == 80.0 / 60.0
+    assert ctx.scheduled_day_value == 80.0 * 8.0
+
+
+def test_hourly_context_ignores_position_daily_when_hourly_fallback_used():
+    employee = SimpleNamespace(
+        pay_basis=PayBasis.hourly,
+        daily_rate=None,
+        hourly_rate=None,
+        monthly_salary=None,
+    )
+    position = SimpleNamespace(daily_rate=9999.0, hourly_rate=100.0)
+    ctx = resolve_employee_pay_context(employee, 480.0, position=position)
+    assert ctx.hourly_rate == 100.0
+    assert ctx.scheduled_day_value == 800.0
+
+
 def _ph(hour: int, minute: int = 0) -> datetime:
     utc_hour = hour - 8
     day = 4

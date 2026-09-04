@@ -33,9 +33,6 @@ class _OwnerNotificationsScreenState extends State<OwnerNotificationsScreen> {
   IconData _iconFor(String type) {
     if (type.startsWith('leave')) return Icons.event_busy_rounded;
     if (type.startsWith('attendance')) return Icons.fact_check_outlined;
-    if (type.contains('employee_of_the_month') || type.contains('productivity')) {
-      return Icons.emoji_events_outlined;
-    }
     if (type.startsWith('payroll')) return Icons.payments_outlined;
     if (type.startsWith('schedule')) return Icons.calendar_month_outlined;
     return Icons.notifications_outlined;
@@ -81,12 +78,6 @@ class _OwnerNotificationsScreenState extends State<OwnerNotificationsScreen> {
       } else {
         context.push('/owner/attendance');
       }
-      return;
-    }
-    if (type.contains('employee_of_the_month') ||
-        type.contains('productivity') ||
-        entityType.contains('productivity')) {
-      context.push('/owner/productivity');
       return;
     }
     context.push('/owner/leave');

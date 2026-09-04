@@ -11,14 +11,14 @@ import {
   KeyRound,
   Phone,
   Plus,
-  ScanFace,
   Search,
   UserPlus,
 } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
-import { Link } from "react-router-dom";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
+import { SimulatedBadge } from "@/components/tenant/SimulatedBadge";
+import { useTenantMode } from "@/lib/tenantMode";
 import { Button } from "@/components/ui/button";
 import {
   OwnerPage,
@@ -176,6 +176,7 @@ function weekdayLabel(dateKey: string) {
 
 export function OwnerEmployeesPage() {
   const qc = useQueryClient();
+  const { isDemo } = useTenantMode();
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
   const [formOpen, setFormOpen] = useState(false);
@@ -256,6 +257,10 @@ export function OwnerEmployeesPage() {
           current.payBasis === "daily" && selected?.daily_rate != null
             ? String(selected.daily_rate)
             : current.dailyRate,
+        hourlyRate:
+          current.payBasis === "hourly" && selected?.hourly_rate != null
+            ? String(selected.hourly_rate)
+            : current.hourlyRate,
       }));
       return;
     }
@@ -268,6 +273,11 @@ export function OwnerEmployeesPage() {
         (!current.dailyRate.trim() ||
           (prev?.daily_rate != null &&
             Number(current.dailyRate) === Number(prev.daily_rate)));
+      const stillDefaultHourly =
+        current.payBasis === "hourly" &&
+        (!current.hourlyRate.trim() ||
+          (prev?.hourly_rate != null &&
+            Number(current.hourlyRate) === Number(prev.hourly_rate)));
       return {
         ...current,
         positionId: nextPositionId,
@@ -276,6 +286,13 @@ export function OwnerEmployeesPage() {
           stillDefault && selected?.daily_rate != null
             ? String(selected.daily_rate)
             : current.dailyRate,
+        hourlyRate: stillDefaultHourly
+          ? selected?.hourly_rate != null
+            ? String(selected.hourly_rate)
+            : prev?.hourly_rate != null
+              ? ""
+              : current.hourlyRate
+          : current.hourlyRate,
       };
     });
   }
@@ -408,7 +425,11 @@ export function OwnerEmployeesPage() {
     <OwnerPage>
       <OwnerPageHeader
         title="Employees"
-        description="Search your team, open a profile, or enroll a new employee."
+        description={
+          isDemo
+            ? "Simulated demo employees for research/defense presentation only."
+            : "Search your team, open a profile, or enroll a new employee."
+        }
         actions={
           <Button
             className="h-9 gap-1.5 rounded-xl px-3 font-medium"
@@ -464,6 +485,11 @@ export function OwnerEmployeesPage() {
                       <h2 className="truncate text-sm font-semibold text-[#1F2937] group-hover:text-[#1E3A5F]">
                         {employee.full_name}
                       </h2>
+                      {isDemo ? (
+                        <p className="mt-1">
+                          <SimulatedBadge label="Demo Employee" />
+                        </p>
+                      ) : null}
                       <div className="mt-2 flex items-center gap-2 text-[11px] font-medium text-[#6B7280]">
                         <Phone className="h-3.5 w-3.5 shrink-0 text-[#9CA3AF]" />
                         <span className="truncate">
@@ -716,6 +742,11 @@ export function OwnerEmployeesPage() {
                           <p className="truncate text-lg font-semibold tracking-tight">
                             {detailsEmployee.full_name}
                           </p>
+                          {isDemo ? (
+                            <p className="mt-1">
+                              <SimulatedBadge label="Demo Employee" />
+                            </p>
+                          ) : null}
                           <p className="mt-0.5 truncate text-sm text-white/80">
                             {detailsEmployee.position_title ?? "No role"}
                           </p>
@@ -867,19 +898,6 @@ export function OwnerEmployeesPage() {
                     }}
                   >
                     Edit
-                  </Button>
-                  <Button
-                    className="rounded-xl"
-                    variant="outline"
-                    asChild
-                  >
-                    <Link
-                      to={`/owner/face-demo?employeeId=${detailsEmployee.id}`}
-                      onClick={() => setDetailsEmployee(null)}
-                    >
-                      <ScanFace className="mr-2 h-4 w-4" />
-                      Enroll face
-                    </Link>
                   </Button>
                 </div>
                 {detailsEmployee.status === "inactive" ? (
@@ -1053,7 +1071,7 @@ function EmployeeFields({
   onPositionChange,
 }: {
   form: EmployeeForm;
-  positions: { id: string; title: string; daily_rate: number }[];
+  positions: { id: string; title: string; daily_rate: number; hourly_rate?: number | null }[];
   editing?: boolean;
   onChange: (form: EmployeeForm) => void;
   onPositionChange: (positionId: string) => void;
@@ -1179,6 +1197,12 @@ function EmployeeFields({
                 selected?.daily_rate != null
                   ? String(selected.daily_rate)
                   : form.dailyRate,
+              hourlyRate:
+                payBasis === "hourly" &&
+                !form.hourlyRate.trim() &&
+                selected?.hourly_rate != null
+                  ? String(selected.hourly_rate)
+                  : form.hourlyRate,
             });
           }}
         >
@@ -1232,6 +1256,11 @@ function EmployeeFields({
               onChange({ ...form, hourlyRate: event.target.value })
             }
           />
+          <p className="text-xs text-[#6B7280]">
+            Prefills from the selected position when an hourly rate is
+            configured. You can override it for this employee. Payroll uses this
+            employee hourly rate (position hourly rate is fallback only).
+          </p>
         </div>
       ) : null}
       {form.payBasis === "monthly" ? (

@@ -1,4 +1,5 @@
 import 'package:aroll_mobile/core/app_state.dart';
+import 'package:aroll_mobile/core/tenant_mode.dart';
 import 'package:aroll_mobile/core/di/injection.dart';
 import 'package:aroll_mobile/core/theme/business_brand_theme.dart';
 import 'package:aroll_mobile/domain/entities/employee_portal.dart';
@@ -42,16 +43,11 @@ class _EmployeePayrollScreenState extends State<EmployeePayrollScreen> {
   @override
   Widget build(BuildContext context) {
     return EmployeeScaffold(
-      title: 'Payroll',
+      title: sl<AppState>().session?.isDemo == true
+          ? TenantModeCopy.samplePayroll
+          : 'Payroll',
       selectedIndex: 3,
       showBack: true,
-      actions: [
-        IconButton(
-          tooltip: 'Payroll History',
-          onPressed: () => context.push('/payroll/history'),
-          icon: const Icon(Icons.history_rounded),
-        ),
-      ],
       child: FutureBuilder<_PayrollData>(
         future: _future,
         builder: (context, snapshot) {
@@ -73,7 +69,9 @@ class _EmployeePayrollScreenState extends State<EmployeePayrollScreen> {
               _DailyWageCard(payroll: payroll),
               const SizedBox(height: 18),
               EmployeePrimaryButton(
-                label: 'View Payslip',
+                label: sl<AppState>().session?.isDemo == true
+                    ? 'View sample payslip'
+                    : 'View Payslip',
                 onPressed: () => context.go('/payslip'),
                 icon: Icons.receipt_long_rounded,
               ),
@@ -236,7 +234,9 @@ class _CurrentSalaryCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Current net pay',
+                  sl<AppState>().session?.isDemo == true
+                      ? 'Sample net pay'
+                      : 'Current net pay',
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w600,

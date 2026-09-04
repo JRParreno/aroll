@@ -15,6 +15,7 @@ import {
   formatWeekRange,
   getWeekDays,
   getWeekStart,
+  isEmployeeFullyActivated,
   navigateWeek,
   toDateKey,
   WEEKDAY_LABELS,
@@ -45,6 +46,7 @@ import {
   listHolidays,
   listShifts,
   updateScheduleAssignment,
+  updateShift,
   type Employee,
   type ScheduleAssignment,
   type Shift,
@@ -56,7 +58,8 @@ type EmployeeAvailability =
   | "leavePending"
   | "onLeave"
   | "assigned"
-  | "conflict";
+  | "conflict"
+  | "activationRequired";
 
 const defaultTableColors = DEFAULT_SCHEDULE_TABLE_COLORS;
 
@@ -73,11 +76,17 @@ function overlaps(first: Shift, second: Shift) {
   return first.start_time < second.end_time && second.start_time < first.end_time;
 }
 
+function toTimeInputValue(value: string) {
+  const [hour = "00", minute = "00"] = value.split(":");
+  return `${String(Number(hour) || 0).padStart(2, "0")}:${String(Number(minute) || 0).padStart(2, "0")}`;
+}
+
 function statusTone(status: EmployeeAvailability) {
   if (status === "available") return "bg-emerald-50 text-emerald-700 border-emerald-100";
   if (status === "leavePending") return "bg-violet-50 text-violet-700 border-violet-100";
   if (status === "onLeave") return "bg-rose-50 text-rose-700 border-rose-100";
   if (status === "assigned") return "bg-blue-50 text-blue-700 border-blue-100";
+  if (status === "activationRequired") return "bg-slate-100 text-slate-700 border-slate-200";
   return "bg-amber-50 text-amber-700 border-amber-100";
 }
 
@@ -86,6 +95,7 @@ function availabilityLabel(status: EmployeeAvailability) {
   if (status === "leavePending") return "Leave Pending";
   if (status === "onLeave") return "On Leave";
   if (status === "assigned") return "Already assigned";
+  if (status === "activationRequired") return "Activation required";
   return "Conflict";
 }
 
@@ -143,6 +153,8 @@ export function OwnerSchedulePage() {
   const [showNewShift, setShowNewShift] = useState(false);
   const [overrideDialogOpen, setOverrideDialogOpen] = useState(false);
   const [overrideEmployeeNames, setOverrideEmployeeNames] = useState<string[]>([]);
+  const [editingShift, setEditingShift] = useState<Shift | null>(null);
+  const [editTimes, setEditTimes] = useState({ start_time: "", end_time: "" });
   const [newShift, setNewShift] = useState({
     name: "",
     start_time: "08:00",
@@ -220,6 +232,7 @@ export function OwnerSchedulePage() {
   }, [assignmentsForDate]);
 
   function availabilityFor(employee: Employee): EmployeeAvailability {
+    if (!isEmployeeFullyActivated(employee)) return "activationRequired";
     const leaveState = leaveByEmployee.get(employee.id);
     if (leaveState?.on_leave) return "onLeave";
     if (leaveState?.leave_pending) return "leavePending";
@@ -280,8 +293,26 @@ export function OwnerSchedulePage() {
   );
 
   const modalEmployees = filteredEmployees.filter(
-    (employee) => availabilityFor(employee) !== "onLeave"
+    (employee) =>
+      availabilityFor(employee) !== "onLeave" &&
+      availabilityFor(employee) !== "activationRequired"
   );
+  const activationRequiredEmployees = employees.filter((employee) => {
+    if (availabilityFor(employee) !== "activationRequired") return false;
+    const matchesSearch = [
+      employee.full_name,
+      employee.position_title ?? "",
+      employee.employment_type,
+    ]
+      .join(" ")
+      .toLowerCase()
+      .includes(search.toLowerCase());
+    return (
+      matchesSearch &&
+      (positionFilter === "all" || employee.position_title === positionFilter) &&
+      (typeFilter === "all" || employee.employment_type === typeFilter)
+    );
+  });
   const onLeaveEmployees = employees.filter((employee) => {
     const availability = availabilityFor(employee);
     if (availability !== "onLeave") return false;
@@ -412,6 +443,23 @@ export function OwnerSchedulePage() {
     onError: () => toast.error("Failed to create shift"),
   });
 
+  const saveShiftTimes = useMutation({
+    mutationFn: () => {
+      if (!editingShift) throw new Error("No shift selected");
+      return updateShift(editingShift.id, {
+        start_time: editTimes.start_time,
+        end_time: editTimes.end_time,
+      });
+    },
+    onSuccess: () => {
+      toast.success("Shift times updated");
+      setEditingShift(null);
+      qc.invalidateQueries({ queryKey: ["shifts"] });
+      qc.invalidateQueries({ queryKey: ["weekly-schedule"] });
+    },
+    onError: () => toast.error("Could not update shift times"),
+  });
+
   const removeAssignment = useMutation({
     mutationFn: deleteScheduleAssignment,
     onSuccess: () => {
@@ -424,6 +472,7 @@ export function OwnerSchedulePage() {
 
   function toggleEmployee(employee: Employee) {
     const availability = availabilityFor(employee);
+    if (availability === "activationRequired") return;
     if (availability === "onLeave") {
       setSelectedEmployeeIds((current) =>
         current.includes(employee.id)
@@ -639,24 +688,40 @@ export function OwnerSchedulePage() {
                           {shift.employee_capacity}
                         </p>
                       </div>
-                      <Button
-                        variant="outline"
-                        className="gap-2"
-                        onClick={() => openEmployeeModal(shift.id)}
-                      >
-                        <Users className="h-4 w-4" />
-                        Add Employee
-                      </Button>
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          variant="outline"
+                          className="gap-2"
+                          onClick={() => {
+                            setEditingShift(shift);
+                            setEditTimes({
+                              start_time: toTimeInputValue(shift.start_time),
+                              end_time: toTimeInputValue(shift.end_time),
+                            });
+                          }}
+                        >
+                          <Pencil className="h-4 w-4" />
+                          Edit times
+                        </Button>
+                        <Button
+                          variant="outline"
+                          className="gap-2"
+                          onClick={() => openEmployeeModal(shift.id)}
+                        >
+                          <Users className="h-4 w-4" />
+                          Add Employee
+                        </Button>
+                      </div>
                     </div>
 
-                    <div className="mt-5 overflow-hidden rounded-xl border border-slate-100">
-                      <table className="w-full text-sm">
+                    <div className="mt-5 overflow-x-auto rounded-xl border border-slate-100">
+                      <table className="w-full min-w-[640px] table-fixed text-sm">
                         <thead className="bg-[#F9FAFB] text-left text-[#6B7280]">
                           <tr>
-                            <th className="px-4 py-3 font-medium">Employee</th>
-                            <th className="px-4 py-3 font-medium">Position</th>
-                            <th className="px-4 py-3 font-medium">Status</th>
-                            <th className="px-4 py-3 text-right font-medium">Actions</th>
+                            <th className="w-[34%] px-4 py-3 font-medium">Employee</th>
+                            <th className="w-[20%] px-4 py-3 font-medium">Position</th>
+                            <th className="w-[32%] px-4 py-3 font-medium">Status</th>
+                            <th className="w-[14%] px-4 py-3 text-right font-medium">Actions</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -673,13 +738,15 @@ export function OwnerSchedulePage() {
                               );
                               return (
                                 <tr className="border-t border-slate-100" key={assignment.id}>
-                                  <td className="px-4 py-3 font-medium text-[#1F2937]">
-                                    {assignment.employee_name}
+                                  <td className="px-4 py-3 align-middle font-medium text-[#1F2937]">
+                                    <span className="block break-words">
+                                      {assignment.employee_name}
+                                    </span>
                                   </td>
-                                  <td className="px-4 py-3 text-[#6B7280]">
-                                    {employee?.position_title ?? "Unassigned"}d
+                                  <td className="px-4 py-3 align-middle text-[#6B7280]">
+                                    {employee?.position_title ?? "Unassigned"}
                                   </td>
-                                  <td className="px-4 py-3">
+                                  <td className="px-4 py-3 align-middle">
                                     <div className="flex flex-wrap gap-2">
                                       {assignment.on_leave ? (
                                         <span className="rounded-full border border-rose-100 bg-rose-50 px-2.5 py-1 text-xs font-medium text-rose-700">
@@ -707,7 +774,7 @@ export function OwnerSchedulePage() {
                                       )}
                                     </div>
                                   </td>
-                                  <td className="px-4 py-3">
+                                  <td className="px-4 py-3 align-middle">
                                     <div className="flex justify-end gap-2">
                                       <Button
                                         variant="outline"
@@ -1058,6 +1125,7 @@ export function OwnerSchedulePage() {
               <option value="onLeave">On leave</option>
               <option value="assigned">Already assigned</option>
               <option value="conflict">Conflicts</option>
+              <option value="activationRequired">Activation required</option>
             </select>
           </div>
 
@@ -1126,6 +1194,51 @@ export function OwnerSchedulePage() {
                 )}
               </tbody>
             </table>
+
+            {activationRequiredEmployees.length > 0 ? (
+              <>
+                <p className="sticky top-0 z-10 border-y border-slate-100 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-wide text-[#6B7280]">
+                  Activation required
+                </p>
+                <table className="w-full min-w-[720px] text-sm">
+                  <tbody>
+                    {activationRequiredEmployees.map((employee) => (
+                      <tr
+                        className="border-t border-slate-100 opacity-70"
+                        key={employee.id}
+                      >
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-3">
+                            <input disabled readOnly type="checkbox" />
+                            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-[#374151]">
+                              {initials(employee.full_name)}
+                            </div>
+                            <span className="font-medium text-[#1F2937]">
+                              {employee.full_name}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-[#6B7280]">
+                          {employee.position_title ?? "Unassigned"}
+                        </td>
+                        <td className="px-4 py-3 text-[#6B7280]">
+                          {employee.employment_type === "full_time"
+                            ? "Full-Time"
+                            : "Part-Time"}
+                        </td>
+                        <td className="px-4 py-3">
+                          <span
+                            className={`rounded-full border px-2.5 py-1 text-xs font-medium ${statusTone("activationRequired")}`}
+                          >
+                            Activation required
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </>
+            ) : null}
 
             {onLeaveEmployees.length > 0 ? (
               <>
@@ -1223,6 +1336,57 @@ export function OwnerSchedulePage() {
               onClick={confirmLeaveOverride}
             >
               Assign Anyway
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(editingShift)}
+        onOpenChange={(open) => {
+          if (!open) setEditingShift(null);
+        }}
+      >
+        <DialogContent className="max-w-md sm:rounded-2xl">
+          <DialogHeader>
+            <DialogTitle>Edit {editingShift?.name} times</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className="space-y-2 text-sm font-medium text-[#374151]">
+              <span>Start time</span>
+              <Input
+                type="time"
+                value={editTimes.start_time}
+                onChange={(event) =>
+                  setEditTimes({ ...editTimes, start_time: event.target.value })
+                }
+              />
+            </label>
+            <label className="space-y-2 text-sm font-medium text-[#374151]">
+              <span>End time</span>
+              <Input
+                type="time"
+                value={editTimes.end_time}
+                onChange={(event) =>
+                  setEditTimes({ ...editTimes, end_time: event.target.value })
+                }
+              />
+            </label>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditingShift(null)}>
+              Cancel
+            </Button>
+            <Button
+              className="bg-[#1E3A5F] hover:bg-[#284B73]"
+              disabled={
+                !editTimes.start_time ||
+                !editTimes.end_time ||
+                saveShiftTimes.isPending
+              }
+              onClick={() => saveShiftTimes.mutate()}
+            >
+              {saveShiftTimes.isPending ? "Saving..." : "Save times"}
             </Button>
           </DialogFooter>
         </DialogContent>

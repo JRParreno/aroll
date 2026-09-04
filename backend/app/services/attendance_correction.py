@@ -39,7 +39,7 @@ def _as_utc(value: datetime) -> datetime:
         # Treat naive client times as business-local wall clock.
         raise HTTPException(
             400,
-            "Clock times must include a timezone offset (e.g. 2026-07-19T09:00:00+08:00).",
+            "Time In and Time Out must include a timezone offset (e.g. 2026-07-19T09:00:00+08:00).",
         )
     return value.astimezone(timezone.utc)
 
@@ -210,31 +210,31 @@ def create_correction_request(
         if record.time_in is None:
             raise HTTPException(
                 400,
-                "Incomplete attendance is missing a recorded clock-in.",
+                "Incomplete attendance is missing a recorded Time In.",
             )
         official_in = _as_utc(record.time_in)
         if time_out_utc is None:
             raise HTTPException(
                 400,
-                "Please provide the corrected clock-out time.",
+                "Please provide the corrected Time Out.",
             )
         if time_in_utc is not None and abs(
             (time_in_utc - official_in).total_seconds()
         ) > 60:
             raise HTTPException(
                 400,
-                "Clock-in cannot be changed for incomplete attendance. "
-                "Contact your manager if the recorded clock-in is wrong.",
+                "Time In cannot be changed for incomplete attendance. "
+                "Contact your manager if the recorded Time In is wrong.",
             )
         time_in_utc = official_in
     elif time_in_utc is None or time_out_utc is None:
         # Non-incomplete corrections still require both punches.
         raise HTTPException(
             400,
-            "Please provide corrected clock-in and clock-out times.",
+            "Please provide corrected Time In and Time Out.",
         )
     if time_out_utc <= time_in_utc:
-        raise HTTPException(400, "Clock-out must be after clock-in.")
+        raise HTTPException(400, "Time Out must be after Time In.")
 
     # Validate times fall on/near the work date (allow overnight).
     local_anchor = datetime.combine(assignment.work_date, shift.start_time)
@@ -244,7 +244,7 @@ def create_correction_request(
         hour=0, minute=0, second=0, microsecond=0
     ) - timedelta(hours=12)
     window_end = work_start_local.astimezone(timezone.utc) + timedelta(hours=36)
-    for label, punch in (("Clock-in", time_in_utc), ("Clock-out", time_out_utc)):
+    for label, punch in (("Time In", time_in_utc), ("Time Out", time_out_utc)):
         if punch < window_start or punch > window_end:
             raise HTTPException(
                 400,
@@ -383,9 +383,9 @@ def approve_correction(
     ):
         final_in = record.time_in
     if final_in is None:
-        raise HTTPException(400, "Approved correction is missing a clock-in time.")
+        raise HTTPException(400, "Approved correction is missing a Time In.")
     if final_out is not None and final_out <= final_in:
-        raise HTTPException(400, "Clock-out must be after clock-in.")
+        raise HTTPException(400, "Time Out must be after Time In.")
 
     status = _recompute_status(
         time_in=final_in,

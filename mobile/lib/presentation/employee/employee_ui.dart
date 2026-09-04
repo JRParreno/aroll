@@ -7,6 +7,7 @@ import 'package:aroll_mobile/domain/entities/employee_portal.dart';
 import 'package:aroll_mobile/domain/entities/user_session.dart';
 import 'package:aroll_mobile/presentation/auth/sign_out_dialog.dart';
 import 'package:aroll_mobile/presentation/shared/app_ui.dart';
+import 'package:aroll_mobile/presentation/shared/tenant_mode_banner.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
@@ -174,7 +175,14 @@ class EmployeeScaffold extends StatelessWidget {
             : null,
         actions: actions,
       ),
-      body: SafeArea(child: child),
+      body: SafeArea(
+        child: Column(
+          children: [
+            const TenantModeBanner(),
+            Expanded(child: child),
+          ],
+        ),
+      ),
       bottomNavigationBar: EmployeeBottomNav(selectedIndex: selectedIndex),
     );
   }
@@ -536,7 +544,7 @@ String employeeAttendanceHistoryLabel(String status) {
     case 'in_progress':
       return 'In Progress';
     case 'incomplete':
-      return 'Incomplete Attendance – Clock-Out Missing';
+      return 'Incomplete Attendance – Time Out Missing';
     case 'on_leave':
       return 'On Leave';
     default:
@@ -1100,7 +1108,7 @@ class EmployeePerformanceChart extends StatelessWidget {
               ),
               child: const Text(
                 'No attendance records yet.\n'
-                'Charts will update once you start clocking in.',
+                'Charts will update once you start timing in.',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 12,

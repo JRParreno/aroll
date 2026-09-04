@@ -22,6 +22,7 @@ from app.schemas.schedule import (
     WeeklyScheduleResponse,
 )
 from app.services.activity_logger import create_log
+from app.services.employee_activation import raise_if_not_activated_for_schedule
 from app.services.leave_requests import (
     approved_leave_dates_for_employees,
     leave_availability_for_date,
@@ -213,8 +214,9 @@ def assign_schedule(
 
     employee_ids = [uuid.UUID(eid) for eid in body.employee_ids]
 
-    employees = (
-        db.query(Employee)
+    rows = (
+        db.query(Employee, User)
+        .join(User, Employee.user_id == User.id)
         .filter(
             Employee.business_id == user.business_id,
             Employee.is_active.is_(True),
@@ -222,8 +224,11 @@ def assign_schedule(
         )
         .all()
     )
-    if len(employees) != len(employee_ids):
+    if len(rows) != len(employee_ids):
         raise HTTPException(400, "One or more employees not found for this business")
+
+    raise_if_not_activated_for_schedule(rows)
+    employees = [employee for employee, _linked in rows]
 
     _validate_employee_schedule_conflicts(db, employee_ids, body.work_date, shift)
 

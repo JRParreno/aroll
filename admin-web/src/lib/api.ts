@@ -45,6 +45,8 @@ export type LoginResponse = {
   position?: string | null;
   role?: string | null;
   business_name?: string | null;
+  is_demo?: boolean;
+  is_internal_test?: boolean;
 };
 
 export type UserMe = {
@@ -61,6 +63,8 @@ export type UserMe = {
   setup_completed_at: string | null;
   branding?: BusinessBrandingSettings | null;
   profile_image_url?: string | null;
+  is_demo?: boolean;
+  is_internal_test?: boolean;
 };
 
 export type Registration = {
@@ -88,6 +92,8 @@ export type BusinessListItem = {
   created_at: string;
   employee_count: number;
   location_count: number;
+  is_demo?: boolean;
+  is_internal_test?: boolean;
 };
 
 export type BusinessLocation = {
@@ -108,6 +114,8 @@ export type BusinessDetail = {
   timezone: string;
   created_at: string;
   employee_count: number;
+  is_demo?: boolean;
+  is_internal_test?: boolean;
   owner: {
     name: string;
     email: string;
@@ -157,6 +165,7 @@ export type Employee = {
   monthly_salary: number | null;
   status: "invited" | "active" | "inactive";
   must_change_password: boolean;
+  face_registration_status?: string | null;
   temporary_password: string | null;
   profile_image_url: string | null;
 };
@@ -174,7 +183,6 @@ export type OwnerPerformanceSummary = {
   attendance_rate: number;
   punctuality_rate: number;
   total_overtime_hours: number;
-  productivity_score: number;
 };
 
 export type OwnerPerformanceTrendItem = {
@@ -203,8 +211,6 @@ export type EmployeePerformanceItem = {
   overtime_hours: number;
   attendance_rate: number;
   punctuality_rate: number;
-  productivity_score: number;
-  reasons: string[];
 };
 
 export type OwnerPerformance = {
@@ -1216,6 +1222,7 @@ export type Position = {
   id: string;
   title: string;
   daily_rate: number;
+  hourly_rate?: number | null;
   description: string | null;
   is_active: boolean;
 };
@@ -1385,6 +1392,21 @@ export async function createShift(payload: {
   return data;
 }
 
+export async function updateShift(
+  id: string,
+  payload: {
+    name?: string;
+    shift_type?: string;
+    start_time?: string;
+    end_time?: string;
+    break_minutes?: number;
+    employee_capacity?: number;
+  }
+) {
+  const { data } = await api.put<Shift>(`/shifts/${id}`, payload);
+  return data;
+}
+
 export async function deleteShift(id: string) {
   const { data } = await api.delete(`/shifts/${id}`);
   return data;
@@ -1398,6 +1420,7 @@ export async function listPositions() {
 export async function createPosition(payload: {
   title: string;
   daily_rate: number;
+  hourly_rate?: number | null;
   description?: string;
 }) {
   const { data } = await api.post<Position>("/positions", payload);

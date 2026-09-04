@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:aroll_mobile/core/di/injection.dart';
 import 'package:aroll_mobile/data/repositories/owner_repository.dart';
 import 'package:aroll_mobile/presentation/shared/app_ui.dart';
+import 'package:aroll_mobile/presentation/shared/tenant_mode_banner.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
@@ -21,6 +22,8 @@ class OwnerShell extends StatefulWidget {
     this.showAppBar = true,
     this.backgroundColor,
     this.showNotificationBell = true,
+    this.onBack,
+    this.footer,
   });
 
   final int selectedIndex;
@@ -31,6 +34,8 @@ class OwnerShell extends StatefulWidget {
   final bool showAppBar;
   final Color? backgroundColor;
   final bool showNotificationBell;
+  final VoidCallback? onBack;
+  final Widget? footer;
 
   static const _routes = [
     '/owner/home',
@@ -111,7 +116,7 @@ class _OwnerShellState extends State<OwnerShell> with WidgetsBindingObserver {
                         minWidth: AppSizes.minTap,
                         minHeight: AppSizes.minTap,
                       ),
-                      onPressed: () => _onBack(context),
+                      onPressed: widget.onBack ?? () => _onBack(context),
                       icon: const Icon(
                         Icons.arrow_back_rounded,
                         size: AppSizes.iconLg,
@@ -123,47 +128,64 @@ class _OwnerShellState extends State<OwnerShell> with WidgetsBindingObserver {
               actions: mergedActions,
             )
           : null,
-      body: widget.showAppBar ? SafeArea(child: widget.child) : widget.child,
-      bottomNavigationBar: Material(
-        color: AppColors.white,
-        child: Container(
-          decoration: const BoxDecoration(
+      body: widget.showAppBar
+          ? SafeArea(
+              child: Column(
+                children: [
+                  const TenantModeBanner(),
+                  Expanded(child: widget.child),
+                ],
+              ),
+            )
+          : widget.child,
+      bottomNavigationBar: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (widget.footer != null) widget.footer!,
+          Material(
             color: AppColors.white,
-            border: Border(
-              top: BorderSide(color: AppColors.border),
+            child: Container(
+              decoration: BoxDecoration(
+                color: AppColors.white,
+                border: widget.footer == null
+                    ? const Border(
+                        top: BorderSide(color: AppColors.border),
+                      )
+                    : null,
+              ),
+              child: NavigationBar(
+                selectedIndex: widget.selectedIndex,
+                height: AppSizes.navHeight,
+                backgroundColor: AppColors.white,
+                surfaceTintColor: Colors.transparent,
+                indicatorColor: AppColors.iconWell,
+                labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+                onDestinationSelected: (index) =>
+                    context.go(OwnerShell._routes[index]),
+                destinations: const [
+                  NavigationDestination(
+                    icon: Icon(Icons.home_outlined, size: AppSizes.iconLg),
+                    selectedIcon:
+                        Icon(Icons.home_rounded, size: AppSizes.iconLg),
+                    label: 'Home',
+                  ),
+                  NavigationDestination(
+                    icon: Icon(Icons.fact_check_outlined, size: AppSizes.iconLg),
+                    selectedIcon:
+                        Icon(Icons.fact_check_rounded, size: AppSizes.iconLg),
+                    label: 'Attendance',
+                  ),
+                  NavigationDestination(
+                    icon: Icon(Icons.person_outline_rounded, size: AppSizes.iconLg),
+                    selectedIcon:
+                        Icon(Icons.person_rounded, size: AppSizes.iconLg),
+                    label: 'Profile',
+                  ),
+                ],
+              ),
             ),
           ),
-          child: NavigationBar(
-            selectedIndex: widget.selectedIndex,
-            height: AppSizes.navHeight,
-            backgroundColor: AppColors.white,
-            surfaceTintColor: Colors.transparent,
-            indicatorColor: AppColors.iconWell,
-            labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
-            onDestinationSelected: (index) =>
-                context.go(OwnerShell._routes[index]),
-            destinations: const [
-              NavigationDestination(
-                icon: Icon(Icons.home_outlined, size: AppSizes.iconLg),
-                selectedIcon:
-                    Icon(Icons.home_rounded, size: AppSizes.iconLg),
-                label: 'Home',
-              ),
-              NavigationDestination(
-                icon: Icon(Icons.fact_check_outlined, size: AppSizes.iconLg),
-                selectedIcon:
-                    Icon(Icons.fact_check_rounded, size: AppSizes.iconLg),
-                label: 'Attendance',
-              ),
-              NavigationDestination(
-                icon: Icon(Icons.person_outline_rounded, size: AppSizes.iconLg),
-                selectedIcon:
-                    Icon(Icons.person_rounded, size: AppSizes.iconLg),
-                label: 'Profile',
-              ),
-            ],
-          ),
-        ),
+        ],
       ),
     );
   }
@@ -452,79 +474,117 @@ class OwnerActionCard extends StatelessWidget {
       );
 }
 
-/// Bar chart showing attendance and shift performance metrics.
-class OwnerPerformanceChart extends StatelessWidget {
-  const OwnerPerformanceChart({super.key, required this.summary});
+/// Rounded gradient bar chart used by Dashboard Performance Overview and
+/// Attendance Overview. Callers supply the five category counts.
+class OwnerOverviewBarChart extends StatelessWidget {
+  const OwnerOverviewBarChart({
+    super.key,
+    required this.onTime,
+    required this.late,
+    required this.undertime,
+    required this.overtime,
+    required this.absent,
+    this.title,
+  });
 
-  final Map<String, dynamic> summary;
+  final int onTime;
+  final int late;
+  final int undertime;
+  final int overtime;
+  final int absent;
+  final String? title;
+
+  static const _undertimeColor = Color(0xFFEA580C);
 
   @override
   Widget build(BuildContext context) {
     final values = [
-      ('On time', ownerParseInt(summary['on_time_clock_ins']), Colors.green),
-      ('Late', ownerParseInt(summary['late_clock_ins']), Colors.amber),
-      ('Under', ownerParseInt(summary['undertime_shifts']), Colors.orange),
-      ('Over', ownerParseInt(summary['overtime_shifts']), Colors.blue),
-      ('Absent', ownerParseInt(summary['absent_shifts']), Colors.redAccent),
+      ('On time', onTime, AppColors.success),
+      ('Late', late, AppColors.warning),
+      ('Undertime', undertime, _undertimeColor),
+      ('Overtime', overtime, AppColors.primary),
+      ('Absent', absent, AppColors.danger),
     ];
-    final maxValue =
-        math.max(1, values.map((entry) => entry.$2).fold(0, math.max));
-    return OwnerCard(
-      padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
+    final maxValue = values
+        .map((entry) => entry.$2)
+        .fold<int>(1, (prev, value) => value > prev ? value : prev);
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
+      decoration: BoxDecoration(
+        color: AppColors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: AppColors.border),
+        boxShadow: appCardShadow,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Text(
-            'Performance Overview',
-            style: appSectionTitleStyle(),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            'Live attendance and shift activity.',
-            style: appMutedStyle().copyWith(fontSize: 12),
-          ),
-          const SizedBox(height: 10),
+          if (title != null) ...[
+            Text(title!, style: appSectionTitleStyle()),
+            const SizedBox(height: 12),
+          ],
           SizedBox(
-            height: 108,
+            height: 150,
             child: Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: values
-                  .map(
-                    (entry) => Expanded(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 4),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.end,
-                          children: [
-                            Text(
-                              '${entry.$2}',
-                              style: const TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.w600,
-                              ),
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (final entry in values)
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      child: Column(
+                        children: [
+                          Text(
+                            '${entry.$2}',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              height: 1.2,
+                              color: AppColors.textPrimary,
                             ),
-                            const SizedBox(height: 3),
-                            Container(
-                              height: math.max(7, 70 * entry.$2 / maxValue),
-                              decoration: BoxDecoration(
-                                color: entry.$3,
-                                borderRadius: const BorderRadius.vertical(
-                                  top: Radius.circular(4),
+                          ),
+                          const SizedBox(height: 4),
+                          Expanded(
+                            child: Align(
+                              alignment: Alignment.bottomCenter,
+                              child: FractionallySizedBox(
+                                widthFactor: 1,
+                                heightFactor:
+                                    (entry.$2 / maxValue).clamp(0.18, 1),
+                                child: DecoratedBox(
+                                  decoration: BoxDecoration(
+                                    gradient: LinearGradient(
+                                      begin: Alignment.bottomCenter,
+                                      end: Alignment.topCenter,
+                                      colors: [
+                                        entry.$3,
+                                        entry.$3.withValues(alpha: 0.72),
+                                      ],
+                                    ),
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
                                 ),
                               ),
                             ),
-                            const SizedBox(height: 4),
-                            Text(
-                              entry.$1,
-                              textAlign: TextAlign.center,
-                              style: const TextStyle(fontSize: 9),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            entry.$1,
+                            textAlign: TextAlign.center,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: appMutedStyle().copyWith(
+                              fontSize: 10,
+                              height: 1.2,
                             ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
                     ),
-                  )
-                  .toList(),
+                  ),
+              ],
             ),
           ),
         ],

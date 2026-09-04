@@ -269,7 +269,7 @@ class _AttendanceCorrectionScreenState
                       border: Border.all(color: const Color(0xFFFDE68A)),
                     ),
                     child: const Text(
-                      'Edit clock-out and remarks only. Clock-in is locked.',
+                      'Edit Time Out and remarks only. Time In is locked.',
                       style: TextStyle(
                         fontSize: 12.5,
                         height: 1.4,
@@ -284,7 +284,7 @@ class _AttendanceCorrectionScreenState
           ),
           const SizedBox(height: 14),
           EmployeeSectionTitle(
-            isIncomplete ? 'Corrected clock-out' : 'Corrected times',
+            isIncomplete ? 'Corrected Time Out' : 'Corrected times',
           ),
           const SizedBox(height: 4),
           Text(

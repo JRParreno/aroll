@@ -535,6 +535,28 @@ class OwnerRepository {
       ))
           .data!;
 
+  Future<Map<String, dynamic>> updateShift({
+    required String shiftId,
+    String? name,
+    String? startTime,
+    String? endTime,
+    String? shiftType,
+    int? breakMinutes,
+    int? employeeCapacity,
+  }) async =>
+      (await _api.dio.put<Map<String, dynamic>>(
+        '/shifts/$shiftId',
+        data: {
+          if (name != null) 'name': name,
+          if (shiftType != null) 'shift_type': shiftType,
+          if (startTime != null) 'start_time': startTime,
+          if (endTime != null) 'end_time': endTime,
+          if (breakMinutes != null) 'break_minutes': breakMinutes,
+          if (employeeCapacity != null) 'employee_capacity': employeeCapacity,
+        },
+      ))
+          .data!;
+
   Future<void> deleteShift(String shiftId) async {
     await _api.dio.delete<void>('/shifts/$shiftId');
   }
@@ -542,6 +564,7 @@ class OwnerRepository {
   Future<Map<String, dynamic>> createPosition({
     required String title,
     required double dailyRate,
+    double? hourlyRate,
     String? description,
   }) async =>
       (await _api.dio.post<Map<String, dynamic>>(
@@ -549,6 +572,7 @@ class OwnerRepository {
         data: {
           'title': title,
           'daily_rate': dailyRate,
+          if (hourlyRate != null) 'hourly_rate': hourlyRate,
           if (description != null && description.isNotEmpty)
             'description': description,
         },

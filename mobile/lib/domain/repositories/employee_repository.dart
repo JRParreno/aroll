@@ -48,14 +48,14 @@ abstract class EmployeeRepository {
   Future<AttendanceClockResult> clockInWithFace({
     required double latitude,
     required double longitude,
-    required FaceQuickCapture capture,
+    FaceQuickCapture? capture,
     String? shiftAssignmentId,
   });
 
   Future<AttendanceClockResult> clockOutWithFace({
     required double latitude,
     required double longitude,
-    required FaceQuickCapture capture,
+    FaceQuickCapture? capture,
   });
 
   Future<List<LeaveRequestItem>> getLeaveRequests({String? status});

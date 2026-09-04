@@ -18,14 +18,6 @@ class OwnerBusinessSetupSummaryScreen extends StatelessWidget {
       builder: (data) {
         final summary = data as _SetupSummaryData;
         return [
-          const SetupSurfaceCard(
-            child: SetupSectionHeader(
-              icon: Icons.fact_check_outlined,
-              title: 'Business Information Setup Summary',
-              subtitle:
-                  'Read-only overview of your business configuration. Use Business Setup Settings to make changes.',
-            ),
-          ),
           const SizedBox(height: 14),
           OwnerInfoSection(
             title: 'Business Profile',
@@ -120,13 +112,13 @@ class OwnerBusinessSetupSummaryScreen extends StatelessWidget {
             skipEmpty: false,
             rows: [
               (
-                'Clock-In Settings',
+                'Time-In Settings',
                 summary.attendancePolicy.isEmpty
                     ? 'Not configured'
                     : 'Configured',
               ),
               (
-                'Early Clock-In Window',
+                'Early Time-In Window',
                 _minutesLabel(summary.attendancePolicy['early_clock_in_minutes']),
               ),
               (
@@ -247,11 +239,13 @@ String? _shiftLabel(Map<String, dynamic> shift) {
 String? _positionLabel(Map<String, dynamic> position) {
   final title = '${position['title'] ?? ''}'.trim();
   if (title.isEmpty) return null;
-  final rate = position['daily_rate'];
-  if (rate != null) {
-    return '$title — ₱$rate/day';
-  }
-  return title;
+  final daily = position['daily_rate'];
+  final hourly = position['hourly_rate'];
+  final parts = <String>[];
+  if (daily != null) parts.add('₱$daily/day');
+  if (hourly != null) parts.add('₱$hourly/hr');
+  if (parts.isEmpty) return title;
+  return '$title — ${parts.join(' · ')}';
 }
 
 String _radiusLabel(Object? radius) {

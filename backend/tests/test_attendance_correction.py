@@ -315,7 +315,7 @@ def test_incomplete_rejects_changed_clock_in():
             reason="Trying to change clock-in",
         )
     assert exc.value.status_code == 400
-    assert "Clock-in cannot be changed" in str(exc.value.detail)
+    assert "Time In cannot be changed" in str(exc.value.detail)
 
 
 def test_approve_incomplete_keeps_official_clock_in():

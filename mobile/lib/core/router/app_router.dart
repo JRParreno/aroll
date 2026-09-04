@@ -26,7 +26,6 @@ import 'package:aroll_mobile/presentation/owner/owner_dashboard_screen.dart';
 import 'package:aroll_mobile/presentation/owner/owner_leave_management_screen.dart';
 import 'package:aroll_mobile/presentation/owner/owner_location_screen.dart';
 import 'package:aroll_mobile/presentation/owner/owner_notifications_screen.dart';
-import 'package:aroll_mobile/presentation/owner/owner_productivity_screen.dart';
 import 'package:aroll_mobile/presentation/owner/owner_account_information_screen.dart';
 import 'package:aroll_mobile/presentation/owner/owner_business_information_screen.dart';
 import 'package:aroll_mobile/presentation/owner/owner_business_setup_summary_screen.dart';
@@ -70,6 +69,9 @@ String resolveAuthenticatedRoute(AppState appState) {
         ? '/owner/setup-wizard'
         : '/owner/home';
   }
+  if (session.isDemo) {
+    return '/home';
+  }
   if (appState.faceEnrolled != true) {
     return '/face-registration';
   }
@@ -107,6 +109,7 @@ GoRouter createAppRouter(AppState appState) {
       } else if (session?.isEmployee == true && loc.startsWith('/owner/')) {
         redirect = resolveAuthenticatedRoute(appState);
       } else if (session?.isEmployee == true &&
+          session?.isDemo != true &&
           !appState.mustChangePassword &&
           appState.faceEnrolled != true &&
           loc != '/face-registration' &&
@@ -114,6 +117,10 @@ GoRouter createAppRouter(AppState appState) {
         // Force face enrollment on every session until completed — including
         // after app close/reopen (restore sets faceEnrolled from server).
         redirect = '/face-registration';
+      } else if (session?.isEmployee == true &&
+          session?.isDemo == true &&
+          loc == '/face-registration') {
+        redirect = '/home';
       } else if (session?.isEmployee == true &&
           appState.faceEnrolled == true &&
           loc == '/face-registration') {
@@ -375,11 +382,6 @@ GoRouter createAppRouter(AppState appState) {
           state,
           OwnerProfileScreen(session: appState.session!),
         ),
-      ),
-      GoRoute(
-        path: '/owner/productivity',
-        pageBuilder: (context, state) =>
-            _fadePage(state, const OwnerProductivityScreen()),
       ),
       GoRoute(
         path: '/owner/location',

@@ -6,6 +6,7 @@ import 'package:aroll_mobile/presentation/owner/owner_shell.dart';
 import 'package:aroll_mobile/presentation/owner/payroll/owner_payroll_format.dart';
 import 'package:aroll_mobile/presentation/owner/payroll/owner_payslip_pdf.dart';
 import 'package:aroll_mobile/presentation/shared/app_ui.dart';
+import 'package:aroll_mobile/presentation/shared/tenant_mode_banner.dart';
 import 'package:flutter/material.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -83,6 +84,7 @@ class _OwnerPayrollDetailScreenState extends State<OwnerPayrollDetailScreen> {
       final path = await generateOwnerPayslipPdf(
         payslip: payslip,
         businessName: businessName,
+        sample: sl<AppState>().session?.isDemo == true,
       );
       if (!mounted) return;
       await SharePlus.instance.share(
@@ -128,6 +130,10 @@ class _OwnerPayrollDetailScreenState extends State<OwnerPayrollDetailScreen> {
                   : ListView(
                       padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
                       children: [
+                        if (sl<AppState>().session?.isDemo == true) ...[
+                          const PayslipSampleBanner(),
+                          const SizedBox(height: 12),
+                        ],
                         OwnerCard(
                           padding: EdgeInsets.zero,
                           child: Column(

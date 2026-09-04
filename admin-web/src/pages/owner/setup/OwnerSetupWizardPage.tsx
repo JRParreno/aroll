@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import {
+  ArrowLeft,
   ArrowRight,
   CheckCircle2,
   Circle,
@@ -10,11 +11,19 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { BusinessLocationSetup } from "@/components/owner/location/BusinessLocationSetup";
 import { HolidaySetupSection } from "@/components/owner/setup/HolidaySetupSection";
 import { OwnerPageBackLink } from "@/components/owner/layout/OwnerPageLayout";
+import { formatShiftTime } from "@/components/owner/schedule/scheduleUtils";
 import {
   completeSetup,
   createPosition,
@@ -30,6 +39,8 @@ import {
   updateAttendancePolicy,
   updatePayrollConfig,
   updateRestDayPolicy,
+  updateShift,
+  type Shift,
 } from "@/lib/api";
 import { ME_QUERY_KEY } from "@/lib/authSession";
 
@@ -53,10 +64,15 @@ const STEP_STATUS_KEYS = [
   "review",
 ] as const;
 
+function toTimeInputValue(value: string) {
+  const [hour = "00", minute = "00"] = value.split(":");
+  return `${String(Number(hour) || 0).padStart(2, "0")}:${String(Number(minute) || 0).padStart(2, "0")}`;
+}
+
 const STEP_HELP: Record<string, string> = {
   "Work Shifts": "Add the times your team usually works.",
   "Employee Job Roles":
-    "Add the different job roles in your business and their daily pay.",
+    "Add the different job roles in your business, their daily pay, and optional hourly pay.",
   "Set Up Employee Pay":
     "Choose how often employees get paid and how pay is calculated.",
   "How Employees Time In & Out":
@@ -209,9 +225,12 @@ export function OwnerSetupWizardPage() {
     break_minutes: "0",
     employee_capacity: "1",
   });
+  const [editingShift, setEditingShift] = useState<Shift | null>(null);
+  const [editTimes, setEditTimes] = useState({ start_time: "", end_time: "" });
   const [posForm, setPosForm] = useState({
     title: "",
     daily_rate: "",
+    hourly_rate: "",
     description: "",
   });
   const [payrollForm, setPayrollForm] = useState({
@@ -335,7 +354,9 @@ export function OwnerSetupWizardPage() {
     Number(shiftForm.employee_capacity) >= 1;
 
   const positionDraftValid =
-    posForm.title.trim().length > 0 && Number(posForm.daily_rate) > 0;
+    posForm.title.trim().length > 0 &&
+    Number(posForm.daily_rate) > 0 &&
+    (!posForm.hourly_rate.trim() || Number(posForm.hourly_rate) > 0);
 
   const nextPaydayDate = useMemo(
     () => computeNextPayday(payrollForm),
@@ -412,16 +433,45 @@ export function OwnerSetupWizardPage() {
     },
   });
 
+  const saveShiftTimes = useMutation({
+    mutationFn: () => {
+      if (!editingShift) throw new Error("No shift selected");
+      return updateShift(editingShift.id, {
+        start_time: editTimes.start_time,
+        end_time: editTimes.end_time,
+      });
+    },
+    onSuccess: () => {
+      toast.success("Shift times updated");
+      setEditingShift(null);
+      refetchShifts();
+      qc.invalidateQueries({ queryKey: ["shifts"] });
+      qc.invalidateQueries({ queryKey: ["weekly-schedule"] });
+    },
+    onError: () => toast.error("Could not update shift times"),
+  });
+
+  function openEditShiftTimes(shift: Shift) {
+    setEditingShift(shift);
+    setEditTimes({
+      start_time: toTimeInputValue(shift.start_time),
+      end_time: toTimeInputValue(shift.end_time),
+    });
+  }
+
   const addPosition = useMutation({
     mutationFn: () =>
       createPosition({
         title: posForm.title,
         daily_rate: Number(posForm.daily_rate),
+        hourly_rate: posForm.hourly_rate.trim()
+          ? Number(posForm.hourly_rate)
+          : undefined,
         description: posForm.description || undefined,
       }),
     onSuccess: () => {
       toast.success("Job role added");
-      setPosForm({ title: "", daily_rate: "", description: "" });
+      setPosForm({ title: "", daily_rate: "", hourly_rate: "", description: "" });
       refetchPositions();
       qc.invalidateQueries({ queryKey: ["setup-status"] });
     },
@@ -494,7 +544,7 @@ export function OwnerSetupWizardPage() {
         attendance_based_salary_enabled: attForm.attendance_based_salary_enabled,
       }),
     onSuccess: () => {
-      toast.success("Clock-in settings saved");
+      toast.success("Time-in settings saved");
       qc.invalidateQueries({ queryKey: ["setup-status"] });
       qc.invalidateQueries({ queryKey: ["attendance-policy"] });
     },
@@ -564,10 +614,21 @@ export function OwnerSetupWizardPage() {
   return (
     <div className="min-h-screen bg-[#F7F8FA] px-4 py-6 text-[#1F2937] sm:px-6 lg:px-8">
       <div className="mx-auto max-w-5xl space-y-6">
-        <OwnerPageBackLink
-          to={step < 0 ? "/owner/settings/setup" : "/owner/setup-wizard?step=menu"}
-          label={step < 0 ? "Back to Business Setup" : "Back to setup menu"}
-        />
+        {step < 0 ? (
+          <OwnerPageBackLink
+            to="/owner/settings/setup"
+            label="Back to Business Setup"
+          />
+        ) : (
+          <button
+            className="inline-flex items-center gap-2 rounded-lg px-1 py-0.5 text-sm font-medium text-[#6B7280] transition-colors hover:bg-white hover:text-[#1E3A5F]"
+            onClick={() => goToStep(-1)}
+            type="button"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Back to setup menu
+          </button>
+        )}
 
         <header className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
@@ -731,17 +792,27 @@ export function OwnerSetupWizardPage() {
                       className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-3 last:border-b-0"
                     >
                       <span>
-                        {s.name} ({s.start_time}–{s.end_time})
+                        {s.name} ({formatShiftTime(s.start_time)}–
+                        {formatShiftTime(s.end_time)})
                       </span>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() =>
-                          deleteShift(s.id).then(() => refetchShifts())
-                        }
-                      >
-                        Remove
-                      </Button>
+                      <div className="flex shrink-0 items-center gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => openEditShiftTimes(s)}
+                        >
+                          Edit times
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() =>
+                            deleteShift(s.id).then(() => refetchShifts())
+                          }
+                        >
+                          Remove
+                        </Button>
+                      </div>
                     </li>
                   ))}
                 </ul>
@@ -751,7 +822,7 @@ export function OwnerSetupWizardPage() {
             {step === 1 && (
               <>
                 <div className="grid gap-5 sm:grid-cols-2">
-                  <div className="space-y-2">
+                  <div className="space-y-2 sm:col-span-2">
                     <Label>Job role name</Label>
                     <Input
                       className="h-11 rounded-xl border-slate-200 bg-white"
@@ -772,6 +843,17 @@ export function OwnerSetupWizardPage() {
                       }
                     />
                   </div>
+                  <div className="space-y-2">
+                    <Label>Hourly pay (₱, optional)</Label>
+                    <Input
+                      className="h-11 rounded-xl border-slate-200 bg-white"
+                      type="number"
+                      value={posForm.hourly_rate}
+                      onChange={(e) =>
+                        setPosForm({ ...posForm, hourly_rate: e.target.value })
+                      }
+                    />
+                  </div>
                   <div className="space-y-2 sm:col-span-2">
                     <Label>Description</Label>
                     <Input
@@ -786,7 +868,7 @@ export function OwnerSetupWizardPage() {
                 <Button
                   className="rounded-xl bg-[#1E3A5F] hover:bg-[#284B73]"
                   onClick={() => addPosition.mutate()}
-                  disabled={!posForm.title || !posForm.daily_rate}
+                  disabled={!positionDraftValid}
                 >
                   Add job role
                 </Button>
@@ -798,6 +880,7 @@ export function OwnerSetupWizardPage() {
                     >
                       <span>
                         {p.title} — ₱{p.daily_rate}/day
+                        {p.hourly_rate != null ? ` · ₱${p.hourly_rate}/hr` : ""}
                       </span>
                       <Button
                         size="sm"
@@ -1221,7 +1304,7 @@ export function OwnerSetupWizardPage() {
                       [
                         "maximum_overtime_minutes",
                         "Maximum overtime duration (min)",
-                        "How long an employee may stay clocked in after shift end before attendance becomes Incomplete.",
+                        "How long an employee may stay timed in after shift end before attendance becomes Incomplete.",
                       ],
                     ] as const
                   ).map(([key, label, hint]) => (
@@ -1254,7 +1337,7 @@ export function OwnerSetupWizardPage() {
                   onClick={() => saveAttendance.mutate()}
                   disabled={saveAttendance.isPending}
                 >
-                  Save Clock-In Settings
+                  Save Time-In Settings
                 </Button>
               </>
             )}
@@ -1340,6 +1423,65 @@ export function OwnerSetupWizardPage() {
           </>
         )}
       </div>
+
+      <Dialog
+        open={Boolean(editingShift)}
+        onOpenChange={(open) => {
+          if (!open) setEditingShift(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-md sm:rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-[#1F2937]">
+              Edit {editingShift?.name} times
+            </DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label>Start time</Label>
+              <Input
+                className="h-11 rounded-xl border-slate-200 bg-white"
+                type="time"
+                value={editTimes.start_time}
+                onChange={(e) =>
+                  setEditTimes({ ...editTimes, start_time: e.target.value })
+                }
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>End time</Label>
+              <Input
+                className="h-11 rounded-xl border-slate-200 bg-white"
+                type="time"
+                value={editTimes.end_time}
+                onChange={(e) =>
+                  setEditTimes({ ...editTimes, end_time: e.target.value })
+                }
+              />
+            </div>
+          </div>
+          <DialogFooter className="gap-2 sm:justify-end">
+            <Button
+              className="rounded-xl"
+              variant="outline"
+              onClick={() => setEditingShift(null)}
+            >
+              Cancel
+            </Button>
+            <Button
+              className="rounded-xl bg-[#1E3A5F] hover:bg-[#284B73]"
+              disabled={
+                !editTimes.start_time ||
+                !editTimes.end_time ||
+                saveShiftTimes.isPending
+              }
+              onClick={() => saveShiftTimes.mutate()}
+            >
+              {saveShiftTimes.isPending ? "Saving..." : "Save times"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

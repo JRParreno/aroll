@@ -1,7 +1,6 @@
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  BarChart3,
   BriefcaseBusiness,
   CalendarCheck,
   CalendarOff,
@@ -10,7 +9,6 @@ import {
   LayoutDashboard,
   LogOut,
   MapPinned,
-  ScanFace,
   Settings,
   Users,
 } from "lucide-react";
@@ -21,11 +19,13 @@ import { getMe } from "@/lib/api";
 import { clearAuthSession, ME_QUERY_KEY } from "@/lib/authSession";
 import { cn } from "@/lib/utils";
 import { ownerNavItems } from "@/layouts/ownerNav";
+import { TenantModeBanner } from "@/components/tenant/TenantModeBanner";
+import { ResearchEvaluationGate } from "@/components/tenant/ResearchEvaluationGate";
+import { sessionIsDemo, sessionIsInternalTest } from "@/lib/tenantMode";
 
 const ownerNavIcons = {
   Dashboard: LayoutDashboard,
   Employees: Users,
-  "Face demo": ScanFace,
   Schedule: CalendarCheck,
   Schedules: CalendarCheck,
   Attendance: ClipboardList,
@@ -33,7 +33,6 @@ const ownerNavIcons = {
   Payroll: BriefcaseBusiness,
   Location: MapPinned,
   Locations: MapPinned,
-  Productivity: BarChart3,
   Settings: Settings,
   "Business Setup": Settings,
   Help: CircleHelp,
@@ -98,12 +97,10 @@ function resolveTopBarMeta(pathname: string) {
   const subtitles: Record<string, string> = {
     Dashboard: "Overview of attendance, payroll, and setup health",
     Employees: "Enroll, review, and manage your workforce",
-    "Face demo": "Preview face recognition for attendance",
     Schedule: "Assign shifts and review the weekly roster",
     Attendance: "Monitor daily time-in and time-out records",
     "Leave Management": "Review and act on employee leave requests",
     Payroll: "Track pay periods and employee earnings",
-    Productivity: "See team performance trends over time",
     Location: "Manage your business attendance location",
     Settings: "Configure setup, policies, and preferences",
     Help: "Guides and support for your workspace",
@@ -164,7 +161,11 @@ export function OwnerLayout() {
               {me?.business_name ?? "Owner Portal"}
             </p>
             <p className="mt-0.5 text-[10px] font-medium uppercase tracking-[0.16em] text-white/55">
-              Business Workspace
+              {sessionIsDemo(me)
+                ? "DEMO"
+                : sessionIsInternalTest(me)
+                  ? "INTERNAL TEST"
+                  : "Business Workspace"}
             </p>
           </div>
         </div>
@@ -200,7 +201,7 @@ export function OwnerLayout() {
                   >
                     <Icon className="h-4 w-4 shrink-0" strokeWidth={2} />
                   </span>
-                  <span className="truncate">{item.label}</span>
+                  <span className="truncate">{item.label === "Payroll" && sessionIsDemo(me) ? "Sample Payroll" : item.label}</span>
                 </NavLink>
               );
             })}
@@ -251,21 +252,25 @@ export function OwnerLayout() {
       />
 
       <main className="min-h-screen flex-1 lg:pl-64">
-        <div className="sticky top-0 z-20 border-b border-slate-200/70 bg-white/80 px-5 py-3 backdrop-blur-md sm:px-8">
-          <div className="mx-auto flex max-w-6xl items-center justify-between gap-4">
-            <div className="min-w-0">
-              <p className="truncate text-sm font-semibold text-[#1F2937]">
-                {topBar.title}
-              </p>
-              <p className="truncate text-xs text-[#6B7280]">{topBar.subtitle}</p>
-            </div>
-            <div className="flex shrink-0 items-center gap-2">
-              <OwnerNotificationBell />
+        <div className="sticky top-0 z-20 border-b border-slate-200/70 bg-white/80 backdrop-blur-md">
+          <div className="px-5 py-3 sm:px-8">
+            <div className="mx-auto flex max-w-6xl items-center justify-between gap-4">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-[#1F2937]">
+                  {topBar.title}
+                </p>
+                <p className="truncate text-xs text-[#6B7280]">{topBar.subtitle}</p>
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                <OwnerNotificationBell />
+              </div>
             </div>
           </div>
+          <TenantModeBanner />
         </div>
         <Outlet />
       </main>
+      <ResearchEvaluationGate />
     </div>
   );
 }

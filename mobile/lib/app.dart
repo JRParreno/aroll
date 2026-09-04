@@ -5,6 +5,7 @@ import 'package:aroll_mobile/core/theme/business_brand_theme.dart';
 import 'package:aroll_mobile/domain/repositories/employee_repository.dart';
 import 'package:aroll_mobile/domain/usecase/auth/restore_session_usecase.dart';
 import 'package:aroll_mobile/presentation/auth/aroll_splash_screen.dart';
+import 'package:aroll_mobile/presentation/shared/research_evaluation_gate.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -43,7 +44,11 @@ class _ArollAppState extends State<ArollApp> with WidgetsBindingObserver {
   }
 
   Future<void> _restoreSession() async {
-    await sl<RestoreSessionUsecase>()();
+    try {
+      await sl<RestoreSessionUsecase>()();
+    } catch (_) {
+      // Stay unauthenticated if restore cannot complete (missing env, storage).
+    }
     if (!mounted) return;
     setState(() {
       _router = createAppRouter(_appState);
@@ -59,6 +64,7 @@ class _ArollAppState extends State<ArollApp> with WidgetsBindingObserver {
         _refreshingFace ||
         session == null ||
         !session.isEmployee ||
+        session.isDemo ||
         _appState.mustChangePassword) {
       return;
     }
@@ -115,7 +121,9 @@ class _ArollAppState extends State<ArollApp> with WidgetsBindingObserver {
               debugShowCheckedModeBanner: false,
               theme: theme,
               routerConfig: _router!,
-              builder: (context, child) => ShadAppBuilder(child: child!),
+              builder: (context, child) => ResearchEvaluationOverlay(
+                child: ShadAppBuilder(child: child!),
+              ),
             );
           },
         );

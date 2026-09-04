@@ -1,6 +1,6 @@
-import 'dart:math' as math;
-
+import 'package:aroll_mobile/core/app_state.dart';
 import 'package:aroll_mobile/core/di/injection.dart';
+import 'package:aroll_mobile/presentation/shared/tenant_mode_banner.dart';
 import 'package:aroll_mobile/core/face/face_api_errors.dart';
 import 'package:aroll_mobile/data/repositories/owner_repository.dart';
 import 'package:aroll_mobile/presentation/employee/employee_ui.dart';
@@ -275,7 +275,7 @@ class _OwnerAttendanceScreenState extends State<OwnerAttendanceScreen> {
     final picked = await showTimePicker(
       context: context,
       initialTime: initial,
-      helpText: 'Select clock-out time',
+      helpText: 'Select Time Out',
     );
     if (picked == null || !mounted) return;
 
@@ -289,7 +289,7 @@ class _OwnerAttendanceScreenState extends State<OwnerAttendanceScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Save clock-out at ${picked.format(context)} for '
+              'Save Time Out at ${picked.format(context)} for '
               '${record['employee_name'] ?? 'employee'}?',
             ),
             const SizedBox(height: 12),
@@ -297,7 +297,7 @@ class _OwnerAttendanceScreenState extends State<OwnerAttendanceScreen> {
               controller: reasonController,
               decoration: const InputDecoration(
                 labelText: 'Reason (optional)',
-                hintText: 'Employee forgot to clock out',
+                hintText: 'Employee forgot to time out',
               ),
             ),
           ],
@@ -587,72 +587,13 @@ class _AttendanceChart extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final values = [
-      ('On time', metrics['on_time'] ?? 0, const Color(0xFF22C55E)),
-      ('Late', metrics['late'] ?? 0, const Color(0xFFF59E0B)),
-      ('Under', metrics['undertime'] ?? 0, const Color(0xFFF97316)),
-      ('Over', metrics['overtime'] ?? 0, const Color(0xFF3B82F6)),
-      ('Absent', metrics['absent'] ?? 0, const Color(0xFFEF4444)),
-    ];
-    final maxValue =
-        math.max(1, values.map((entry) => entry.$2).fold(0, math.max));
-
-    return _AttendanceCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Attendance Overview',
-            style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                  fontWeight: FontWeight.w700,
-                ),
-          ),
-          const SizedBox(height: 10),
-          SizedBox(
-            height: 132,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: values
-                  .map(
-                    (entry) => Expanded(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 3),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.end,
-                          children: [
-                            Text(
-                              '${entry.$2}',
-                              style: const TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Container(
-                              height: math.max(8, 88 * entry.$2 / maxValue),
-                              decoration: BoxDecoration(
-                                color: entry.$3,
-                                borderRadius: const BorderRadius.vertical(
-                                  top: Radius.circular(4),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 6),
-                            Text(
-                              entry.$1,
-                              textAlign: TextAlign.center,
-                              style: const TextStyle(fontSize: 9),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  )
-                  .toList(),
-            ),
-          ),
-        ],
-      ),
+    return OwnerOverviewBarChart(
+      title: 'Attendance Overview',
+      onTime: metrics['on_time'] ?? 0,
+      late: metrics['late'] ?? 0,
+      undertime: metrics['undertime'] ?? 0,
+      overtime: metrics['overtime'] ?? 0,
+      absent: metrics['absent'] ?? 0,
     );
   }
 }
@@ -704,7 +645,7 @@ class _RestDayWorkSection extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           const Text(
-            'Employees who clocked in or out on the configured rest day.',
+            'Employees who timed in or out on the configured rest day.',
             style: TextStyle(fontSize: 12, color: Color(0xFF6B7280)),
           ),
           const SizedBox(height: 12),
@@ -850,6 +791,10 @@ class _AttendanceEmployeeCard extends StatelessWidget {
                         fontSize: 15,
                       ),
                     ),
+                    if (sl<AppState>().session?.isDemo == true) ...[
+                      const SizedBox(height: 4),
+                      const SimulatedChip(label: 'SIMULATED'),
+                    ],
                     if (shift != null)
                       Text(
                         '$shift',
@@ -1351,7 +1296,7 @@ class _AttendanceEmptyState extends StatelessWidget {
           ? 'No attendance records yet'
           : 'No attendance for this day',
       description: isToday
-          ? 'Clock-ins will appear here as your team starts their shifts.'
+          ? 'Time Ins will appear here as your team starts their shifts.'
           : 'Try another date, or check back after shifts are completed.',
       icon: Icons.event_available_outlined,
     );
@@ -1441,7 +1386,7 @@ String _statusCopy(String status) {
     case 'absent':
       return 'Marked absent';
     case 'in_progress':
-      return 'Clocked in';
+      return 'Timed in';
     case 'complete':
       return 'Arrived on time';
     case 'on_leave':

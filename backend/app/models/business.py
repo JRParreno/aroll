@@ -1,7 +1,18 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, Enum, ForeignKey, Integer, Numeric, String, Text, func
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Integer,
+    Numeric,
+    String,
+    Text,
+    func,
+)
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -68,12 +79,27 @@ class Business(Base):
     setup_completed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # Tenant classification. Demo Café is research/defense only.
+    # Internal test (Dev Lab) is development-only and never is_demo.
+    is_demo: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false", nullable=False
+    )
+    is_internal_test: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false", nullable=False
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
 
     locations = relationship("BusinessLocation", back_populates="business")
     employees = relationship("Employee", back_populates="business")
+
+    __table_args__ = (
+        CheckConstraint(
+            "NOT (is_demo AND is_internal_test)",
+            name="ck_business_demo_internal_test_mutex",
+        ),
+    )
 
 
 class BusinessLocation(Base):

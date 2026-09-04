@@ -37,9 +37,8 @@ class EmployeeCreate(BaseModel):
 
     @model_validator(mode="after")
     def _pay_required(self):
-        # Create may omit daily_rate when position_id is set — API prefills
-        # from Position before final validation. Skip here if daily + no rate
-        # but position present; enforce in the API after prefill.
+        # Create may omit daily_rate / hourly_rate when position_id is set —
+        # API prefills from Position before final validation.
         if self.pay_basis == PayBasis.daily and self.daily_rate is None:
             if self.position_id:
                 return self
@@ -48,6 +47,8 @@ class EmployeeCreate(BaseModel):
                 "(or select a position to prefill it)."
             )
         if self.pay_basis == PayBasis.hourly:
+            if self.hourly_rate is None and self.position_id:
+                return self
             _validate_pay_fields(
                 pay_basis=self.pay_basis,
                 daily_rate=self.daily_rate,
@@ -93,6 +94,7 @@ class EmployeeResponse(BaseModel):
     monthly_salary: float | None = None
     status: str
     must_change_password: bool
+    face_registration_status: str = "not_registered"
     temporary_password: str | None = None
 
     class Config:

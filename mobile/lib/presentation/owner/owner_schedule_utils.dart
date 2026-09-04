@@ -42,6 +42,12 @@ enum OwnerEmployeeAvailability {
   onLeave,
   assigned,
   conflict,
+  activationRequired,
+}
+
+bool ownerEmployeeIsFullyActivated(Map<String, dynamic> employee) {
+  if (employee['must_change_password'] == true) return false;
+  return '${employee['face_registration_status'] ?? ''}' == 'completed';
 }
 
 OwnerEmployeeAvailability ownerAvailabilityFor({
@@ -53,6 +59,9 @@ OwnerEmployeeAvailability ownerAvailabilityFor({
   bool onLeave = false,
   bool leavePending = false,
 }) {
+  if (!ownerEmployeeIsFullyActivated(employee)) {
+    return OwnerEmployeeAvailability.activationRequired;
+  }
   final employeeId = '${employee['id']}';
 
   if (selectedShift != null) {

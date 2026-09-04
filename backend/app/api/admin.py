@@ -80,6 +80,8 @@ def _business_list_response(db: Session, business: Business) -> BusinessListResp
         created_at=business.created_at,
         employee_count=employee_count,
         location_count=location_count,
+        is_demo=bool(business.is_demo),
+        is_internal_test=bool(business.is_internal_test),
     )
 
 
@@ -122,6 +124,8 @@ def _business_detail_response(db: Session, business: Business) -> BusinessDetail
         timezone=business.timezone,
         created_at=business.created_at,
         employee_count=employee_count,
+        is_demo=bool(business.is_demo),
+        is_internal_test=bool(business.is_internal_test),
         owner=owner,
         registration_id=registration_id,
         registration_submitted_at=registration_submitted_at,

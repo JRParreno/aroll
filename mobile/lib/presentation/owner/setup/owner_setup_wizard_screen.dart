@@ -4,6 +4,7 @@ import 'package:aroll_mobile/core/location/business_location_defaults.dart';
 import 'package:aroll_mobile/core/location/business_location_geocoding.dart';
 import 'package:aroll_mobile/core/location/employee_location_service.dart';
 import 'package:aroll_mobile/data/repositories/owner_repository.dart';
+import 'package:aroll_mobile/presentation/owner/owner_shell.dart';
 import 'package:aroll_mobile/presentation/owner/setup/holiday_setup_section.dart';
 import 'package:aroll_mobile/presentation/owner/setup/setup_ui.dart';
 import 'package:aroll_mobile/presentation/owner/setup/setup_wizard_constants.dart';
@@ -48,6 +49,7 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
 
   final _positionTitle = TextEditingController();
   final _positionRate = TextEditingController();
+  final _positionHourly = TextEditingController();
   final _positionDescription = TextEditingController();
 
   String _payPeriodType = 'monthly';
@@ -100,6 +102,7 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
     _shiftCapacity.dispose();
     _positionTitle.dispose();
     _positionRate.dispose();
+    _positionHourly.dispose();
     _positionDescription.dispose();
     _payrollLateDeductionRate.dispose();
     _payrollOvertimeRate.dispose();
@@ -231,9 +234,13 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
       (int.tryParse(_shiftBreak.text) ?? -1) >= 0 &&
       (int.tryParse(_shiftCapacity.text) ?? 0) >= 1;
 
-  bool get _positionDraftValid =>
-      _positionTitle.text.trim().isNotEmpty &&
-      (double.tryParse(_positionRate.text) ?? 0) > 0;
+  bool get _positionDraftValid {
+    if (_positionTitle.text.trim().isEmpty) return false;
+    if ((double.tryParse(_positionRate.text) ?? 0) <= 0) return false;
+    final hourlyText = _positionHourly.text.trim();
+    if (hourlyText.isEmpty) return true;
+    return (double.tryParse(hourlyText) ?? 0) > 0;
+  }
 
   bool get _payrollFormValid =>
       _nextPaydayDate != null &&
@@ -308,6 +315,97 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
     }
   }
 
+  String _shiftTimeRangeLabel(Map<String, dynamic> shift) {
+    final start = parseApiTime('${shift['start_time']}');
+    final end = parseApiTime('${shift['end_time']}');
+    if (start == null || end == null) {
+      return '${shift['start_time']} – ${shift['end_time']}';
+    }
+    return '${start.format(context)} – ${end.format(context)}';
+  }
+
+  Future<void> _editShiftTimes(Map<String, dynamic> shift) async {
+    var start = parseApiTime('${shift['start_time']}') ??
+        const TimeOfDay(hour: 8, minute: 30);
+    var end = parseApiTime('${shift['end_time']}') ??
+        const TimeOfDay(hour: 12, minute: 30);
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (dialogContext, setDialogState) {
+            return AlertDialog(
+              title: Text(
+                'Edit ${shift['name']} times',
+                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  OutlinedButton(
+                    style: SetupUi.secondaryButton,
+                    onPressed: () async {
+                      final picked = await showTimePicker(
+                        context: dialogContext,
+                        initialTime: start,
+                      );
+                      if (picked != null) {
+                        setDialogState(() => start = picked);
+                      }
+                    },
+                    child: Text('Start ${start.format(dialogContext)}'),
+                  ),
+                  const SizedBox(height: 10),
+                  OutlinedButton(
+                    style: SetupUi.secondaryButton,
+                    onPressed: () async {
+                      final picked = await showTimePicker(
+                        context: dialogContext,
+                        initialTime: end,
+                      );
+                      if (picked != null) {
+                        setDialogState(() => end = picked);
+                      }
+                    },
+                    child: Text('End ${end.format(dialogContext)}'),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext, false),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  style: SetupUi.primaryButton,
+                  onPressed: () => Navigator.pop(dialogContext, true),
+                  child: const Text('Save times'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+    if (saved != true) return;
+
+    setState(() => _busy = true);
+    try {
+      await _repo.updateShift(
+        shiftId: '${shift['id']}',
+        startTime: formatApiTime(start),
+        endTime: formatApiTime(end),
+      );
+      _shifts = await _repo.shifts();
+      _showSnack('Shift times updated');
+    } catch (_) {
+      _showSnack('Could not update shift times');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   Future<bool> _addPosition() async {
     if (!_positionDraftValid) return false;
     setState(() => _busy = true);
@@ -315,10 +413,14 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
       await _repo.createPosition(
         title: _positionTitle.text.trim(),
         dailyRate: double.parse(_positionRate.text.trim()),
+        hourlyRate: _positionHourly.text.trim().isEmpty
+            ? null
+            : double.parse(_positionHourly.text.trim()),
         description: _positionDescription.text.trim(),
       );
       _positionTitle.clear();
       _positionRate.clear();
+      _positionHourly.clear();
       _positionDescription.clear();
       _showSnack('Job role added');
       final positions = await _repo.positions();
@@ -400,10 +502,10 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
         'missing_clock_out_policy': _attMissingClockOutPolicy,
         'attendance_based_salary_enabled': _attAttendanceBasedSalaryEnabled,
       });
-      _showSnack('Clock-in settings saved');
+      _showSnack('Time-in settings saved');
       await _refreshSetupStatus();
     } catch (_) {
-      _showSnack('Could not save clock-in settings');
+      _showSnack('Could not save time-in settings');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -600,30 +702,23 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
     );
   }
 
+  bool get _showsWizardFooter {
+    if (_loading || _loadError != null || _step < 0) return false;
+    if (_step >= setupWizardStepLabels.length - 1) return false;
+    if (_step == setupWizardBusinessInfoStep) return false;
+    return true;
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return OwnerShell(
+      selectedIndex: 2,
+      title: setupWizardScreenTitle(_step),
+      showBackButton: true,
+      onBack: _handleBack,
       backgroundColor: SetupUi.scaffold,
-      appBar: AppBar(
-        backgroundColor: SetupUi.scaffold,
-        elevation: 0,
-        scrolledUnderElevation: 0,
-        toolbarHeight: 56,
-        leading: IconButton(
-          tooltip: 'Back',
-          onPressed: _handleBack,
-          icon: const Icon(Icons.arrow_back_rounded),
-        ),
-        title: Text(
-          setupWizardScreenTitle(_step),
-          style: const TextStyle(
-            fontWeight: FontWeight.w800,
-            fontSize: 18,
-            color: AppColors.textPrimary,
-          ),
-        ),
-      ),
-      body: _loading
+      footer: _showsWizardFooter ? _buildFooter() : null,
+      child: _loading
           ? const Center(child: CircularProgressIndicator(color: SetupUi.navy))
           : _loadError != null
               ? Center(
@@ -643,22 +738,14 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
                     ),
                   ),
                 )
-              : Column(
+              : ListView(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
                   children: [
-                    Expanded(
-                      child: ListView(
-                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-                        children: [
-                          if (_step < 0) ...[
-                            _buildTitleSection(),
-                            const SizedBox(height: 14),
-                            _buildSetupMenu(),
-                          ] else
-                            _buildStepCard(),
-                        ],
-                      ),
-                    ),
-                    if (_step >= 0) _buildFooter(),
+                    if (_step < 0) ...[
+                      const SizedBox(height: 14),
+                      _buildSetupMenu(),
+                    ] else
+                      _buildStepCard(),
                   ],
                 ),
     );
@@ -678,17 +765,6 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
       title: title,
       value: value,
       onChanged: onChanged,
-    );
-  }
-
-  Widget _buildTitleSection() {
-    return const SetupSurfaceCard(
-      child: SetupSectionHeader(
-        icon: Icons.storefront_outlined,
-        title: 'Business Setup',
-        subtitle:
-            'Choose a section below to configure. Each card opens its settings.',
-      ),
     );
   }
 
@@ -880,18 +956,80 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
           const SizedBox(height: 14),
           const SetupListLabel('Added shifts'),
           ..._shifts.map(
-            (shift) => SetupListTileCard(
-              leadingIcon: Icons.schedule_rounded,
-              title: '${shift['name']}',
-              subtitle: '${shift['start_time']} – ${shift['end_time']}',
-              trailing: TextButton(
-                style: SetupUi.ghostButton.copyWith(
-                  foregroundColor:
-                      const WidgetStatePropertyAll(AppColors.danger),
-                ),
-                onPressed:
-                    _busy ? null : () => _removeShift('${shift['id']}'),
-                child: const Text('Remove'),
+            (shift) => SetupSurfaceCard(
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        width: 36,
+                        height: 36,
+                        decoration: BoxDecoration(
+                          color: AppColors.iconWell,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Icon(
+                          Icons.schedule_rounded,
+                          size: 18,
+                          color: SetupUi.navy,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '${shift['name']}',
+                              style: const TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.textPrimary,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              _shiftTimeRangeLabel(shift),
+                              style: const TextStyle(
+                                fontSize: 13,
+                                height: 1.35,
+                                color: AppColors.textMuted,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 4,
+                    children: [
+                      TextButton(
+                        style: SetupUi.ghostButton,
+                        onPressed:
+                            _busy ? null : () => _editShiftTimes(shift),
+                        child: const Text('Edit times'),
+                      ),
+                      TextButton(
+                        style: SetupUi.ghostButton.copyWith(
+                          foregroundColor: const WidgetStatePropertyAll(
+                            AppColors.danger,
+                          ),
+                        ),
+                        onPressed: _busy
+                            ? null
+                            : () => _removeShift('${shift['id']}'),
+                        child: const Text('Remove'),
+                      ),
+                    ],
+                  ),
+                ],
               ),
             ),
           ),
@@ -907,7 +1045,7 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
         SetupPanel(
           title: 'Add a job role',
           icon: Icons.badge_outlined,
-          subtitle: 'Set the role name and daily pay for this position.',
+          subtitle: 'Set the role name, daily pay, and optional hourly pay.',
           children: [
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -934,6 +1072,17 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
                   ),
                 ),
               ],
+            ),
+            const SizedBox(height: _fieldGap),
+            TextField(
+              controller: _positionHourly,
+              style: const TextStyle(fontSize: 14),
+              decoration: _compactInput(
+                'Hourly pay (₱, optional)',
+              ),
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+              onChanged: (_) => setState(() {}),
             ),
             const SizedBox(height: _fieldGap),
             TextField(
@@ -964,7 +1113,7 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
             (position) => SetupListTileCard(
               leadingIcon: Icons.badge_outlined,
               title: '${position['title']}',
-              subtitle: '₱${position['daily_rate']}/day',
+              subtitle: _positionRateSubtitle(position),
               trailing: TextButton(
                 style: SetupUi.ghostButton.copyWith(
                   foregroundColor:
@@ -1129,89 +1278,67 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         SetupPanel(
-          title: 'Clock-in rules',
+          title: 'Time-in rules',
           icon: Icons.fact_check_outlined,
           subtitle:
               'Configure early, late, absent, half-day, overtime, and incomplete cutoffs.',
           children: [
-            Row(
-              children: [
-                Expanded(
-                  child: _labeledNumberField(
-                    'Early clock-in window (min)',
-                    _attEarlyClockIn,
-                  ),
-                ),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: _labeledNumberField(
-                    'Extra minutes before late',
-                    _attOnTimeGrace,
-                  ),
-                ),
-              ],
+            SetupLabeledSetting(
+              title: 'Early time-in window (min)',
+              description:
+                  'How early employees may time in before shift start.',
+              controller: _attEarlyClockIn,
+              inputHint: 'Minutes',
             ),
-            const SizedBox(height: _fieldGap),
-            Row(
-              children: [
-                Expanded(
-                  child: _labeledNumberField(
-                    'Absent if under (% of shift)',
-                    _attAbsentPercent,
-                  ),
-                ),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: _labeledNumberField(
-                    'Half-day if under (% of shift)',
-                    _attHalfDayPercent,
-                  ),
-                ),
-              ],
+            SetupLabeledSetting(
+              title: 'Extra minutes before late',
+              description:
+                  'Grace after shift start before status becomes Late.',
+              controller: _attOnTimeGrace,
+              inputHint: 'Minutes',
             ),
-            const SizedBox(height: _fieldGap),
-            Row(
-              children: [
-                Expanded(
-                  child: _labeledNumberField(
-                    'Payroll half-day cutoff (min)',
-                    _attHalfDay,
-                  ),
-                ),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: _labeledNumberField(
-                    'Payroll absent cutoff (min)',
-                    _attAbsent,
-                  ),
-                ),
-              ],
+            SetupLabeledSetting(
+              title: 'Absent if under (% of shift)',
+              description:
+                  'Status cutoff as percent of scheduled shift length.',
+              controller: _attAbsentPercent,
+              inputHint: 'Percent',
             ),
-            const SizedBox(height: _fieldGap),
-            Row(
-              children: [
-                Expanded(
-                  child: _labeledNumberField(
-                    'Minimum overtime minutes',
-                    _attOvertimeMinimum,
-                  ),
-                ),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: _labeledNumberField(
-                    'Maximum overtime duration (min)',
-                    _attMaximumOvertime,
-                  ),
-                ),
-              ],
+            SetupLabeledSetting(
+              title: 'Half-day if under (% of shift)',
+              description:
+                  'Status cutoff as percent of scheduled shift length.',
+              controller: _attHalfDayPercent,
+              inputHint: 'Percent',
             ),
-            const SizedBox(height: 4),
-            Text(
-              'Maximum overtime duration: how long an employee may stay '
-              'clocked in after shift end before attendance becomes Incomplete.',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: const Color(0xFF6B7280),
-                  ),
+            SetupLabeledSetting(
+              title: 'Payroll half-day cutoff (min)',
+              description:
+                  'Used for payslip half-day math (minutes).',
+              controller: _attHalfDay,
+              inputHint: 'Minutes',
+            ),
+            SetupLabeledSetting(
+              title: 'Payroll absent cutoff (min)',
+              description:
+                  'Fallback minute cutoff when shift length is unavailable.',
+              controller: _attAbsent,
+              inputHint: 'Minutes',
+            ),
+            SetupLabeledSetting(
+              title: 'Minimum overtime minutes',
+              description:
+                  'OT pay starts only after this many minutes past shift end.',
+              controller: _attOvertimeMinimum,
+              inputHint: 'Minutes',
+            ),
+            SetupLabeledSetting(
+              title: 'Maximum overtime duration (min)',
+              description:
+                  'How long an employee may stay timed in after shift end '
+                  'before attendance becomes Incomplete.',
+              controller: _attMaximumOvertime,
+              inputHint: 'Minutes',
             ),
           ],
         ),
@@ -1228,7 +1355,7 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
           child: FilledButton(
             onPressed: _busy ? null : _saveAttendance,
             style: _primaryButtonStyle,
-            child: const Text('Save Clock-In Settings'),
+            child: const Text('Save Time-In Settings'),
           ),
         ),
       ],
@@ -1261,7 +1388,7 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
       children: [
         const SetupInfoBanner(
           'Set your workplace on the map and choose how close employees must '
-          'be before they can clock in or clock out.',
+          'be before they can time in or time out.',
         ),
         const SizedBox(height: _fieldGap),
         SetupPanel(
@@ -1458,62 +1585,54 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
   }
 
   Widget _buildFooter() {
-    if (_step >= setupWizardStepLabels.length - 1 ||
-        _step == setupWizardBusinessInfoStep) {
-      return const SizedBox.shrink();
-    }
-
-    return SafeArea(
-      top: false,
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          border: Border(top: BorderSide(color: AppColors.border)),
-          boxShadow: [
-            BoxShadow(
-              color: Color(0x0A000000),
-              blurRadius: 10,
-              offset: Offset(0, -2),
-            ),
-          ],
-        ),
-        child: Row(
-          children: [
-            const Spacer(),
-            TextButton(
-              style: SetupUi.ghostButton,
-              onPressed: _busy
-                  ? null
-                  : () => setState(
-                        () => _step = clampSetupStep(_step + 1),
-                      ),
-              child: const Text('Skip for Now'),
-            ),
-            if (_currentStepCanContinue()) ...[
-              const SizedBox(width: 8),
-              FilledButton(
-                onPressed: _busy ? null : _handleContinue,
-                style: SetupUi.primaryButton.copyWith(
-                  minimumSize: const WidgetStatePropertyAll(Size(0, 40)),
-                ),
-                child: const Text('Continue'),
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        border: Border(top: BorderSide(color: AppColors.border)),
+        boxShadow: [
+          BoxShadow(
+            color: Color(0x0A000000),
+            blurRadius: 10,
+            offset: Offset(0, -2),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          const Spacer(),
+          TextButton(
+            style: SetupUi.ghostButton,
+            onPressed: _busy
+                ? null
+                : () => setState(
+                      () => _step = clampSetupStep(_step + 1),
+                    ),
+            child: const Text('Skip for Now'),
+          ),
+          if (_currentStepCanContinue()) ...[
+            const SizedBox(width: 8),
+            FilledButton(
+              onPressed: _busy ? null : _handleContinue,
+              style: SetupUi.primaryButton.copyWith(
+                minimumSize: const WidgetStatePropertyAll(Size(0, 40)),
               ),
-            ],
+              child: const Text('Continue'),
+            ),
           ],
-        ),
+        ],
       ),
     );
   }
 
-  Widget _labeledNumberField(String label, TextEditingController controller) {
-    return TextField(
-      controller: controller,
-      style: const TextStyle(fontSize: 14),
-      decoration: _compactInput(label),
-      keyboardType: TextInputType.number,
-    );
-  }
-
   Widget _infoBox(String text) => SetupInfoBanner(text);
+}
+
+String _positionRateSubtitle(Map<String, dynamic> position) {
+  final daily = position['daily_rate'];
+  final hourly = position['hourly_rate'];
+  final parts = <String>[];
+  if (daily != null) parts.add('₱$daily/day');
+  if (hourly != null) parts.add('₱$hourly/hr');
+  return parts.join(' · ');
 }

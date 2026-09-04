@@ -571,7 +571,7 @@ class _FaceRegistrationScreenState extends State<FaceRegistrationScreen> {
                         const SizedBox(height: 8),
                         Text(
                           _banner ??
-                              'Register as you usually look at work — glasses and makeup are OK. Use them the same way when you clock in.',
+                              'Register as you usually look at work — glasses and makeup are OK. Use them the same way when you time in.',
                           textAlign: TextAlign.center,
                           style: TextStyle(
                             color: Colors.white.withValues(alpha: 0.78),

@@ -1,4 +1,6 @@
+import 'package:aroll_mobile/core/app_state.dart';
 import 'package:aroll_mobile/core/di/injection.dart';
+import 'package:aroll_mobile/presentation/shared/tenant_mode_banner.dart';
 import 'package:aroll_mobile/domain/entities/employee_portal.dart';
 import 'package:aroll_mobile/domain/repositories/employee_repository.dart';
 import 'package:aroll_mobile/presentation/employee/employee_ui.dart';
@@ -41,7 +43,9 @@ class _EmployeePayslipScreenState extends State<EmployeePayslipScreen> {
   @override
   Widget build(BuildContext context) {
     return EmployeeScaffold(
-      title: 'PAYSLIP',
+      title: sl<AppState>().session?.isDemo == true
+          ? 'SAMPLE PAYSLIP'
+          : 'PAYSLIP',
       selectedIndex: 3,
       showBack: true,
       child: FutureBuilder<EmployeePayslip>(
@@ -69,8 +73,10 @@ class _EmployeePayslipScreenState extends State<EmployeePayslipScreen> {
                           color: const Color(0xFF8D8D8D),
                           borderRadius: BorderRadius.circular(999),
                         ),
-                        child: const Text(
-                          'PAYSLIP',
+                        child: Text(
+                          sl<AppState>().session?.isDemo == true
+                              ? 'SAMPLE PAYSLIP'
+                              : 'PAYSLIP',
                           style: TextStyle(
                             color: Colors.white,
                             fontWeight: FontWeight.w700,
@@ -78,6 +84,10 @@ class _EmployeePayslipScreenState extends State<EmployeePayslipScreen> {
                         ),
                       ),
                     ),
+                    if (sl<AppState>().session?.isDemo == true) ...[
+                      const SizedBox(height: 12),
+                      const PayslipSampleBanner(),
+                    ],
                     const SizedBox(height: 14),
                     Center(
                       child: Text(

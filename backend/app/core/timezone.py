@@ -31,5 +31,16 @@ def business_today(tz_name: str | None) -> date:
     return business_now(tz_name).date()
 
 
+def to_business_naive(value: datetime, tz_name: str | None) -> datetime:
+    """Convert a punch timestamp to naive local time in the business timezone.
+
+    Timezone-aware values (typically UTC from the database) are converted.
+    Naive values are treated as already-local and returned unchanged.
+    """
+    if value.tzinfo is None:
+        return value
+    return value.astimezone(get_business_tz(tz_name)).replace(tzinfo=None)
+
+
 def manila_now() -> datetime:
     return datetime.now(get_manila_tz())

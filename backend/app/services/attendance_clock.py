@@ -24,6 +24,10 @@ from app.models.business import BusinessLocation
 from app.models.employee import Employee
 from app.models.enums import AttendanceStatus
 from app.models.scheduling import Shift, ShiftAssignment
+from app.services.demo_tenant import (
+    load_business_for_employee,
+    substitute_demo_worksite_coordinates,
+)
 
 
 class GeofenceValidationError(HTTPException):
@@ -121,68 +125,184 @@ def _scheduled_end(work_date: date, shift: Shift) -> datetime:
     return end_at
 
 
+def _list_assignment_candidates(
+    db: Session,
+    employee: Employee,
+    work_date: date,
+) -> list[tuple[ShiftAssignment, Shift]]:
+    """Today's assignments plus yesterday's overnight shift if it still spans today."""
+    yesterday = work_date - timedelta(days=1)
+    rows = (
+        db.query(ShiftAssignment, Shift)
+        .join(Shift, ShiftAssignment.shift_id == Shift.id)
+        .filter(
+            ShiftAssignment.employee_id == employee.id,
+            Shift.business_id == employee.business_id,
+            ShiftAssignment.work_date.in_((yesterday, work_date)),
+        )
+        .order_by(ShiftAssignment.work_date.asc(), Shift.start_time.asc())
+        .all()
+    )
+    candidates: list[tuple[ShiftAssignment, Shift]] = []
+    for assignment, shift in rows:
+        if assignment.work_date == work_date:
+            candidates.append((assignment, shift))
+            continue
+        # Yesterday overnight (end <= start) can still be the active shift after midnight.
+        if shift.end_time <= shift.start_time:
+            candidates.append((assignment, shift))
+    return candidates
+
+
+def _records_by_assignment(
+    db: Session,
+    *,
+    employee_id: uuid.UUID,
+    assignment_ids: list[uuid.UUID],
+) -> dict[uuid.UUID, AttendanceRecord]:
+    if not assignment_ids:
+        return {}
+    rows = (
+        db.query(AttendanceRecord)
+        .filter(
+            AttendanceRecord.employee_id == employee_id,
+            AttendanceRecord.shift_assignment_id.in_(assignment_ids),
+        )
+        .order_by(AttendanceRecord.created_at.asc())
+        .all()
+    )
+    return {row.shift_assignment_id: row for row in rows if row.shift_assignment_id}
+
+
+def pick_assignment_for_time_in(
+    rows: list[tuple[ShiftAssignment, Shift]],
+    records_by_assignment_id: dict[uuid.UUID, AttendanceRecord],
+    *,
+    now_local: datetime,
+    early_clock_in_minutes: int,
+    preferred_assignment_id: uuid.UUID | None = None,
+) -> tuple[ShiftAssignment, Shift]:
+    """Choose the scheduled shift whose Time In window applies now.
+
+    Assignments that already have an attendance record are skipped so a completed
+    morning shift does not block Time In for an evening shift on the same day.
+    """
+    open_rows = [
+        (assignment, shift)
+        for assignment, shift in rows
+        if records_by_assignment_id.get(assignment.id) is None
+    ]
+    if not open_rows:
+        raise HTTPException(
+            400,
+            "Attendance for this shift is already complete.",
+        )
+
+    in_shift: list[tuple[ShiftAssignment, Shift]] = []
+    early_window: list[tuple[ShiftAssignment, Shift]] = []
+    late: list[tuple[ShiftAssignment, Shift]] = []
+    upcoming: list[tuple[ShiftAssignment, Shift, datetime]] = []
+
+    for assignment, shift in open_rows:
+        scheduled_start = _scheduled_start(assignment.work_date, shift)
+        scheduled_end = _scheduled_end(assignment.work_date, shift)
+        earliest = scheduled_start - timedelta(minutes=early_clock_in_minutes)
+        if now_local < earliest:
+            upcoming.append((assignment, shift, earliest))
+            continue
+        if scheduled_start <= now_local < scheduled_end:
+            in_shift.append((assignment, shift))
+        elif now_local < scheduled_start:
+            early_window.append((assignment, shift))
+        else:
+            late.append((assignment, shift))
+
+    def _prefer(
+        group: list[tuple[ShiftAssignment, Shift]],
+    ) -> tuple[ShiftAssignment, Shift]:
+        if preferred_assignment_id is not None:
+            for assignment, shift in group:
+                if assignment.id == preferred_assignment_id:
+                    return assignment, shift
+        return group[0]
+
+    if in_shift:
+        return _prefer(in_shift)
+    if early_window:
+        return _prefer(early_window)
+    if late:
+        # Prefer the most recently started past shift (last in start-time order).
+        if preferred_assignment_id is not None:
+            for assignment, shift in reversed(late):
+                if assignment.id == preferred_assignment_id:
+                    return assignment, shift
+        return late[-1]
+
+    raise HTTPException(
+        400,
+        f"Time In opens {early_clock_in_minutes} minutes before shift start.",
+    )
+
+
 def _resolve_assignment(
     db: Session,
     employee: Employee,
     work_date: date,
     shift_assignment_id: uuid.UUID | None,
+    *,
+    now_local: datetime,
+    early_clock_in_minutes: int,
 ) -> tuple[ShiftAssignment, Shift]:
-    query = (
-        db.query(ShiftAssignment, Shift)
-        .join(Shift, ShiftAssignment.shift_id == Shift.id)
-        .filter(
-            ShiftAssignment.employee_id == employee.id,
-            ShiftAssignment.work_date == work_date,
-            Shift.business_id == employee.business_id,
-        )
-        .order_by(Shift.start_time.asc())
-    )
-    rows = query.all()
+    rows = _list_assignment_candidates(db, employee, work_date)
     if not rows:
         raise HTTPException(400, "You have no assigned shift for today.")
 
     if shift_assignment_id is not None:
-        for assignment, shift in rows:
-            if assignment.id == shift_assignment_id:
-                return assignment, shift
-        raise HTTPException(400, "Selected shift assignment was not found for today.")
+        known_ids = {assignment.id for assignment, _shift in rows}
+        if shift_assignment_id not in known_ids:
+            raise HTTPException(
+                400, "Selected shift assignment was not found for today."
+            )
 
-    if len(rows) == 1:
-        return rows[0]
-
-    raise HTTPException(
-        400,
-        "Multiple shifts are assigned today. Open your schedule and select a shift to time in.",
+    records = _records_by_assignment(
+        db,
+        employee_id=employee.id,
+        assignment_ids=[assignment.id for assignment, _shift in rows],
+    )
+    return pick_assignment_for_time_in(
+        rows,
+        records,
+        now_local=now_local,
+        early_clock_in_minutes=early_clock_in_minutes,
+        preferred_assignment_id=shift_assignment_id,
     )
 
 
 def _active_record(
     db: Session,
     employee: Employee,
-    work_date: date,
+    work_date: date | None = None,
 ) -> AttendanceRecord | None:
-    assignment_ids = [
-        row.id
-        for row in db.query(ShiftAssignment.id)
+    """Open in-progress/late punch for this employee.
+
+    Not scoped to today's assignment IDs so an overnight Time Out after midnight
+    still finds the open punch when the employee also has a shift on the new day.
+    Incomplete (forgotten Time Out) is excluded so it does not block the next shift.
+    """
+    del work_date  # kept for callers; open sessions are employee-scoped
+    return (
+        db.query(AttendanceRecord)
         .filter(
-            ShiftAssignment.employee_id == employee.id,
-            ShiftAssignment.work_date == work_date,
+            AttendanceRecord.business_id == employee.business_id,
+            AttendanceRecord.employee_id == employee.id,
+            AttendanceRecord.time_out.is_(None),
+            AttendanceRecord.status.in_(
+                (AttendanceStatus.in_progress, AttendanceStatus.late)
+            ),
         )
-        .all()
-    ]
-    # Incomplete (forgotten clock-out) stays open for correction but must not
-    # block a new day's clock-in / clock-out flow.
-    query = db.query(AttendanceRecord).filter(
-        AttendanceRecord.business_id == employee.business_id,
-        AttendanceRecord.employee_id == employee.id,
-        AttendanceRecord.time_out.is_(None),
-        AttendanceRecord.status.in_(
-            (AttendanceStatus.in_progress, AttendanceStatus.late)
-        ),
+        .order_by(AttendanceRecord.created_at.desc())
+        .first()
     )
-    if assignment_ids:
-        query = query.filter(AttendanceRecord.shift_assignment_id.in_(assignment_ids))
-    return query.order_by(AttendanceRecord.created_at.desc()).first()
 
 
 def _existing_assignment_record(
@@ -342,7 +462,7 @@ def verify_employee_face_match(
                 "code": "face_enrollment_quality",
                 "message": (
                     "Your enrolled face samples are inconsistent. "
-                    "Please re-enroll your face before clocking in."
+                    "Please re-enroll your face before timing in."
                 ),
             },
         )
@@ -507,18 +627,40 @@ def clock_in_employee(
     face_match_score: float | None = None,
 ) -> dict:
     from app.services.leave_requests import raise_if_on_approved_leave
+    from app.services.missing_clock_out import ensure_incomplete_for_employee
 
     today = business_today(business_timezone)
     raise_if_on_approved_leave(db, employee=employee, work_date=today)
+    ensure_incomplete_for_employee(
+        db, employee, business_timezone=business_timezone
+    )
 
     location = _primary_location(db, employee.business_id)
+    latitude, longitude = substitute_demo_worksite_coordinates(
+        business=load_business_for_employee(db, employee),
+        location=location,
+        latitude=latitude,
+        longitude=longitude,
+    )
     geofence = _validate_geofence(location, latitude, longitude)
 
     resolved_score = face_match_score
     if face_image_bytes is not None and resolved_score is None:
         resolved_score = verify_employee_face_match(db, employee, face_image_bytes)
+
+    open_session = _active_record(db, employee, today)
+    if open_session is not None:
+        raise HTTPException(400, "You are already timed in for this shift.")
+
+    policy = _attendance_policy(db, employee.business_id)
+    now_local = business_now(business_timezone).replace(tzinfo=None)
     assignment, shift = _resolve_assignment(
-        db, employee, today, shift_assignment_id
+        db,
+        employee,
+        today,
+        shift_assignment_id,
+        now_local=now_local,
+        early_clock_in_minutes=policy.early_clock_in_minutes,
     )
 
     existing = _existing_assignment_record(
@@ -528,20 +670,18 @@ def clock_in_employee(
     )
     if existing is not None:
         if existing.time_in is not None and existing.time_out is None:
-            raise HTTPException(400, "You are already clocked in for this shift.")
+            raise HTTPException(400, "You are already timed in for this shift.")
         raise HTTPException(
             400,
             "Attendance for this shift is already complete.",
         )
 
-    policy = _attendance_policy(db, employee.business_id)
-    now_local = business_now(business_timezone).replace(tzinfo=None)
     scheduled_start = _scheduled_start(assignment.work_date, shift)
     earliest = scheduled_start - timedelta(minutes=policy.early_clock_in_minutes)
     if now_local < earliest:
         raise HTTPException(
             400,
-            f"Clock-in opens {policy.early_clock_in_minutes} minutes before shift start.",
+            f"Time In opens {policy.early_clock_in_minutes} minutes before shift start.",
         )
 
     status = _clock_in_status(
@@ -583,9 +723,9 @@ def clock_in_employee(
     )
 
     message = (
-        "Clocked in successfully."
+        "Timed in successfully."
         if status == AttendanceStatus.in_progress
-        else "Clocked in successfully. You were marked late."
+        else "Timed in successfully. You were marked late."
     )
     if is_rest_day:
         message = (
@@ -630,6 +770,12 @@ def clock_out_employee(
     raise_if_on_approved_leave(db, employee=employee, work_date=today)
 
     location = _primary_location(db, employee.business_id)
+    latitude, longitude = substitute_demo_worksite_coordinates(
+        business=load_business_for_employee(db, employee),
+        location=location,
+        latitude=latitude,
+        longitude=longitude,
+    )
     geofence = _validate_geofence(location, latitude, longitude)
 
     # If open punch is past end + maximum_overtime_minutes, mark incomplete.
@@ -700,6 +846,10 @@ def clock_out_employee(
     elif liveness_passed is False:
         record.liveness_passed = False
 
+    worked_minutes = max(
+        (now_utc - record.time_in).total_seconds() / 60.0,
+        0.0,
+    )
     was_late = record.status == AttendanceStatus.late
     if shift is not None and assignment is not None:
         from app.services.attendance_status import resolve_closed_attendance_status
@@ -714,10 +864,6 @@ def clock_out_employee(
         )
     else:
         # No assigned shift: fall back to legacy fixed-minute absent bar.
-        worked_minutes = max(
-            (now_utc - record.time_in).total_seconds() / 60.0,
-            0.0,
-        )
         absent_bar = min(
             policy.half_day_threshold_minutes, policy.absent_threshold_minutes
         )
@@ -756,11 +902,11 @@ def clock_out_employee(
         geofence.get("inside_geofence"),
     )
 
-    message = "Clocked out successfully."
+    message = "Timed out successfully."
     if record.status == AttendanceStatus.late:
-        message = "Clocked out successfully. Late status preserved."
+        message = "Timed out successfully. Late status preserved."
     elif record.status == AttendanceStatus.absent:
-        message = "Clocked out. Marked absent due to insufficient worked time."
+        message = "Timed out. Marked absent due to insufficient worked time."
     if early_out_minutes > 0:
         message = f"{message} Early out: {early_out_minutes:.0f} min."
     if face_match_score is not None:

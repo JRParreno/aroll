@@ -213,7 +213,7 @@ def _calculate_employee_payslip(
 
     rest_policy = db.get(BusinessRestDayPolicy, employee.business_id)
     position = db.get(Position, employee.position_id) if employee.position_id else None
-    # Phase 2/3: Employee pay first; Position.daily_rate is legacy daily fallback.
+    # Employee pay first; Position.daily_rate / hourly_rate are templates/fallback.
     # All rate math goes through resolve_employee_pay_context (daily + hourly).
     resolved_pay = resolve_employee_pay(employee, position=position)
 
@@ -527,6 +527,10 @@ def _calculate_employee_payslip(
                 "status": row_status,
                 "time_in": record.time_in.isoformat() if record.time_in else None,
                 "time_out": record.time_out.isoformat() if record.time_out else None,
+                "shift_name": shift.name if shift else None,
+                "shift_assignment_id": (
+                    str(assignment.id) if assignment is not None else None
+                ),
                 "holiday_name": holiday.name if holiday else None,
                 "is_rest_day": is_rest,
                 "rest_day_premium_pay": (

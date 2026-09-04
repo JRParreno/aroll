@@ -1055,7 +1055,7 @@ def raise_if_on_approved_leave(
         detail={
             "code": "on_leave",
             "message": (
-                "You are on approved leave for this day. Clock-in and clock-out "
+                "You are on approved leave for this day. Time In and Time Out "
                 "are not required."
             ),
             "leave_request_id": str(leave.id),

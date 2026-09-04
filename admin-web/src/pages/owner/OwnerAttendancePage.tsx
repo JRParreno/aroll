@@ -16,6 +16,8 @@ import {
   OwnerPageContent,
   OwnerPageHeader,
 } from "@/components/owner/layout/OwnerPageLayout";
+import { SimulatedBadge } from "@/components/tenant/SimulatedBadge";
+import { useTenantMode } from "@/lib/tenantMode";
 import {
   approveOwnerAttendanceCorrection,
   completeOwnerAttendance,
@@ -99,7 +101,7 @@ function EmployeeAvatar({
 function statusCopy(status: string) {
   if (status === "late") return "Arrived late";
   if (status === "absent") return "Marked absent";
-  if (status === "in_progress") return "Clocked in";
+  if (status === "in_progress") return "Timed in";
   if (status === "complete") return "Arrived on time";
   if (status === "on_leave") return "On Leave";
   if (status === "holiday_paid") return "Paid holiday (not worked)";
@@ -151,6 +153,7 @@ function EmployeeInfoRow({
 
 export function OwnerAttendancePage() {
   const queryClient = useQueryClient();
+  const { isDemo } = useTenantMode();
   const [search, setSearch] = useState("");
   const [date, setDate] = useState(todayIso);
   const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -225,11 +228,11 @@ export function OwnerAttendancePage() {
   const completeMutation = useMutation({
     mutationFn: () => {
       if (!completing || !completeTime) {
-        return Promise.reject(new Error("Clock-out time is required."));
+        return Promise.reject(new Error("Time Out is required."));
       }
       const timeOut = new Date(`${completing.date}T${completeTime}:00`);
       if (Number.isNaN(timeOut.getTime())) {
-        return Promise.reject(new Error("Enter a valid clock-out time."));
+        return Promise.reject(new Error("Enter a valid Time Out."));
       }
       return completeOwnerAttendance(completing.id, {
         time_out: timeOut.toISOString(),
@@ -293,7 +296,14 @@ export function OwnerAttendancePage() {
 
   return (
     <OwnerPage>
-      <OwnerPageHeader title="Attendance" />
+      <OwnerPageHeader
+        title="Attendance"
+        description={
+          isDemo
+            ? "Simulated Time In / Time Out records for demonstration only."
+            : undefined
+        }
+      />
 
       <OwnerPageContent>
         <section className="rounded-2xl border border-amber-200 bg-amber-50/40 p-5 shadow-sm">
@@ -303,7 +313,7 @@ export function OwnerAttendancePage() {
                 Pending correction requests
               </h2>
               <p className="mt-1 text-sm text-[#6B7280]">
-                Employees can request corrected clock-in and clock-out times for
+                Employees can request corrected Time In and Time Out for
                 a shift. Approve to update attendance and payroll.
               </p>
             </div>
@@ -480,7 +490,7 @@ export function OwnerAttendancePage() {
                 Rest Day Work
               </h2>
               <p className="mt-1 text-sm text-[#6B7280]">
-                Employees who clocked in or out on {restDayLabel}
+                Employees who timed in or out on {restDayLabel}
                 {typeof data?.rest_day_premium_percent === "number"
                   ? ` · ${data.rest_day_premium_percent}% premium`
                   : ""}
@@ -525,6 +535,11 @@ export function OwnerAttendancePage() {
                       <h3 className="truncate text-sm font-semibold text-[#111827]">
                         {record.employee_name}
                       </h3>
+                      {isDemo ? (
+                        <p className="mt-1">
+                          <SimulatedBadge label="SIMULATED" />
+                        </p>
+                      ) : null}
                       <p className="mt-0.5 text-xs text-[#6B7280]">
                         {formatDisplayDate(record.date)}
                         {record.weekday
@@ -608,6 +623,11 @@ export function OwnerAttendancePage() {
                       <h2 className="truncate text-sm font-semibold text-[#111827]">
                         {record.employee_name}
                       </h2>
+                      {isDemo ? (
+                        <p className="mt-1">
+                          <SimulatedBadge label="SIMULATED" />
+                        </p>
+                      ) : null}
                       <p className="mt-0.5 text-xs text-[#6B7280]">
                         {formatDisplayDate(record.date)}
                         {record.weekday
@@ -772,16 +792,16 @@ export function OwnerAttendancePage() {
           {completing ? (
             <div className="space-y-3">
               <p className="text-sm text-[#6B7280]">
-                Enter the correct clock-out time for{" "}
+                Enter the correct Time Out for{" "}
                 <span className="font-semibold text-[#111827]">
                   {completing.employee_name}
                 </span>{" "}
-                on {formatDisplayDate(completing.date)}. Clock-in was{" "}
+                on {formatDisplayDate(completing.date)}. Time In was{" "}
                 {formatTime(completing.time_in)}.
               </p>
               <div>
                 <label className="mb-1 block text-xs font-semibold text-[#374151]">
-                  Clock-out time
+                  Time Out
                 </label>
                 <Input
                   onChange={(event) => setCompleteTime(event.target.value)}
@@ -818,7 +838,7 @@ export function OwnerAttendancePage() {
               onClick={() => completeMutation.mutate()}
               type="button"
             >
-              {completeMutation.isPending ? "Saving…" : "Save clock-out"}
+              {completeMutation.isPending ? "Saving…" : "Save Time Out"}
             </Button>
           </DialogFooter>
         </DialogContent>

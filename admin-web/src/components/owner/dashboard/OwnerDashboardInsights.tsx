@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { CalendarClock, ClipboardCheck } from "lucide-react";
 import { Link } from "react-router-dom";
 import { getOwnerPayrollReport, getSetupStatus } from "@/lib/api";
+import { useTenantMode } from "@/lib/tenantMode";
 
 function daysUntil(dateKey: string | null | undefined) {
   if (!dateKey) return null;
@@ -75,6 +76,7 @@ function InsightCard({
 }
 
 export function OwnerDashboardInsights() {
+  const { isDemo } = useTenantMode();
   const { data: payrollReport, isLoading: payrollLoading } = useQuery({
     queryKey: ["owner-payroll-report", "dashboard-current"],
     queryFn: () => getOwnerPayrollReport(),
@@ -105,25 +107,29 @@ export function OwnerDashboardInsights() {
   return (
     <div className="flex flex-col gap-4">
       <InsightCard
-        title="Payroll Status"
+        title={isDemo ? "Sample Payroll Status" : "Payroll Status"}
         icon={CalendarClock}
         loading={payrollLoading || setupLoading}
         value={
           !payrollConfigured
             ? "Not scheduled"
-            : payrollStatusLabel(payrollReport?.payroll_status, paydayIn)
+            : isDemo
+              ? "Demonstration period"
+              : payrollStatusLabel(payrollReport?.payroll_status, paydayIn)
         }
         helper={
-          !payrollConfigured
-            ? "Configure payroll in Business Setup"
-            : periodLabel
-              ? `Current period: ${periodLabel}`
-              : paydayLabel
-                ? `Next payday: ${paydayLabel}`
-                : "Configure payroll in Business Setup"
+          isDemo
+            ? "Demonstration payroll only. Not for actual salary payment."
+            : !payrollConfigured
+              ? "Configure payroll in Business Setup"
+              : periodLabel
+                ? `Current period: ${periodLabel}`
+                : paydayLabel
+                  ? `Next payday: ${paydayLabel}`
+                  : "Configure payroll in Business Setup"
         }
         to="/owner/payroll"
-        linkLabel="View payroll"
+        linkLabel={isDemo ? "View sample payroll" : "View payroll"}
       />
       <InsightCard
         title="Setup Tasks"

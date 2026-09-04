@@ -30,6 +30,8 @@ class BusinessListResponse(BaseModel):
     created_at: datetime
     employee_count: int
     location_count: int
+    is_demo: bool = False
+    is_internal_test: bool = False
 
 
 class BusinessDetailResponse(BaseModel):
@@ -40,6 +42,8 @@ class BusinessDetailResponse(BaseModel):
     timezone: str
     created_at: datetime
     employee_count: int
+    is_demo: bool = False
+    is_internal_test: bool = False
     owner: BusinessOwnerResponse | None = None
     registration_id: str | None = None
     registration_submitted_at: datetime | None = None

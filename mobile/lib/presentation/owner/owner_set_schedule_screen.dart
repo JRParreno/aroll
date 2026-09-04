@@ -742,96 +742,26 @@ class _OwnerScheduleScreenState extends State<OwnerScheduleScreen> {
                             orElse: () => null,
                           );
                       return Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 8),
-                        child: ListTile(
-                          contentPadding:
-                              const EdgeInsets.symmetric(horizontal: 8),
-                          leading: EmployeeAvatar(
-                            imageUrl:
-                                employee?['profile_image_url'] as String?,
-                            name:
-                                '${assignment['employee_name'] ?? 'Employee'}',
-                            size: 40,
+                        padding: const EdgeInsets.fromLTRB(12, 4, 8, 4),
+                        child: _AssignedEmployeeRow(
+                          name:
+                              '${assignment['employee_name'] ?? 'Employee'}',
+                          position: employee?['position_title'] as String?,
+                          imageUrl:
+                              employee?['profile_image_url'] as String?,
+                          isRestDayWork:
+                              assignment['is_rest_day_work'] == true,
+                          onLeave: assignment['on_leave'] == true,
+                          assignedDuringLeave:
+                              assignment['assigned_during_leave'] == true,
+                          leavePending: assignment['leave_pending'] == true,
+                          saving: _saving,
+                          onReassign: () => _startReassignment(
+                            '${assignment['id']}',
+                            shiftId,
                           ),
-                          title: Text(
-                            '${assignment['employee_name'] ?? 'Employee'}',
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w600,
-                              fontSize: 14,
-                            ),
-                          ),
-                          subtitle: Text(
-                            employee?['position_title'] as String? ??
-                                'Assigned',
-                            style: appMutedStyle().copyWith(fontSize: 12),
-                          ),
-                          trailing: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              if (assignment['is_rest_day_work'] == true)
-                                const _SoftChip(
-                                  label: 'Rest day',
-                                  background: Color(0xFFF0F9FF),
-                                  foreground: Color(0xFF075985),
-                                  border: Color(0xFFBAE6FD),
-                                ),
-                              if (assignment['is_rest_day_work'] == true)
-                                const SizedBox(width: 6),
-                              _SoftChip(
-                                label: assignment['on_leave'] == true
-                                    ? 'On Leave'
-                                    : 'Assigned',
-                                background: assignment['on_leave'] == true
-                                    ? const Color(0xFFDBEAFE)
-                                    : const Color(0xFFEFF6FF),
-                                foreground: const Color(0xFF1D4ED8),
-                                border: const Color(0xFFBFDBFE),
-                              ),
-                              if (assignment['assigned_during_leave'] ==
-                                  true) ...[
-                                const SizedBox(width: 6),
-                                const _SoftChip(
-                                  label: 'Assigned During Leave',
-                                  background: Color(0xFFFFF7ED),
-                                  foreground: Color(0xFFC2410C),
-                                  border: Color(0xFFFDBA74),
-                                ),
-                              ],
-                              if (assignment['leave_pending'] == true) ...[
-                                const SizedBox(width: 6),
-                                const _SoftChip(
-                                  label: 'Leave Pending',
-                                  background: Color(0xFFFFFBEB),
-                                  foreground: Color(0xFFB45309),
-                                  border: Color(0xFFFDE68A),
-                                ),
-                              ],
-                              IconButton(
-                                tooltip: 'Reassign',
-                                onPressed: _saving
-                                    ? null
-                                    : () => _startReassignment(
-                                          '${assignment['id']}',
-                                          shiftId,
-                                        ),
-                                icon: const Icon(
-                                  Icons.edit_outlined,
-                                  size: 18,
-                                ),
-                              ),
-                              IconButton(
-                                tooltip: 'Remove',
-                                onPressed: _saving
-                                    ? null
-                                    : () => _removeAssignment(
-                                          '${assignment['id']}',
-                                        ),
-                                icon: const Icon(
-                                  Icons.delete_outline,
-                                  size: 18,
-                                ),
-                              ),
-                            ],
+                          onRemove: () => _removeAssignment(
+                            '${assignment['id']}',
                           ),
                         ),
                       );
@@ -863,7 +793,7 @@ class _OwnerScheduleScreenState extends State<OwnerScheduleScreen> {
                               ),
                             ),
                             subtitle: Text(
-                              'Premium applies when the employee clocks in',
+                              'Premium applies when the employee times in',
                               style: appMutedStyle().copyWith(fontSize: 11),
                             ),
                             value: _isRestDayWork,
@@ -1103,16 +1033,21 @@ class _OwnerScheduleScreenState extends State<OwnerScheduleScreen> {
         return 'Already assigned';
       case OwnerEmployeeAvailability.conflict:
         return 'Conflict';
+      case OwnerEmployeeAvailability.activationRequired:
+        return 'Activation required';
     }
   }
 
   List<Widget> _buildEmployeePickerSections() {
     final available = <Map<String, dynamic>>[];
     final onLeave = <Map<String, dynamic>>[];
+    final activationRequired = <Map<String, dynamic>>[];
     for (final employee in _employees) {
       final availability = _availabilityFor(employee);
       if (availability == OwnerEmployeeAvailability.onLeave) {
         onLeave.add(employee);
+      } else if (availability == OwnerEmployeeAvailability.activationRequired) {
+        activationRequired.add(employee);
       } else {
         available.add(employee);
       }
@@ -1205,6 +1140,8 @@ class _OwnerScheduleScreenState extends State<OwnerScheduleScreen> {
 
     return [
       section('Available Employees', available),
+      if (activationRequired.isNotEmpty)
+        section('Activation required', activationRequired),
       section('Employees On Leave', onLeave),
     ];
   }
@@ -1413,6 +1350,12 @@ class _AvailabilityChip extends StatelessWidget {
           const Color(0xFFB91C1C),
           const Color(0xFFFECACA),
         ),
+      OwnerEmployeeAvailability.activationRequired => (
+          'Activation required',
+          const Color(0xFFF1F5F9),
+          const Color(0xFF475569),
+          const Color(0xFFE2E8F0),
+        ),
     };
 
     return Container(
@@ -1522,6 +1465,120 @@ class _InfoBanner extends StatelessWidget {
               onPressed: onAction,
               child: Text(actionLabel!),
             ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AssignedEmployeeRow extends StatelessWidget {
+  const _AssignedEmployeeRow({
+    required this.name,
+    required this.position,
+    required this.imageUrl,
+    required this.isRestDayWork,
+    required this.onLeave,
+    required this.assignedDuringLeave,
+    required this.leavePending,
+    required this.saving,
+    required this.onReassign,
+    required this.onRemove,
+  });
+
+  final String name;
+  final String? position;
+  final String? imageUrl;
+  final bool isRestDayWork;
+  final bool onLeave;
+  final bool assignedDuringLeave;
+  final bool leavePending;
+  final bool saving;
+  final VoidCallback onReassign;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          EmployeeAvatar(imageUrl: imageUrl, name: name, size: 40),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  name,
+                  softWrap: true,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                    height: 1.3,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  position ?? 'Assigned',
+                  style: appMutedStyle().copyWith(fontSize: 12),
+                ),
+                const SizedBox(height: 6),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [
+                    if (isRestDayWork)
+                      const _SoftChip(
+                        label: 'Rest day',
+                        background: Color(0xFFF0F9FF),
+                        foreground: Color(0xFF075985),
+                        border: Color(0xFFBAE6FD),
+                      ),
+                    _SoftChip(
+                      label: onLeave ? 'On Leave' : 'Assigned',
+                      background: onLeave
+                          ? const Color(0xFFDBEAFE)
+                          : const Color(0xFFEFF6FF),
+                      foreground: const Color(0xFF1D4ED8),
+                      border: const Color(0xFFBFDBFE),
+                    ),
+                    if (assignedDuringLeave)
+                      const _SoftChip(
+                        label: 'Assigned During Leave',
+                        background: Color(0xFFFFF7ED),
+                        foreground: Color(0xFFC2410C),
+                        border: Color(0xFFFDBA74),
+                      ),
+                    if (leavePending)
+                      const _SoftChip(
+                        label: 'Leave Pending',
+                        background: Color(0xFFFFFBEB),
+                        foreground: Color(0xFFB45309),
+                        border: Color(0xFFFDE68A),
+                      ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            tooltip: 'Reassign',
+            visualDensity: VisualDensity.compact,
+            constraints: const BoxConstraints.tightFor(width: 36, height: 36),
+            padding: EdgeInsets.zero,
+            onPressed: saving ? null : onReassign,
+            icon: const Icon(Icons.edit_outlined, size: 18),
+          ),
+          IconButton(
+            tooltip: 'Remove',
+            visualDensity: VisualDensity.compact,
+            constraints: const BoxConstraints.tightFor(width: 36, height: 36),
+            padding: EdgeInsets.zero,
+            onPressed: saving ? null : onRemove,
+            icon: const Icon(Icons.delete_outline, size: 18),
+          ),
         ],
       ),
     );

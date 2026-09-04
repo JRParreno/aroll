@@ -15,10 +15,12 @@ router = APIRouter(prefix="/positions", tags=["positions"])
 
 
 def _position_response(pos: Position) -> PositionResponse:
+    hourly = getattr(pos, "hourly_rate", None)
     return PositionResponse(
         id=str(pos.id),
         title=pos.title,
         daily_rate=float(pos.daily_rate),
+        hourly_rate=float(hourly) if hourly is not None else None,
         description=pos.description,
         is_active=pos.is_active,
     )
@@ -52,6 +54,7 @@ def create_position(
         business_id=user.business_id,
         title=body.title,
         daily_rate=body.daily_rate,
+        hourly_rate=body.hourly_rate,
         description=body.description,
     )
     db.add(pos)

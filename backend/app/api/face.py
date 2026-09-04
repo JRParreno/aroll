@@ -34,6 +34,10 @@ from app.services.face_embedding import (
     min_match_score,
 )
 from app.services.face_enrollment import enroll_face_sample_bytes, face_status_for_employee
+from app.services.demo_tenant import (
+    load_business_for_employee,
+    raise_if_demo_enrollment_locked,
+)
 from app.services.face_liveness import (
     challenge_instruction,
     create_challenge,
@@ -125,6 +129,8 @@ def delete_face_samples(
     if user.business_id is None:
         raise HTTPException(400, "No business context")
     emp = _get_business_employee(db, employee_id, user.business_id)
+
+    raise_if_demo_enrollment_locked(load_business_for_employee(db, emp))
 
     deleted = (
         db.query(EmployeeFaceEmbedding)

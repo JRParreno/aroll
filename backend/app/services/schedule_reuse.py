@@ -1,6 +1,6 @@
 """Schedule reuse helpers — copy/preview/apply assignment patterns only.
 
-Does not touch attendance, payroll, leave, or productivity records.
+Does not touch attendance, payroll, or leave records.
 Conflict rules mirror existing assign overlap + capacity checks.
 """
 
@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 from app.models.employee import Employee
 from app.models.schedule_template import ScheduleTemplate, ScheduleTemplateEntry
 from app.models.scheduling import Shift, ShiftAssignment
+from app.models.user import User
 from app.schemas.schedule_reuse import (
     ScheduleConflictMode,
     ScheduleReuseApplyResponse,
@@ -28,6 +29,7 @@ from app.schemas.schedule_reuse import (
     ScheduleTemplateDetailResponse,
     ScheduleTemplateSummary,
 )
+from app.services.employee_activation import is_employee_fully_activated
 
 
 def _times_overlap(first: Shift, second: Shift) -> bool:
@@ -171,6 +173,10 @@ def build_preview(
         .filter(Employee.business_id == business_id)
         .all()
     }
+    users = {
+        linked.id: linked
+        for linked in db.query(User).filter(User.business_id == business_id).all()
+    }
     shifts = {
         shift.id: shift
         for shift in db.query(Shift).filter(Shift.business_id == business_id).all()
@@ -233,6 +239,13 @@ def build_preview(
         if employee is None or not employee.is_active:
             base.status = "skipped_inactive"
             base.conflict_reason = "Employee is inactive or missing"
+            skipped_count += 1
+            items.append(base)
+            continue
+
+        if not is_employee_fully_activated(employee, users.get(employee.user_id)):
+            base.status = "skipped_inactive"
+            base.conflict_reason = "Account not activated"
             skipped_count += 1
             items.append(base)
             continue

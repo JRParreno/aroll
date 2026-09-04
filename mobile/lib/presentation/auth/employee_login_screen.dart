@@ -37,7 +37,7 @@ class _EmployeeLoginScreenState extends State<EmployeeLoginScreen> {
       state.session,
       mustChange: state.session.mustChangePassword,
     );
-    if (!state.session.mustChangePassword) {
+    if (!state.session.mustChangePassword && !state.session.isDemo) {
       try {
         final face = await sl<EmployeeRepository>().getFaceStatus();
         appState.setFaceEnrolled(face.isCompleted);

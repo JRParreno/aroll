@@ -23,7 +23,6 @@ import { OwnerAttendancePage } from "@/pages/owner/OwnerAttendancePage";
 import { OwnerLeaveManagementPage } from "@/pages/owner/OwnerLeaveManagementPage";
 import { OwnerNotificationsPage } from "@/pages/owner/OwnerNotificationsPage";
 import { OwnerPayrollPage } from "@/pages/owner/OwnerPayrollPage";
-import { OwnerProductivityPage } from "@/pages/owner/OwnerProductivityPage";
 import { OwnerLocationPage } from "@/pages/owner/OwnerLocationPage";
 import { OwnerBusinessDocumentsPage } from "@/pages/owner/OwnerBusinessDocumentsPage";
 import { OwnerPositionsSalaryRatesPage } from "@/pages/owner/OwnerPositionsSalaryRatesPage";
@@ -35,7 +34,6 @@ import { OwnerBusinessSetupsPage } from "@/pages/owner/OwnerBusinessSetupsPage";
 import { OwnerLeavePolicyPage } from "@/pages/owner/OwnerLeavePolicyPage";
 import { OwnerHelpPage } from "@/pages/owner/OwnerHelpPage";
 import { OwnerProfilePage } from "@/pages/owner/OwnerProfilePage";
-import { OwnerFaceDemoPage } from "@/pages/owner/OwnerFaceDemoPage";
 import { OwnerSetupWizardPage } from "@/pages/owner/setup/OwnerSetupWizardPage";
 import { PendingVerificationPage } from "@/pages/owner/PendingVerificationPage";
 import { RejectedApplicationPage } from "@/pages/owner/RejectedApplicationPage";
@@ -78,14 +76,12 @@ export default function App() {
       >
         <Route path="dashboard" element={<OwnerDashboardPage />} />
         <Route path="employees" element={<OwnerEmployeesPage />} />
-        <Route path="face-demo" element={<OwnerFaceDemoPage />} />
         <Route path="schedule" element={<OwnerSchedulePage />} />
         <Route path="attendance" element={<OwnerAttendancePage />} />
         <Route path="leave" element={<OwnerLeaveManagementPage />} />
         <Route path="leave/:requestId" element={<OwnerLeaveManagementPage />} />
         <Route path="notifications" element={<OwnerNotificationsPage />} />
         <Route path="payroll" element={<OwnerPayrollPage />} />
-        <Route path="productivity" element={<OwnerProductivityPage />} />
         <Route path="location" element={<OwnerLocationPage />} />
         <Route
           path="business-documents"

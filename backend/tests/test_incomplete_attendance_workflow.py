@@ -87,7 +87,7 @@ def test_notify_incomplete_sends_employee_and_owner():
     assert notify_user.called
     emp_kwargs = notify_user.call_args.kwargs
     assert emp_kwargs["type"] == "incomplete_attendance"
-    assert "forgot to clock out" in emp_kwargs["message"].lower()
+    assert "forgot to time out" in emp_kwargs["message"].lower()
 
     assert create_notification.called
     owner_kwargs = create_notification.call_args.kwargs
