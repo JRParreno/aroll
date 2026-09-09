@@ -11,9 +11,11 @@ import 'package:aroll_mobile/domain/repositories/employee_repository.dart';
 import 'package:aroll_mobile/presentation/employee/employee_ui.dart';
 import 'package:aroll_mobile/presentation/employee/face_attendance_result_screen.dart';
 import 'package:aroll_mobile/presentation/employee/face_auto_attendance_screen.dart';
+import 'package:aroll_mobile/presentation/employee/time_out_confirm_dialog.dart';
 import 'package:aroll_mobile/core/tenant_mode.dart';
 import 'package:aroll_mobile/presentation/shared/tenant_mode_banner.dart';
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
@@ -83,8 +85,7 @@ class _ScanAttendanceScreenState extends State<ScanAttendanceScreen> {
         _todaySchedule = dashboard.todaySchedule;
         _loading = false;
       });
-      // Start GPS immediately — do not wait for the camera / face path.
-      // Demo Café never uses participant device GPS.
+      // Warm GPS only if location was already granted. Do not prompt here.
       if (sl<AppState>().session?.isDemo != true) {
         unawaited(_warmupGps());
       }
@@ -115,9 +116,13 @@ class _ScanAttendanceScreenState extends State<ScanAttendanceScreen> {
 
   Future<void> _warmupGps() async {
     if (sl<AppState>().session?.isDemo == true) return;
-    // Light warmup only — do not run a full multi-sample collect here
-    // (that races/competes with attendance and wastes time).
     try {
+      final permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        return;
+      }
+      // Light warmup only — do not prompt, and do not run a full collect here.
       final worksite = _worksite ?? await _repo.getWorksite();
       if (!mounted) return;
       setState(() => _worksite = worksite);
@@ -198,6 +203,8 @@ class _ScanAttendanceScreenState extends State<ScanAttendanceScreen> {
   }
 
   Future<void> _clockOut() async {
+    final confirmed = await showTimeOutConfirmation(context);
+    if (!confirmed || !mounted) return;
     await _startAutoAttendance(FaceAttendanceAction.clockOut);
   }
 

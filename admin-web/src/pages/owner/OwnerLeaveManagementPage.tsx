@@ -44,7 +44,7 @@ function LeaveEmployeeAvatar({
   return (
     <div
       className={cn(
-        "flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#d8d8d8] font-extrabold text-[#333] ring-2 ring-white shadow-sm",
+        "flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#d8d8d8] font-semibold text-[#333] ring-2 ring-white shadow-sm",
         className
       )}
     >
@@ -355,7 +355,7 @@ export function OwnerLeaveManagementPage() {
             <button
               key={item.key}
               className={cn(
-                "rounded-full px-3.5 py-1.5 text-sm font-semibold transition",
+                "rounded-full px-3.5 py-1.5 text-[0.9375rem] font-medium transition",
                 tab === item.key
                   ? "bg-[#1F456B] text-white"
                   : "bg-white text-[#4B5563] ring-1 ring-slate-200 hover:bg-slate-50"

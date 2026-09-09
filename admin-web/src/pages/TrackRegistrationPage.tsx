@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { formatDateTime, StatusBadge } from "@/components/detail/DetailLayout";
 import { SystemBrandPanel } from "@/components/branding/SystemBranding";
+import { AuthLegalLinks } from "@/components/legal/AuthLegalLinks";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -283,6 +284,7 @@ export function TrackRegistrationPage() {
               Back to Registration
             </Link>
           </p>
+          <AuthLegalLinks className="mt-4" />
         </div>
       </main>
 

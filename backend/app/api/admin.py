@@ -27,6 +27,7 @@ from app.models.enums import (
 from app.models.registration_document import RegistrationDocument
 from app.models.payroll import BusinessPayrollConfig
 from app.models.user import User
+from app.services.legal_consent import ensure_legal_consent_url
 from app.schemas.admin_business import (
     BusinessDetailResponse,
     BusinessListResponse,
@@ -348,6 +349,7 @@ def approve_registration(
     )
     db.add(business)
     db.flush()
+    ensure_legal_consent_url(business)
 
     # Create owner account
     owner = User(

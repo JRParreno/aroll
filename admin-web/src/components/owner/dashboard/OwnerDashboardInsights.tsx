@@ -66,11 +66,11 @@ function InsightCard({
           {linkLabel}
         </Link>
       </div>
-      <p className="mt-4 text-sm font-medium text-[#374151]">{title}</p>
+      <p className="mt-4 text-[0.9375rem] font-medium text-[#374151]">{title}</p>
       <p className="mt-1 text-xl font-semibold tracking-tight text-[#1F2937]">
         {loading ? "..." : value}
       </p>
-      <p className="mt-2 text-xs leading-relaxed text-[#6B7280]">{helper}</p>
+      <p className="owner-section-subtitle mt-2 text-[0.8125rem]">{helper}</p>
     </div>
   );
 }

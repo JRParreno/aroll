@@ -12,8 +12,8 @@ export function PrototypeNotice() {
       className="rounded-2xl border border-amber-200 bg-amber-50 p-4"
       data-testid="prototype-notice"
     >
-      <p className="text-sm font-semibold text-amber-950">{PROTOTYPE_NOTICE_TITLE}</p>
-      <p className="mt-1 text-sm leading-6 text-amber-900">{PROTOTYPE_NOTICE_BODY}</p>
+      <p className="text-[0.9375rem] font-medium text-amber-950">{PROTOTYPE_NOTICE_TITLE}</p>
+      <p className="mt-1 text-[0.9375rem] font-normal leading-6 text-amber-900">{PROTOTYPE_NOTICE_BODY}</p>
     </section>
   );
 }

@@ -8,6 +8,7 @@ import 'package:aroll_mobile/core/face/face_api_errors.dart';
 import 'package:aroll_mobile/core/face/face_camera_preview.dart';
 import 'package:aroll_mobile/core/face/face_quality.dart';
 import 'package:aroll_mobile/domain/repositories/employee_repository.dart';
+import 'package:aroll_mobile/presentation/permissions/permission_rationale.dart';
 import 'package:aroll_mobile/presentation/employee/employee_ui.dart';
 import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart';
@@ -16,7 +17,6 @@ import 'package:go_router/go_router.dart';
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
-import 'package:permission_handler/permission_handler.dart';
 
 /// Burst enrollment: capture many frames, keep the best open-eye stills.
 const _burstDuration = Duration(milliseconds: 2600);
@@ -75,6 +75,11 @@ class _FaceRegistrationScreenState extends State<FaceRegistrationScreen> {
 
   Future<void> _bootstrap() async {
     try {
+      if (sl<AppState>().legalConsentAccepted != true) {
+        if (!mounted) return;
+        context.go('/legal-consent');
+        return;
+      }
       final status = await _repo.getFaceStatus();
       if (!mounted) return;
       if (status.isCompleted) {
@@ -111,8 +116,8 @@ class _FaceRegistrationScreenState extends State<FaceRegistrationScreen> {
       _error = null;
     });
     try {
-      final permitted = await Permission.camera.request();
-      if (!permitted.isGranted) {
+      final permitted = await requestCameraWithRationale(context);
+      if (!permitted) {
         if (!mounted) return;
         setState(() {
           _cameraStarting = false;
@@ -516,13 +521,17 @@ class _FaceRegistrationScreenState extends State<FaceRegistrationScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (_loading) {
+      return const Scaffold(
+        backgroundColor: Colors.black,
+        body: Center(
+          child: CircularProgressIndicator(color: Colors.white70),
+        ),
+      );
+    }
     return Scaffold(
       backgroundColor: Colors.black,
-      body: _loading
-          ? const Center(
-              child: CircularProgressIndicator(color: Colors.white70),
-            )
-          : Stack(
+      body: Stack(
               fit: StackFit.expand,
               children: [
                 if (_cameraReady)

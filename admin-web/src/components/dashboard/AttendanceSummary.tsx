@@ -33,13 +33,13 @@ export function AttendanceSummary({
   const progress = (display.present_rate / 100) * circumference;
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+    <div className="owner-card p-5 sm:p-6">
       <div className="flex items-center justify-between gap-2">
         <div>
-          <h2 className="text-lg font-semibold text-[#1F2937]">
+          <h2 className="owner-section-title">
             Today&apos;s Attendance Summary
           </h2>
-          <p className="mt-1 text-sm text-[#6B7280]">
+          <p className="owner-section-subtitle mt-1">
             Present, absent, and late counts across active businesses.
           </p>
         </div>

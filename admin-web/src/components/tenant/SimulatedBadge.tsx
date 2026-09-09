@@ -12,7 +12,7 @@ export function SimulatedBadge({
     <Badge
       variant="secondary"
       className={cn(
-        "border-amber-200 bg-amber-50 text-[10px] font-semibold uppercase tracking-wide text-amber-900",
+        "border-amber-200 bg-amber-50 text-[11px] font-medium uppercase tracking-wide text-amber-900",
         className
       )}
     >
@@ -36,7 +36,7 @@ export function TenantKindBadge({
     return (
       <Badge
         variant="secondary"
-        className="border-sky-200 bg-sky-50 text-[10px] font-semibold uppercase tracking-wide text-sky-900"
+        className="border-sky-200 bg-sky-50 text-[11px] font-medium uppercase tracking-wide text-sky-900"
       >
         INTERNAL TEST
       </Badge>

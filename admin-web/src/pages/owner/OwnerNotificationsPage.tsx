@@ -84,8 +84,8 @@ export function OwnerNotificationsPage() {
             <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-[#6B7280]">
               <Bell className="h-5 w-5" />
             </div>
-            <p className="font-medium text-[#111827]">No notifications yet</p>
-            <p className="mt-1 text-sm text-[#6B7280]">
+            <p className="owner-section-title">No notifications yet</p>
+            <p className="owner-section-subtitle mt-1">
               Updates about leave and scheduling will appear here.
             </p>
           </div>
@@ -105,10 +105,10 @@ export function OwnerNotificationsPage() {
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <p className="font-semibold text-[#111827]">
+                    <p className="owner-section-title">
                       {notification.title}
                     </p>
-                    <p className="mt-1 text-sm text-[#6B7280]">
+                    <p className="owner-section-subtitle mt-1">
                       {notification.message}
                     </p>
                   </div>

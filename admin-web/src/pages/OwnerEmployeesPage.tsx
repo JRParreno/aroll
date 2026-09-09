@@ -128,7 +128,7 @@ function EmployeeAvatar({
   return (
     <div
       className={cn(
-        "flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#d8d8d8] font-extrabold text-[#333] ring-2 ring-white shadow-sm",
+        "flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#d8d8d8] font-semibold text-[#333] ring-2 ring-white shadow-sm",
         className
       )}
     >

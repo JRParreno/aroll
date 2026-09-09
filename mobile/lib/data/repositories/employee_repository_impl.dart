@@ -4,6 +4,7 @@ import 'package:aroll_mobile/core/network/api_client.dart';
 import 'package:aroll_mobile/domain/entities/employee_portal.dart';
 import 'package:aroll_mobile/domain/entities/face_liveness.dart';
 import 'package:aroll_mobile/domain/entities/leave_request.dart';
+import 'package:aroll_mobile/domain/entities/legal_consent.dart';
 import 'package:aroll_mobile/domain/entities/user_session.dart';
 import 'package:aroll_mobile/domain/repositories/employee_repository.dart';
 import 'package:dio/dio.dart';
@@ -155,6 +156,23 @@ class EmployeeRepositoryImpl implements EmployeeRepository {
       data: form,
     );
     return _faceStatusFromJson(res.data!);
+  }
+
+  @override
+  Future<LegalConsentStatus> getLegalConsent() async {
+    final res = await _api.dio.get<Map<String, dynamic>>(
+      '/employee/legal-consent',
+    );
+    return _legalConsentFromJson(res.data!);
+  }
+
+  @override
+  Future<LegalConsentStatus> acceptLegalConsent() async {
+    final res = await _api.dio.post<Map<String, dynamic>>(
+      '/employee/legal-consent',
+      data: {'accepted': true},
+    );
+    return _legalConsentFromJson(res.data!);
   }
 
   @override
@@ -763,5 +781,18 @@ LeaveRequestItem _leaveRequestFromJson(Map<String, dynamic> json) {
     createdAt: _dateTime(json['created_at'] as String?) ?? DateTime.now(),
     hasPendingChanges: json['has_pending_changes'] as bool? ?? false,
     previousRequest: _leaveRequestPreviousFromJson(json['previous_request']),
+  );
+}
+
+LegalConsentStatus _legalConsentFromJson(Map<String, dynamic> json) {
+  return LegalConsentStatus(
+    accepted: json['accepted'] as bool? ?? false,
+    acceptedAt: DateTime.tryParse('${json['accepted_at'] ?? ''}'),
+    businessName: json['business_name'] as String? ?? 'Workplace',
+    businessCode: json['business_code'] as String? ?? '',
+    legalConsentUrl: json['legal_consent_url'] as String? ?? '',
+    legalConsentPageUrl: json['legal_consent_page_url'] as String?,
+    content: json['content'] as String? ?? '',
+    isDemo: json['is_demo'] as bool? ?? false,
   );
 }

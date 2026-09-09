@@ -10,6 +10,7 @@ from fastapi import (
     Form,
     HTTPException,
     Query,
+    Request,
     Response,
     UploadFile,
 )
@@ -63,15 +64,44 @@ from app.services.missing_clock_out import (
     list_incomplete_for_employee,
 )
 from app.services.face_enrollment import enroll_face_sample_bytes, face_status_for_employee
+from app.services.legal_consent import (
+    absolute_legal_page_url,
+    legal_consent_url_for,
+    record_employee_legal_consent,
+    require_employee_legal_consent,
+    resolve_legal_content,
+)
 from app.services.pay_period import resolve_pay_period
 from app.models.payroll import BusinessPayrollConfig
 from app.schemas.face import FaceEnrollResponse, FaceStatusResponse
+from app.schemas.legal_consent import (
+    LegalConsentAcceptRequest,
+    LegalConsentStatusResponse,
+)
 
 router = APIRouter(prefix="/employee", tags=["employee-mobile"])
 
 
 class FaceRegistrationRequest(BaseModel):
     status: Literal["completed"]
+
+
+def _legal_consent_status(
+    request: Request, employee: Employee, business: Business
+) -> LegalConsentStatusResponse:
+    return LegalConsentStatusResponse(
+        accepted=bool(employee.legal_consent_accepted),
+        accepted_at=employee.legal_consent_accepted_at,
+        business_name=business.name,
+        business_code=business.business_code,
+        legal_consent_url=legal_consent_url_for(business),
+        legal_consent_page_url=absolute_legal_page_url(
+            request, business.business_code
+        ),
+        content=resolve_legal_content(business),
+        is_demo=bool(business.is_demo),
+        is_internal_test=bool(business.is_internal_test),
+    )
 
 
 def _current_employee(
@@ -1038,6 +1068,7 @@ async def clock_in_with_face(
     they resolve the seeded demo identity and the fictional worksite instead.
     """
     employee, business = _current_employee(db, user)
+    require_employee_legal_consent(employee)
     if business_is_demo(business):
         score = verify_demo_seeded_identity(db, employee, business)
         return clock_in_employee(
@@ -1106,6 +1137,7 @@ async def clock_out_with_face(
 ):
     """Clock out with GPS + client blink/smile gesture + server face match."""
     employee, business = _current_employee(db, user)
+    require_employee_legal_consent(employee)
     if business_is_demo(business):
         score = verify_demo_seeded_identity(db, employee, business)
         return clock_out_employee(
@@ -1149,6 +1181,38 @@ async def clock_out_with_face(
     )
 
 
+@router.get("/legal-consent", response_model=LegalConsentStatusResponse)
+def get_legal_consent(
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+):
+    employee, business = _current_employee(db, user)
+    return _legal_consent_status(request, employee, business)
+
+
+@router.post("/legal-consent", response_model=LegalConsentStatusResponse)
+def accept_legal_consent(
+    body: LegalConsentAcceptRequest,
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+):
+    if not body.accepted:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "legal_consent_required",
+                "message": "You must agree to continue.",
+            },
+        )
+    employee, business = _current_employee(db, user)
+    record_employee_legal_consent(employee)
+    db.commit()
+    db.refresh(employee)
+    return _legal_consent_status(request, employee, business)
+
+
 @router.get("/face-status", response_model=FaceStatusResponse)
 def employee_face_status(
     db: Annotated[Session, Depends(get_db)],
@@ -1166,6 +1230,7 @@ async def employee_enroll_face_samples(
 ):
     """Employee self-enroll — same embedding pipeline as owner face demo."""
     employee, _business = _current_employee(db, user)
+    require_employee_legal_consent(employee)
     payloads: list[bytes] = []
     for upload in files:
         data = await upload.read()
@@ -1192,6 +1257,7 @@ def face_registration(
 ):
     """Legacy status endpoint. Prefer POST /employee/face-samples for enrollment."""
     employee, business = _current_employee(db, user)
+    require_employee_legal_consent(employee)
     status = face_status_for_employee(db, employee)
     if status["sample_count"] < 1 or employee.face_registration_status != "completed":
         raise HTTPException(

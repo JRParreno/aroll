@@ -15,7 +15,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.security import hash_password
-from app.core.timezone import get_business_tz
+from app.core.timezone import business_today, get_business_tz
 from app.db.session import SessionLocal
 from app.models.attendance import AttendanceRecord
 from app.models.attendance_policy import BusinessAttendancePolicy
@@ -40,6 +40,10 @@ from app.models.rest_day_policy import BusinessRestDayPolicy
 from app.models.scheduling import Shift, ShiftAssignment
 from app.models.user import User
 from app.services.leave_policy import default_treatments
+from app.services.legal_consent import (
+    default_legal_consent_content,
+    ensure_legal_consent_url,
+)
 from app.services.pay_period import resolve_pay_period
 
 logger = logging.getLogger("aroll.seed.demo")
@@ -150,14 +154,19 @@ def _upsert_business(db: Session) -> Business:
         )
         db.add(business)
         db.flush()
-        return business
-    business.name = DEMO_BUSINESS_NAME
-    business.status = BusinessStatus.active
-    business.timezone = DEMO_TIMEZONE
-    business.is_demo = True
-    business.is_internal_test = False
-    if business.setup_completed_at is None:
-        business.setup_completed_at = now
+    else:
+        business.name = DEMO_BUSINESS_NAME
+        business.status = BusinessStatus.active
+        business.timezone = DEMO_TIMEZONE
+        business.is_demo = True
+        business.is_internal_test = False
+        if business.setup_completed_at is None:
+            business.setup_completed_at = now
+    ensure_legal_consent_url(business)
+    business.legal_consent_content = default_legal_consent_content(
+        DEMO_BUSINESS_NAME, is_demo=True
+    )
+    business.legal_consent_updated_at = now
     db.flush()
     return business
 
@@ -422,9 +431,14 @@ def _upsert_shift(
     return row
 
 
+def _demo_today() -> date:
+    """Demo Café calendar date. Clock-in uses Asia/Manila, not the host OS date."""
+    return business_today(DEMO_TIMEZONE)
+
+
 def _recent_weekdays(count: int = 12) -> list[date]:
     days: list[date] = []
-    cursor = date.today() - timedelta(days=1)
+    cursor = _demo_today() - timedelta(days=1)
     while len(days) < count:
         if cursor.weekday() < 5:
             days.append(cursor)
@@ -512,7 +526,7 @@ def _seed_schedule_and_attendance(
     workdays = _recent_weekdays(12)
     morning = shifts["morning"]
     afternoon = shifts["afternoon"]
-    today = date.today()
+    today = _demo_today()
 
     for index, work_date in enumerate(workdays):
         hannah_assignment = _upsert_assignment(
@@ -659,7 +673,7 @@ def _seed_payroll_adjustments(
     luis: Employee,
 ) -> None:
     config = db.get(BusinessPayrollConfig, business.id)
-    period_start, period_end = resolve_pay_period(config, today=date.today())
+    period_start, period_end = resolve_pay_period(config, today=_demo_today())
     _upsert_adjustment(
         db,
         business=business,

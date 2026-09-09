@@ -10,12 +10,18 @@ class AppState extends ChangeNotifier {
   bool? faceEnrolled;
   /// UI-only DEMO01 research notice. Not a demo-mode security flag.
   bool researchEvalAcknowledged = false;
+  /// Device-local flag: employee has seen the permission explanation screen.
+  bool permissionsIntroSeen = false;
+  /// Server flag: employee has agreed to the workplace consent page.
+  bool legalConsentAccepted = true;
 
   void setSession(UserSession s, {required bool mustChange}) {
     session = s;
     isLoggedIn = true;
     mustChangePassword = mustChange;
     researchEvalAcknowledged = false;
+    permissionsIntroSeen = !s.isEmployee;
+    legalConsentAccepted = s.isEmployee ? s.legalConsentAccepted : true;
     if (s.isEmployee) {
       employeeProfileImageUrl = s.profileImageUrl;
       // Locked until server confirms enrollment (login, restore, or resume).
@@ -42,6 +48,8 @@ class AppState extends ChangeNotifier {
     employeeProfileImageUrl = null;
     faceEnrolled = null;
     researchEvalAcknowledged = false;
+    permissionsIntroSeen = false;
+    legalConsentAccepted = true;
     notifyListeners();
   }
 
@@ -83,6 +91,31 @@ class AppState extends ChangeNotifier {
         profileImageUrl: imageUrl,
         isDemo: current.isDemo,
         isInternalTest: current.isInternalTest,
+        legalConsentAccepted: current.legalConsentAccepted,
+        legalConsentUrl: current.legalConsentUrl,
+        legalConsentPageUrl: current.legalConsentPageUrl,
+      );
+    }
+    notifyListeners();
+  }
+
+  void setPermissionsIntroSeen(bool seen) {
+    permissionsIntroSeen = seen;
+    notifyListeners();
+  }
+
+  void setLegalConsentAccepted({
+    required bool accepted,
+    String? legalConsentUrl,
+    String? legalConsentPageUrl,
+  }) {
+    legalConsentAccepted = accepted;
+    final current = session;
+    if (current != null) {
+      session = current.copyWith(
+        legalConsentAccepted: accepted,
+        legalConsentUrl: legalConsentUrl ?? current.legalConsentUrl,
+        legalConsentPageUrl: legalConsentPageUrl ?? current.legalConsentPageUrl,
       );
     }
     notifyListeners();

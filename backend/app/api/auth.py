@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -24,6 +24,10 @@ from app.schemas.auth import (
     LoginRequest,
     TokenResponse,
     UserMeResponse,
+)
+from app.services.legal_consent import (
+    absolute_legal_page_url,
+    legal_consent_url_for,
 )
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -78,7 +82,30 @@ def _employee_auth_context(
     }
 
 
-def _token_response(user: User, db: Session) -> TokenResponse:
+def _legal_consent_fields(
+    user: User, db: Session, request: Request | None = None
+) -> dict[str, str | bool | None]:
+    accepted: bool | None = None
+    legal_url: str | None = None
+    page_url: str | None = None
+    business = db.get(Business, user.business_id) if user.business_id else None
+    if business is not None:
+        legal_url = legal_consent_url_for(business)
+        if request is not None:
+            page_url = absolute_legal_page_url(request, business.business_code)
+    if user.role == UserRole.employee:
+        emp = db.query(Employee).filter(Employee.user_id == user.id).first()
+        accepted = bool(emp.legal_consent_accepted) if emp is not None else False
+    return {
+        "legal_consent_accepted": accepted,
+        "legal_consent_url": legal_url,
+        "legal_consent_page_url": page_url,
+    }
+
+
+def _token_response(
+    user: User, db: Session, request: Request | None = None
+) -> TokenResponse:
     token = create_access_token(
         str(user.id),
         extra={
@@ -94,6 +121,7 @@ def _token_response(user: User, db: Session) -> TokenResponse:
         is_demo=is_demo,
         is_internal_test=is_internal_test,
         **_employee_auth_context(user, db),
+        **_legal_consent_fields(user, db, request),
     )
 
 
@@ -172,7 +200,11 @@ def _authenticate_password(user: User, password: str) -> bool:
 
 
 @router.post("/login", response_model=TokenResponse)
-def login(body: LoginRequest, db: Annotated[Session, Depends(get_db)]):
+def login(
+    body: LoginRequest,
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+):
     user = _resolve_login_user(db, body.email)
     if user is None or not _authenticate_password(user, body.password):
         raise HTTPException(
@@ -206,12 +238,13 @@ def login(body: LoginRequest, db: Annotated[Session, Depends(get_db)]):
 
     user.last_login_at = datetime.now(timezone.utc)
     db.commit()
-    return _token_response(user, db)
+    return _token_response(user, db, request)
 
 
 @router.post("/business-owner-login", response_model=TokenResponse)
 def business_owner_login(
     body: BusinessOwnerLoginRequest,
+    request: Request,
     db: Annotated[Session, Depends(get_db)],
 ):
     resolved = _resolve_business_owner(db, str(body.email), body.business_code)
@@ -241,12 +274,13 @@ def business_owner_login(
 
     user.last_login_at = datetime.now(timezone.utc)
     db.commit()
-    return _token_response(user, db)
+    return _token_response(user, db, request)
 
 
 @router.post("/change-password", response_model=TokenResponse)
 def change_password(
     body: ChangePasswordRequest,
+    request: Request,
     user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ):
@@ -261,11 +295,12 @@ def change_password(
             emp.status = EmployeeStatus.active
     db.commit()
     db.refresh(user)
-    return _token_response(user, db)
+    return _token_response(user, db, request)
 
 
 @router.get("/me", response_model=UserMeResponse)
 def me(
+    request: Request,
     user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ):
@@ -279,6 +314,7 @@ def me(
             business_code = business.business_code
             setup_completed_at = business.setup_completed_at
     is_demo, is_internal_test = _tenant_flags(business)
+    legal = _legal_consent_fields(user, db, request)
     db.refresh(user)
     return UserMeResponse(
         id=str(user.id),
@@ -296,4 +332,7 @@ def me(
         profile_image_url=ctx["profile_image_url"],
         is_demo=is_demo,
         is_internal_test=is_internal_test,
+        legal_consent_accepted=legal["legal_consent_accepted"],
+        legal_consent_url=legal["legal_consent_url"],
+        legal_consent_page_url=legal["legal_consent_page_url"],
     )

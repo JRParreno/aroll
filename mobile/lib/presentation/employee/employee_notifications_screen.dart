@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:aroll_mobile/core/di/injection.dart';
 import 'package:aroll_mobile/core/theme/business_brand_theme.dart';
 import 'package:aroll_mobile/domain/repositories/employee_repository.dart';
+import 'package:aroll_mobile/presentation/permissions/permissions_onboarding_screen.dart';
 import 'package:aroll_mobile/presentation/employee/employee_ui.dart';
 import 'package:aroll_mobile/presentation/shared/app_ui.dart';
 import 'package:flutter/material.dart';
@@ -24,6 +27,10 @@ class _EmployeeNotificationsScreenState
   void initState() {
     super.initState();
     _future = _repo.notifications();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      unawaited(maybeRequestNotificationPermission(context));
+    });
   }
 
   Future<void> _reload() async {

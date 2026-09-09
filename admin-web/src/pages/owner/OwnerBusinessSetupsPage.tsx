@@ -12,14 +12,16 @@ import {
   UserRoundCog,
 } from "lucide-react";
 import { Link } from "react-router-dom";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useQuery } from "@tanstack/react-query";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   OwnerPage,
   OwnerPageBackLink,
   OwnerPageContent,
   OwnerPageHeader,
 } from "@/components/owner/layout/OwnerPageLayout";
+import { getMe } from "@/lib/api";
+import { ME_QUERY_KEY } from "@/lib/authSession";
 
 const setupSections = [
   {
@@ -76,9 +78,14 @@ const setupSections = [
     to: "/owner/settings/business",
     icon: Building2,
   },
-];
+] as const;
 
 export function OwnerBusinessSetupsPage() {
+  const { data: me } = useQuery({ queryKey: ME_QUERY_KEY, queryFn: getMe });
+  const consentPath = me?.business_code
+    ? `/legal/b/${me.business_code}`
+    : "/owner/settings/business";
+
   return (
     <OwnerPage>
       <OwnerPageHeader
@@ -88,30 +95,6 @@ export function OwnerBusinessSetupsPage() {
 
       <OwnerPageContent>
         <OwnerPageBackLink to="/owner/dashboard" label="Back to Dashboard" />
-
-        <Card className="rounded-2xl border-slate-200 shadow-sm">
-          <CardHeader className="pb-3">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <CardTitle className="text-lg font-semibold text-[#1F2937]">
-                  Setup Wizard
-                </CardTitle>
-                <p className="mt-1 text-sm text-[#6B7280]">
-                  Walk through shifts, positions, payroll, attendance, holidays,
-                  location, and rest day policies in one guided flow.
-                </p>
-              </div>
-              <span className="rounded-xl bg-[#F3F6FA] p-2 text-[#1E3A5F]">
-                <FileText className="h-5 w-5" />
-              </span>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <Button className="bg-[#1E3A5F] hover:bg-[#284B73]" asChild>
-              <Link to="/owner/setup-wizard">Open Setup Wizard</Link>
-            </Button>
-          </CardContent>
-        </Card>
 
         <section>
           <h2 className="mb-4 text-sm font-medium uppercase tracking-wide text-[#6B7280]">
@@ -129,10 +112,10 @@ export function OwnerBusinessSetupsPage() {
                         <Icon className="h-5 w-5" />
                       </span>
                       <span className="min-w-0 flex-1">
-                        <span className="block text-sm font-semibold text-[#1F2937]">
+                        <span className="owner-section-title block">
                           {section.title}
                         </span>
-                        <span className="mt-1 block text-xs leading-5 text-[#6B7280]">
+                        <span className="owner-section-subtitle mt-1 block">
                           {section.description}
                         </span>
                       </span>
@@ -142,6 +125,25 @@ export function OwnerBusinessSetupsPage() {
                 </Link>
               );
             })}
+            <Link to={consentPath} className="block">
+              <Card className="h-full rounded-2xl border-slate-200 shadow-sm transition hover:border-slate-300 hover:bg-[#FAFBFC]">
+                <CardContent className="flex items-center gap-4 p-5">
+                  <span className="rounded-xl bg-[#F3F6FA] p-2 text-[#1E3A5F]">
+                    <FileText className="h-5 w-5" />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="owner-section-title block">
+                      Employee consent webpage
+                    </span>
+                    <span className="owner-section-subtitle mt-1 block">
+                      Preview the generated workplace consent page. Edit the
+                      content in Business Settings.
+                    </span>
+                  </span>
+                  <ChevronRight className="h-5 w-5 shrink-0 text-[#9CA3AF]" />
+                </CardContent>
+              </Card>
+            </Link>
           </div>
         </section>
 
@@ -151,10 +153,10 @@ export function OwnerBusinessSetupsPage() {
               <HelpCircle className="h-5 w-5" />
             </span>
             <div>
-              <p className="text-sm font-semibold text-[#1F2937]">
+              <p className="owner-section-title">
                 Need help configuring setup?
               </p>
-              <p className="mt-1 text-xs text-[#6B7280]">
+              <p className="owner-section-subtitle mt-1">
                 Use each module above to continue the existing setup workflow.
               </p>
             </div>

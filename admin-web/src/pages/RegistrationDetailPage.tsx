@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import {
   Building2,
   CalendarClock,
@@ -15,11 +15,15 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import {
+  AdminPage,
+  AdminPageBackLink,
+  AdminPageContent,
+  AdminPageHeader,
+} from "@/components/admin/layout/AdminPageLayout";
+import {
   DetailField,
   DetailSection,
-  EmptyState,
   formatDateTime,
-  PageHeader,
   StatusBadge,
 } from "@/components/detail/DetailLayout";
 import { Button } from "@/components/ui/button";
@@ -78,47 +82,53 @@ export function RegistrationDetailPage() {
 
   if (isLoading) {
     return (
-      <div className="p-6">
-        <div className="animate-pulse space-y-4">
-          <div className="h-4 w-32 rounded bg-muted" />
-          <div className="h-8 w-64 rounded bg-muted" />
-          <div className="h-40 rounded-xl bg-muted" />
-        </div>
-      </div>
+      <AdminPage>
+        <AdminPageHeader
+          title="Registration request"
+          description="Loading registration details."
+        />
+        <AdminPageContent>
+          <div className="animate-pulse space-y-4">
+            <div className="h-4 w-32 rounded bg-muted" />
+            <div className="h-8 w-64 rounded bg-muted" />
+            <div className="h-40 rounded-2xl bg-muted" />
+          </div>
+        </AdminPageContent>
+      </AdminPage>
     );
   }
 
   if (isError || !data) {
     return (
-      <div className="p-6">
-        <EmptyState
+      <AdminPage>
+        <AdminPageHeader
           title="Registration not found"
           description="This request may have been removed or the link is invalid."
         />
-        <div className="mt-4">
-          <Button asChild variant="outline">
-            <Link to="/admin/registrations">Back to pending requests</Link>
-          </Button>
-        </div>
-      </div>
+        <AdminPageContent>
+          <AdminPageBackLink
+            to="/admin/registrations"
+            label="Back to pending requests"
+          />
+        </AdminPageContent>
+      </AdminPage>
     );
   }
 
   const isPending = data.status === "pending";
 
   return (
-    <div className="p-6 pb-24">
-      <div className="mx-auto max-w-4xl space-y-6">
-        <PageHeader
-          backTo="/admin/registrations"
-          backLabel="Pending requests"
-          title={data.business_name}
-          description="Review the submitted business details before approving or rejecting this registration."
-          badge={<StatusBadge status={data.status} />}
-          actions={
-            isPending ? (
+    <AdminPage>
+      <AdminPageHeader
+        title={data.business_name}
+        description="Review the submitted business details before approving or rejecting this registration."
+        actions={
+          <span className="flex flex-wrap items-center gap-2">
+            <StatusBadge status={data.status} />
+            {isPending ? (
               <>
                 <Button
+                  className="h-10 rounded-xl bg-[#1E3A5F] hover:bg-[#284B73]"
                   onClick={() => approve.mutate()}
                   disabled={approve.isPending || reject.isPending}
                 >
@@ -127,6 +137,7 @@ export function RegistrationDetailPage() {
                 </Button>
                 <Button
                   variant="destructive"
+                  className="h-10 rounded-xl"
                   onClick={() => setRejectOpen(true)}
                   disabled={approve.isPending || reject.isPending}
                 >
@@ -134,8 +145,15 @@ export function RegistrationDetailPage() {
                   Reject
                 </Button>
               </>
-            ) : undefined
-          }
+            ) : null}
+          </span>
+        }
+      />
+
+      <AdminPageContent>
+        <AdminPageBackLink
+          to="/admin/registrations"
+          label="Pending requests"
         />
 
         <div className="grid gap-6 lg:grid-cols-3">
@@ -240,8 +258,8 @@ export function RegistrationDetailPage() {
             </DetailSection>
 
             {data.rejection_reason && (
-              <section className="rounded-xl border border-red-200 bg-red-50/60 p-5">
-                <h2 className="text-sm font-semibold text-red-800">
+              <section className="rounded-2xl border border-red-200 bg-red-50/60 p-5">
+                <h2 className="text-sm font-medium text-red-800">
                   Rejection Reason
                 </h2>
                 <p className="mt-2 text-sm leading-relaxed text-red-700">
@@ -251,9 +269,9 @@ export function RegistrationDetailPage() {
             )}
 
             {isPending && (
-              <section className="rounded-xl border bg-muted/30 p-5">
-                <h2 className="text-sm font-semibold">Review checklist</h2>
-                <ul className="mt-3 space-y-2 text-sm text-muted-foreground">
+              <section className="owner-card-muted p-5">
+                <h2 className="text-sm font-medium text-[#1F2937]">Review checklist</h2>
+                <ul className="owner-section-subtitle mt-3 space-y-2 text-sm">
                   <li>• Verify business name, type, and address look legitimate</li>
                   <li>• Preview or download all uploaded documents</li>
                   <li>• Confirm owner contact details are reachable</li>
@@ -263,7 +281,7 @@ export function RegistrationDetailPage() {
             )}
           </div>
         </div>
-      </div>
+      </AdminPageContent>
 
       <Dialog open={rejectOpen} onOpenChange={setRejectOpen}>
         <DialogContent>
@@ -293,6 +311,6 @@ export function RegistrationDetailPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </AdminPage>
   );
 }

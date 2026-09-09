@@ -6,12 +6,12 @@ import 'package:aroll_mobile/core/face/gesture_liveness_detector.dart';
 import 'package:aroll_mobile/core/theme/business_brand_theme.dart';
 import 'package:aroll_mobile/domain/entities/face_liveness.dart';
 import 'package:aroll_mobile/presentation/employee/employee_ui.dart';
+import 'package:aroll_mobile/presentation/permissions/permission_rationale.dart';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
-import 'package:permission_handler/permission_handler.dart';
 
 /// Quick capture: blink or smile on-device, then return a single face photo.
 class FaceLivenessCaptureScreen extends StatefulWidget {
@@ -65,8 +65,9 @@ class _FaceLivenessCaptureScreenState extends State<FaceLivenessCaptureScreen> {
 
   Future<void> _bootstrap() async {
     try {
-      final permitted = await Permission.camera.request();
-      if (!permitted.isGranted) {
+      final permitted = await requestCameraWithRationale(context);
+      if (!mounted) return;
+      if (!permitted) {
         setState(() {
           _busy = false;
           _error =

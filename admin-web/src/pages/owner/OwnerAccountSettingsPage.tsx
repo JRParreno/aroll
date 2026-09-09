@@ -9,6 +9,7 @@ import {
   OwnerPage,
   OwnerPageBackLink,
   OwnerPageContent,
+  OwnerPageHeader,
 } from "@/components/owner/layout/OwnerPageLayout";
 import {
   PasswordInput,
@@ -142,15 +143,12 @@ export function OwnerAccountSettingsPage() {
 
   return (
     <OwnerPage>
+      <OwnerPageHeader
+        title="Account Settings"
+        description="Manage your profile picture, personal information, and password."
+      />
       <OwnerPageContent className="max-w-3xl">
         <OwnerPageBackLink to="/owner/settings/setup" label="Back to Business Setup" />
-
-        <div>
-          <h1 className="text-2xl font-semibold">Account Settings</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Manage your profile picture, personal information, and password.
-          </p>
-        </div>
 
         {isLoading && (
           <p className="text-sm text-muted-foreground">Loading account settings...</p>
@@ -165,7 +163,7 @@ export function OwnerAccountSettingsPage() {
           <>
             <Card>
               <CardHeader>
-                <CardTitle>Profile Picture</CardTitle>
+                <CardTitle className="text-[1.0625rem] font-semibold leading-snug tracking-[-0.015em]">Profile Picture</CardTitle>
               </CardHeader>
               <CardContent>
                 <ImageUploadField
@@ -178,7 +176,7 @@ export function OwnerAccountSettingsPage() {
 
             <Card>
               <CardHeader>
-                <CardTitle>Personal Information</CardTitle>
+                <CardTitle className="text-[1.0625rem] font-semibold leading-snug tracking-[-0.015em]">Personal Information</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-2">
@@ -214,7 +212,7 @@ export function OwnerAccountSettingsPage() {
 
             <Card>
               <CardHeader>
-                <CardTitle>Security</CardTitle>
+                <CardTitle className="text-[1.0625rem] font-semibold leading-snug tracking-[-0.015em]">Security</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 <PasswordInput

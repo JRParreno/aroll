@@ -152,7 +152,7 @@ export function OwnerPayrollPage() {
         description={
           isDemo
             ? "Demonstration payroll only. Not for actual salary payment."
-            : undefined
+            : "Review pay periods, earnings, and payroll history for your team."
         }
       />
 
@@ -163,8 +163,8 @@ export function OwnerPayrollPage() {
               <Search className="h-4 w-4" />
             </div>
             <div>
-              <h2 className="text-sm font-semibold text-[#1F2937]">Payroll filters</h2>
-              <p className="text-xs text-[#6B7280]">
+              <h2 className="owner-section-title">Payroll filters</h2>
+              <p className="owner-section-subtitle mt-0.5">
                 Search employees and choose the pay period to review.
               </p>
             </div>
@@ -379,7 +379,7 @@ export function OwnerPayrollPage() {
                   <span className="text-sm font-semibold text-[#166534]">
                     Final Net Pay
                   </span>
-                  <span className="text-base font-bold text-emerald-700">
+                  <span className="text-base font-semibold text-emerald-700">
                     {money(finalNet)}
                   </span>
                 </div>
@@ -426,7 +426,7 @@ export function OwnerPayrollPage() {
                     <p className="text-xs font-medium text-[#166534]">
                       Final Net Pay
                     </p>
-                    <p className="text-xl font-bold text-emerald-700">
+                    <p className="text-xl font-semibold text-emerald-700">
                       {money(payslip.final_net_pay ?? payslip.net_pay)}
                     </p>
                   </div>
@@ -549,7 +549,7 @@ function PayslipPreview({
     <div className="mx-auto max-w-md rounded-2xl border border-slate-200 bg-white p-6 text-sm shadow-sm">
       {sample ? (
         <div className="mb-4 rounded-xl border border-orange-200 bg-orange-50 px-3 py-2 text-center">
-          <p className="text-xs font-bold tracking-wide text-orange-900">
+          <p className="text-xs font-medium tracking-wide text-orange-900">
             {PAYSLIP_SAMPLE_LINE_1}
           </p>
           <p className="text-[11px] font-semibold text-orange-800">

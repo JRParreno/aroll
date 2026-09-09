@@ -3,6 +3,7 @@ import { ArrowLeft, FileCheck2, UploadCloud } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { SystemBrandPanel } from "@/components/branding/SystemBranding";
+import { AuthLegalLinks } from "@/components/legal/AuthLegalLinks";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -553,6 +554,7 @@ export function BusinessRegistrationPage() {
               </Link>
             </p>
           </div>
+          <AuthLegalLinks className="mt-5" />
         </div>
       </main>
     </div>

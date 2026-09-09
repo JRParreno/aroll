@@ -28,7 +28,8 @@ class ApiClient {
           }
 
           final path = options.path;
-          if (path.startsWith('/registrations')) {
+          if (path.startsWith('/registrations') ||
+              path.startsWith('/public/')) {
             options.headers.remove('Authorization');
             handler.next(options);
             return;
@@ -100,6 +101,7 @@ class ApiClient {
 ///                         handling and decides whether to clear storage.
 bool _skipUnauthorizedHandling(String path) {
   return path.startsWith('/registrations') ||
+      path.startsWith('/public/') ||
       path == '/auth/login' ||
       path == '/auth/business-owner-login' ||
       path == '/auth/me';

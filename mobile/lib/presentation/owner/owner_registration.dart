@@ -1,6 +1,7 @@
 import 'package:aroll_mobile/core/di/injection.dart';
 import 'package:aroll_mobile/data/repositories/owner_repository.dart';
 import 'package:aroll_mobile/presentation/auth/owner_auth_ui.dart';
+import 'package:aroll_mobile/presentation/legal/legal_document_screen.dart';
 import 'package:aroll_mobile/presentation/shared/app_ui.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
@@ -252,6 +253,8 @@ class _OwnerRegistrationScreenState extends State<OwnerRegistrationScreen> {
                   icon: Icons.send_rounded,
                   onPressed: _loading ? null : _submit,
                 ),
+                const SizedBox(height: 12),
+                const LegalLinksRow(),
                 if (_registrationId != null)
                   Padding(
                     padding: const EdgeInsets.only(top: 10),
@@ -342,6 +345,8 @@ class _TrackRegistrationScreenState extends State<TrackRegistrationScreen> {
                   loading: _loading,
                   onPressed: _loading ? null : _track,
                 ),
+                const SizedBox(height: 12),
+                const LegalLinksRow(),
               ],
             ),
           ),

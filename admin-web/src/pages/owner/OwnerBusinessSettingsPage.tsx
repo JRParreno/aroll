@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Building2, FileText, Palette } from "lucide-react";
+import { Building2, FileText, Palette, Link2 } from "lucide-react";
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { toast } from "sonner";
 import { BusinessRegistrationDocumentsSection } from "@/components/business/BusinessRegistrationDocumentsSection";
 import {
@@ -19,6 +20,7 @@ import {
   OwnerPage,
   OwnerPageBackLink,
   OwnerPageContent,
+  OwnerPageHeader,
 } from "@/components/owner/layout/OwnerPageLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -31,7 +33,7 @@ import {
   type BusinessBrandingSettings,
 } from "@/lib/api";
 import { ME_QUERY_KEY } from "@/lib/authSession";
-import { formatBusinessType, formatVerificationStatus } from "@/lib/registrationDocuments";
+import { formatVerificationStatus } from "@/lib/registrationDocuments";
 
 async function fetchOwnerDocument(
   _registrationId: string,
@@ -47,6 +49,8 @@ export function OwnerBusinessSettingsPage() {
     business_type: "",
     address: "",
     business_code: "",
+    legal_consent_content: "",
+    legal_consent_url: "",
   });
   const [branding, setBranding] =
     useState<BusinessBrandingSettings>(defaultBusinessBranding);
@@ -63,6 +67,8 @@ export function OwnerBusinessSettingsPage() {
       business_type: data.business_type ?? "",
       address: data.address,
       business_code: data.business_code,
+      legal_consent_content: data.legal_consent_content ?? "",
+      legal_consent_url: data.legal_consent_url ?? `/legal/b/${data.business_code}`,
     });
     setBranding(data.branding ?? defaultBusinessBranding);
   }, [data]);
@@ -74,6 +80,7 @@ export function OwnerBusinessSettingsPage() {
         business_type: form.business_type.trim() || null,
         address: form.address.trim(),
         branding: businessBrandingForSave(branding),
+        legal_consent_content: form.legal_consent_content.trim(),
       }),
     onSuccess: () => {
       toast.success("Business settings saved");
@@ -86,6 +93,10 @@ export function OwnerBusinessSettingsPage() {
   if (isLoading) {
     return (
       <OwnerPage>
+        <OwnerPageHeader
+          title="Business Settings"
+          description="Business profile, branding, and registration documents."
+        />
         <OwnerPageContent className="max-w-4xl">
           <p className="text-sm text-muted-foreground">Loading business settings…</p>
         </OwnerPageContent>
@@ -96,6 +107,10 @@ export function OwnerBusinessSettingsPage() {
   if (isError || !data) {
     return (
       <OwnerPage>
+        <OwnerPageHeader
+          title="Business Settings"
+          description="Business profile, branding, and registration documents."
+        />
         <OwnerPageContent className="max-w-4xl">
           <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
             Unable to load business settings. Please try again.
@@ -114,19 +129,16 @@ export function OwnerBusinessSettingsPage() {
 
   return (
     <OwnerPage>
+      <OwnerPageHeader
+        title="Business Settings"
+        description="Business profile, branding, and registration documents."
+      />
       <OwnerPageContent className="max-w-4xl">
         <OwnerPageBackLink to="/owner/settings/setup" label="Back to Business Setup" />
 
-        <div>
-          <h1 className="text-2xl font-semibold">Business Settings</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Business profile, branding, and registration documents.
-          </p>
-        </div>
-
         <Card>
           <CardHeader>
-            <CardTitle>Business Information</CardTitle>
+            <CardTitle className="text-[1.0625rem] font-semibold leading-snug tracking-[-0.015em]">Business Information</CardTitle>
           </CardHeader>
           <CardContent className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2 md:col-span-2">
@@ -179,11 +191,85 @@ export function OwnerBusinessSettingsPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
+            <CardTitle className="flex items-center gap-2 text-[1.0625rem] font-semibold leading-snug tracking-[-0.015em]">
+              <FileText className="h-4 w-4" />
+              Employee consent webpage
+            </CardTitle>
+            <p className="owner-section-subtitle mt-1">
+              Employees must review this workplace-specific page and agree
+              before face enrollment. The generated link is stored with this
+              business and used by mobile and web.
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="legal-consent-url">Generated link</Label>
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <Input
+                  id="legal-consent-url"
+                  value={`${window.location.origin}${form.legal_consent_url || `/legal/b/${form.business_code}`}`}
+                  readOnly
+                />
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={async () => {
+                      const url = `${window.location.origin}${form.legal_consent_url || `/legal/b/${form.business_code}`}`;
+                      await navigator.clipboard.writeText(url);
+                      toast.success("Consent link copied");
+                    }}
+                  >
+                    <Link2 className="mr-2 h-4 w-4" />
+                    Copy
+                  </Button>
+                  <Button type="button" variant="outline" asChild>
+                    <Link
+                      to={form.legal_consent_url || `/legal/b/${form.business_code}`}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Preview
+                    </Link>
+                  </Button>
+                </div>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="legal-consent-content">Consent page content</Label>
+              <textarea
+                id="legal-consent-content"
+                value={form.legal_consent_content}
+                onChange={(event) =>
+                  setForm({ ...form, legal_consent_content: event.target.value })
+                }
+                rows={12}
+                className="min-h-[240px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                placeholder="Write the Terms, Privacy, and biometric consent text employees must review."
+              />
+              <button
+                type="button"
+                className="text-xs font-medium text-[#1E3A5F] underline underline-offset-2"
+                onClick={() =>
+                  setForm({
+                    ...form,
+                    legal_consent_content: `${form.business_name || "This workplace"} — Terms, Privacy, and Biometric Consent\n\nThis page is configured by ${form.business_name || "this workplace"} for the Aroll+ attendance and payroll app.\n\nBy tapping I agree, you confirm that you have read this page and consent to:\n• Using Aroll+ for attendance, scheduling, and payroll\n• Face enrollment and face-based Time In / Time Out on live accounts\n• Workplace location checks during live attendance\n\nIf you have questions, contact your supervisor or Aroll+ support.`,
+                  })
+                }
+              >
+                Insert starter text
+              </button>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-[1.0625rem] font-semibold leading-snug tracking-[-0.015em]">
               <Palette className="h-4 w-4" />
               Business Branding & Theme
             </CardTitle>
-            <p className="text-sm text-muted-foreground">
+            <p className="owner-section-subtitle mt-1">
               Logo and brand colors appear in the owner portal and employee
               mobile app. The separate display image field was removed in favor
               of the business logo.

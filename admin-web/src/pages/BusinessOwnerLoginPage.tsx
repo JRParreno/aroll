@@ -4,6 +4,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { SystemBrandPanel } from "@/components/branding/SystemBranding";
+import { AuthLegalLinks } from "@/components/legal/AuthLegalLinks";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -153,6 +154,7 @@ export function BusinessOwnerLoginPage() {
                   </Link>
                 </p>
               </div>
+              <AuthLegalLinks />
             </form>
           </section>
         </div>

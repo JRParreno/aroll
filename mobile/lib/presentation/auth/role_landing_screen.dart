@@ -1,4 +1,5 @@
 import 'package:aroll_mobile/presentation/auth/aroll_splash_screen.dart';
+import 'package:aroll_mobile/presentation/legal/legal_document_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
@@ -103,6 +104,8 @@ class _RoleLandingScreenState extends State<RoleLandingScreen>
                           filled: false,
                           onTap: () => context.go('/login/owner-options'),
                         ),
+                        const SizedBox(height: 12),
+                        const LegalLinksRow(lightOnNavy: true),
                         const SizedBox(height: 12),
                       ],
                     ),
@@ -279,6 +282,8 @@ class OwnerOptionsScreen extends StatelessWidget {
                 subtitle: 'Check an existing application using your email.',
                 onTap: () => context.go('/track-registration'),
               ),
+              const SizedBox(height: 8),
+              const LegalLinksRow(lightOnNavy: true),
             ],
           ),
         ),

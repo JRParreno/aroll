@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { Link, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import {
   Building2,
   CalendarClock,
@@ -12,14 +12,18 @@ import {
   Globe,
 } from "lucide-react";
 import {
+  AdminPage,
+  AdminPageBackLink,
+  AdminPageContent,
+  AdminPageHeader,
+} from "@/components/admin/layout/AdminPageLayout";
+import {
   DetailField,
   DetailSection,
   EmptyState,
   formatDateTime,
-  PageHeader,
   StatusBadge,
 } from "@/components/detail/DetailLayout";
-import { Button } from "@/components/ui/button";
 import { BusinessRegistrationDocumentsSection } from "@/components/business/BusinessRegistrationDocumentsSection";
 import { TenantKindBadge } from "@/components/tenant/SimulatedBadge";
 import { getBusiness } from "@/lib/api";
@@ -35,68 +39,72 @@ export function BusinessDetailPage() {
 
   if (isLoading) {
     return (
-      <div className="p-6">
-        <div className="animate-pulse space-y-4">
-          <div className="h-4 w-32 rounded bg-muted" />
-          <div className="h-8 w-64 rounded bg-muted" />
-          <div className="h-40 rounded-xl bg-muted" />
-        </div>
-      </div>
+      <AdminPage>
+        <AdminPageHeader
+          title="Business profile"
+          description="Loading business details."
+        />
+        <AdminPageContent>
+          <div className="animate-pulse space-y-4">
+            <div className="h-4 w-32 rounded bg-muted" />
+            <div className="h-8 w-64 rounded bg-muted" />
+            <div className="h-40 rounded-2xl bg-muted" />
+          </div>
+        </AdminPageContent>
+      </AdminPage>
     );
   }
 
   if (isError || !data) {
     return (
-      <div className="p-6">
-        <EmptyState
+      <AdminPage>
+        <AdminPageHeader
           title="Business not found"
           description="This business may have been removed or the link is invalid."
         />
-        <div className="mt-4">
-          <Button asChild variant="outline">
-            <Link to="/admin/approved-business">Back to approved businesses</Link>
-          </Button>
-        </div>
-      </div>
+        <AdminPageContent>
+          <AdminPageBackLink
+            to="/admin/approved-business"
+            label="Back to approved businesses"
+          />
+        </AdminPageContent>
+      </AdminPage>
     );
   }
 
   return (
-    <div className="p-6">
-      <div className="mx-auto max-w-4xl space-y-6">
-        <PageHeader
-          backTo="/admin/approved-business"
-          backLabel="Approved businesses"
-          title={data.name}
-          description="Overview of this approved business, its owner, and configured locations."
-          badge={
-            <span className="flex flex-wrap items-center gap-2">
-              <StatusBadge status={data.status} />
-              <TenantKindBadge
-                isDemo={data.is_demo}
-                isInternalTest={data.is_internal_test}
-              />
-            </span>
-          }
+    <AdminPage>
+      <AdminPageHeader
+        title={data.name}
+        description="Overview of this approved business, its owner, and configured locations."
+        actions={
+          <span className="flex flex-wrap items-center gap-2">
+            <StatusBadge status={data.status} />
+            <TenantKindBadge
+              isDemo={data.is_demo}
+              isInternalTest={data.is_internal_test}
+            />
+          </span>
+        }
+      />
+
+      <AdminPageContent>
+        <AdminPageBackLink
+          to="/admin/approved-business"
+          label="Approved businesses"
         />
 
         <div className="grid gap-4 sm:grid-cols-3">
-          <div className="rounded-xl border bg-card p-4 shadow-sm">
-            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Business Code
-            </p>
+          <div className="owner-card p-4">
+            <p className="owner-label uppercase text-[#6B7280]">Business Code</p>
             <p className="mt-2 font-mono text-lg font-semibold">{data.business_code}</p>
           </div>
-          <div className="rounded-xl border bg-card p-4 shadow-sm">
-            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Active Employees
-            </p>
+          <div className="owner-card p-4">
+            <p className="owner-label uppercase text-[#6B7280]">Active Employees</p>
             <p className="mt-2 text-lg font-semibold">{data.employee_count}</p>
           </div>
-          <div className="rounded-xl border bg-card p-4 shadow-sm">
-            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Locations
-            </p>
+          <div className="owner-card p-4">
+            <p className="owner-label uppercase text-[#6B7280]">Locations</p>
             <p className="mt-2 text-lg font-semibold">{data.locations.length}</p>
           </div>
         </div>
@@ -191,14 +199,14 @@ export function BusinessDetailPage() {
               />
             </DetailSection>
 
-            <section className="rounded-xl border bg-card p-5 shadow-sm sm:p-6">
+            <section className="owner-card p-5 sm:p-6">
               <div className="mb-5 flex items-start gap-3">
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                <div className="owner-icon-well h-9 w-9 shrink-0">
                   <MapPin className="h-4 w-4" />
                 </div>
                 <div>
-                  <h2 className="text-base font-semibold">Work Locations</h2>
-                  <p className="mt-1 text-sm text-muted-foreground">
+                  <h2 className="owner-section-title">Work Locations</h2>
+                  <p className="owner-section-subtitle mt-1">
                     Sites configured for attendance and geofencing.
                   </p>
                 </div>
@@ -214,12 +222,12 @@ export function BusinessDetailPage() {
                   {data.locations.map((loc) => (
                     <div
                       key={loc.id}
-                      className="rounded-lg border bg-muted/20 p-4"
+                      className="rounded-xl border border-slate-200 bg-[#FAFBFC] p-4"
                     >
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <p className="font-medium">{loc.label}</p>
                         {loc.is_primary && (
-                          <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
+                          <span className="rounded-full bg-[#EAF2FB] px-2 py-0.5 text-xs font-medium text-[#1E3A5F]">
                             Primary
                           </span>
                         )}
@@ -263,9 +271,9 @@ export function BusinessDetailPage() {
               )}
             </DetailSection>
 
-            <section className="rounded-xl border bg-muted/30 p-5">
-              <h2 className="text-sm font-semibold">Quick summary</h2>
-              <ul className="mt-3 space-y-2 text-sm text-muted-foreground">
+            <section className="owner-card-muted p-5">
+              <h2 className="text-sm font-medium text-[#1F2937]">Quick summary</h2>
+              <ul className="owner-section-subtitle mt-3 space-y-2 text-sm">
                 <li>
                   • {data.employee_count} active employee
                   {data.employee_count === 1 ? "" : "s"} enrolled
@@ -279,7 +287,7 @@ export function BusinessDetailPage() {
             </section>
           </div>
         </div>
-      </div>
-    </div>
+      </AdminPageContent>
+    </AdminPage>
   );
 }

@@ -11,6 +11,7 @@ type PageHeaderProps = {
   actions?: React.ReactNode;
 };
 
+/** In-content heading used when a page does not use AdminPageHeader. */
 export function PageHeader({
   backTo,
   backLabel,
@@ -23,20 +24,20 @@ export function PageHeader({
     <div className="space-y-4">
       <Link
         to={backTo}
-        className="inline-flex items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
+        className="inline-flex items-center gap-2 rounded-lg px-1 py-0.5 text-sm font-medium text-[#6B7280] transition-colors hover:bg-white hover:text-[#1E3A5F]"
       >
         <ArrowLeft className="h-4 w-4" />
         {backLabel}
       </Link>
 
       <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="space-y-2">
+        <div className="min-w-0 space-y-1.5">
           <div className="flex flex-wrap items-center gap-3">
-            <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
+            <h1 className="owner-page-title">{title}</h1>
             {badge}
           </div>
           {description && (
-            <p className="max-w-2xl text-sm text-muted-foreground">{description}</p>
+            <p className="owner-section-subtitle max-w-2xl">{description}</p>
           )}
         </div>
         {actions && <div className="flex flex-wrap gap-2">{actions}</div>}
@@ -55,11 +56,13 @@ type DetailFieldProps = {
 export function DetailField({ label, value, icon, className }: DetailFieldProps) {
   return (
     <div className={cn("space-y-1.5", className)}>
-      <p className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+      <p className="owner-label flex items-center gap-2 uppercase text-[#6B7280]">
         {icon}
         {label}
       </p>
-      <div className="text-sm font-medium leading-relaxed">{value ?? "—"}</div>
+      <div className="text-[0.9375rem] font-medium leading-relaxed text-[#1F2937]">
+        {value ?? "—"}
+      </div>
     </div>
   );
 }
@@ -80,22 +83,15 @@ export function DetailSection({
   className,
 }: DetailSectionProps) {
   return (
-    <section
-      className={cn(
-        "rounded-xl border bg-card p-5 shadow-sm sm:p-6",
-        className
-      )}
-    >
+    <section className={cn("owner-card p-5 sm:p-6", className)}>
       <div className="mb-5 flex items-start gap-3">
         {icon && (
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-            {icon}
-          </div>
+          <div className="owner-icon-well h-9 w-9 shrink-0">{icon}</div>
         )}
         <div>
-          <h2 className="text-base font-semibold">{title}</h2>
+          <h2 className="owner-section-title">{title}</h2>
           {description && (
-            <p className="mt-1 text-sm text-muted-foreground">{description}</p>
+            <p className="owner-section-subtitle mt-1">{description}</p>
           )}
         </div>
       </div>
@@ -126,7 +122,7 @@ export function StatusBadge({ status }: StatusBadgeProps) {
   return (
     <span
       className={cn(
-        "inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold capitalize",
+        "inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium capitalize",
         style
       )}
     >
@@ -152,9 +148,9 @@ export function EmptyState({
   description: string;
 }) {
   return (
-    <div className="rounded-xl border border-dashed bg-muted/20 px-6 py-10 text-center">
-      <p className="font-medium">{title}</p>
-      <p className="mt-1 text-sm text-muted-foreground">{description}</p>
+    <div className="rounded-2xl border border-dashed border-slate-200 bg-[#FAFBFC] px-6 py-10 text-center">
+      <p className="owner-section-title">{title}</p>
+      <p className="owner-section-subtitle mt-1">{description}</p>
     </div>
   );
 }

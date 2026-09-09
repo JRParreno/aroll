@@ -301,7 +301,7 @@ export function OwnerAttendancePage() {
         description={
           isDemo
             ? "Simulated Time In / Time Out records for demonstration only."
-            : undefined
+            : "Review daily Time In and Time Out records, corrections, and attendance status."
         }
       />
 
@@ -309,7 +309,7 @@ export function OwnerAttendancePage() {
         <section className="rounded-2xl border border-amber-200 bg-amber-50/40 p-5 shadow-sm">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <h2 className="text-base font-semibold text-[#1F2937]">
+              <h2 className="owner-section-title">
                 Pending correction requests
               </h2>
               <p className="mt-1 text-sm text-[#6B7280]">
@@ -486,10 +486,10 @@ export function OwnerAttendancePage() {
         <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <h2 className="text-base font-semibold text-[#1F2937]">
+              <h2 className="owner-section-title">
                 Rest Day Work
               </h2>
-              <p className="mt-1 text-sm text-[#6B7280]">
+              <p className="owner-section-subtitle mt-1">
                 Employees who timed in or out on {restDayLabel}
                 {typeof data?.rest_day_premium_percent === "number"
                   ? ` · ${data.rest_day_premium_percent}% premium`
@@ -710,7 +710,7 @@ export function OwnerAttendancePage() {
         <DialogContent className="max-w-md gap-0 overflow-hidden border-slate-200 p-0 sm:rounded-2xl">
           <div className="border-b border-[#E8EEF4] px-5 py-4">
             <DialogHeader>
-              <DialogTitle className="text-[15px] font-extrabold text-[#111827]">
+              <DialogTitle className="text-[15px] font-semibold text-[#111827]">
                 Employee Details
               </DialogTitle>
             </DialogHeader>
@@ -727,7 +727,7 @@ export function OwnerAttendancePage() {
                   className="h-14 w-14 text-sm"
                 />
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-extrabold text-[#111827]">
+                  <p className="truncate text-sm font-semibold text-[#111827]">
                     Employee Information
                   </p>
                   <p className="text-[11.5px] text-[#6B7280]">

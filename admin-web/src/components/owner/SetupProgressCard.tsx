@@ -37,14 +37,14 @@ export function SetupProgressCard({ status }: Props) {
       <div className="relative flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2.5">
-            <h2 className="text-sm font-semibold text-[#1F2937]">
+            <h2 className="owner-section-title">
               Business Setup Progress
             </h2>
-            <span className="rounded-full bg-[#EEF3F8] px-2.5 py-1 text-xs font-semibold text-[#1E3A5F]">
+            <span className="rounded-full bg-[#EEF3F8] px-2.5 py-1 text-xs font-medium text-[#1E3A5F]">
               {status.completion_percent}%
             </span>
           </div>
-          <p className="mt-1 text-xs text-[#6B7280]">
+          <p className="owner-section-subtitle mt-1">
             {completedParts} of {totalParts} parts completed
           </p>
         </div>

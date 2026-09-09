@@ -12,13 +12,14 @@ import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
-from app.core.timezone import business_now
+from app.core.timezone import business_now, business_today
 from app.db.session import SessionLocal
 from app.main import app
 from app.models.attendance import AttendanceRecord
 from app.models.business import Business
 from app.models.employee import Employee
 from app.models.face_embedding import EmployeeFaceEmbedding
+from app.models.scheduling import ShiftAssignment
 from app.models.user import User
 from app.seed_demo import (
     DEMO_BUSINESS_CODE,
@@ -27,6 +28,7 @@ from app.seed_demo import (
     DEMO_LONGITUDE,
     DEMO_OWNER_EMAIL,
     DEMO_SEED_PASSWORD,
+    DEMO_TIMEZONE,
     seed_demo,
 )
 from app.seed_internal_test import (
@@ -69,7 +71,14 @@ def _login_employee(client: TestClient, email: str, password: str) -> str:
         json={"email": email, "password": password},
     )
     assert response.status_code == 200, response.text
-    return response.json()["access_token"]
+    token = response.json()["access_token"]
+    consent = client.post(
+        "/api/v1/employee/legal-consent",
+        json={"accepted": True},
+        headers=_auth_header(token),
+    )
+    assert consent.status_code == 200, consent.text
+    return token
 
 
 def _login_owner(client: TestClient, *, code: str, email: str, password: str) -> str:
@@ -258,6 +267,26 @@ def test_demo_seeded_identity_resolves_without_live_probe():
         employee = _hannah(db)
         score = verify_demo_seeded_identity(db, employee, business)
         assert score == 1.0
+    finally:
+        db.close()
+
+
+def test_demo_seed_assigns_hannah_on_business_today():
+    """Open demo Time In looks up Asia/Manila today, not the host OS date."""
+    seed_demo()
+    today = business_today(DEMO_TIMEZONE)
+    db = SessionLocal()
+    try:
+        employee = _hannah(db)
+        count = (
+            db.query(ShiftAssignment)
+            .filter(
+                ShiftAssignment.employee_id == employee.id,
+                ShiftAssignment.work_date == today,
+            )
+            .count()
+        )
+        assert count >= 1
     finally:
         db.close()
 

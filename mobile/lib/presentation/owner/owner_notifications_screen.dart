@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:aroll_mobile/core/di/injection.dart';
 import 'package:aroll_mobile/data/repositories/owner_repository.dart';
+import 'package:aroll_mobile/presentation/permissions/permissions_onboarding_screen.dart';
 import 'package:aroll_mobile/presentation/owner/owner_shell.dart';
 import 'package:aroll_mobile/presentation/shared/app_ui.dart';
 import 'package:flutter/material.dart';
@@ -22,6 +25,10 @@ class _OwnerNotificationsScreenState extends State<OwnerNotificationsScreen> {
   void initState() {
     super.initState();
     _future = _repo.notifications();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      unawaited(maybeRequestNotificationPermission(context));
+    });
   }
 
   Future<void> _reload() async {

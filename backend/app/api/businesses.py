@@ -1,5 +1,6 @@
 from typing import Annotated
 import uuid
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse
@@ -53,6 +54,7 @@ from app.services.setup_status import (
 )
 from app.services.registration_documents import get_document_file_path
 from app.services.registration_service import document_response
+from app.services.legal_consent import ensure_legal_consent_url
 
 router = APIRouter(prefix="/businesses", tags=["businesses"])
 
@@ -466,6 +468,9 @@ def _business_settings_response(
         application_status=reg.application_status.value if reg else None,
         registration_documents=documents,
         branding=_branding_response(business),
+        legal_consent_content=business.legal_consent_content,
+        legal_consent_url=ensure_legal_consent_url(business),
+        legal_consent_updated_at=business.legal_consent_updated_at,
     )
 
 
@@ -479,6 +484,11 @@ def get_business_settings(
     business = db.get(Business, user.business_id)
     if business is None:
         raise HTTPException(404, "Business not found")
+    previous_url = business.legal_consent_url
+    ensure_legal_consent_url(business)
+    if business.legal_consent_url != previous_url:
+        db.commit()
+        db.refresh(business)
     return _business_settings_response(db, user, business)
 
 
@@ -496,6 +506,11 @@ def update_business_settings(
 
     business.name = body.business_name
     business.business_type = body.business_type
+    ensure_legal_consent_url(business)
+
+    if body.legal_consent_content is not None:
+        business.legal_consent_content = body.legal_consent_content or None
+        business.legal_consent_updated_at = datetime.now(timezone.utc)
 
     if body.branding is not None:
         business.logo_url = body.branding.logo_url

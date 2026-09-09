@@ -47,13 +47,13 @@ export function RecentActivities({ activities, loading }: RecentActivitiesProps)
   const isSample = activities.length === 0 && !loading;
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+    <div className="owner-card p-5 sm:p-6">
       <div className="flex items-center justify-between gap-2">
         <div>
-          <h2 className="text-lg font-semibold text-[#1F2937]">
+          <h2 className="owner-section-title">
             Recent Activities
           </h2>
-          <p className="mt-1 text-sm text-[#6B7280]">
+          <p className="owner-section-subtitle mt-1">
             Latest approvals and platform actions.
           </p>
         </div>
@@ -73,7 +73,7 @@ export function RecentActivities({ activities, loading }: RecentActivitiesProps)
               key={activity.id}
               className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 bg-[#FAFBFC] px-4 py-3"
             >
-              <p className="text-sm font-medium text-[#1E3A5F]">
+              <p className="text-[0.9375rem] font-medium text-[#1E3A5F]">
                 {activity.description}
               </p>
               <span className="shrink-0 text-xs text-muted-foreground">

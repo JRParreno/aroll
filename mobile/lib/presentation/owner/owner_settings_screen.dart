@@ -1,3 +1,5 @@
+import 'package:aroll_mobile/core/app_state.dart';
+import 'package:aroll_mobile/core/di/injection.dart';
 import 'package:aroll_mobile/presentation/owner/owner_shell.dart';
 import 'package:aroll_mobile/presentation/owner/setup/setup_ui.dart';
 import 'package:flutter/material.dart';
@@ -50,6 +52,19 @@ class OwnerSettingsScreen extends StatelessWidget {
             icon: Icons.fact_check_outlined,
             showStatus: false,
             onTap: () => context.push('/owner/settings/setup-summary'),
+          ),
+          const SizedBox(height: 10),
+          SetupMenuCard(
+            label: 'Workplace consent page',
+            subtitle:
+                'Open the generated consent webpage for this business.',
+            icon: Icons.description_outlined,
+            showStatus: false,
+            onTap: () {
+              final code = sl<AppState>().session?.businessCode;
+              if (code == null || code.isEmpty) return;
+              context.push('/legal/b/$code');
+            },
           ),
         ],
       ),

@@ -1,6 +1,7 @@
 import 'package:aroll_mobile/core/app_state.dart';
 import 'package:aroll_mobile/core/di/injection.dart';
 import 'package:aroll_mobile/domain/repositories/auth_repository.dart';
+import 'package:aroll_mobile/presentation/legal/legal_document_screen.dart';
 import 'package:aroll_mobile/presentation/auth/owner_auth_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -99,6 +100,7 @@ class _OwnerLoginScreenState extends State<OwnerLoginScreen> {
               label: 'Track registration status',
               onPressed: () => context.go('/track-registration'),
             ),
+            const LegalLinksRow(),
           ],
         ),
       ),

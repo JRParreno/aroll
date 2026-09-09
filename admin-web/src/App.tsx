@@ -6,6 +6,8 @@ import { RequireOwnerAuth } from "@/layouts/RequireOwnerAuth";
 import { AdminRegistrationsPage } from "@/pages/AdminRegistrationsPage";
 import { LoginPage } from "@/pages/LoginPage";
 import { BusinessOwnerLoginPage } from "@/pages/BusinessOwnerLoginPage";
+import { LegalDocumentPage } from "@/pages/LegalDocumentPage";
+import { BusinessLegalPage } from "@/pages/BusinessLegalPage";
 import { OwnerEmployeesPage } from "@/pages/OwnerEmployeesPage";
 import { AdminDashboardPage } from "@/pages/AdminDashboardPage";
 import { ApprovedBusinessPage } from "@/pages/ApprovedBusinessPage";
@@ -47,21 +49,20 @@ export default function App() {
     <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/owner-login" element={<BusinessOwnerLoginPage />} />
+      <Route path="/legal/docs/:slug" element={<LegalDocumentPage />} />
+      <Route path="/legal/b/:businessCode" element={<BusinessLegalPage />} />
+      <Route path="/legal/terms" element={<Navigate to="/legal/docs/terms" replace />} />
+      <Route path="/legal/privacy" element={<Navigate to="/legal/docs/privacy" replace />} />
+      <Route
+        path="/legal/biometric-consent"
+        element={<Navigate to="/legal/docs/biometric-consent" replace />}
+      />
 
       <Route
         path="/owner/change-password"
         element={
           <RequireOwnerAuth passwordChangeOnly>
             <OwnerChangePasswordPage />
-          </RequireOwnerAuth>
-        }
-      />
-
-      <Route
-        path="/owner/setup-wizard"
-        element={
-          <RequireOwnerAuth>
-            <OwnerSetupWizardPage />
           </RequireOwnerAuth>
         }
       />
@@ -74,6 +75,7 @@ export default function App() {
           </RequireOwnerAuth>
         }
       >
+        <Route path="setup-wizard" element={<OwnerSetupWizardPage />} />
         <Route path="dashboard" element={<OwnerDashboardPage />} />
         <Route path="employees" element={<OwnerEmployeesPage />} />
         <Route path="schedule" element={<OwnerSchedulePage />} />

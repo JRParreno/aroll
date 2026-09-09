@@ -1,5 +1,6 @@
 import 'package:aroll_mobile/core/app_state.dart';
 import 'package:aroll_mobile/core/di/bloc_service_locator.dart';
+import 'package:aroll_mobile/core/legal/privacy_preferences.dart';
 import 'package:aroll_mobile/core/network/api_client.dart';
 import 'package:aroll_mobile/data/repositories/auth_repository_impl.dart';
 import 'package:aroll_mobile/data/repositories/employee_repository_impl.dart';
@@ -21,6 +22,9 @@ Future<void> initDependencies() async {
       aOptions: AndroidOptions(encryptedSharedPreferences: true),
     ),
   );
+  sl.registerLazySingleton(
+    () => PrivacyPreferences(sl<FlutterSecureStorage>()),
+  );
   sl.registerLazySingleton(AppState.new);
   sl.registerLazySingleton(
     () => ApiClient(sl<FlutterSecureStorage>(), sl<AppState>()),
@@ -41,6 +45,7 @@ Future<void> initDependencies() async {
       sl<AuthRepository>(),
       sl<AppState>(),
       sl<EmployeeRepository>(),
+      sl<PrivacyPreferences>(),
     ),
   );
 

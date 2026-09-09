@@ -37,15 +37,15 @@ export function MonthlyRegistrationsChart({
   const chartData = data.length > 0 ? data : [];
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+    <div className="owner-card p-5 sm:p-6">
       {loading ? (
         <Shimmer className="h-6 w-48" />
       ) : (
         <div>
-          <h2 className="text-lg font-semibold text-[#1F2937]">
+          <h2 className="owner-section-title">
             Monthly Registrations
           </h2>
-          <p className="mt-1 text-sm text-[#6B7280]">
+          <p className="owner-section-subtitle mt-1">
             New business registration volume by month.
           </p>
         </div>

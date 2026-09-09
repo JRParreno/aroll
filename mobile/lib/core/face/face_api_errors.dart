@@ -52,6 +52,8 @@ String? _friendlyCode(String? code) {
       return 'Please keep the same person in the frame.';
     case 'face_required':
       return 'You’ll need face recognition to time in or time out.';
+    case 'legal_consent_required':
+      return 'Please review and agree to your workplace consent page before continuing.';
     case 'face_enrollment_required':
     case 'face_model_outdated':
       return 'Please finish setting up your face first.';

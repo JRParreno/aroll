@@ -57,6 +57,9 @@ class AuthRepositoryImpl implements AuthRepository {
       profileImageUrl: m['profile_image_url'] as String?,
       isDemo: m['is_demo'] as bool? ?? false,
       isInternalTest: m['is_internal_test'] as bool? ?? false,
+      legalConsentAccepted: m['legal_consent_accepted'] as bool? ?? false,
+      legalConsentUrl: m['legal_consent_url'] as String?,
+      legalConsentPageUrl: m['legal_consent_page_url'] as String?,
     );
   }
 

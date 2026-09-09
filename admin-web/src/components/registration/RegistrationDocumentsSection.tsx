@@ -46,27 +46,27 @@ export function RegistrationDocumentsSection({
 
   if (documents.length === 0) {
     return (
-      <p className="text-sm text-muted-foreground">No documents uploaded yet.</p>
+      <p className="owner-section-subtitle">No documents uploaded yet.</p>
     );
   }
 
   return (
-    <ul className="divide-y rounded-lg border">
+    <ul className="divide-y divide-slate-100 overflow-hidden rounded-2xl border border-slate-200">
       {documents.map((doc) => (
         <li
           key={doc.id}
           className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between"
         >
           <div className="flex min-w-0 items-start gap-3">
-            <FileText className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+            <FileText className="mt-0.5 h-4 w-4 shrink-0 text-[#6B7280]" />
             <div className="min-w-0">
-              <p className="font-medium">
+              <p className="font-medium text-[#1F2937]">
                 {DOCUMENT_LABELS[doc.document_type] ?? doc.document_type}
               </p>
-              <p className="truncate text-sm text-muted-foreground">
+              <p className="truncate text-sm text-[#6B7280]">
                 {doc.original_filename}
               </p>
-              <p className="mt-1 text-xs text-muted-foreground">
+              <p className="mt-1 text-xs text-[#6B7280]">
                 {formatFileSize(doc.file_size)} · Uploaded{" "}
                 {formatDateTime(doc.uploaded_at)}
               </p>
@@ -77,6 +77,7 @@ export function RegistrationDocumentsSection({
               type="button"
               variant="outline"
               size="sm"
+              className="h-9 rounded-xl"
               disabled={loadingId === doc.id}
               onClick={() => void handleAction(doc, "preview")}
             >
@@ -87,6 +88,7 @@ export function RegistrationDocumentsSection({
               type="button"
               variant="outline"
               size="sm"
+              className="h-9 rounded-xl"
               disabled={loadingId === doc.id}
               onClick={() => void handleAction(doc, "download")}
             >

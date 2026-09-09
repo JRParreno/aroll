@@ -1,6 +1,8 @@
 import 'package:aroll_mobile/domain/entities/employee_portal.dart';
 import 'package:aroll_mobile/core/app_state.dart';
 import 'package:aroll_mobile/core/router/app_nav_observer.dart';
+import 'package:aroll_mobile/core/router/auth_redirect.dart';
+import 'package:aroll_mobile/core/legal/legal_documents.dart';
 import 'package:aroll_mobile/presentation/auth/change_password_screen.dart';
 import 'package:aroll_mobile/presentation/auth/employee_login_screen.dart';
 import 'package:aroll_mobile/presentation/auth/owner_login_screen.dart';
@@ -18,6 +20,10 @@ import 'package:aroll_mobile/presentation/employee/request_leave_screen.dart';
 import 'package:aroll_mobile/presentation/employee/schedule_screen.dart';
 import 'package:aroll_mobile/presentation/employee/shift_detail_screen.dart';
 import 'package:aroll_mobile/presentation/employee/shift_history_screen.dart';
+import 'package:aroll_mobile/presentation/legal/legal_document_screen.dart';
+import 'package:aroll_mobile/presentation/legal/employee_consent_screen.dart';
+import 'package:aroll_mobile/presentation/legal/business_legal_page_screen.dart';
+import 'package:aroll_mobile/presentation/permissions/permissions_onboarding_screen.dart';
 import 'package:aroll_mobile/presentation/home/home_screen.dart';
 import 'package:aroll_mobile/presentation/home/scan_attendance_screen.dart';
 import 'package:aroll_mobile/presentation/owner/owner_attendance_screen.dart';
@@ -44,6 +50,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+export 'package:aroll_mobile/core/router/auth_redirect.dart';
+
 CustomTransitionPage<void> _fadePage(GoRouterState state, Widget child) {
   return appFadeSlidePage(key: state.pageKey, child: child);
 }
@@ -52,30 +60,12 @@ bool _isPublicRoute(String loc) {
   return loc == '/login' ||
       loc.startsWith('/login/') ||
       loc == '/register-business' ||
-      loc == '/track-registration';
+      loc == '/track-registration' ||
+      loc.startsWith('/legal/');
 }
 
-/// Resolves the landing route after auth (login, restore, or password change).
-String resolveAuthenticatedRoute(AppState appState) {
-  if (!appState.isLoggedIn || appState.session == null) {
-    return '/login';
-  }
-  final session = appState.session!;
-  if (appState.mustChangePassword) {
-    return '/change-password';
-  }
-  if (session.isOwner) {
-    return session.setupCompletedAt == null
-        ? '/owner/setup-wizard'
-        : '/owner/home';
-  }
-  if (session.isDemo) {
-    return '/home';
-  }
-  if (appState.faceEnrolled != true) {
-    return '/face-registration';
-  }
-  return '/home';
+bool _isLegalReadRoute(String loc) {
+  return loc == '/legal-consent' || loc.startsWith('/legal/');
 }
 
 GoRouter createAppRouter(AppState appState) {
@@ -102,18 +92,40 @@ GoRouter createAppRouter(AppState appState) {
         redirect = resolveAuthenticatedRoute(appState);
       } else if (session?.isOwner == true &&
           !loc.startsWith('/owner/') &&
-          loc != '/change-password') {
+          loc != '/change-password' &&
+          !loc.startsWith('/legal/')) {
         redirect = session?.setupCompletedAt == null
             ? '/owner/setup-wizard'
             : '/owner/home';
       } else if (session?.isEmployee == true && loc.startsWith('/owner/')) {
         redirect = resolveAuthenticatedRoute(appState);
       } else if (session?.isEmployee == true &&
+          !appState.mustChangePassword &&
+          !appState.legalConsentAccepted &&
+          loc != '/legal-consent' &&
+          loc != '/change-password' &&
+          !loc.startsWith('/legal/')) {
+        redirect = '/legal-consent';
+      } else if (session?.isEmployee == true &&
+          appState.legalConsentAccepted &&
+          loc == '/legal-consent') {
+        redirect = resolveAuthenticatedRoute(appState);
+      } else if (session?.isEmployee == true &&
+          !appState.mustChangePassword &&
+          !appState.permissionsIntroSeen &&
+          loc != '/permissions-onboarding' &&
+          loc != '/change-password' &&
+          !_isLegalReadRoute(loc)) {
+        redirect = '/permissions-onboarding';
+      } else if (session?.isEmployee == true &&
           session?.isDemo != true &&
           !appState.mustChangePassword &&
           appState.faceEnrolled != true &&
           loc != '/face-registration' &&
-          loc != '/change-password') {
+          loc != '/permissions-onboarding' &&
+          loc != '/legal-consent' &&
+          loc != '/change-password' &&
+          !loc.startsWith('/legal/')) {
         // Force face enrollment on every session until completed — including
         // after app close/reopen (restore sets faceEnrolled from server).
         redirect = '/face-registration';
@@ -170,9 +182,61 @@ GoRouter createAppRouter(AppState appState) {
         ),
       ),
       GoRoute(
+        path: '/legal/docs/terms',
+        pageBuilder: (context, state) => _fadePage(
+          state,
+          const LegalDocumentScreen(kind: LegalDocumentKind.terms),
+        ),
+      ),
+      GoRoute(
+        path: '/legal/docs/privacy',
+        pageBuilder: (context, state) => _fadePage(
+          state,
+          const LegalDocumentScreen(kind: LegalDocumentKind.privacy),
+        ),
+      ),
+      GoRoute(
+        path: '/legal/docs/biometric-consent',
+        pageBuilder: (context, state) => _fadePage(
+          state,
+          const LegalDocumentScreen(kind: LegalDocumentKind.biometricConsent),
+        ),
+      ),
+      GoRoute(
+        path: '/legal/terms',
+        redirect: (context, state) => '/legal/docs/terms',
+      ),
+      GoRoute(
+        path: '/legal/privacy',
+        redirect: (context, state) => '/legal/docs/privacy',
+      ),
+      GoRoute(
+        path: '/legal/biometric-consent',
+        redirect: (context, state) => '/legal/docs/biometric-consent',
+      ),
+      GoRoute(
+        path: '/legal/b/:businessCode',
+        pageBuilder: (context, state) => _fadePage(
+          state,
+          BusinessLegalPageScreen(
+            businessCode: state.pathParameters['businessCode'] ?? '',
+          ),
+        ),
+      ),
+      GoRoute(
+        path: '/legal-consent',
+        pageBuilder: (context, state) =>
+            _fadePage(state, const EmployeeConsentScreen()),
+      ),
+      GoRoute(
         path: '/change-password',
         pageBuilder: (context, state) =>
             _fadePage(state, const ChangePasswordScreen()),
+      ),
+      GoRoute(
+        path: '/permissions-onboarding',
+        pageBuilder: (context, state) =>
+            _fadePage(state, const PermissionsOnboardingScreen()),
       ),
       GoRoute(
         path: '/home',

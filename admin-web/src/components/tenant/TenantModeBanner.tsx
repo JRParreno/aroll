@@ -17,13 +17,13 @@ export function TenantModeBanner() {
         data-tenant-mode="demo"
       >
         <div className="mx-auto max-w-6xl">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-amber-900">
+          <p className="owner-label uppercase tracking-[0.14em] text-amber-900">
             {DEMO_BANNER_TITLE}
           </p>
-          <p className="text-sm font-medium text-amber-950">
+          <p className="text-[0.9375rem] font-medium leading-snug text-amber-950">
             {businessName || "AROLL+ Demo Café"}
           </p>
-          <p className="text-xs leading-5 text-amber-800">{DEMO_BANNER_BODY}</p>
+          <p className="mt-0.5 text-xs font-normal leading-5 text-amber-800">{DEMO_BANNER_BODY}</p>
         </div>
       </div>
     );
@@ -37,13 +37,13 @@ export function TenantModeBanner() {
         data-tenant-mode="internal-test"
       >
         <div className="mx-auto max-w-6xl">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-sky-900">
+          <p className="owner-label uppercase tracking-[0.14em] text-sky-900">
             {DEVTEST_BANNER_TITLE}
           </p>
-          <p className="text-sm font-medium text-sky-950">
+          <p className="text-[0.9375rem] font-medium leading-snug text-sky-950">
             {businessName || "AROLL+ Dev Lab"}
           </p>
-          <p className="text-xs leading-5 text-sky-800">{DEVTEST_BANNER_BODY}</p>
+          <p className="mt-0.5 text-xs font-normal leading-5 text-sky-800">{DEVTEST_BANNER_BODY}</p>
         </div>
       </div>
     );

@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:aroll_mobile/domain/entities/employee_portal.dart';
 import 'package:aroll_mobile/domain/entities/face_liveness.dart';
 import 'package:aroll_mobile/domain/entities/leave_request.dart';
+import 'package:aroll_mobile/domain/entities/legal_consent.dart';
 
 abstract class EmployeeRepository {
   Future<EmployeeDashboard> getDashboard();
@@ -36,6 +37,10 @@ abstract class EmployeeRepository {
   Future<FaceStatus> getFaceStatus();
 
   Future<FaceStatus> enrollFaceSamples(List<File> images);
+
+  Future<LegalConsentStatus> getLegalConsent();
+
+  Future<LegalConsentStatus> acceptLegalConsent();
 
   Future<EmployeeProfile> updateProfileImage(String imageData);
 

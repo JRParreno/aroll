@@ -14,6 +14,7 @@ Design documentation for the thesis **System Design** chapter and implementation
 
 | [PROJECT-SETUP.md](PROJECT-SETUP.md) | First-time install (prerequisites, env files, `scripts/setup.ps1`) |
 | [DEMO-AND-TEST-ACCOUNTS.md](DEMO-AND-TEST-ACCOUNTS.md) | Seeded Demo Café (`DEMO01`) vs Dev Lab (`DEVTEST`) vs platform admin |
+| [legal/](legal/) | Prototype reference Terms / Privacy / biometric consent (not the runtime workplace consent page) |
 
 ## Suggested reading order
 

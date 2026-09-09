@@ -1,4 +1,6 @@
-from pydantic import BaseModel, Field
+from datetime import datetime
+
+from pydantic import BaseModel, Field, field_validator
 
 from app.schemas.registration import RegistrationDocumentResponse
 
@@ -69,6 +71,9 @@ class BusinessSettingsResponse(BaseModel):
     application_status: str | None = None
     registration_documents: list[RegistrationDocumentResponse] = Field(default_factory=list)
     branding: BusinessBrandingSettings = Field(default_factory=BusinessBrandingSettings)
+    legal_consent_content: str | None = None
+    legal_consent_url: str | None = None
+    legal_consent_updated_at: datetime | None = None
 
 
 class BusinessSettingsUpdate(BaseModel):
@@ -76,3 +81,11 @@ class BusinessSettingsUpdate(BaseModel):
     business_type: str | None = Field(default=None, max_length=100)
     address: str = Field(min_length=5)
     branding: BusinessBrandingSettings | None = None
+    legal_consent_content: str | None = Field(default=None, max_length=50000)
+
+    @field_validator("legal_consent_content")
+    @classmethod
+    def strip_legal_content(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return value.strip()

@@ -1,10 +1,12 @@
 import 'package:aroll_mobile/core/app_state.dart';
 import 'package:aroll_mobile/core/di/injection.dart';
+import 'package:aroll_mobile/core/legal/privacy_preferences.dart';
 import 'package:aroll_mobile/core/router/app_router.dart';
 import 'package:aroll_mobile/domain/repositories/employee_repository.dart';
 import 'package:aroll_mobile/presentation/auth/bloc/login_bloc/login_bloc.dart';
 import 'package:aroll_mobile/presentation/auth/bloc/login_bloc/login_event.dart';
 import 'package:aroll_mobile/presentation/auth/bloc/login_bloc/login_state.dart';
+import 'package:aroll_mobile/presentation/legal/legal_document_screen.dart';
 import 'package:aroll_mobile/presentation/auth/owner_auth_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -44,6 +46,11 @@ class _EmployeeLoginScreenState extends State<EmployeeLoginScreen> {
       } catch (_) {
         appState.setFaceEnrolled(false);
       }
+    }
+    if (state.session.isEmployee) {
+      appState.setPermissionsIntroSeen(
+        await sl<PrivacyPreferences>().hasSeenPermissionsIntro(),
+      );
     }
     if (!context.mounted) return;
     context.go(resolveAuthenticatedRoute(appState));
@@ -110,6 +117,8 @@ class _EmployeeLoginScreenState extends State<EmployeeLoginScreen> {
                     icon: Icons.arrow_forward_rounded,
                     onPressed: loading ? null : () => _submit(context, false),
                   ),
+                  const SizedBox(height: 12),
+                  const LegalLinksRow(),
                 ],
               ),
             ),

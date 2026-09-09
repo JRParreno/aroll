@@ -100,7 +100,7 @@ export function OwnerLeavePolicyPage() {
         <OwnerPageBackLink to="/owner/settings/setup" label="Back to Business Setup" />
 
         <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <p className="text-sm text-[#6B7280]">
+          <p className="owner-section-subtitle">
             Employees only pick the leave type. Payroll uses this policy. You
             can still override it when approving a request.
           </p>

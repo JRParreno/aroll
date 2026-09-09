@@ -31,6 +31,10 @@ from app.models.payroll import BusinessPayrollConfig, Position
 from app.models.rest_day_policy import BusinessRestDayPolicy
 from app.models.user import User
 from app.services.leave_policy import default_treatments
+from app.services.legal_consent import (
+    default_legal_consent_content,
+    ensure_legal_consent_url,
+)
 
 logger = logging.getLogger("aroll.seed.internal_test")
 
@@ -99,14 +103,19 @@ def _upsert_business(db: Session) -> Business:
         )
         db.add(business)
         db.flush()
-        return business
-    business.name = DEV_BUSINESS_NAME
-    business.status = BusinessStatus.active
-    business.timezone = DEV_TIMEZONE
-    business.is_demo = False
-    business.is_internal_test = True
-    if business.setup_completed_at is None:
-        business.setup_completed_at = now
+    else:
+        business.name = DEV_BUSINESS_NAME
+        business.status = BusinessStatus.active
+        business.timezone = DEV_TIMEZONE
+        business.is_demo = False
+        business.is_internal_test = True
+        if business.setup_completed_at is None:
+            business.setup_completed_at = now
+    ensure_legal_consent_url(business)
+    business.legal_consent_content = default_legal_consent_content(
+        DEV_BUSINESS_NAME, is_demo=False
+    )
+    business.legal_consent_updated_at = now
     db.flush()
     return business
 

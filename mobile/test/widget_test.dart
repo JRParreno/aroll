@@ -10,6 +10,8 @@ void main() {
     expect(find.text('Welcome to Aroll+'), findsOneWidget);
     expect(find.text('Login as Employee'), findsOneWidget);
     expect(find.text('Login as Business Owner'), findsOneWidget);
+    expect(find.text('Terms & Conditions'), findsWidgets);
+    expect(find.text('Privacy Policy'), findsWidgets);
     expect(find.text('DEMO MODE'), findsNothing);
     expect(find.text('DEVELOPER TEST MODE'), findsNothing);
   });

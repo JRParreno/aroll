@@ -3,6 +3,11 @@ import { AttendanceSummary } from "@/components/dashboard/AttendanceSummary";
 import { MonthlyRegistrationsChart } from "@/components/dashboard/MonthlyRegistrationsChart";
 import { RecentActivities } from "@/components/dashboard/RecentActivities";
 import { StatCard } from "@/components/dashboard/StatCard";
+import {
+  AdminPage,
+  AdminPageContent,
+  AdminPageHeader,
+} from "@/components/admin/layout/AdminPageLayout";
 import { getDashboardStats } from "@/lib/api";
 
 export function AdminDashboardPage() {
@@ -12,21 +17,16 @@ export function AdminDashboardPage() {
   });
 
   return (
-    <div className="min-h-full bg-[#F7F8FA]">
-      <header className="border-b border-slate-200 bg-white px-5 py-6 sm:px-8">
-        <div className="mx-auto max-w-6xl">
-          <p className="text-sm font-medium text-[#6B7280]">
-            Platform administration
-          </p>
-          <h1 className="mt-1 text-2xl font-semibold tracking-tight text-[#1F2937] sm:text-3xl">
-            Dashboard Overview
-          </h1>
-        </div>
-      </header>
+    <AdminPage>
+      <AdminPageHeader
+        eyebrow="Platform administration"
+        title="Dashboard Overview"
+        description="Monitor businesses, registrations, and platform activity."
+      />
 
-      <div className="mx-auto max-w-6xl space-y-6 px-5 py-6 sm:px-8">
+      <AdminPageContent>
         {isError && (
-          <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
             Unable to load dashboard stats. Restart the backend and try again.
           </p>
         )}
@@ -80,7 +80,7 @@ export function AdminDashboardPage() {
             loading={isLoading}
           />
         </div>
-      </div>
-    </div>
+      </AdminPageContent>
+    </AdminPage>
   );
 }

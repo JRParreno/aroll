@@ -1,6 +1,7 @@
 import {
   BadgeDollarSign,
   ClipboardList,
+  FileText,
   LifeBuoy,
   Lightbulb,
   LockKeyhole,
@@ -8,6 +9,8 @@ import {
   ShieldAlert,
   TriangleAlert,
 } from "lucide-react";
+import { Link } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import {
   OwnerCard,
@@ -16,6 +19,8 @@ import {
   OwnerPageHeader,
 } from "@/components/owner/layout/OwnerPageLayout";
 import { PrototypeNotice } from "@/components/tenant/PrototypeNotice";
+import { getMe } from "@/lib/api";
+import { ME_QUERY_KEY } from "@/lib/authSession";
 import { cn } from "@/lib/utils";
 
 const SUPPORT_EMAIL = "arollplus1111@gmail.com";
@@ -64,6 +69,11 @@ const reportDetails = [
 ];
 
 export function OwnerHelpPage() {
+  const { data: me } = useQuery({ queryKey: ME_QUERY_KEY, queryFn: getMe });
+  const consentPath = me?.business_code
+    ? `/legal/b/${me.business_code}`
+    : "/owner/settings/business";
+
   return (
     <OwnerPage>
       <OwnerPageHeader
@@ -74,7 +84,30 @@ export function OwnerHelpPage() {
       <OwnerPageContent>
         <PrototypeNotice />
         <OwnerCard className="p-5 sm:p-6">
-          <p className="max-w-3xl text-sm leading-relaxed text-[#6B7280]">
+          <div className="flex items-start gap-4">
+            <span className="owner-icon-well h-12 w-12 shrink-0">
+              <FileText className="h-5 w-5" />
+            </span>
+            <div className="min-w-0">
+              <h2 className="owner-section-title">Employee consent webpage</h2>
+              <p className="owner-section-subtitle mt-1 max-w-2xl">
+                Employees review the workplace-configured consent page and
+                agree in the mobile app. Configure the content in Business
+                Settings.
+              </p>
+              <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-sm font-semibold text-[#1E3A5F]">
+                <Link to={consentPath} className="hover:underline">
+                  Open consent webpage
+                </Link>
+                <Link to="/owner/settings/business" className="hover:underline">
+                  Edit in Business Settings
+                </Link>
+              </div>
+            </div>
+          </div>
+        </OwnerCard>
+        <OwnerCard className="p-5 sm:p-6">
+          <p className="owner-section-subtitle max-w-3xl">
             Find helpful information about using your Aroll+ workspace. If you
             encounter an error, experience a problem while using the system, or
             have suggestions for improvement, our support team is available to
@@ -102,10 +135,10 @@ export function OwnerHelpPage() {
                       <Icon className="h-5 w-5" />
                     </span>
                     <div className="min-w-0">
-                      <h3 className="text-sm font-semibold text-[#1F2937]">
+                      <h3 className="owner-section-title">
                         {topic.title}
                       </h3>
-                      <p className="mt-1 text-sm leading-relaxed text-[#6B7280]">
+                      <p className="owner-section-subtitle mt-1">
                         {topic.description}
                       </p>
                     </div>
@@ -123,10 +156,10 @@ export function OwnerHelpPage() {
                 <LifeBuoy className="h-5 w-5" />
               </span>
               <div className="min-w-0">
-                <h2 className="text-base font-semibold text-[#1F2937]">
+                <h2 className="owner-section-title">
                   Contact Aroll+ Support
                 </h2>
-                <p className="mt-1 max-w-2xl text-sm leading-relaxed text-[#6B7280]">
+                <p className="owner-section-subtitle mt-1 max-w-2xl">
                   If you encounter a problem that you cannot resolve or would
                   like to send feedback, you can contact the Aroll+ support team
                   through email.
@@ -160,10 +193,10 @@ export function OwnerHelpPage() {
               <ShieldAlert className="h-5 w-5" />
             </span>
             <div className="min-w-0">
-              <h2 className="text-base font-semibold text-[#1F2937]">
+              <h2 className="owner-section-title">
                 When Reporting a Problem
               </h2>
-              <p className="mt-1 text-sm leading-relaxed text-[#6B7280]">
+              <p className="owner-section-subtitle mt-1">
                 Including the following details helps our support team review
                 your concern more quickly.
               </p>

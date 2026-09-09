@@ -8,6 +8,7 @@ import 'package:aroll_mobile/domain/entities/employee_portal.dart';
 import 'package:aroll_mobile/domain/repositories/employee_repository.dart';
 import 'package:aroll_mobile/presentation/employee/employee_ui.dart';
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 
 class EmployeeProfileScreen extends StatefulWidget {
@@ -335,6 +336,26 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
                     ],
                   ),
                   const SizedBox(height: 14),
+                  OutlinedButton(
+                    onPressed: () {
+                      final code = sl<AppState>().session?.businessCode;
+                      if (code == null || code.isEmpty) return;
+                      context.push('/legal/b/$code');
+                    },
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: brand.primary,
+                      side: BorderSide(color: brand.primary.withValues(alpha: 0.45)),
+                      minimumSize: const Size.fromHeight(48),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                    child: const Text(
+                      'Workplace consent page',
+                      style: TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
                   OutlinedButton(
                     onPressed: () => confirmEmployeeSignOut(context),
                     style: OutlinedButton.styleFrom(

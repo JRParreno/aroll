@@ -12,11 +12,11 @@ import 'package:aroll_mobile/domain/entities/employee_portal.dart';
 import 'package:aroll_mobile/domain/entities/face_liveness.dart';
 import 'package:aroll_mobile/presentation/employee/employee_ui.dart';
 import 'package:aroll_mobile/presentation/employee/face_attendance_result_screen.dart';
+import 'package:aroll_mobile/presentation/permissions/permission_rationale.dart';
 import 'package:camera/camera.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
-import 'package:permission_handler/permission_handler.dart';
 
 /// Seamless attendance: camera + GPS run in parallel. Continuous face detection
 /// (no blink/smile). When the face is ready and GPS is inside the geofence,
@@ -98,22 +98,23 @@ class _FaceAutoAttendanceScreenState extends State<FaceAutoAttendanceScreen> {
   void initState() {
     super.initState();
     _openedAt = DateTime.now();
-    // Camera + GPS start together — never wait on each other.
     unawaited(_bootstrapCamera());
-    unawaited(_startGpsParallel());
   }
 
   Future<void> _bootstrapCamera() async {
     final camStarted = DateTime.now();
     try {
-      final permitted = await Permission.camera.request();
-      if (!permitted.isGranted) {
+      final permitted = await requestCameraWithRationale(context);
+      if (!mounted) return;
+      if (!permitted) {
         setState(() {
           _busy = false;
           _error = 'Please allow camera access so we can verify it’s you.';
         });
         return;
       }
+      // GPS after the camera explanation so permission dialogs do not stack.
+      unawaited(_startGpsParallel());
 
       // Detector is cheap to construct — start it while the camera initializes.
       final detector = FaceDetector(
@@ -185,6 +186,16 @@ class _FaceAutoAttendanceScreenState extends State<FaceAutoAttendanceScreen> {
     _gpsRunning = true;
     if (mounted) {
       setState(() => _gpsStatus = 'Checking work location…');
+    }
+    final allowed = await requestLocationWithRationale(context);
+    if (!allowed) {
+      if (!mounted) return;
+      setState(() {
+        _gpsRunning = false;
+        _error =
+            'Please allow location access so we can confirm you’re at your workplace.';
+      });
+      return;
     }
     final worksite = widget.worksite;
 

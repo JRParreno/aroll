@@ -4,6 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { ArrowRight, Mail, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 import { SystemBrandPanel } from "@/components/branding/SystemBranding";
+import { AuthLegalLinks } from "@/components/legal/AuthLegalLinks";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -105,6 +106,7 @@ export function LoginPage() {
               <p className="text-center text-xs text-[#6B7280]">
                 Demo admin: admin@example.com / changeme123
               </p>
+              <AuthLegalLinks className="pt-1" />
             </form>
           </section>
         </div>

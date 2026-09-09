@@ -14,7 +14,7 @@ function isPublicAuthPath(path: string): boolean {
     return true;
   }
   // Public owner signup only — not admin review under /admin/registrations
-  return path.startsWith("/registrations");
+  return path.startsWith("/registrations") || path.startsWith("/public/");
 }
 
 export const api = axios.create({ baseURL: API_BASE });
@@ -65,6 +65,9 @@ export type UserMe = {
   profile_image_url?: string | null;
   is_demo?: boolean;
   is_internal_test?: boolean;
+  legal_consent_accepted?: boolean | null;
+  legal_consent_url?: string | null;
+  legal_consent_page_url?: string | null;
 };
 
 export type Registration = {
@@ -1328,6 +1331,9 @@ export type BusinessSettings = {
   application_status: string | null;
   registration_documents: RegistrationDocument[];
   branding: BusinessBrandingSettings;
+  legal_consent_content?: string | null;
+  legal_consent_url?: string | null;
+  legal_consent_updated_at?: string | null;
 };
 
 export type BusinessSettingsUpdate = {
@@ -1335,6 +1341,16 @@ export type BusinessSettingsUpdate = {
   business_type?: string | null;
   address: string;
   branding?: BusinessBrandingSettings;
+  legal_consent_content?: string | null;
+};
+
+export type PublicLegalPage = {
+  business_name: string;
+  business_code: string;
+  legal_consent_url: string;
+  content: string;
+  updated_at: string | null;
+  is_demo?: boolean;
 };
 
 export type AccountSettingsUpdate = {
@@ -1521,6 +1537,13 @@ export async function getBusinessSettings() {
 
 export async function updateBusinessSettings(payload: BusinessSettingsUpdate) {
   const { data } = await api.put("/businesses/me/business-settings", payload);
+  return data;
+}
+
+export async function getPublicLegalPage(businessCode: string) {
+  const { data } = await api.get<PublicLegalPage>(
+    `/public/legal/${encodeURIComponent(businessCode)}`
+  );
   return data;
 }
 
