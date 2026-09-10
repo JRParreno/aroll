@@ -63,6 +63,9 @@ def seed_internal_test(db: Session | None = None) -> Business:
             role=UserRole.owner,
         )
         _upsert_employee(db, business, position=position)
+        from app.services.legal_consent import publish_default_legal
+
+        publish_default_legal(business)
         db.commit()
         db.refresh(business)
         logger.info(

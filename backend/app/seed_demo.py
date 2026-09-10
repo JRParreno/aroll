@@ -118,6 +118,18 @@ def seed_demo(db: Session | None = None) -> Business:
         )
         _seed_payroll_adjustments(db, business, owner=owner, hannah=hannah, luis=luis)
         _seed_synthetic_faces(db, owner=owner, hannah=hannah, luis=luis)
+        from app.services.legal_consent import (
+            publish_default_legal,
+            seed_accepted_consents,
+        )
+
+        publish_default_legal(business)
+        seed_accepted_consents(
+            db, employee=hannah, business=business, user_id=hannah.user_id
+        )
+        seed_accepted_consents(
+            db, employee=luis, business=business, user_id=luis.user_id
+        )
         db.commit()
         db.refresh(business)
         logger.info("Seeded demo tenant %s (%s)", business.name, business.business_code)

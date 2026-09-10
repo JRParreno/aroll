@@ -41,6 +41,10 @@ from app.schemas.owner_setup import (
     RestDayPolicyUpdate,
     SetupStatusResponse,
 )
+from app.schemas.legal_consent import (
+    BusinessLegalSettingsResponse,
+    BusinessLegalSettingsUpdate,
+)
 from app.services.leave_policy import (
     get_or_create_leave_policy,
     serialize_leave_policy,
@@ -50,6 +54,10 @@ from app.services.setup_status import (
     SetupIncompleteError,
     complete_setup,
     get_setup_status,
+)
+from app.services.legal_consent import (
+    apply_legal_settings_update,
+    legal_settings_payload,
 )
 from app.services.registration_documents import get_document_file_path
 from app.services.registration_service import document_response
@@ -520,6 +528,36 @@ def update_business_settings(
 
     db.commit()
     return {"status": "ok"}
+
+
+@router.get("/me/legal", response_model=BusinessLegalSettingsResponse)
+def get_business_legal_settings(
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(require_roles(UserRole.owner, UserRole.manager))],
+):
+    if user.business_id is None:
+        raise HTTPException(400, "No business context")
+    business = db.get(Business, user.business_id)
+    if business is None:
+        raise HTTPException(404, "Business not found")
+    return BusinessLegalSettingsResponse(**legal_settings_payload(business))
+
+
+@router.put("/me/legal", response_model=BusinessLegalSettingsResponse)
+def update_business_legal_settings(
+    body: BusinessLegalSettingsUpdate,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(require_roles(UserRole.owner))],
+):
+    if user.business_id is None:
+        raise HTTPException(400, "No business context")
+    business = db.get(Business, user.business_id)
+    if business is None:
+        raise HTTPException(404, "Business not found")
+    apply_legal_settings_update(business, body)
+    db.commit()
+    db.refresh(business)
+    return BusinessLegalSettingsResponse(**legal_settings_payload(business))
 
 
 @router.get("/me/registration-documents/{document_id}/file")

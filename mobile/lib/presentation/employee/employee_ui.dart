@@ -25,6 +25,7 @@ abstract final class EmployeeColors {
   static const fieldFill = AppColors.fieldFill;
   static const chipFill = AppColors.chipFill;
   static const success = AppColors.success;
+  static const danger = AppColors.danger;
 }
 
 /// Owner setup primary color from the active [Theme] (session branding).

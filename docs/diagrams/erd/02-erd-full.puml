@@ -75,7 +75,7 @@ entity "employee_face_embedding" as efe {
   * **id** : UUID <<PK>>
   * employee_id : UUID <<FK>>
   --
-  embedding : vector(128)
+  embedding : vector(512)
   model_version : varchar(50)
   sample_index : smallint
   enrolled_by : UUID <<FK user>>

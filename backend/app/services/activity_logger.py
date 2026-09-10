@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from app.models.activity_log import ActivityLog
 
 
-def create_log(
+def add_log(
     db: Session,
     user_id,
     action: str,
@@ -27,9 +27,33 @@ def create_log(
         device=(device or None) and device[:120],
         ip_address=(ip_address or None) and ip_address[:64],
     )
-
     db.add(log)
+    return log
+
+
+def create_log(
+    db: Session,
+    user_id,
+    action: str,
+    description: str | None = None,
+    *,
+    previous_value: str | None = None,
+    new_value: str | None = None,
+    platform: str | None = None,
+    device: str | None = None,
+    ip_address: str | None = None,
+):
+    log = add_log(
+        db,
+        user_id,
+        action,
+        description,
+        previous_value=previous_value,
+        new_value=new_value,
+        platform=platform,
+        device=device,
+        ip_address=ip_address,
+    )
     db.commit()
     db.refresh(log)
-
     return log

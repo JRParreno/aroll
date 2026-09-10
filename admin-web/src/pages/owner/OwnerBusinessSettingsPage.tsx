@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Building2, FileText, Palette } from "lucide-react";
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { toast } from "sonner";
 import { BusinessRegistrationDocumentsSection } from "@/components/business/BusinessRegistrationDocumentsSection";
 import {
@@ -26,7 +27,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   fetchOwnerRegistrationDocumentFile,
+  getBusinessLegalSettings,
   getBusinessSettings,
+  updateBusinessLegalSettings,
   updateBusinessSettings,
   type BusinessBrandingSettings,
 } from "@/lib/api";
@@ -50,11 +53,38 @@ export function OwnerBusinessSettingsPage() {
   });
   const [branding, setBranding] =
     useState<BusinessBrandingSettings>(defaultBusinessBranding);
+  const [legal, setLegal] = useState({
+    terms_content: "",
+    privacy_content: "",
+    biometric_consent_content: "",
+    terms_version: "",
+    privacy_version: "",
+    biometric_consent_version: "",
+    legal_page_url: "",
+  });
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ["business-settings"],
     queryFn: getBusinessSettings,
   });
+
+  const { data: legalData } = useQuery({
+    queryKey: ["business-legal"],
+    queryFn: getBusinessLegalSettings,
+  });
+
+  useEffect(() => {
+    if (!legalData) return;
+    setLegal({
+      terms_content: legalData.terms_content ?? "",
+      privacy_content: legalData.privacy_content ?? "",
+      biometric_consent_content: legalData.biometric_consent_content ?? "",
+      terms_version: legalData.terms_version ?? "",
+      privacy_version: legalData.privacy_version ?? "",
+      biometric_consent_version: legalData.biometric_consent_version ?? "",
+      legal_page_url: legalData.legal_page_url,
+    });
+  }, [legalData]);
 
   useEffect(() => {
     if (!data) return;
@@ -81,6 +111,23 @@ export function OwnerBusinessSettingsPage() {
       qc.invalidateQueries({ queryKey: ME_QUERY_KEY });
     },
     onError: () => toast.error("Failed to save business settings"),
+  });
+
+  const saveLegal = useMutation({
+    mutationFn: () =>
+      updateBusinessLegalSettings({
+        terms_content: legal.terms_content,
+        privacy_content: legal.privacy_content,
+        biometric_consent_content: legal.biometric_consent_content,
+        terms_version: legal.terms_version,
+        privacy_version: legal.privacy_version,
+        biometric_consent_version: legal.biometric_consent_version,
+      }),
+    onSuccess: () => {
+      toast.success("Legal page saved");
+      qc.invalidateQueries({ queryKey: ["business-legal"] });
+    },
+    onError: () => toast.error("Failed to save legal page"),
   });
 
   if (isLoading) {
@@ -194,6 +241,82 @@ export function OwnerBusinessSettingsPage() {
               branding={branding}
               onChange={setBranding}
             />
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Workplace legal page</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Employees review this owner-configured webpage for Terms, Privacy,
+              and Biometric Consent. Project markdown templates in docs/legal
+              are reference only.
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Generated URL
+              </p>
+              <div className="mt-1 flex flex-wrap items-center gap-3">
+                <code className="text-xs">{legal.legal_page_url || `/legal/b/${form.business_code}`}</code>
+                {form.business_code ? (
+                  <Link
+                    className="text-sm font-medium text-[#1E3A5F] underline"
+                    to={`/legal/b/${form.business_code}`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Preview
+                  </Link>
+                ) : null}
+              </div>
+            </div>
+            {(
+              [
+                ["terms_content", "terms_version", "Terms and Conditions"],
+                ["privacy_content", "privacy_version", "Privacy Policy"],
+                [
+                  "biometric_consent_content",
+                  "biometric_consent_version",
+                  "Biometric Consent",
+                ],
+              ] as const
+            ).map(([contentKey, versionKey, label]) => (
+              <div key={contentKey} className="space-y-2">
+                <div className="flex items-end gap-3">
+                  <div className="flex-1 space-y-2">
+                    <Label htmlFor={contentKey}>{label}</Label>
+                    <textarea
+                      id={contentKey}
+                      className="min-h-32 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                      value={legal[contentKey]}
+                      onChange={(event) =>
+                        setLegal({ ...legal, [contentKey]: event.target.value })
+                      }
+                    />
+                  </div>
+                  <div className="w-48 space-y-2">
+                    <Label htmlFor={versionKey}>Version</Label>
+                    <Input
+                      id={versionKey}
+                      value={legal[versionKey]}
+                      onChange={(event) =>
+                        setLegal({ ...legal, [versionKey]: event.target.value })
+                      }
+                      placeholder="e.g. terms-2026-09-09"
+                    />
+                  </div>
+                </div>
+              </div>
+            ))}
+            <Button
+              type="button"
+              onClick={() => saveLegal.mutate()}
+              disabled={saveLegal.isPending}
+            >
+              Save legal page
+            </Button>
           </CardContent>
         </Card>
 

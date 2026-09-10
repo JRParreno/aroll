@@ -4,6 +4,7 @@ import 'package:aroll_mobile/core/network/api_client.dart';
 import 'package:aroll_mobile/domain/entities/employee_portal.dart';
 import 'package:aroll_mobile/domain/entities/face_liveness.dart';
 import 'package:aroll_mobile/domain/entities/leave_request.dart';
+import 'package:aroll_mobile/domain/entities/legal_consent.dart';
 import 'package:aroll_mobile/domain/entities/user_session.dart';
 import 'package:aroll_mobile/domain/repositories/employee_repository.dart';
 import 'package:dio/dio.dart';
@@ -134,6 +135,41 @@ class EmployeeRepositoryImpl implements EmployeeRepository {
   Future<FaceStatus> getFaceStatus() async {
     final res = await _api.dio.get<Map<String, dynamic>>('/employee/face-status');
     return _faceStatusFromJson(res.data!);
+  }
+
+  @override
+  Future<LegalConsentStatus> getConsentStatus() async {
+    final res =
+        await _api.dio.get<Map<String, dynamic>>('/employee/consent/status');
+    return LegalConsentStatus.fromJson(res.data!);
+  }
+
+  @override
+  Future<LegalConsentStatus> acceptConsent({
+    required List<String> types,
+    required Map<String, String> versions,
+    required bool adultAcknowledged,
+    String client = 'mobile',
+  }) async {
+    final res = await _api.dio.post<Map<String, dynamic>>(
+      '/employee/consent/accept',
+      data: {
+        'accepted': true,
+        'types': types,
+        'versions': versions,
+        'client': client,
+        'adult_acknowledged': adultAcknowledged,
+      },
+    );
+    return LegalConsentStatus.fromJson(res.data!);
+  }
+
+  @override
+  Future<PublicLegalPage> getPublicLegalPage(String businessCode) async {
+    final res = await _api.dio.get<Map<String, dynamic>>(
+      '/public/legal/${businessCode.trim().toUpperCase()}',
+    );
+    return PublicLegalPage.fromJson(res.data!);
   }
 
   @override

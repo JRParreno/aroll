@@ -35,6 +35,7 @@ import { OwnerLeavePolicyPage } from "@/pages/owner/OwnerLeavePolicyPage";
 import { OwnerHelpPage } from "@/pages/owner/OwnerHelpPage";
 import { OwnerProfilePage } from "@/pages/owner/OwnerProfilePage";
 import { OwnerSetupWizardPage } from "@/pages/owner/setup/OwnerSetupWizardPage";
+import { PublicLegalPage } from "@/pages/PublicLegalPage";
 import { PendingVerificationPage } from "@/pages/owner/PendingVerificationPage";
 import { RejectedApplicationPage } from "@/pages/owner/RejectedApplicationPage";
 
@@ -129,6 +130,7 @@ export default function App() {
         <Route path="*" element={<AdminNotFoundPage />} />
       </Route>
 
+      <Route path="/legal/b/:businessCode" element={<PublicLegalPage />} />
       <Route path="/register-business" element={<BusinessRegistrationPage />} />
       <Route path="/track-registration" element={<TrackRegistrationPage />} />
       <Route path="/pending-verification" element={<PendingVerificationPage />} />

@@ -123,9 +123,12 @@ Complete on **staging** before promoting to pilot production.
 
 ### Privacy (pilot)
 
-- [ ] Fill placeholders in [legal/](legal/) (`[ORGANIZATION NAME]`, contacts, dates)
-- [ ] Employee signs [legal/BIOMETRIC-CONSENT.md](legal/BIOMETRIC-CONSENT.md) before face enrollment
-- [ ] Users can access [legal/PRIVACY-POLICY.md](legal/PRIVACY-POLICY.md) and [legal/TERMS-AND-CONDITIONS.md](legal/TERMS-AND-CONDITIONS.md)
+- [x] Runtime Terms, Privacy, and Biometric Consent come from the owner-configured workplace legal page (not hardcoded app copy). Unpublished content cannot be accepted.
+- [x] Typed `consent_record` rows store identity, business, type, policy version, UTC timestamp, client, and audit metadata
+- [x] Policy version changes require re-consent; biometric consent is separate from Terms/Privacy
+- [x] Biometric consent is required before employee/owner face enrollment and live face attendance (DEMO tenants skip live capture, not production gates)
+- [x] Biometric withdrawal and employee deactivation clear that employee’s face embeddings and reset registration status
+- [ ] Fill placeholders in owner-published legal content (`[ORGANIZATION NAME]`, contacts, dates); [legal/](legal/) remains templates
 - [ ] Owners briefed on who may enroll / clear faces
 - [ ] ArcFace / InsightFace weights: academic thesis OK; commercial deployment needs a proper license or model swap ([FACE-RECOGNITION.md](FACE-RECOGNITION.md))
 

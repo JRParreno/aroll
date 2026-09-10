@@ -2,12 +2,13 @@ import uuid
 import re
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from app.core.deps import require_roles
 from app.core.security import generate_temporary_password, hash_password
 from app.db.session import get_db
+from app.models.business import Business
 from app.models.employee import Employee
 from app.models.enums import EmployeeStatus, PayBasis, UserRole
 from app.models.attendance import AttendanceRecord
@@ -24,6 +25,15 @@ from app.schemas.employee import (
     EmployeeUpdate,
     _validate_pay_fields,
 )
+from app.schemas.legal_consent import (
+    EmployeeConsentSummary,
+    LegalConsentWithdrawRequest,
+)
+from app.services.legal_consent import (
+    clear_employee_face_data,
+    consent_summary_for_employee,
+    withdraw_biometric_consent,
+)
 
 router = APIRouter(prefix="/employees", tags=["employees"])
 
@@ -34,7 +44,12 @@ def _float_or_none(value) -> float | None:
     return float(value)
 
 
-def _employee_response(emp: Employee, user: User) -> EmployeeResponse:
+def _employee_response(
+    emp: Employee,
+    user: User,
+    *,
+    consent: EmployeeConsentSummary | None = None,
+) -> EmployeeResponse:
     pay_basis = getattr(emp, "pay_basis", None) or PayBasis.daily
     return EmployeeResponse(
         id=str(emp.id),
@@ -59,7 +74,14 @@ def _employee_response(emp: Employee, user: User) -> EmployeeResponse:
         temporary_password=(
             user.pending_temporary_password if user.must_change_password else None
         ),
+        consent=consent,
     )
+
+
+def _consent_for(db: Session, emp: Employee, business: Business | None) -> EmployeeConsentSummary | None:
+    if business is None:
+        return None
+    return EmployeeConsentSummary(**consent_summary_for_employee(db, emp, business))
 
 
 def _generate_employee_username(db: Session, full_name: str) -> str:
@@ -113,6 +135,7 @@ def list_employees(
 ):
     if user.business_id is None:
         raise HTTPException(400, "No business context")
+    business = db.get(Business, user.business_id)
     query = (
         db.query(Employee, User)
         .join(User, Employee.user_id == User.id)
@@ -121,7 +144,10 @@ def list_employees(
     if not include_inactive:
         query = query.filter(Employee.status != EmployeeStatus.inactive)
     rows = query.order_by(Employee.full_name).all()
-    return [_employee_response(emp, u) for emp, u in rows]
+    return [
+        _employee_response(emp, u, consent=_consent_for(db, emp, business))
+        for emp, u in rows
+    ]
 
 
 @router.post("", response_model=EmployeeCreateResponse, status_code=201)
@@ -264,6 +290,7 @@ def deactivate_employee(
     employee_id: uuid.UUID,
     db: Annotated[Session, Depends(get_db)],
     user: Annotated[User, Depends(require_roles(UserRole.owner, UserRole.manager))],
+    request: Request,
 ):
     if user.business_id is None:
         raise HTTPException(400, "No business context")
@@ -275,9 +302,55 @@ def deactivate_employee(
     emp.status = EmployeeStatus.inactive
     emp.is_active = False
     linked_user.is_active = False
+    deleted = clear_employee_face_data(db, emp)
+    from app.core.request_meta import audit_meta_from_request
+    from app.services.activity_logger import add_log
+
+    meta = audit_meta_from_request(request)
+    add_log(
+        db,
+        user.id,
+        "face_cleared",
+        f"Cleared face embeddings for {emp.full_name} during deactivation "
+        f"({deleted} sample(s))",
+        platform=meta.get("platform"),
+        device=meta.get("device"),
+        ip_address=meta.get("ip_address"),
+    )
     db.commit()
     db.refresh(emp)
-    return _employee_response(emp, linked_user)
+    business = db.get(Business, user.business_id)
+    return _employee_response(emp, linked_user, consent=_consent_for(db, emp, business))
+
+
+@router.post(
+    "/{employee_id}/biometric-consent/withdraw",
+    response_model=EmployeeResponse,
+)
+def withdraw_employee_biometric_consent(
+    employee_id: uuid.UUID,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(require_roles(UserRole.owner, UserRole.manager))],
+    request: Request,
+    body: LegalConsentWithdrawRequest | None = None,
+):
+    if user.business_id is None:
+        raise HTTPException(400, "No business context")
+    business = db.get(Business, user.business_id)
+    if business is None:
+        raise HTTPException(404, "Business not found")
+    emp, linked_user = _get_business_employee(db, employee_id, user.business_id)
+    withdraw_biometric_consent(
+        db,
+        employee=emp,
+        business=business,
+        actor_user_id=user.id,
+        client=(body.client if body else "web"),
+        request=request,
+    )
+    db.commit()
+    db.refresh(emp)
+    return _employee_response(emp, linked_user, consent=_consent_for(db, emp, business))
 
 
 @router.delete("/{employee_id}")

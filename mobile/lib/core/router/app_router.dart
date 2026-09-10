@@ -18,6 +18,8 @@ import 'package:aroll_mobile/presentation/employee/request_leave_screen.dart';
 import 'package:aroll_mobile/presentation/employee/schedule_screen.dart';
 import 'package:aroll_mobile/presentation/employee/shift_detail_screen.dart';
 import 'package:aroll_mobile/presentation/employee/shift_history_screen.dart';
+import 'package:aroll_mobile/presentation/legal/employee_legal_consent_screen.dart';
+import 'package:aroll_mobile/presentation/permissions/permissions_onboarding_screen.dart';
 import 'package:aroll_mobile/presentation/home/home_screen.dart';
 import 'package:aroll_mobile/presentation/home/scan_attendance_screen.dart';
 import 'package:aroll_mobile/presentation/owner/owner_attendance_screen.dart';
@@ -72,6 +74,15 @@ String resolveAuthenticatedRoute(AppState appState) {
   if (session.isDemo) {
     return '/home';
   }
+  if (appState.legalConsentSatisfied != true) {
+    return '/legal-consent';
+  }
+  if (!appState.permissionsIntroSeen) {
+    return '/permissions';
+  }
+  if (appState.biometricConsentSatisfied != true) {
+    return '/biometric-consent';
+  }
   if (appState.faceEnrolled != true) {
     return '/face-registration';
   }
@@ -111,8 +122,40 @@ GoRouter createAppRouter(AppState appState) {
       } else if (session?.isEmployee == true &&
           session?.isDemo != true &&
           !appState.mustChangePassword &&
+          appState.legalConsentSatisfied != true &&
+          loc != '/legal-consent' &&
+          loc != '/change-password' &&
+          loc != '/legal-page') {
+        redirect = '/legal-consent';
+      } else if (session?.isEmployee == true &&
+          session?.isDemo != true &&
+          !appState.mustChangePassword &&
+          appState.legalConsentSatisfied == true &&
+          !appState.permissionsIntroSeen &&
+          loc != '/permissions' &&
+          loc != '/legal-consent' &&
+          loc != '/legal-page' &&
+          loc != '/change-password') {
+        redirect = '/permissions';
+      } else if (session?.isEmployee == true &&
+          session?.isDemo != true &&
+          !appState.mustChangePassword &&
+          appState.legalConsentSatisfied == true &&
+          appState.permissionsIntroSeen &&
+          appState.biometricConsentSatisfied != true &&
+          loc != '/biometric-consent' &&
+          loc != '/legal-page' &&
+          loc != '/change-password') {
+        redirect = '/biometric-consent';
+      } else if (session?.isEmployee == true &&
+          session?.isDemo != true &&
+          !appState.mustChangePassword &&
           appState.faceEnrolled != true &&
           loc != '/face-registration' &&
+          loc != '/legal-consent' &&
+          loc != '/permissions' &&
+          loc != '/biometric-consent' &&
+          loc != '/legal-page' &&
           loc != '/change-password') {
         // Force face enrollment on every session until completed — including
         // after app close/reopen (restore sets faceEnrolled from server).
@@ -173,6 +216,26 @@ GoRouter createAppRouter(AppState appState) {
         path: '/change-password',
         pageBuilder: (context, state) =>
             _fadePage(state, const ChangePasswordScreen()),
+      ),
+      GoRoute(
+        path: '/legal-consent',
+        pageBuilder: (context, state) =>
+            _fadePage(state, const EmployeeLegalConsentScreen()),
+      ),
+      GoRoute(
+        path: '/legal-page',
+        pageBuilder: (context, state) =>
+            _fadePage(state, const WorkplaceLegalPageScreen()),
+      ),
+      GoRoute(
+        path: '/permissions',
+        pageBuilder: (context, state) =>
+            _fadePage(state, const PermissionsOnboardingScreen()),
+      ),
+      GoRoute(
+        path: '/biometric-consent',
+        pageBuilder: (context, state) =>
+            _fadePage(state, const BiometricConsentScreen()),
       ),
       GoRoute(
         path: '/home',

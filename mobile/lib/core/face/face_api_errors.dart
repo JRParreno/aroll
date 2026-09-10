@@ -57,8 +57,14 @@ String? _friendlyCode(String? code) {
       return 'Please finish setting up your face first.';
     case 'business_inactive':
       return 'This workplace isn’t active right now. Please contact your employer.';
-    case 'employee_inactive':
-      return 'Your account isn’t active. Please contact your employer.';
+    case 'legal_consent_required':
+      return 'Please review and agree to your workplace Terms and Privacy Policy first.';
+    case 'biometric_consent_required':
+      return 'Please agree to biometric consent before face enrollment or live attendance.';
+    case 'legal_content_unpublished':
+      return 'Your employer has not published the required legal documents yet.';
+    case 'consent_version_mismatch':
+      return 'The legal documents were updated. Please review them again.';
     case 'mock_location':
       return 'Location spoofing isn’t allowed. Please turn off any fake GPS apps and try again.';
     case 'not_clocked_in':

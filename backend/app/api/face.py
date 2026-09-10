@@ -5,12 +5,13 @@ from __future__ import annotations
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.deps import get_current_user, require_roles
 from app.db.session import get_db
+from app.models.business import Business
 from app.models.employee import Employee
 from app.models.enums import UserRole
 from app.models.face_embedding import EmployeeFaceEmbedding
@@ -34,6 +35,12 @@ from app.services.face_embedding import (
     min_match_score,
 )
 from app.services.face_enrollment import enroll_face_sample_bytes, face_status_for_employee
+from app.services.legal_consent import (
+    clear_employee_face_data,
+    require_biometric_consent,
+)
+from app.services.activity_logger import add_log
+from app.core.request_meta import audit_meta_from_request
 from app.services.demo_tenant import (
     load_business_for_employee,
     raise_if_demo_enrollment_locked,
@@ -103,14 +110,30 @@ async def enroll_face_samples(
     db: Annotated[Session, Depends(get_db)],
     user: Annotated[User, Depends(require_roles(UserRole.owner, UserRole.manager))],
     files: Annotated[list[UploadFile], File(..., description="3–5 face images")],
+    request: Request,
 ):
     if user.business_id is None:
         raise HTTPException(400, "No business context")
     emp = _get_business_employee(db, employee_id, user.business_id)
+    business = db.get(Business, user.business_id)
+    if business is None:
+        raise HTTPException(404, "Business not found")
+    require_biometric_consent(db, emp, business)
     payloads = await _read_uploads(files)
     result = enroll_face_sample_bytes(
         db, emp, payloads, enrolled_by=user.id
     )
+    meta = audit_meta_from_request(request)
+    add_log(
+        db,
+        user.id,
+        "face_enrolled",
+        f"Enrolled face samples for {emp.full_name}",
+        platform=meta.get("platform"),
+        device=meta.get("device"),
+        ip_address=meta.get("ip_address"),
+    )
+    db.commit()
     return FaceEnrollResponse(
         employee_id=result["employee_id"],
         face_registration_status=result["face_registration_status"],
@@ -125,6 +148,7 @@ def delete_face_samples(
     employee_id: uuid.UUID,
     db: Annotated[Session, Depends(get_db)],
     user: Annotated[User, Depends(require_roles(UserRole.owner, UserRole.manager))],
+    request: Request,
 ):
     if user.business_id is None:
         raise HTTPException(400, "No business context")
@@ -132,13 +156,17 @@ def delete_face_samples(
 
     raise_if_demo_enrollment_locked(load_business_for_employee(db, emp))
 
-    deleted = (
-        db.query(EmployeeFaceEmbedding)
-        .filter(EmployeeFaceEmbedding.employee_id == emp.id)
-        .delete(synchronize_session=False)
+    deleted = clear_employee_face_data(db, emp)
+    meta = audit_meta_from_request(request)
+    add_log(
+        db,
+        user.id,
+        "face_cleared",
+        f"Cleared face embeddings for {emp.full_name} ({deleted} sample(s))",
+        platform=meta.get("platform"),
+        device=meta.get("device"),
+        ip_address=meta.get("ip_address"),
     )
-    emp.face_registration_status = "not_registered"
-    emp.face_registered_at = None
     db.commit()
     return {
         "status": "ok",

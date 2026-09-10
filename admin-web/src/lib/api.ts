@@ -14,7 +14,7 @@ function isPublicAuthPath(path: string): boolean {
     return true;
   }
   // Public owner signup only — not admin review under /admin/registrations
-  return path.startsWith("/registrations");
+  return path.startsWith("/registrations") || path.includes("/public/legal/");
 }
 
 export const api = axios.create({ baseURL: API_BASE });
@@ -168,6 +168,19 @@ export type Employee = {
   face_registration_status?: string | null;
   temporary_password: string | null;
   profile_image_url: string | null;
+  consent?: EmployeeConsentSummary | null;
+};
+
+export type EmployeeConsentSummary = {
+  terms_satisfied: boolean;
+  privacy_satisfied: boolean;
+  biometric_satisfied: boolean;
+  terms_version: string | null;
+  privacy_version: string | null;
+  biometric_version: string | null;
+  terms_accepted_at: string | null;
+  privacy_accepted_at: string | null;
+  biometric_accepted_at: string | null;
 };
 
 export type OwnerPerformanceSummary = {
@@ -1521,6 +1534,72 @@ export async function getBusinessSettings() {
 
 export async function updateBusinessSettings(payload: BusinessSettingsUpdate) {
   const { data } = await api.put("/businesses/me/business-settings", payload);
+  return data;
+}
+
+export type BusinessLegalSettings = {
+  business_name: string;
+  business_code: string;
+  legal_page_url: string;
+  terms_content: string | null;
+  privacy_content: string | null;
+  biometric_consent_content: string | null;
+  terms_version: string | null;
+  privacy_version: string | null;
+  biometric_consent_version: string | null;
+  legal_updated_at: string | null;
+  terms_published: boolean;
+  privacy_published: boolean;
+  biometric_published: boolean;
+};
+
+export type BusinessLegalSettingsUpdate = {
+  terms_content?: string | null;
+  privacy_content?: string | null;
+  biometric_consent_content?: string | null;
+  terms_version?: string | null;
+  privacy_version?: string | null;
+  biometric_consent_version?: string | null;
+};
+
+export type PublicLegalSection = {
+  title: string;
+  consent_type: string;
+  content: string | null;
+  version: string | null;
+  published: boolean;
+};
+
+export type PublicLegalPage = {
+  business_name: string;
+  business_code: string;
+  legal_page_url: string;
+  updated_at: string | null;
+  is_demo: boolean;
+  terms: PublicLegalSection;
+  privacy: PublicLegalSection;
+  biometric: PublicLegalSection;
+};
+
+export async function getBusinessLegalSettings() {
+  const { data } = await api.get<BusinessLegalSettings>("/businesses/me/legal");
+  return data;
+}
+
+export async function updateBusinessLegalSettings(
+  payload: BusinessLegalSettingsUpdate
+) {
+  const { data } = await api.put<BusinessLegalSettings>(
+    "/businesses/me/legal",
+    payload
+  );
+  return data;
+}
+
+export async function getPublicLegalPage(businessCode: string) {
+  const { data } = await api.get<PublicLegalPage>(
+    `/public/legal/${businessCode.trim().toUpperCase()}`
+  );
   return data;
 }
 

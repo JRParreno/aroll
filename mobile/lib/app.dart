@@ -1,5 +1,6 @@
 import 'package:aroll_mobile/core/app_state.dart';
 import 'package:aroll_mobile/core/di/injection.dart';
+import 'package:aroll_mobile/core/legal/employee_gate_loader.dart';
 import 'package:aroll_mobile/core/router/app_router.dart';
 import 'package:aroll_mobile/core/theme/business_brand_theme.dart';
 import 'package:aroll_mobile/domain/repositories/employee_repository.dart';
@@ -70,17 +71,21 @@ class _ArollAppState extends State<ArollApp> with WidgetsBindingObserver {
     }
     // Already on the enroll screen — avoid fighting the camera/tutorial UI.
     final loc = _router?.routerDelegate.currentConfiguration.uri.path;
-    if (loc == '/face-registration') return;
+    if (loc == '/face-registration' ||
+        loc == '/legal-consent' ||
+        loc == '/permissions' ||
+        loc == '/biometric-consent') {
+      return;
+    }
 
     _refreshingFace = true;
     try {
-      final face = await sl<EmployeeRepository>().getFaceStatus();
-      _appState.setFaceEnrolled(face.isCompleted);
-      if (!face.isCompleted && _router != null) {
-        _router!.go('/face-registration');
+      await loadEmployeePostAuthGates(_appState, session);
+      final next = resolveAuthenticatedRoute(_appState);
+      if (_router != null && loc != next && next != '/home') {
+        _router!.go(next);
       }
     } catch (_) {
-      // Network failure: keep employee locked out of the rest of the app.
       _appState.setFaceEnrolled(false);
       if (loc != '/face-registration') {
         _router?.go('/face-registration');
