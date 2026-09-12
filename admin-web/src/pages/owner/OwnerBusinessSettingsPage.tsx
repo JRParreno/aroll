@@ -53,15 +53,15 @@ export function OwnerBusinessSettingsPage() {
   });
   const [branding, setBranding] =
     useState<BusinessBrandingSettings>(defaultBusinessBranding);
-  const [legal, setLegal] = useState({
+  const [legalCustom, setLegalCustom] = useState({
     terms_content: "",
     privacy_content: "",
     biometric_consent_content: "",
     terms_version: "",
     privacy_version: "",
     biometric_consent_version: "",
-    legal_page_url: "",
   });
+  const [useCustomConsents, setUseCustomConsents] = useState(false);
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ["business-settings"],
@@ -75,14 +75,16 @@ export function OwnerBusinessSettingsPage() {
 
   useEffect(() => {
     if (!legalData) return;
-    setLegal({
-      terms_content: legalData.terms_content ?? "",
-      privacy_content: legalData.privacy_content ?? "",
-      biometric_consent_content: legalData.biometric_consent_content ?? "",
-      terms_version: legalData.terms_version ?? "",
-      privacy_version: legalData.privacy_version ?? "",
-      biometric_consent_version: legalData.biometric_consent_version ?? "",
-      legal_page_url: legalData.legal_page_url,
+    setUseCustomConsents(legalData.use_custom_consents);
+    setLegalCustom({
+      terms_content: legalData.custom.terms_content ?? "",
+      privacy_content: legalData.custom.privacy_content ?? "",
+      biometric_consent_content:
+        legalData.custom.biometric_consent_content ?? "",
+      terms_version: legalData.custom.terms_version ?? "",
+      privacy_version: legalData.custom.privacy_version ?? "",
+      biometric_consent_version:
+        legalData.custom.biometric_consent_version ?? "",
     });
   }, [legalData]);
 
@@ -116,12 +118,13 @@ export function OwnerBusinessSettingsPage() {
   const saveLegal = useMutation({
     mutationFn: () =>
       updateBusinessLegalSettings({
-        terms_content: legal.terms_content,
-        privacy_content: legal.privacy_content,
-        biometric_consent_content: legal.biometric_consent_content,
-        terms_version: legal.terms_version,
-        privacy_version: legal.privacy_version,
-        biometric_consent_version: legal.biometric_consent_version,
+        use_custom_consents: useCustomConsents,
+        terms_content: legalCustom.terms_content,
+        privacy_content: legalCustom.privacy_content,
+        biometric_consent_content: legalCustom.biometric_consent_content,
+        terms_version: legalCustom.terms_version,
+        privacy_version: legalCustom.privacy_version,
+        biometric_consent_version: legalCustom.biometric_consent_version,
       }),
     onSuccess: () => {
       toast.success("Legal page saved");
@@ -246,20 +249,24 @@ export function OwnerBusinessSettingsPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Workplace legal page</CardTitle>
+            <CardTitle>Legal Content</CardTitle>
             <p className="text-sm text-muted-foreground">
-              Employees review this owner-configured webpage for Terms, Privacy,
-              and Biometric Consent. Project markdown templates in docs/legal
-              are reference only.
+              This workplace uses Aroll+ default Terms, Privacy, and Biometric
+              Consent unless you enable a custom override. Employees review the
+              effective page at the generated URL. You are not required to write
+              legal copy.
             </p>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
               <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                Generated URL
+                Effective legal page
               </p>
               <div className="mt-1 flex flex-wrap items-center gap-3">
-                <code className="text-xs">{legal.legal_page_url || `/legal/b/${form.business_code}`}</code>
+                <code className="text-xs">
+                  {legalData?.legal_page_url ||
+                    `/legal/b/${form.business_code}`}
+                </code>
                 {form.business_code ? (
                   <Link
                     className="text-sm font-medium text-[#1E3A5F] underline"
@@ -271,51 +278,113 @@ export function OwnerBusinessSettingsPage() {
                   </Link>
                 ) : null}
               </div>
+              <p className="mt-2 text-sm font-medium text-slate-800">
+                {useCustomConsents
+                  ? "Custom for this workplace"
+                  : "Using Aroll+ Defaults"}
+              </p>
             </div>
-            {(
-              [
-                ["terms_content", "terms_version", "Terms and Conditions"],
-                ["privacy_content", "privacy_version", "Privacy Policy"],
+
+            <label className="flex items-start gap-3 rounded-lg border border-slate-200 px-3 py-3 text-sm">
+              <input
+                type="checkbox"
+                className="mt-1"
+                checked={useCustomConsents}
+                onChange={(event) => setUseCustomConsents(event.target.checked)}
+              />
+              <span>
+                <span className="font-medium">Use custom legal content</span>
+                <span className="mt-1 block text-muted-foreground">
+                  When off, employees see the current Aroll+ defaults. When on,
+                  this workplace must publish its own Terms, Privacy, and
+                  Biometric Consent. Incomplete custom content cannot be
+                  accepted.
+                </span>
+              </span>
+            </label>
+
+            <div className="space-y-3 rounded-lg border border-slate-200 p-3">
+              <p className="text-sm font-medium text-slate-800">
+                Aroll+ defaults (read-only)
+              </p>
+              {(
                 [
-                  "biometric_consent_content",
-                  "biometric_consent_version",
-                  "Biometric Consent",
-                ],
-              ] as const
-            ).map(([contentKey, versionKey, label]) => (
-              <div key={contentKey} className="space-y-2">
-                <div className="flex items-end gap-3">
-                  <div className="flex-1 space-y-2">
-                    <Label htmlFor={contentKey}>{label}</Label>
-                    <textarea
-                      id={contentKey}
-                      className="min-h-32 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                      value={legal[contentKey]}
-                      onChange={(event) =>
-                        setLegal({ ...legal, [contentKey]: event.target.value })
-                      }
-                    />
+                  ["terms", "Terms and Conditions"],
+                  ["privacy", "Privacy Policy"],
+                  ["biometric", "Biometric Consent"],
+                ] as const
+              ).map(([key, label]) => {
+                const section = legalData?.defaults?.[key];
+                return (
+                  <div key={key} className="space-y-1">
+                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      {label}
+                      {section?.version ? ` · ${section.version}` : ""}
+                      {section?.published === false ? " · unpublished" : ""}
+                    </p>
+                    <pre className="max-h-40 overflow-auto whitespace-pre-wrap rounded-md bg-slate-50 p-3 text-xs leading-5 text-slate-700">
+                      {section?.content || "No platform default published yet."}
+                    </pre>
                   </div>
-                  <div className="w-48 space-y-2">
-                    <Label htmlFor={versionKey}>Version</Label>
-                    <Input
-                      id={versionKey}
-                      value={legal[versionKey]}
-                      onChange={(event) =>
-                        setLegal({ ...legal, [versionKey]: event.target.value })
-                      }
-                      placeholder="e.g. terms-2026-09-09"
-                    />
+                );
+              })}
+            </div>
+
+            {useCustomConsents ? (
+              <>
+                {(
+                  [
+                    ["terms_content", "terms_version", "Terms and Conditions"],
+                    ["privacy_content", "privacy_version", "Privacy Policy"],
+                    [
+                      "biometric_consent_content",
+                      "biometric_consent_version",
+                      "Biometric Consent",
+                    ],
+                  ] as const
+                ).map(([contentKey, versionKey, label]) => (
+                  <div key={contentKey} className="space-y-2">
+                    <div className="flex items-end gap-3">
+                      <div className="flex-1 space-y-2">
+                        <Label htmlFor={contentKey}>{label}</Label>
+                        <textarea
+                          id={contentKey}
+                          className="min-h-32 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                          value={legalCustom[contentKey]}
+                          onChange={(event) =>
+                            setLegalCustom({
+                              ...legalCustom,
+                              [contentKey]: event.target.value,
+                            })
+                          }
+                        />
+                      </div>
+                      <div className="w-48 space-y-2">
+                        <Label htmlFor={versionKey}>Version</Label>
+                        <Input
+                          id={versionKey}
+                          value={legalCustom[versionKey]}
+                          onChange={(event) =>
+                            setLegalCustom({
+                              ...legalCustom,
+                              [versionKey]: event.target.value,
+                            })
+                          }
+                          placeholder="e.g. terms-2026-09-09"
+                        />
+                      </div>
+                    </div>
                   </div>
-                </div>
-              </div>
-            ))}
+                ))}
+              </>
+            ) : null}
+
             <Button
               type="button"
               onClick={() => saveLegal.mutate()}
               disabled={saveLegal.isPending}
             >
-              Save legal page
+              Save legal settings
             </Button>
           </CardContent>
         </Card>

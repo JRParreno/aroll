@@ -140,7 +140,7 @@ class _EmployeeLegalConsentScreenState extends State<EmployeeLegalConsentScreen>
               ),
               const SizedBox(height: 8),
               const Text(
-                'Review the Terms and Privacy Policy configured by your employer, then record your acceptance. These are not the project template files.',
+                'Review the Terms and Privacy Policy for this workplace, then record your acceptance.',
                 style: TextStyle(
                   color: EmployeeColors.textMuted,
                   height: 1.4,
@@ -153,7 +153,7 @@ class _EmployeeLegalConsentScreenState extends State<EmployeeLegalConsentScreen>
               if (unpublished) ...[
                 const SizedBox(height: 12),
                 const Text(
-                  'Your employer has not published these documents yet. Contact them before using face enrollment or live attendance.',
+                  'These documents are not published yet. Contact your workplace before using face enrollment or live attendance.',
                   style: TextStyle(color: EmployeeColors.danger, height: 1.4),
                 ),
               ],
@@ -321,7 +321,7 @@ class _BiometricConsentScreenState extends State<BiometricConsentScreen> {
                 const Padding(
                   padding: EdgeInsets.only(top: 12),
                   child: Text(
-                    'Your employer has not published biometric consent yet.',
+                    'Biometric consent is not published yet.',
                     style: TextStyle(color: EmployeeColors.danger),
                   ),
                 ),
@@ -455,7 +455,7 @@ class _LegalSectionCard extends StatelessWidget {
           if (section.version != null) ...[
             const SizedBox(height: 4),
             Text(
-              'Version ${section.version}',
+              'Version ${section.version}${section.contentSource == "business_custom" ? " · Custom workplace content" : " · Aroll+ default"}',
               style: const TextStyle(
                 color: EmployeeColors.textMuted,
                 fontSize: 12,
@@ -466,7 +466,9 @@ class _LegalSectionCard extends StatelessWidget {
           Text(
             section.published
                 ? (section.content ?? '')
-                : '${section.title} has not been published by your employer yet.',
+                : section.contentSource == 'admin_default'
+                    ? '${section.title} has not been published yet.'
+                    : '${section.title} has not been published for this workplace yet.',
             style: TextStyle(
               height: 1.45,
               color: section.published

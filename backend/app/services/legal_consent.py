@@ -1,9 +1,11 @@
-"""Owner-configured legal pages and typed consent records."""
+"""Platform defaults, optional business override, and typed consent records."""
 
 from __future__ import annotations
 
+import hashlib
 import html
 import uuid
+from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from fastapi import HTTPException, Request
@@ -15,6 +17,7 @@ from app.models.consent_record import ConsentRecord
 from app.models.employee import Employee
 from app.models.face_embedding import EmployeeFaceEmbedding
 from app.models.face_liveness import FaceLivenessChallenge
+from app.models.platform_legal_document import PlatformLegalDocument
 from app.services.activity_logger import add_log
 
 LEGAL_PAGE_PREFIX = "/legal/b/"
@@ -33,11 +36,29 @@ ACTION_WITHDRAWN = "withdrawn"
 LEGAL_TYPES = (CONSENT_TERMS, CONSENT_PRIVACY)
 ALL_TYPES = (CONSENT_TERMS, CONSENT_PRIVACY, CONSENT_BIOMETRIC)
 
+CONTENT_SOURCE_ADMIN = "admin_default"
+CONTENT_SOURCE_CUSTOM = "business_custom"
+
 SECTION_TITLES = {
     CONSENT_TERMS: "Terms and Conditions",
     CONSENT_PRIVACY: "Privacy Policy",
     CONSENT_BIOMETRIC: "Biometric Consent",
 }
+
+DEFAULT_VERSIONS = {
+    CONSENT_TERMS: DEFAULT_TERMS_VERSION,
+    CONSENT_PRIVACY: DEFAULT_PRIVACY_VERSION,
+    CONSENT_BIOMETRIC: DEFAULT_BIOMETRIC_VERSION,
+}
+
+
+@dataclass(frozen=True)
+class EffectiveLegalSection:
+    consent_type: str
+    content: str | None
+    version: str | None
+    content_source: str
+    published: bool
 
 
 def legal_page_path(business_code: str) -> str:
@@ -67,17 +88,14 @@ def section_published(content: str | None, version: str | None) -> bool:
     return bool(_trimmed(content) and _trimmed(version))
 
 
-def current_version(business: Business, consent_type: str) -> str | None:
-    if consent_type == CONSENT_TERMS:
-        return _trimmed(business.terms_version) or None
-    if consent_type == CONSENT_PRIVACY:
-        return _trimmed(business.privacy_version) or None
-    if consent_type == CONSENT_BIOMETRIC:
-        return _trimmed(business.biometric_consent_version) or None
-    return None
+def content_hash(content: str | None) -> str | None:
+    text = _trimmed(content)
+    if not text:
+        return None
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-def current_content(business: Business, consent_type: str) -> str | None:
+def custom_content(business: Business, consent_type: str) -> str | None:
     if consent_type == CONSENT_TERMS:
         value = _trimmed(business.terms_content)
     elif consent_type == CONSENT_PRIVACY:
@@ -89,11 +107,68 @@ def current_content(business: Business, consent_type: str) -> str | None:
     return value or None
 
 
-def is_type_published(business: Business, consent_type: str) -> bool:
-    return section_published(
-        current_content(business, consent_type),
-        current_version(business, consent_type),
+def custom_version(business: Business, consent_type: str) -> str | None:
+    if consent_type == CONSENT_TERMS:
+        return _trimmed(business.terms_version) or None
+    if consent_type == CONSENT_PRIVACY:
+        return _trimmed(business.privacy_version) or None
+    if consent_type == CONSENT_BIOMETRIC:
+        return _trimmed(business.biometric_consent_version) or None
+    return None
+
+
+def platform_document(
+    db: Session, consent_type: str
+) -> PlatformLegalDocument | None:
+    return db.get(PlatformLegalDocument, consent_type)
+
+
+def resolve_legal_section(
+    db: Session, business: Business, consent_type: str
+) -> EffectiveLegalSection:
+    if getattr(business, "use_custom_consents", False):
+        content = custom_content(business, consent_type)
+        version = custom_version(business, consent_type)
+        published = section_published(content, version)
+        return EffectiveLegalSection(
+            consent_type=consent_type,
+            content=content if published else None,
+            version=version if published else None,
+            content_source=CONTENT_SOURCE_CUSTOM,
+            published=published,
+        )
+
+    document = platform_document(db, consent_type)
+    if document is None or not document.published:
+        return EffectiveLegalSection(
+            consent_type=consent_type,
+            content=None,
+            version=None,
+            content_source=CONTENT_SOURCE_ADMIN,
+            published=False,
+        )
+    content = _trimmed(document.content) or None
+    version = _trimmed(document.version) or None
+    published = section_published(content, version)
+    return EffectiveLegalSection(
+        consent_type=consent_type,
+        content=content if published else None,
+        version=version if published else None,
+        content_source=CONTENT_SOURCE_ADMIN,
+        published=published,
     )
+
+
+def current_version(db: Session, business: Business, consent_type: str) -> str | None:
+    return resolve_legal_section(db, business, consent_type).version
+
+
+def current_content(db: Session, business: Business, consent_type: str) -> str | None:
+    return resolve_legal_section(db, business, consent_type).content
+
+
+def is_type_published(db: Session, business: Business, consent_type: str) -> bool:
+    return resolve_legal_section(db, business, consent_type).published
 
 
 def latest_record(
@@ -110,13 +185,23 @@ def latest_record(
     )
 
 
-def type_satisfied(db: Session, employee: Employee, business: Business, consent_type: str) -> bool:
-    if not is_type_published(business, consent_type):
+def type_satisfied(
+    db: Session, employee: Employee, business: Business, consent_type: str
+) -> bool:
+    section = resolve_legal_section(db, business, consent_type)
+    if not section.published:
         return False
     record = latest_record(db, employee.id, consent_type)
     if record is None or record.action != ACTION_ACCEPTED:
         return False
-    return record.policy_version == current_version(business, consent_type)
+    if record.policy_version != section.version:
+        return False
+    if (
+        record.content_source
+        and record.content_source != section.content_source
+    ):
+        return False
+    return True
 
 
 def legal_satisfied(db: Session, employee: Employee, business: Business) -> bool:
@@ -127,25 +212,41 @@ def biometric_satisfied(db: Session, employee: Employee, business: Business) -> 
     return type_satisfied(db, employee, business, CONSENT_BIOMETRIC)
 
 
+def _section_public_dict(section: EffectiveLegalSection) -> dict:
+    return {
+        "title": SECTION_TITLES[section.consent_type],
+        "consent_type": section.consent_type,
+        "content": section.content if section.published else None,
+        "version": section.version if section.published else None,
+        "published": section.published,
+        "content_source": section.content_source,
+    }
+
+
 def _type_status(
     db: Session, employee: Employee, business: Business, consent_type: str
 ) -> dict:
-    published = is_type_published(business, consent_type)
+    section = resolve_legal_section(db, business, consent_type)
     record = latest_record(db, employee.id, consent_type)
     accepted = (
         record is not None
         and record.action == ACTION_ACCEPTED
-        and published
-        and record.policy_version == current_version(business, consent_type)
+        and section.published
+        and record.policy_version == section.version
+        and (
+            not record.content_source
+            or record.content_source == section.content_source
+        )
     )
     return {
         "consent_type": consent_type,
-        "published": published,
+        "published": section.published,
         "satisfied": accepted,
-        "current_version": current_version(business, consent_type),
+        "current_version": section.version,
         "accepted_version": record.policy_version if record else None,
         "accepted_at": record.created_at if record and record.action == ACTION_ACCEPTED else None,
         "last_action": record.action if record else None,
+        "content_source": section.content_source,
     }
 
 
@@ -168,6 +269,7 @@ def consent_status_payload(
         "legal_page_url": business.legal_page_url or legal_page_path(business.business_code),
         "legal_page_api_path": legal_api_page_path(business.business_code),
         "is_demo": bool(getattr(business, "is_demo", False)),
+        "use_custom_consents": bool(getattr(business, "use_custom_consents", False)),
         "legal_satisfied": bool(terms["satisfied"] and privacy["satisfied"]),
         "biometric_satisfied": bool(biometric["satisfied"]),
         "adult_acknowledged": adult,
@@ -200,52 +302,64 @@ def consent_summary_for_employee(
     }
 
 
-def public_legal_payload(business: Business) -> dict:
+def public_legal_payload(db: Session, business: Business) -> dict:
     ensure_legal_page_url(business)
-
-    def section(consent_type: str) -> dict:
-        content = current_content(business, consent_type)
-        version = current_version(business, consent_type)
-        published = section_published(content, version)
-        return {
-            "title": SECTION_TITLES[consent_type],
-            "consent_type": consent_type,
-            "content": content if published else None,
-            "version": version if published else None,
-            "published": published,
-        }
-
+    terms = resolve_legal_section(db, business, CONSENT_TERMS)
+    privacy = resolve_legal_section(db, business, CONSENT_PRIVACY)
+    biometric = resolve_legal_section(db, business, CONSENT_BIOMETRIC)
+    updated_at = business.legal_updated_at
+    if not getattr(business, "use_custom_consents", False):
+        stamps = [
+            platform_document(db, item).updated_at
+            for item in ALL_TYPES
+            if platform_document(db, item) is not None
+        ]
+        updated_at = max(stamps) if stamps else None
     return {
         "business_name": business.name,
         "business_code": business.business_code,
         "legal_page_url": business.legal_page_url or legal_page_path(business.business_code),
-        "updated_at": business.legal_updated_at,
+        "updated_at": updated_at,
         "is_demo": bool(getattr(business, "is_demo", False)),
-        "terms": section(CONSENT_TERMS),
-        "privacy": section(CONSENT_PRIVACY),
-        "biometric": section(CONSENT_BIOMETRIC),
+        "use_custom_consents": bool(getattr(business, "use_custom_consents", False)),
+        "terms": _section_public_dict(terms),
+        "privacy": _section_public_dict(privacy),
+        "biometric": _section_public_dict(biometric),
     }
 
 
-def render_legal_html_page(business: Business) -> HTMLResponse:
-    payload = public_legal_payload(business)
+def render_legal_html_page(db: Session, business: Business) -> HTMLResponse:
+    payload = public_legal_payload(db, business)
     title = html.escape(f"{business.name} — Workplace legal documents")
     name = html.escape(business.name)
     code = html.escape(business.business_code)
 
     def block(section: dict) -> str:
         heading = html.escape(section["title"])
+        source = section.get("content_source")
+        source_label = (
+            "Aroll+ default"
+            if source == CONTENT_SOURCE_ADMIN
+            else "Custom for this workplace"
+        )
         if not section["published"]:
-            body = html.escape(
-                f"{business.name} has not published {section['title']} yet. "
-                "Contact your employer before using face enrollment or live attendance."
-            )
+            if source == CONTENT_SOURCE_ADMIN:
+                body = html.escape(
+                    f"Aroll+ has not published {section['title']} yet."
+                )
+            else:
+                body = html.escape(
+                    f"{business.name} has not published {section['title']} yet. "
+                    "Contact your employer before using face enrollment or live attendance."
+                )
             version = ""
         else:
             body = html.escape(section["content"] or "").replace("\n", "<br>\n")
             version = html.escape(section["version"] or "")
         version_html = (
-            f'<p class="meta">Version {version}</p>' if version else ""
+            f'<p class="meta">Version {version} · {html.escape(source_label)}</p>'
+            if version
+            else f'<p class="meta">{html.escape(source_label)}</p>'
         )
         return (
             f'<section class="card">'
@@ -338,18 +452,19 @@ def record_acceptances(
     created: list[ConsentRecord] = []
 
     for consent_type in unique_types:
-        if not is_type_published(business, consent_type):
+        section = resolve_legal_section(db, business, consent_type)
+        if not section.published:
             raise HTTPException(
                 400,
                 detail={
                     "code": "legal_content_unpublished",
                     "message": (
                         f"{SECTION_TITLES[consent_type]} has not been published "
-                        "by your employer yet."
+                        "yet."
                     ),
                 },
             )
-        expected = current_version(business, consent_type)
+        expected = section.version
         offered = _trimmed(versions.get(consent_type))
         if not offered or offered != expected:
             raise HTTPException(
@@ -366,6 +481,7 @@ def record_acceptances(
             )
         if type_satisfied(db, employee, business, consent_type):
             continue
+        snapshot = section.content
         row = ConsentRecord(
             business_id=business.id,
             employee_id=employee.id,
@@ -379,6 +495,9 @@ def record_acceptances(
             platform=meta.get("platform"),
             legal_page_url=page_url,
             adult_acknowledged=adult_acknowledged if needs_adult else None,
+            content_source=section.content_source,
+            accepted_content_hash=content_hash(snapshot),
+            content_snapshot=snapshot,
             created_at=now,
         )
         db.add(row)
@@ -408,7 +527,9 @@ def withdraw_biometric_consent(
     from app.core.request_meta import audit_meta_from_request
 
     meta = audit_meta_from_request(request)
-    version = current_version(business, CONSENT_BIOMETRIC) or "unpublished"
+    section = resolve_legal_section(db, business, CONSENT_BIOMETRIC)
+    version = section.version or "unpublished"
+    snapshot = section.content
     row = ConsentRecord(
         business_id=business.id,
         employee_id=employee.id,
@@ -421,6 +542,9 @@ def withdraw_biometric_consent(
         device=meta.get("device"),
         platform=meta.get("platform"),
         legal_page_url=ensure_legal_page_url(business),
+        content_source=section.content_source,
+        accepted_content_hash=content_hash(snapshot),
+        content_snapshot=snapshot,
         created_at=datetime.now(timezone.utc),
     )
     db.add(row)
@@ -524,25 +648,45 @@ def default_legal_content(business_name: str, consent_type: str) -> str:
     )
 
 
-def publish_default_legal(business: Business, *, force: bool = False) -> None:
+def ensure_platform_legal_defaults(
+    db: Session,
+    *,
+    force: bool = False,
+    updated_by: uuid.UUID | None = None,
+) -> None:
+    now = datetime.now(timezone.utc)
+    for consent_type in ALL_TYPES:
+        existing = platform_document(db, consent_type)
+        content = default_legal_content("Aroll+", consent_type)
+        version = DEFAULT_VERSIONS[consent_type]
+        if existing is None:
+            db.add(
+                PlatformLegalDocument(
+                    consent_type=consent_type,
+                    content=content,
+                    version=version,
+                    published=True,
+                    updated_at=now,
+                    updated_by=updated_by,
+                )
+            )
+            continue
+        if force or not section_published(existing.content, existing.version):
+            existing.content = content
+            existing.version = version
+            existing.published = True
+            existing.updated_at = now
+            if updated_by is not None:
+                existing.updated_by = updated_by
+
+
+def publish_default_legal(
+    db: Session, business: Business, *, force: bool = False
+) -> None:
+    """Point this business at platform Admin defaults (no per-business copy)."""
+    ensure_platform_legal_defaults(db, force=force)
+    business.use_custom_consents = False
     ensure_legal_page_url(business)
-    changed = False
-    if force or not is_type_published(business, CONSENT_TERMS):
-        business.terms_content = default_legal_content(business.name, CONSENT_TERMS)
-        business.terms_version = DEFAULT_TERMS_VERSION
-        changed = True
-    if force or not is_type_published(business, CONSENT_PRIVACY):
-        business.privacy_content = default_legal_content(business.name, CONSENT_PRIVACY)
-        business.privacy_version = DEFAULT_PRIVACY_VERSION
-        changed = True
-    if force or not is_type_published(business, CONSENT_BIOMETRIC):
-        business.biometric_consent_content = default_legal_content(
-            business.name, CONSENT_BIOMETRIC
-        )
-        business.biometric_consent_version = DEFAULT_BIOMETRIC_VERSION
-        changed = True
-    if changed:
-        business.legal_updated_at = datetime.now(timezone.utc)
 
 
 def seed_accepted_consents(
@@ -553,34 +697,142 @@ def seed_accepted_consents(
     user_id: uuid.UUID,
     client: str = "mobile",
 ) -> None:
-    publish_default_legal(business)
+    publish_default_legal(db, business)
     now = datetime.now(timezone.utc)
     page_url = ensure_legal_page_url(business)
     for consent_type in ALL_TYPES:
         if type_satisfied(db, employee, business, consent_type):
             continue
+        section = resolve_legal_section(db, business, consent_type)
+        snapshot = section.content
         db.add(
             ConsentRecord(
                 business_id=business.id,
                 employee_id=employee.id,
                 user_id=user_id,
                 consent_type=consent_type,
-                policy_version=current_version(business, consent_type) or "",
+                policy_version=section.version or "",
                 action=ACTION_ACCEPTED,
                 client=client,
                 legal_page_url=page_url,
                 adult_acknowledged=True,
+                content_source=section.content_source,
+                accepted_content_hash=content_hash(snapshot),
+                content_snapshot=snapshot,
                 created_at=now,
             )
         )
 
 
-def legal_settings_payload(business: Business) -> dict:
-    ensure_legal_page_url(business)
+def _platform_section_dict(document: PlatformLegalDocument | None, consent_type: str) -> dict:
+    if document is None:
+        return {
+            "title": SECTION_TITLES[consent_type],
+            "consent_type": consent_type,
+            "content": None,
+            "version": None,
+            "published": False,
+            "updated_at": None,
+            "updated_by": None,
+        }
+    published = bool(document.published) and section_published(
+        document.content, document.version
+    )
     return {
-        "business_name": business.name,
-        "business_code": business.business_code,
-        "legal_page_url": business.legal_page_url or legal_page_path(business.business_code),
+        "title": SECTION_TITLES[consent_type],
+        "consent_type": consent_type,
+        "content": document.content,
+        "version": document.version,
+        "published": published,
+        "updated_at": document.updated_at,
+        "updated_by": str(document.updated_by) if document.updated_by else None,
+    }
+
+
+def platform_legal_payload(db: Session) -> dict:
+    return {
+        "terms": _platform_section_dict(platform_document(db, CONSENT_TERMS), CONSENT_TERMS),
+        "privacy": _platform_section_dict(
+            platform_document(db, CONSENT_PRIVACY), CONSENT_PRIVACY
+        ),
+        "biometric": _platform_section_dict(
+            platform_document(db, CONSENT_BIOMETRIC), CONSENT_BIOMETRIC
+        ),
+    }
+
+
+def apply_platform_legal_update(db: Session, body, *, updated_by: uuid.UUID) -> None:
+    now = datetime.now(timezone.utc)
+
+    def assign(consent_type: str, content: str | None, version: str | None, published: bool | None) -> None:
+        document = platform_document(db, consent_type)
+        if document is None:
+            document = PlatformLegalDocument(
+                consent_type=consent_type,
+                content="",
+                version="",
+                published=False,
+                updated_at=now,
+                updated_by=updated_by,
+            )
+            db.add(document)
+            db.flush()
+        if content is not None:
+            text = content.strip()
+            if len(text) > MAX_LEGAL_CHARS:
+                raise HTTPException(
+                    400, f"{consent_type} exceeds {MAX_LEGAL_CHARS} characters"
+                )
+            document.content = text
+        if version is not None:
+            document.version = version.strip()
+        if published is not None:
+            document.published = published
+        document.updated_at = now
+        document.updated_by = updated_by
+
+    changed = False
+    if any(
+        value is not None
+        for value in (body.terms_content, body.terms_version, body.terms_published)
+    ):
+        assign(CONSENT_TERMS, body.terms_content, body.terms_version, body.terms_published)
+        changed = True
+    if any(
+        value is not None
+        for value in (body.privacy_content, body.privacy_version, body.privacy_published)
+    ):
+        assign(
+            CONSENT_PRIVACY,
+            body.privacy_content,
+            body.privacy_version,
+            body.privacy_published,
+        )
+        changed = True
+    if any(
+        value is not None
+        for value in (
+            body.biometric_consent_content,
+            body.biometric_consent_version,
+            body.biometric_published,
+        )
+    ):
+        assign(
+            CONSENT_BIOMETRIC,
+            body.biometric_consent_content,
+            body.biometric_consent_version,
+            body.biometric_published,
+        )
+        changed = True
+    if not changed:
+        raise HTTPException(400, "No legal default fields to update")
+
+
+def legal_settings_payload(db: Session, business: Business) -> dict:
+    ensure_legal_page_url(business)
+    effective = public_legal_payload(db, business)
+    defaults = platform_legal_payload(db)
+    custom = {
         "terms_content": business.terms_content,
         "privacy_content": business.privacy_content,
         "biometric_consent_content": business.biometric_consent_content,
@@ -588,9 +840,29 @@ def legal_settings_payload(business: Business) -> dict:
         "privacy_version": business.privacy_version,
         "biometric_consent_version": business.biometric_consent_version,
         "legal_updated_at": business.legal_updated_at,
-        "terms_published": is_type_published(business, CONSENT_TERMS),
-        "privacy_published": is_type_published(business, CONSENT_PRIVACY),
-        "biometric_published": is_type_published(business, CONSENT_BIOMETRIC),
+        "terms_published": section_published(
+            business.terms_content, business.terms_version
+        ),
+        "privacy_published": section_published(
+            business.privacy_content, business.privacy_version
+        ),
+        "biometric_published": section_published(
+            business.biometric_consent_content, business.biometric_consent_version
+        ),
+    }
+    return {
+        "business_name": business.name,
+        "business_code": business.business_code,
+        "legal_page_url": business.legal_page_url or legal_page_path(business.business_code),
+        "use_custom_consents": bool(getattr(business, "use_custom_consents", False)),
+        "effective": {
+            "updated_at": effective["updated_at"],
+            "terms": effective["terms"],
+            "privacy": effective["privacy"],
+            "biometric": effective["biometric"],
+        },
+        "defaults": defaults,
+        "custom": custom,
     }
 
 
@@ -612,13 +884,28 @@ def apply_legal_settings_update(business: Business, body) -> None:
             return
         setattr(business, field, value.strip() or None)
 
+    if getattr(body, "use_custom_consents", None) is not None:
+        business.use_custom_consents = bool(body.use_custom_consents)
+
     assign_text("terms_content", body.terms_content)
     assign_text("privacy_content", body.privacy_content)
     assign_text("biometric_consent_content", body.biometric_consent_content)
     assign_version("terms_version", body.terms_version)
     assign_version("privacy_version", body.privacy_version)
     assign_version("biometric_consent_version", body.biometric_consent_version)
-    business.legal_updated_at = datetime.now(timezone.utc)
+    if any(
+        value is not None
+        for value in (
+            getattr(body, "use_custom_consents", None),
+            body.terms_content,
+            body.privacy_content,
+            body.biometric_consent_content,
+            body.terms_version,
+            body.privacy_version,
+            body.biometric_consent_version,
+        )
+    ):
+        business.legal_updated_at = datetime.now(timezone.utc)
 
 
 def lookup_business_by_code(db: Session, business_code: str) -> Business:

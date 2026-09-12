@@ -88,6 +88,9 @@ class Business(Base):
         Boolean, default=False, server_default="false", nullable=False
     )
     legal_page_url: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    use_custom_consents: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false", nullable=False
+    )
     terms_content: Mapped[str | None] = mapped_column(Text, nullable=True)
     privacy_content: Mapped[str | None] = mapped_column(Text, nullable=True)
     biometric_consent_content: Mapped[str | None] = mapped_column(Text, nullable=True)

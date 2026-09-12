@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -43,6 +43,11 @@ class ConsentRecord(Base):
     platform: Mapped[str | None] = mapped_column(String(40), nullable=True)
     legal_page_url: Mapped[str | None] = mapped_column(String(200), nullable=True)
     adult_acknowledged: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    content_source: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    accepted_content_hash: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
+    content_snapshot: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

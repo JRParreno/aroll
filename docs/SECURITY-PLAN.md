@@ -123,7 +123,7 @@ Complete on **staging** before promoting to pilot production.
 
 ### Privacy (pilot)
 
-- [x] Runtime Terms, Privacy, and Biometric Consent come from the owner-configured workplace legal page (not hardcoded app copy). Unpublished content cannot be accepted.
+- [x] Runtime Terms, Privacy, and Biometric Consent come from the effective legal page (platform Admin defaults, or a business override when `use_custom_consents` is true). Unpublished content cannot be accepted.
 - [x] Typed `consent_record` rows store identity, business, type, policy version, UTC timestamp, client, and audit metadata
 - [x] Policy version changes require re-consent; biometric consent is separate from Terms/Privacy
 - [x] Biometric consent is required before employee/owner face enrollment and live face attendance (DEMO tenants skip live capture, not production gates)

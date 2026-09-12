@@ -15,6 +15,7 @@ class ConsentTypeStatus(BaseModel):
     accepted_version: str | None = None
     accepted_at: datetime | None = None
     last_action: str | None = None
+    content_source: str | None = None
 
 
 class LegalConsentStatusResponse(BaseModel):
@@ -23,6 +24,7 @@ class LegalConsentStatusResponse(BaseModel):
     legal_page_url: str
     legal_page_api_path: str
     is_demo: bool = False
+    use_custom_consents: bool = False
     legal_satisfied: bool
     biometric_satisfied: bool
     adult_acknowledged: bool = False
@@ -49,6 +51,7 @@ class PublicLegalSection(BaseModel):
     content: str | None = None
     version: str | None = None
     published: bool
+    content_source: str | None = None
 
 
 class PublicLegalPageResponse(BaseModel):
@@ -57,15 +60,48 @@ class PublicLegalPageResponse(BaseModel):
     legal_page_url: str
     updated_at: datetime | None = None
     is_demo: bool = False
+    use_custom_consents: bool = False
     terms: PublicLegalSection
     privacy: PublicLegalSection
     biometric: PublicLegalSection
 
 
-class BusinessLegalSettingsResponse(BaseModel):
-    business_name: str
-    business_code: str
-    legal_page_url: str
+class PlatformLegalSection(BaseModel):
+    title: str
+    consent_type: str
+    content: str | None = None
+    version: str | None = None
+    published: bool
+    updated_at: datetime | None = None
+    updated_by: str | None = None
+
+
+class PlatformLegalSettingsResponse(BaseModel):
+    terms: PlatformLegalSection
+    privacy: PlatformLegalSection
+    biometric: PlatformLegalSection
+
+
+class PlatformLegalSettingsUpdate(BaseModel):
+    terms_content: str | None = None
+    privacy_content: str | None = None
+    biometric_consent_content: str | None = None
+    terms_version: str | None = Field(default=None, max_length=80)
+    privacy_version: str | None = Field(default=None, max_length=80)
+    biometric_consent_version: str | None = Field(default=None, max_length=80)
+    terms_published: bool | None = None
+    privacy_published: bool | None = None
+    biometric_published: bool | None = None
+
+
+class EffectiveLegalBundle(BaseModel):
+    updated_at: datetime | None = None
+    terms: PublicLegalSection
+    privacy: PublicLegalSection
+    biometric: PublicLegalSection
+
+
+class CustomLegalDraft(BaseModel):
     terms_content: str | None = None
     privacy_content: str | None = None
     biometric_consent_content: str | None = None
@@ -78,7 +114,18 @@ class BusinessLegalSettingsResponse(BaseModel):
     biometric_published: bool
 
 
+class BusinessLegalSettingsResponse(BaseModel):
+    business_name: str
+    business_code: str
+    legal_page_url: str
+    use_custom_consents: bool
+    effective: EffectiveLegalBundle
+    defaults: PlatformLegalSettingsResponse
+    custom: CustomLegalDraft
+
+
 class BusinessLegalSettingsUpdate(BaseModel):
+    use_custom_consents: bool | None = None
     terms_content: str | None = None
     privacy_content: str | None = None
     biometric_consent_content: str | None = None

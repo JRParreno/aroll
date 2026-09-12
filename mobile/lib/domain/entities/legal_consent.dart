@@ -5,6 +5,7 @@ class LegalSection {
     required this.published,
     this.content,
     this.version,
+    this.contentSource,
   });
 
   final String title;
@@ -12,6 +13,7 @@ class LegalSection {
   final bool published;
   final String? content;
   final String? version;
+  final String? contentSource;
 
   factory LegalSection.fromJson(Map<String, dynamic> json) {
     return LegalSection(
@@ -20,6 +22,7 @@ class LegalSection {
       published: json['published'] == true,
       content: json['content'] as String?,
       version: json['version'] as String?,
+      contentSource: json['content_source'] as String?,
     );
   }
 }
@@ -67,6 +70,7 @@ class ConsentTypeStatus {
     this.currentVersion,
     this.acceptedVersion,
     this.acceptedAt,
+    this.contentSource,
   });
 
   final String consentType;
@@ -75,6 +79,7 @@ class ConsentTypeStatus {
   final String? currentVersion;
   final String? acceptedVersion;
   final DateTime? acceptedAt;
+  final String? contentSource;
 
   factory ConsentTypeStatus.fromJson(Map<String, dynamic> json) {
     return ConsentTypeStatus(
@@ -86,6 +91,7 @@ class ConsentTypeStatus {
       acceptedAt: json['accepted_at'] == null
           ? null
           : DateTime.tryParse(json['accepted_at'].toString()),
+      contentSource: json['content_source'] as String?,
     );
   }
 }

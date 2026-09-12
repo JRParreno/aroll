@@ -74,6 +74,12 @@ def seed():
             print(f"Seeded platform admin: {admin_email} / changeme123")
         else:
             print(f"Platform admin already exists: {admin.email}")
+
+        from app.services.legal_consent import ensure_platform_legal_defaults
+
+        ensure_platform_legal_defaults(db)
+        db.commit()
+        print("Seeded platform legal defaults")
     finally:
         db.close()
 

@@ -45,6 +45,7 @@ def test_new_business_defaults_is_demo_false():
         db.flush()
         assert business.is_demo is False
         assert business.is_internal_test is False
+        assert business.use_custom_consents is False
     finally:
         db.rollback()
         db.close()
@@ -58,6 +59,7 @@ def test_demo_tenant_flags_and_membership():
         assert business.name == DEMO_BUSINESS_NAME
         assert business.is_demo is True
         assert business.is_internal_test is False
+        assert business.use_custom_consents is False
         assert business.setup_completed_at is not None
 
         owner = (

@@ -540,7 +540,7 @@ def get_business_legal_settings(
     business = db.get(Business, user.business_id)
     if business is None:
         raise HTTPException(404, "Business not found")
-    return BusinessLegalSettingsResponse(**legal_settings_payload(business))
+    return BusinessLegalSettingsResponse(**legal_settings_payload(db, business))
 
 
 @router.put("/me/legal", response_model=BusinessLegalSettingsResponse)
@@ -557,7 +557,7 @@ def update_business_legal_settings(
     apply_legal_settings_update(business, body)
     db.commit()
     db.refresh(business)
-    return BusinessLegalSettingsResponse(**legal_settings_payload(business))
+    return BusinessLegalSettingsResponse(**legal_settings_payload(db, business))
 
 
 @router.get("/me/registration-documents/{document_id}/file")

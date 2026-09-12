@@ -1537,10 +1537,44 @@ export async function updateBusinessSettings(payload: BusinessSettingsUpdate) {
   return data;
 }
 
-export type BusinessLegalSettings = {
-  business_name: string;
-  business_code: string;
-  legal_page_url: string;
+export type PublicLegalSection = {
+  title: string;
+  consent_type: string;
+  content: string | null;
+  version: string | null;
+  published: boolean;
+  content_source?: "admin_default" | "business_custom" | null;
+};
+
+export type PlatformLegalSection = {
+  title: string;
+  consent_type: string;
+  content: string | null;
+  version: string | null;
+  published: boolean;
+  updated_at: string | null;
+  updated_by: string | null;
+};
+
+export type PlatformLegalSettings = {
+  terms: PlatformLegalSection;
+  privacy: PlatformLegalSection;
+  biometric: PlatformLegalSection;
+};
+
+export type PlatformLegalSettingsUpdate = {
+  terms_content?: string | null;
+  privacy_content?: string | null;
+  biometric_consent_content?: string | null;
+  terms_version?: string | null;
+  privacy_version?: string | null;
+  biometric_consent_version?: string | null;
+  terms_published?: boolean;
+  privacy_published?: boolean;
+  biometric_published?: boolean;
+};
+
+export type CustomLegalDraft = {
   terms_content: string | null;
   privacy_content: string | null;
   biometric_consent_content: string | null;
@@ -1553,7 +1587,23 @@ export type BusinessLegalSettings = {
   biometric_published: boolean;
 };
 
+export type BusinessLegalSettings = {
+  business_name: string;
+  business_code: string;
+  legal_page_url: string;
+  use_custom_consents: boolean;
+  effective: {
+    updated_at: string | null;
+    terms: PublicLegalSection;
+    privacy: PublicLegalSection;
+    biometric: PublicLegalSection;
+  };
+  defaults: PlatformLegalSettings;
+  custom: CustomLegalDraft;
+};
+
 export type BusinessLegalSettingsUpdate = {
+  use_custom_consents?: boolean;
   terms_content?: string | null;
   privacy_content?: string | null;
   biometric_consent_content?: string | null;
@@ -1562,20 +1612,13 @@ export type BusinessLegalSettingsUpdate = {
   biometric_consent_version?: string | null;
 };
 
-export type PublicLegalSection = {
-  title: string;
-  consent_type: string;
-  content: string | null;
-  version: string | null;
-  published: boolean;
-};
-
 export type PublicLegalPage = {
   business_name: string;
   business_code: string;
   legal_page_url: string;
   updated_at: string | null;
   is_demo: boolean;
+  use_custom_consents?: boolean;
   terms: PublicLegalSection;
   privacy: PublicLegalSection;
   biometric: PublicLegalSection;
@@ -1593,6 +1636,18 @@ export async function updateBusinessLegalSettings(
     "/businesses/me/legal",
     payload
   );
+  return data;
+}
+
+export async function getPlatformLegalSettings() {
+  const { data } = await api.get<PlatformLegalSettings>("/admin/legal");
+  return data;
+}
+
+export async function updatePlatformLegalSettings(
+  payload: PlatformLegalSettingsUpdate
+) {
+  const { data } = await api.put<PlatformLegalSettings>("/admin/legal", payload);
   return data;
 }
 

@@ -44,7 +44,15 @@ from app.schemas.registration import (
     RegistrationReject,
     RegistrationResponse,
 )
+from app.schemas.legal_consent import (
+    PlatformLegalSettingsResponse,
+    PlatformLegalSettingsUpdate,
+)
 from app.services.activity_logger import create_log
+from app.services.legal_consent import (
+    apply_platform_legal_update,
+    platform_legal_payload,
+)
 from app.services.registration_documents import get_document_file_path
 from app.services.registration_service import document_response, registration_response
 
@@ -438,3 +446,22 @@ def get_activity_logs(
         }
         for log in logs
     ]
+
+
+@router.get("/legal", response_model=PlatformLegalSettingsResponse)
+def get_platform_legal_defaults(
+    db: Annotated[Session, Depends(get_db)],
+    _: Annotated[User, Depends(require_roles(UserRole.platform_admin))],
+):
+    return PlatformLegalSettingsResponse(**platform_legal_payload(db))
+
+
+@router.put("/legal", response_model=PlatformLegalSettingsResponse)
+def update_platform_legal_defaults(
+    body: PlatformLegalSettingsUpdate,
+    db: Annotated[Session, Depends(get_db)],
+    admin: Annotated[User, Depends(require_roles(UserRole.platform_admin))],
+):
+    apply_platform_legal_update(db, body, updated_by=admin.id)
+    db.commit()
+    return PlatformLegalSettingsResponse(**platform_legal_payload(db))

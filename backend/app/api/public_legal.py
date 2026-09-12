@@ -1,4 +1,4 @@
-"""Unauthenticated owner-configured legal webpage."""
+"""Unauthenticated resolved legal webpage (admin defaults or business override)."""
 
 from typing import Annotated
 
@@ -22,7 +22,7 @@ def get_public_legal_page(
     db: Annotated[Session, Depends(get_db)],
 ):
     business = lookup_business_by_code(db, business_code)
-    return PublicLegalPageResponse(**public_legal_payload(business))
+    return PublicLegalPageResponse(**public_legal_payload(db, business))
 
 
 @router.get("/{business_code}/page")
@@ -31,4 +31,4 @@ def get_public_legal_html(
     db: Annotated[Session, Depends(get_db)],
 ):
     business = lookup_business_by_code(db, business_code)
-    return render_legal_html_page(business)
+    return render_legal_html_page(db, business)

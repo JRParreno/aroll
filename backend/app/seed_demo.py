@@ -123,7 +123,8 @@ def seed_demo(db: Session | None = None) -> Business:
             seed_accepted_consents,
         )
 
-        publish_default_legal(business)
+        publish_default_legal(db, business)
+        business.use_custom_consents = False
         seed_accepted_consents(
             db, employee=hannah, business=business, user_id=hannah.user_id
         )
@@ -159,6 +160,7 @@ def _upsert_business(db: Session) -> Business:
             setup_completed_at=now,
             is_demo=True,
             is_internal_test=False,
+            use_custom_consents=False,
         )
         db.add(business)
         db.flush()
@@ -168,6 +170,7 @@ def _upsert_business(db: Session) -> Business:
     business.timezone = DEMO_TIMEZONE
     business.is_demo = True
     business.is_internal_test = False
+    business.use_custom_consents = False
     if business.setup_completed_at is None:
         business.setup_completed_at = now
     db.flush()

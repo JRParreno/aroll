@@ -8,6 +8,7 @@ import { LoginPage } from "@/pages/LoginPage";
 import { BusinessOwnerLoginPage } from "@/pages/BusinessOwnerLoginPage";
 import { OwnerEmployeesPage } from "@/pages/OwnerEmployeesPage";
 import { AdminDashboardPage } from "@/pages/AdminDashboardPage";
+import { AdminLegalDefaultsPage } from "@/pages/AdminLegalDefaultsPage";
 import { ApprovedBusinessPage } from "@/pages/ApprovedBusinessPage";
 import { BusinessDetailPage } from "@/pages/BusinessDetailPage";
 import { AdminProfilePage } from "@/pages/AdminProfilePage";
@@ -112,6 +113,7 @@ export default function App() {
                 { to: "/admin/dashboard", label: "Dashboard" },
                 { to: "/admin/approved-business", label: "Approved Businesses" },
                 { to: "/admin/registrations", label: "Registration Request" },
+                { to: "/admin/legal", label: "Legal Defaults" },
                 { to: "/admin/activity-logs", label: "Activity Logs" },
                 { to: "/admin/profile", label: "Profile" },
               ]}
@@ -124,6 +126,7 @@ export default function App() {
         <Route path="approved-business/:id" element={<BusinessDetailPage />} />
         <Route path="registrations" element={<AdminRegistrationsPage />} />
         <Route path="registrations/:id" element={<RegistrationDetailPage />} />
+        <Route path="legal" element={<AdminLegalDefaultsPage />} />
         <Route path="activity-logs" element={<ActivityLogsPage />} />
         <Route path="profile" element={<AdminProfilePage />} />
         <Route index element={<Navigate to="dashboard" replace />} />

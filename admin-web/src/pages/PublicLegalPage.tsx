@@ -51,12 +51,23 @@ export function PublicLegalPage() {
             {section.version ? (
               <p className="mt-1 text-sm text-slate-500">
                 Version {section.version}
+                {section.content_source === "business_custom"
+                  ? " · Custom for this workplace"
+                  : " · Aroll+ default"}
               </p>
-            ) : null}
+            ) : (
+              <p className="mt-1 text-sm text-slate-500">
+                {section.content_source === "business_custom"
+                  ? "Custom for this workplace"
+                  : "Aroll+ default"}
+              </p>
+            )}
             <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-slate-800">
               {section.published
                 ? section.content
-                : `${data.business_name} has not published ${section.title} yet. Contact your employer before using face enrollment or live attendance.`}
+                : section.content_source === "admin_default"
+                  ? `Aroll+ has not published ${section.title} yet.`
+                  : `${data.business_name} has not published ${section.title} yet. Contact your employer before using face enrollment or live attendance.`}
             </p>
           </section>
         ))}

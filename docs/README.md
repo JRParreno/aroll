@@ -10,7 +10,7 @@ Design documentation for the thesis **System Design** chapter and implementation
 | [DATABASE-ERD.md](DATABASE-ERD.md) | Database design — full ERD, tables, enums, SQL notes |
 | [SYSTEM-WORKFLOWS.md](SYSTEM-WORKFLOWS.md) | Process design — 13 workflow diagrams (clock-in, payroll, states) |
 | [SECURITY-PLAN.md](SECURITY-PLAN.md) | Deployment security checklist, threats, biometric handling |
-| [legal/](legal/) | Terms, privacy, and biometric **templates/reference only**. Runtime source is the owner-configured workplace legal page. |
+| [legal/](legal/) | Terms, privacy, and biometric **templates/reference only**. Runtime source is Admin defaults (or a business override when `use_custom_consents` is true). |
 
 ## Getting started
 
@@ -22,7 +22,7 @@ Design documentation for the thesis **System Design** chapter and implementation
 1. **SOLUTION.md** — start here for the big picture  
 2. **DATABASE-ERD.md** — when writing data requirements or building migrations  
 3. **SYSTEM-WORKFLOWS.md** — when explaining how users interact with the system  
-4. **SECURITY-PLAN.md** + owner-published legal pages (templates in **legal/**) — before staging / pilot go-live
+4. **SECURITY-PLAN.md** + Admin legal defaults (templates in **legal/**) — before staging / pilot go-live
 
 ## PlantUML
 
