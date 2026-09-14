@@ -49,6 +49,7 @@ class TokenResponse(BaseModel):
     business_name: str | None = None
     is_demo: bool = False
     is_internal_test: bool = False
+    consents_completed: bool = True
 
 
 class UserMeResponse(BaseModel):
@@ -67,3 +68,4 @@ class UserMeResponse(BaseModel):
     profile_image_url: str | None = None
     is_demo: bool = False
     is_internal_test: bool = False
+    consents_completed: bool = True

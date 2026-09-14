@@ -1,7 +1,7 @@
 import 'package:aroll_mobile/core/app_state.dart';
 import 'package:aroll_mobile/core/di/injection.dart';
+import 'package:aroll_mobile/core/legal/employee_gate_loader.dart';
 import 'package:aroll_mobile/core/router/app_router.dart';
-import 'package:aroll_mobile/domain/repositories/employee_repository.dart';
 import 'package:aroll_mobile/presentation/auth/bloc/login_bloc/login_bloc.dart';
 import 'package:aroll_mobile/presentation/auth/bloc/login_bloc/login_event.dart';
 import 'package:aroll_mobile/presentation/auth/bloc/login_bloc/login_state.dart';
@@ -37,14 +37,7 @@ class _EmployeeLoginScreenState extends State<EmployeeLoginScreen> {
       state.session,
       mustChange: state.session.mustChangePassword,
     );
-    if (!state.session.mustChangePassword && !state.session.isDemo) {
-      try {
-        final face = await sl<EmployeeRepository>().getFaceStatus();
-        appState.setFaceEnrolled(face.isCompleted);
-      } catch (_) {
-        appState.setFaceEnrolled(false);
-      }
-    }
+    await loadEmployeePostAuthGates(appState, state.session);
     if (!context.mounted) return;
     context.go(resolveAuthenticatedRoute(appState));
   }

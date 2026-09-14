@@ -62,6 +62,30 @@ def _auth_header(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
+def _accept_current_consents(client: TestClient, token: str) -> None:
+    status = client.get(
+        "/api/v1/employee/consent/status", headers=_auth_header(token)
+    )
+    assert status.status_code == 200, status.text
+    body = status.json()
+    accepted = client.post(
+        "/api/v1/employee/consent/accept",
+        json={
+            "accepted": True,
+            "types": ["terms", "privacy", "biometric"],
+            "versions": {
+                "terms": body["terms"]["current_version"],
+                "privacy": body["privacy"]["current_version"],
+                "biometric": body["biometric"]["current_version"],
+            },
+            "client": "mobile",
+            "adult_acknowledged": True,
+        },
+        headers=_auth_header(token),
+    )
+    assert accepted.status_code == 200, accepted.text
+
+
 def _login_employee(client: TestClient, email: str, password: str) -> str:
     response = client.post(
         "/api/v1/auth/login",
@@ -453,6 +477,7 @@ def test_devtest_enrollment_is_not_demo_locked():
     seed_internal_test()
     client = TestClient(app)
     token = _login_employee(client, DEV_EMPLOYEE_EMAIL, DEV_SEED_PASSWORD)
+    _accept_current_consents(client, token)
     response = client.post(
         "/api/v1/employee/face-samples",
         files=[
@@ -474,6 +499,7 @@ def test_devtest_clock_in_requires_live_face_and_does_not_use_demo_path():
     seed_internal_test()
     client = TestClient(app)
     token = _login_employee(client, DEV_EMPLOYEE_EMAIL, DEV_SEED_PASSWORD)
+    _accept_current_consents(client, token)
     missing = client.post(
         "/api/v1/employee/attendance/clock-in-face",
         data={

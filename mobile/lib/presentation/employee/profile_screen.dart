@@ -8,6 +8,7 @@ import 'package:aroll_mobile/domain/entities/employee_portal.dart';
 import 'package:aroll_mobile/domain/repositories/employee_repository.dart';
 import 'package:aroll_mobile/presentation/employee/employee_ui.dart';
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 
 class EmployeeProfileScreen extends StatefulWidget {
@@ -333,6 +334,22 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
                         value: titleCase(profile.status),
                       ),
                     ],
+                  ),
+                  const SizedBox(height: 14),
+                  OutlinedButton(
+                    onPressed: () => context.push('/consents?view=1'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: brand.primary,
+                      side: BorderSide(color: brand.primary.withValues(alpha: 0.45)),
+                      minimumSize: const Size.fromHeight(48),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                    child: const Text(
+                      'View consents',
+                      style: TextStyle(fontWeight: FontWeight.w700),
+                    ),
                   ),
                   const SizedBox(height: 14),
                   OutlinedButton(

@@ -1,6 +1,7 @@
 from pydantic import BaseModel, Field, model_validator
 
 from app.models.enums import EmploymentType, PayBasis
+from app.schemas.legal_consent import EmployeeConsentSummary
 
 
 def _validate_pay_fields(
@@ -96,6 +97,7 @@ class EmployeeResponse(BaseModel):
     must_change_password: bool
     face_registration_status: str = "not_registered"
     temporary_password: str | None = None
+    consent: EmployeeConsentSummary | None = None
 
     class Config:
         from_attributes = True

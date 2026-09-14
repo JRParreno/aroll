@@ -5,6 +5,7 @@ import {
   ClipboardList,
   LayoutDashboard,
   LogOut,
+  Scale,
   UserRound,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -20,6 +21,7 @@ const navIcons: Record<string, LucideIcon> = {
   Dashboard: LayoutDashboard,
   "Approved Businesses": CheckSquare,
   "Registration Request": ClipboardList,
+  "Legal Defaults": Scale,
   "Activity Logs": Activity,
   Profile: UserRound,
 };

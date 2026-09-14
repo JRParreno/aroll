@@ -10,6 +10,7 @@ from fastapi import (
     Form,
     HTTPException,
     Query,
+    Request,
     Response,
     UploadFile,
 )
@@ -66,6 +67,18 @@ from app.services.face_enrollment import enroll_face_sample_bytes, face_status_f
 from app.services.pay_period import resolve_pay_period
 from app.models.payroll import BusinessPayrollConfig
 from app.schemas.face import FaceEnrollResponse, FaceStatusResponse
+from app.schemas.legal_consent import (
+    LegalConsentAcceptRequest,
+    LegalConsentStatusResponse,
+    LegalConsentWithdrawRequest,
+)
+from app.services.legal_consent import (
+    consent_status_payload,
+    record_acceptances,
+    require_biometric_consent,
+    require_legal_consent,
+    withdraw_biometric_consent,
+)
 
 router = APIRouter(prefix="/employee", tags=["employee-mobile"])
 
@@ -1002,6 +1015,60 @@ def payslip(
     }
 
 
+@router.get("/consent/status", response_model=LegalConsentStatusResponse)
+def employee_consent_status(
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+):
+    employee, business = _current_employee(db, user)
+    return LegalConsentStatusResponse(**consent_status_payload(db, employee, business))
+
+
+@router.post("/consent/accept", response_model=LegalConsentStatusResponse)
+def employee_accept_consent(
+    body: LegalConsentAcceptRequest,
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+):
+    if not body.accepted:
+        raise HTTPException(400, "Consent must be accepted to continue")
+    employee, business = _current_employee(db, user)
+    record_acceptances(
+        db,
+        employee=employee,
+        business=business,
+        user_id=user.id,
+        types=body.types,
+        versions=body.versions,
+        client=body.client,
+        adult_acknowledged=body.adult_acknowledged,
+        request=request,
+    )
+    db.commit()
+    return LegalConsentStatusResponse(**consent_status_payload(db, employee, business))
+
+
+@router.post("/consent/withdraw-biometric", response_model=LegalConsentStatusResponse)
+def employee_withdraw_biometric(
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+    body: LegalConsentWithdrawRequest | None = None,
+):
+    employee, business = _current_employee(db, user)
+    withdraw_biometric_consent(
+        db,
+        employee=employee,
+        business=business,
+        actor_user_id=user.id,
+        client=(body.client if body else "mobile"),
+        request=request,
+    )
+    db.commit()
+    return LegalConsentStatusResponse(**consent_status_payload(db, employee, business))
+
+
 @router.get("/worksite", response_model=WorksiteResponse)
 def worksite(
     db: Annotated[Session, Depends(get_db)],
@@ -1065,6 +1132,8 @@ async def clock_in_with_face(
             liveness_passed=True,
         )
 
+    require_legal_consent(db, employee, business)
+    require_biometric_consent(db, employee, business)
     gesture = (liveness_gesture or "").strip().lower()
     if gesture not in ("blink", "smile"):
         raise HTTPException(
@@ -1132,6 +1201,8 @@ async def clock_out_with_face(
             liveness_passed=True,
         )
 
+    require_legal_consent(db, employee, business)
+    require_biometric_consent(db, employee, business)
     gesture = (liveness_gesture or "").strip().lower()
     if gesture not in ("blink", "smile"):
         raise HTTPException(
@@ -1177,9 +1248,12 @@ async def employee_enroll_face_samples(
     db: Annotated[Session, Depends(get_db)],
     user: Annotated[User, Depends(get_current_user)],
     files: Annotated[list[UploadFile], File(..., description="3–5 face images")],
+    request: Request,
 ):
     """Employee self-enroll — same embedding pipeline as owner face demo."""
-    employee, _business = _current_employee(db, user)
+    employee, business = _current_employee(db, user)
+    require_legal_consent(db, employee, business)
+    require_biometric_consent(db, employee, business)
     payloads: list[bytes] = []
     for upload in files:
         data = await upload.read()
@@ -1189,6 +1263,20 @@ async def employee_enroll_face_samples(
     result = enroll_face_sample_bytes(
         db, employee, payloads, enrolled_by=user.id
     )
+    from app.core.request_meta import audit_meta_from_request
+    from app.services.activity_logger import add_log
+
+    meta = audit_meta_from_request(request)
+    add_log(
+        db,
+        user.id,
+        "face_enrolled",
+        f"{employee.full_name} enrolled face samples",
+        platform=meta.get("platform"),
+        device=meta.get("device"),
+        ip_address=meta.get("ip_address"),
+    )
+    db.commit()
     return FaceEnrollResponse(
         employee_id=result["employee_id"],
         face_registration_status=result["face_registration_status"],

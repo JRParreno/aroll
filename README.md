@@ -84,7 +84,10 @@ Mr. Bean Cafe, Ugom Cafe, Pande Doc, Benzon Burger House
 | [docs/W1-DATA-REQUIREMENTS.md](docs/W1-DATA-REQUIREMENTS.md) | Locked data rules |
 | [docs/PROJECT-SETUP.md](docs/PROJECT-SETUP.md) | First-time setup guide |
 | [docs/IMPLEMENTATION-W1-W4.md](docs/IMPLEMENTATION-W1-W4.md) | Build notes |
+| [docs/legal/](docs/legal/) | Terms / Privacy / Biometric **templates** only |
 | [clean_code_bloc.md](clean_code_bloc.md) | Flutter BLoC guide |
+
+**Runtime legal source of truth:** Platform Admin publishes default Terms, Privacy, and Biometric Consent. Businesses use those defaults unless an owner enables `use_custom_consents`. Employees review `/legal/b/{business_code}` and the server stores typed `consent_record` rows. Markdown files under `docs/legal/` are templates/reference — they are not the production consent documents.
 
 ---
 

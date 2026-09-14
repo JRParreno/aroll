@@ -26,6 +26,7 @@ title Figure A — Data Domains
 
 package "Platform" #EEEEEE {
   [business_registration]
+  [platform_legal_document]
 }
 
 package "Tenant" #E8F4E8 {
@@ -37,6 +38,7 @@ package "Identity" #E8EEF4 {
   [user]
   [employee]
   [employee_face_embedding]
+  [consent_record]
 }
 
 package "Scheduling" #FFF8E8 {
@@ -85,6 +87,16 @@ entity "business_registration" as br {
   submitted_at : timestamptz
 }
 
+entity "platform_legal_document" as pld {
+  * **consent_type** : varchar(20) <<PK terms/privacy/biometric>>
+  --
+  content : text
+  version : varchar(80)
+  published : boolean
+  updated_at : timestamptz
+  updated_by : UUID <<FK user, nullable>>
+}
+
 entity "business" as b {
   * **id** : UUID <<PK>>
   --
@@ -92,6 +104,7 @@ entity "business" as b {
   name : varchar(200)
   status : business_status
   timezone : varchar(64)
+  use_custom_consents : boolean <<default false>>
   created_at : timestamptz
 }
 
@@ -135,11 +148,27 @@ entity "employee_face_embedding" as efe {
   * **id** : UUID <<PK>>
   * employee_id : UUID <<FK>>
   --
-  embedding : vector(128)
+  embedding : vector(512)
   model_version : varchar(50)
   sample_index : smallint
   enrolled_by : UUID <<FK user>>
   enrolled_at : timestamptz
+}
+
+entity "consent_record" as cr {
+  * **id** : UUID <<PK>>
+  * business_id : UUID <<FK>>
+  * employee_id : UUID <<FK>>
+  user_id : UUID <<FK, nullable>>
+  --
+  consent_type : varchar(20)
+  policy_version : varchar(80)
+  content_source : varchar(20)
+  accepted_content_hash : varchar(64)
+  content_snapshot : text
+  action : varchar(20)
+  client : varchar(20)
+  created_at : timestamptz <<UTC>>
 }
 
 entity "shift" as s {
@@ -222,6 +251,8 @@ b ||--|{ u : employs
 b ||--|{ e : has
 u ||--|| e : "login for"
 e ||--|{ efe : has
+b ||--|{ cr : "consent records"
+e ||--|{ cr : has
 b ||--|{ s : defines
 s ||--|{ sa : on
 e ||--|{ sa : assigned
@@ -326,6 +357,24 @@ enum payroll_run_status {
 | status | enum | active, suspended |
 | timezone | varchar(64) | e.g. Asia/Manila |
 | created_at | timestamptz | |
+| legal_page_url | varchar(160) | Generated public path `/legal/b/{business_code}` |
+| use_custom_consents | boolean | Default false = use Admin defaults; true = business custom copy |
+| terms_content / privacy_content / biometric_consent_content | text | Optional custom override storage (used only when `use_custom_consents` is true) |
+| terms_version / privacy_version / biometric_consent_version | varchar(80) | Custom version ids; unpublished custom sections cannot be accepted |
+| legal_updated_at | timestamptz | Last custom legal save |
+
+#### `platform_legal_document`
+
+Platform Admin catalog. One row per consent type. This is the default runtime source unless a business enables a custom override.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| consent_type | varchar(20) PK | `terms` / `privacy` / `biometric` |
+| content | text | Admin-published default copy |
+| version | varchar(80) | Version id employees must match |
+| published | boolean | Unpublished defaults cannot be accepted |
+| updated_at | timestamptz | Last Admin save |
+| updated_by | UUID FK → user | Platform admin who last saved |
 
 ### 5.2 Location
 
@@ -386,13 +435,36 @@ Each worksite stores a **human-readable address** and **GPS coordinates** togeth
 |--------|------|-------|
 | id | UUID PK | |
 | employee_id | UUID FK | |
-| embedding | vector(128) | pgvector; dimension matches model |
+| embedding | vector(512) | pgvector; ArcFace 512-d |
 | model_version | varchar(50) | e.g. face_rec_v1 |
 | sample_index | smallint | 1..N enrollment samples |
 | enrolled_by | UUID FK → user | Manager |
 | enrolled_at | timestamptz | |
 
 **Index:** `CREATE INDEX ON employee_face_embedding USING hnsw (embedding vector_cosine_ops);`
+
+#### `consent_record`
+
+Append-only legal audit. Do not treat a single boolean as the consent record.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| id | UUID PK | |
+| business_id | UUID FK | Tenant |
+| employee_id | UUID FK | Subject |
+| user_id | UUID FK nullable | Login identity at accept/withdraw |
+| consent_type | varchar(20) | `terms` / `privacy` / `biometric` |
+| policy_version | varchar(80) | Version actually shown |
+| content_source | varchar(20) | `admin_default` / `business_custom` (nullable on historical rows) |
+| accepted_content_hash | varchar(64) | SHA-256 of accepted body |
+| content_snapshot | text | Body actually shown |
+| action | varchar(20) | `accepted` / `withdrawn` |
+| client | varchar(20) | `mobile` / `web` |
+| ip_address | varchar(64) | Audit metadata when available |
+| device / platform | varchar | Optional |
+| legal_page_url | varchar(200) | Snapshot of the workplace page |
+| adult_acknowledged | boolean | Optional 18+ acknowledgement |
+| created_at | timestamptz | UTC |
 
 ### 5.4 Scheduling
 
@@ -559,7 +631,7 @@ CREATE EXTENSION IF NOT EXISTS vector;
 CREATE TABLE employee_face_embedding (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   employee_id UUID NOT NULL REFERENCES employee(id),
-  embedding vector(128) NOT NULL,
+  embedding vector(512) NOT NULL,
   model_version VARCHAR(50) NOT NULL,
   sample_index SMALLINT NOT NULL,
   enrolled_by UUID NOT NULL REFERENCES "user"(id),

@@ -11,6 +11,7 @@ import {
   KeyRound,
   Phone,
   Plus,
+  Scale,
   Search,
   UserPlus,
 } from "lucide-react";
@@ -116,6 +117,23 @@ function accountStatusLabel(employee: Pick<Employee, "status" | "must_change_pas
   if (employee.status === "inactive") return "Disabled";
   if (employee.must_change_password) return "Pending Activation";
   return "Active";
+}
+
+function formatConsentStamp(value: string | null | undefined) {
+  if (!value) return "Not recorded";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleString();
+}
+
+function consentLine(
+  satisfied: boolean | undefined,
+  version: string | null | undefined,
+  acceptedAt: string | null | undefined
+) {
+  if (!satisfied) return "Not accepted for the current published version";
+  const versionLabel = version ? `v${version}` : "current version";
+  return `${versionLabel} · ${formatConsentStamp(acceptedAt)}`;
 }
 
 function EmployeeAvatar({
@@ -879,6 +897,41 @@ export function OwnerEmployeesPage() {
                             {statusLabel}
                           </span>
                         </div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <h3 className="mb-2 text-sm font-semibold text-[#111827]">
+                        Consent records
+                      </h3>
+                      <div className="divide-y divide-slate-100 rounded-2xl border border-slate-200 bg-[#FAFBFC] px-3 py-1">
+                        <DetailInfoRow
+                          icon={<Scale className="h-4 w-4" />}
+                          label="Terms"
+                          value={consentLine(
+                            detailsEmployee.consent?.terms_satisfied,
+                            detailsEmployee.consent?.terms_version,
+                            detailsEmployee.consent?.terms_accepted_at
+                          )}
+                        />
+                        <DetailInfoRow
+                          icon={<Scale className="h-4 w-4" />}
+                          label="Privacy"
+                          value={consentLine(
+                            detailsEmployee.consent?.privacy_satisfied,
+                            detailsEmployee.consent?.privacy_version,
+                            detailsEmployee.consent?.privacy_accepted_at
+                          )}
+                        />
+                        <DetailInfoRow
+                          icon={<Scale className="h-4 w-4" />}
+                          label="Biometric"
+                          value={consentLine(
+                            detailsEmployee.consent?.biometric_satisfied,
+                            detailsEmployee.consent?.biometric_version,
+                            detailsEmployee.consent?.biometric_accepted_at
+                          )}
+                        />
                       </div>
                     </div>
                   </>

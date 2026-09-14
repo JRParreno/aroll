@@ -1,27 +1,29 @@
 # Aroll+ Legal & Consent Templates
 
-**Purpose:** Pilot / thesis deployment templates for terms of use, privacy, and biometric consent.
+**Purpose:** Pilot / thesis **templates** for terms of use, privacy, and biometric consent.
 
-**Status:** Draft templates for the Aroll+ study and pilot businesses. They are **not** formal legal advice. Have a lawyer review before commercial rollout beyond the academic pilot.
+**Status:** Draft templates for the Aroll+ study and pilot businesses. They are **not** formal legal advice and are **not** the runtime source of truth. Have a lawyer review before commercial rollout beyond the academic pilot.
+
+**Runtime source of truth:** Platform Admin publishes default Terms, Privacy, and Biometric Consent. Businesses use those defaults unless an owner sets `use_custom_consents` and publishes custom copy. The app and public webpage (`/legal/b/{business_code}`) render the **effective** content. Unpublished sections cannot be accepted as consent. Acceptance is stored as append-only `consent_record` rows (type + version + content source + snapshot/hash + identity + UTC timestamp), not a single boolean.
 
 | Document | Audience | When to use |
 |----------|----------|-------------|
-| [TERMS-AND-CONDITIONS.md](TERMS-AND-CONDITIONS.md) | Owners, managers, employees, platform users | Account creation / first login / business signup |
-| [PRIVACY-POLICY.md](PRIVACY-POLICY.md) | All users | Linked from signup, settings, and consent forms |
-| [BIOMETRIC-CONSENT.md](BIOMETRIC-CONSENT.md) | Employees (face enrollment) | **Before** face enrollment; signed or digitally acknowledged |
+| [TERMS-AND-CONDITIONS.md](TERMS-AND-CONDITIONS.md) | Owners, managers, employees, platform users | Starting copy for the Admin-published default Terms page |
+| [PRIVACY-POLICY.md](PRIVACY-POLICY.md) | All users | Starting copy for the Admin-published default Privacy page |
+| [BIOMETRIC-CONSENT.md](BIOMETRIC-CONSENT.md) | Employees (face enrollment) | Starting copy for default biometric consent; recorded **before** face enrollment |
 
 **Related technical docs:** [../SECURITY-PLAN.md](../SECURITY-PLAN.md) · [../FACE-RECOGNITION.md](../FACE-RECOGNITION.md) · [../SOLUTION.md](../SOLUTION.md)
 
 ## How to use in the pilot
 
-1. Business owner reads Terms + Privacy Policy when registering / activating the business.
-2. Employee receives Temporary password → first login shows Privacy Policy + Terms (acknowledge).
-3. Before face enrollment, employee signs **Biometric Consent** (paper or in-app checkbox + timestamp).
-4. Keep signed copies (or audit log of digital consent) with the business for the pilot period.
+1. Platform Admin publishes default Terms, Privacy, and Biometric Consent (content + version). Owners may optionally enable custom workplace copy in Business Settings. The generated workplace URL is what employees open.
+2. Employee first login: temporary password change → Terms + Privacy webpage → recorded acceptance → permission rationale → biometric consent → face enrollment / live attendance.
+3. Policy version changes require re-consent. An Admin default version bump affects only businesses using defaults. Biometric withdrawal and employee deactivation clear that employee’s face embeddings.
+4. `consent_record` is the legal audit source of truth; activity logs are operational.
 
 ## Placeholders to fill per deployment
 
-Replace these in each document before printing or shipping in-app:
+Replace these in the **Admin-published defaults** (or in a business custom override). These markdown files stay as templates:
 
 - `[ORGANIZATION NAME]` — thesis team / hosting entity name  
 - `[CONTACT EMAIL]` — privacy / support contact  

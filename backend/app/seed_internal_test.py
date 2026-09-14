@@ -63,6 +63,10 @@ def seed_internal_test(db: Session | None = None) -> Business:
             role=UserRole.owner,
         )
         _upsert_employee(db, business, position=position)
+        from app.services.legal_consent import publish_default_legal
+
+        publish_default_legal(db, business)
+        business.use_custom_consents = False
         db.commit()
         db.refresh(business)
         logger.info(
@@ -96,6 +100,7 @@ def _upsert_business(db: Session) -> Business:
             setup_completed_at=now,
             is_demo=False,
             is_internal_test=True,
+            use_custom_consents=False,
         )
         db.add(business)
         db.flush()
@@ -105,6 +110,7 @@ def _upsert_business(db: Session) -> Business:
     business.timezone = DEV_TIMEZONE
     business.is_demo = False
     business.is_internal_test = True
+    business.use_custom_consents = False
     if business.setup_completed_at is None:
         business.setup_completed_at = now
     db.flush()

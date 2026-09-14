@@ -14,7 +14,7 @@ function isPublicAuthPath(path: string): boolean {
     return true;
   }
   // Public owner signup only — not admin review under /admin/registrations
-  return path.startsWith("/registrations");
+    return path.startsWith("/registrations") || path.includes("/public/legal/") || path.includes("/public/consents/");
 }
 
 export const api = axios.create({ baseURL: API_BASE });
@@ -168,6 +168,19 @@ export type Employee = {
   face_registration_status?: string | null;
   temporary_password: string | null;
   profile_image_url: string | null;
+  consent?: EmployeeConsentSummary | null;
+};
+
+export type EmployeeConsentSummary = {
+  terms_satisfied: boolean;
+  privacy_satisfied: boolean;
+  biometric_satisfied: boolean;
+  terms_version: string | null;
+  privacy_version: string | null;
+  biometric_version: string | null;
+  terms_accepted_at: string | null;
+  privacy_accepted_at: string | null;
+  biometric_accepted_at: string | null;
 };
 
 export type OwnerPerformanceSummary = {
@@ -1521,6 +1534,227 @@ export async function getBusinessSettings() {
 
 export async function updateBusinessSettings(payload: BusinessSettingsUpdate) {
   const { data } = await api.put("/businesses/me/business-settings", payload);
+  return data;
+}
+
+export type PublicLegalSection = {
+  title: string;
+  consent_type: string;
+  content: string | null;
+  version: string | null;
+  published: boolean;
+  content_source?: "admin_default" | "business_custom" | null;
+};
+
+export type PlatformLegalSection = {
+  title: string;
+  consent_type: string;
+  content: string | null;
+  version: string | null;
+  published: boolean;
+  updated_at: string | null;
+  updated_by: string | null;
+};
+
+export type PlatformLegalSettings = {
+  terms: PlatformLegalSection;
+  privacy: PlatformLegalSection;
+  biometric: PlatformLegalSection;
+};
+
+export type PlatformLegalSettingsUpdate = {
+  terms_content?: string | null;
+  privacy_content?: string | null;
+  biometric_consent_content?: string | null;
+  terms_version?: string | null;
+  privacy_version?: string | null;
+  biometric_consent_version?: string | null;
+  terms_published?: boolean;
+  privacy_published?: boolean;
+  biometric_published?: boolean;
+};
+
+export type CustomLegalDraft = {
+  terms_content: string | null;
+  privacy_content: string | null;
+  biometric_consent_content: string | null;
+  terms_version: string | null;
+  privacy_version: string | null;
+  biometric_consent_version: string | null;
+  legal_updated_at: string | null;
+  terms_published: boolean;
+  privacy_published: boolean;
+  biometric_published: boolean;
+};
+
+export type BusinessLegalSettings = {
+  business_name: string;
+  business_code: string;
+  legal_page_url: string;
+  use_custom_consents: boolean;
+  effective: {
+    updated_at: string | null;
+    terms: PublicLegalSection;
+    privacy: PublicLegalSection;
+    biometric: PublicLegalSection;
+  };
+  defaults: PlatformLegalSettings;
+  custom: CustomLegalDraft;
+};
+
+export type BusinessLegalSettingsUpdate = {
+  use_custom_consents?: boolean;
+  terms_content?: string | null;
+  privacy_content?: string | null;
+  biometric_consent_content?: string | null;
+  terms_version?: string | null;
+  privacy_version?: string | null;
+  biometric_consent_version?: string | null;
+};
+
+export type PublicLegalPage = {
+  business_name: string;
+  business_code: string;
+  legal_page_url: string;
+  updated_at: string | null;
+  is_demo: boolean;
+  use_custom_consents?: boolean;
+  terms: PublicLegalSection;
+  privacy: PublicLegalSection;
+  biometric: PublicLegalSection;
+};
+
+export async function getBusinessLegalSettings() {
+  const { data } = await api.get<BusinessLegalSettings>("/businesses/me/legal");
+  return data;
+}
+
+export async function updateBusinessLegalSettings(
+  payload: BusinessLegalSettingsUpdate
+) {
+  const { data } = await api.put<BusinessLegalSettings>(
+    "/businesses/me/legal",
+    payload
+  );
+  return data;
+}
+
+export async function getPlatformLegalSettings() {
+  const { data } = await api.get<PlatformLegalSettings>("/admin/legal");
+  return data;
+}
+
+export async function updatePlatformLegalSettings(
+  payload: PlatformLegalSettingsUpdate
+) {
+  const { data } = await api.put<PlatformLegalSettings>("/admin/legal", payload);
+  return data;
+}
+
+export async function getPublicLegalPage(businessCode: string) {
+  const { data } = await api.get<PublicLegalPage>(
+    `/public/legal/${businessCode.trim().toUpperCase()}`
+  );
+  return data;
+}
+
+export type ConsentDocument = {
+  id: string;
+  scope: string;
+  business_id: string | null;
+  title: string;
+  position: number;
+  is_active: boolean;
+  is_required: boolean;
+  consent_type: string;
+  body_text: string | null;
+  has_file: boolean;
+  original_filename: string | null;
+  file_content_type: string | null;
+  version: string;
+  published: boolean;
+  url: string;
+  file_url: string | null;
+  web_path: string;
+  updated_at: string | null;
+  updated_by: string | null;
+};
+
+export type ConsentCatalog = {
+  use_custom_consents: boolean;
+  can_edit: boolean;
+  documents: ConsentDocument[];
+};
+
+export type ConsentDocumentWrite = {
+  title: string;
+  body_text?: string | null;
+  consent_type?: string | null;
+  position?: number | null;
+  is_active?: boolean;
+  is_required?: boolean;
+  version?: string | null;
+};
+
+function catalogBase(scope: "admin" | "owner") {
+  return scope === "admin" ? "/admin/consents" : "/businesses/me/consents";
+}
+
+export async function listConsentDocuments(scope: "admin" | "owner") {
+  const { data } = await api.get<ConsentCatalog>(catalogBase(scope));
+  return data;
+}
+
+export async function createConsentDocument(
+  scope: "admin" | "owner",
+  payload: ConsentDocumentWrite
+) {
+  const { data } = await api.post<ConsentDocument>(catalogBase(scope), payload);
+  return data;
+}
+
+export async function updateConsentDocument(
+  scope: "admin" | "owner",
+  documentId: string,
+  payload: Partial<ConsentDocumentWrite>
+) {
+  const { data } = await api.patch<ConsentDocument>(
+    `${catalogBase(scope)}/${documentId}`,
+    payload
+  );
+  return data;
+}
+
+export async function deleteConsentDocument(
+  scope: "admin" | "owner",
+  documentId: string
+) {
+  await api.delete(`${catalogBase(scope)}/${documentId}`);
+}
+
+export async function reorderConsentDocuments(
+  scope: "admin" | "owner",
+  orderedIds: string[]
+) {
+  const { data } = await api.post<ConsentCatalog>(
+    `${catalogBase(scope)}/reorder`,
+    { ordered_ids: orderedIds }
+  );
+  return data;
+}
+
+export async function uploadConsentDocumentFile(
+  scope: "admin" | "owner",
+  documentId: string,
+  file: File
+) {
+  const formData = new FormData();
+  formData.append("file", file);
+  const { data } = await api.post<ConsentDocument>(
+    `${catalogBase(scope)}/${documentId}/file`,
+    formData,
+    { headers: { "Content-Type": "multipart/form-data" } }
+  );
   return data;
 }
 

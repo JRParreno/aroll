@@ -18,6 +18,8 @@ import 'package:aroll_mobile/presentation/employee/request_leave_screen.dart';
 import 'package:aroll_mobile/presentation/employee/schedule_screen.dart';
 import 'package:aroll_mobile/presentation/employee/shift_detail_screen.dart';
 import 'package:aroll_mobile/presentation/employee/shift_history_screen.dart';
+import 'package:aroll_mobile/presentation/legal/employee_legal_consent_screen.dart';
+import 'package:aroll_mobile/presentation/permissions/permissions_onboarding_screen.dart';
 import 'package:aroll_mobile/presentation/home/home_screen.dart';
 import 'package:aroll_mobile/presentation/home/scan_attendance_screen.dart';
 import 'package:aroll_mobile/presentation/owner/owner_attendance_screen.dart';
@@ -72,6 +74,12 @@ String resolveAuthenticatedRoute(AppState appState) {
   if (session.isDemo) {
     return '/home';
   }
+  if (appState.consentsCompleted != true) {
+    return '/consents';
+  }
+  if (!appState.permissionsIntroSeen) {
+    return '/permissions';
+  }
   if (appState.faceEnrolled != true) {
     return '/face-registration';
   }
@@ -111,8 +119,26 @@ GoRouter createAppRouter(AppState appState) {
       } else if (session?.isEmployee == true &&
           session?.isDemo != true &&
           !appState.mustChangePassword &&
+          appState.consentsCompleted != true &&
+          loc != '/consents' &&
+          loc != '/change-password') {
+        redirect = '/consents';
+      } else if (session?.isEmployee == true &&
+          session?.isDemo != true &&
+          !appState.mustChangePassword &&
+          appState.consentsCompleted == true &&
+          !appState.permissionsIntroSeen &&
+          loc != '/permissions' &&
+          loc != '/consents' &&
+          loc != '/change-password') {
+        redirect = '/permissions';
+      } else if (session?.isEmployee == true &&
+          session?.isDemo != true &&
+          !appState.mustChangePassword &&
           appState.faceEnrolled != true &&
           loc != '/face-registration' &&
+          loc != '/consents' &&
+          loc != '/permissions' &&
           loc != '/change-password') {
         // Force face enrollment on every session until completed — including
         // after app close/reopen (restore sets faceEnrolled from server).
@@ -173,6 +199,28 @@ GoRouter createAppRouter(AppState appState) {
         path: '/change-password',
         pageBuilder: (context, state) =>
             _fadePage(state, const ChangePasswordScreen()),
+      ),
+      GoRoute(
+        path: '/consents',
+        pageBuilder: (context, state) => _fadePage(
+          state,
+          EmployeeConsentFlowScreen(
+            viewOnly: state.uri.queryParameters['view'] == '1',
+          ),
+        ),
+      ),
+      GoRoute(
+        path: '/legal-consent',
+        redirect: (context, state) => '/consents',
+      ),
+      GoRoute(
+        path: '/biometric-consent',
+        redirect: (context, state) => '/consents',
+      ),
+      GoRoute(
+        path: '/permissions',
+        pageBuilder: (context, state) =>
+            _fadePage(state, const PermissionsOnboardingScreen()),
       ),
       GoRoute(
         path: '/home',

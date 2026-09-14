@@ -8,6 +8,7 @@ import { LoginPage } from "@/pages/LoginPage";
 import { BusinessOwnerLoginPage } from "@/pages/BusinessOwnerLoginPage";
 import { OwnerEmployeesPage } from "@/pages/OwnerEmployeesPage";
 import { AdminDashboardPage } from "@/pages/AdminDashboardPage";
+import { AdminLegalDefaultsPage } from "@/pages/AdminLegalDefaultsPage";
 import { ApprovedBusinessPage } from "@/pages/ApprovedBusinessPage";
 import { BusinessDetailPage } from "@/pages/BusinessDetailPage";
 import { AdminProfilePage } from "@/pages/AdminProfilePage";
@@ -35,6 +36,8 @@ import { OwnerLeavePolicyPage } from "@/pages/owner/OwnerLeavePolicyPage";
 import { OwnerHelpPage } from "@/pages/owner/OwnerHelpPage";
 import { OwnerProfilePage } from "@/pages/owner/OwnerProfilePage";
 import { OwnerSetupWizardPage } from "@/pages/owner/setup/OwnerSetupWizardPage";
+import { PublicLegalPage } from "@/pages/PublicLegalPage";
+import { PublicConsentDocumentPage } from "@/pages/PublicConsentDocumentPage";
 import { PendingVerificationPage } from "@/pages/owner/PendingVerificationPage";
 import { RejectedApplicationPage } from "@/pages/owner/RejectedApplicationPage";
 
@@ -111,6 +114,7 @@ export default function App() {
                 { to: "/admin/dashboard", label: "Dashboard" },
                 { to: "/admin/approved-business", label: "Approved Businesses" },
                 { to: "/admin/registrations", label: "Registration Request" },
+                { to: "/admin/legal", label: "Consents" },
                 { to: "/admin/activity-logs", label: "Activity Logs" },
                 { to: "/admin/profile", label: "Profile" },
               ]}
@@ -123,12 +127,15 @@ export default function App() {
         <Route path="approved-business/:id" element={<BusinessDetailPage />} />
         <Route path="registrations" element={<AdminRegistrationsPage />} />
         <Route path="registrations/:id" element={<RegistrationDetailPage />} />
+        <Route path="legal" element={<AdminLegalDefaultsPage />} />
         <Route path="activity-logs" element={<ActivityLogsPage />} />
         <Route path="profile" element={<AdminProfilePage />} />
         <Route index element={<Navigate to="dashboard" replace />} />
         <Route path="*" element={<AdminNotFoundPage />} />
       </Route>
 
+      <Route path="/legal/b/:businessCode" element={<PublicLegalPage />} />
+      <Route path="/legal/c/:documentId" element={<PublicConsentDocumentPage />} />
       <Route path="/register-business" element={<BusinessRegistrationPage />} />
       <Route path="/track-registration" element={<TrackRegistrationPage />} />
       <Route path="/pending-verification" element={<PendingVerificationPage />} />

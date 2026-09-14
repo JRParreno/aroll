@@ -1,7 +1,7 @@
 from typing import Annotated
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
@@ -41,6 +41,34 @@ from app.schemas.owner_setup import (
     RestDayPolicyUpdate,
     SetupStatusResponse,
 )
+from app.schemas.legal_consent import (
+    BusinessLegalSettingsResponse,
+    BusinessLegalSettingsUpdate,
+)
+from app.schemas.consent_catalog import (
+    ConsentCatalogResponse,
+    ConsentDocumentCreate,
+    ConsentDocumentPayload,
+    ConsentDocumentReorder,
+    ConsentDocumentUpdate,
+)
+from app.services.legal_consent import (
+    apply_legal_settings_update,
+    legal_settings_payload,
+)
+from app.services.consent_catalog import (
+    SCOPE_BUSINESS,
+    SCOPE_PLATFORM,
+    catalog_item_payload,
+    create_document,
+    delete_document,
+    get_document,
+    list_catalog_documents,
+    reorder_documents,
+    require_business_custom,
+    save_document_file,
+    update_document,
+)
 from app.services.leave_policy import (
     get_or_create_leave_policy,
     serialize_leave_policy,
@@ -50,6 +78,10 @@ from app.services.setup_status import (
     SetupIncompleteError,
     complete_setup,
     get_setup_status,
+)
+from app.services.legal_consent import (
+    apply_legal_settings_update,
+    legal_settings_payload,
 )
 from app.services.registration_documents import get_document_file_path
 from app.services.registration_service import document_response
@@ -520,6 +552,180 @@ def update_business_settings(
 
     db.commit()
     return {"status": "ok"}
+
+
+@router.get("/me/legal", response_model=BusinessLegalSettingsResponse)
+def get_business_legal_settings(
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(require_roles(UserRole.owner, UserRole.manager))],
+):
+    if user.business_id is None:
+        raise HTTPException(400, "No business context")
+    business = db.get(Business, user.business_id)
+    if business is None:
+        raise HTTPException(404, "Business not found")
+    return BusinessLegalSettingsResponse(**legal_settings_payload(db, business))
+
+
+@router.put("/me/legal", response_model=BusinessLegalSettingsResponse)
+def update_business_legal_settings(
+    body: BusinessLegalSettingsUpdate,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(require_roles(UserRole.owner))],
+):
+    if user.business_id is None:
+        raise HTTPException(400, "No business context")
+    business = db.get(Business, user.business_id)
+    if business is None:
+        raise HTTPException(404, "Business not found")
+    apply_legal_settings_update(db, business, body, updated_by=user.id)
+    db.commit()
+    db.refresh(business)
+    return BusinessLegalSettingsResponse(**legal_settings_payload(db, business))
+
+
+def _owner_business(db: Session, user: User) -> Business:
+    if user.business_id is None:
+        raise HTTPException(400, "No business context")
+    business = db.get(Business, user.business_id)
+    if business is None:
+        raise HTTPException(404, "Business not found")
+    return business
+
+
+def _assert_business_document(document, business: Business) -> None:
+    if document.scope != SCOPE_BUSINESS or document.business_id != business.id:
+        raise HTTPException(404, "Consent document not found")
+
+
+@router.get("/me/consents", response_model=ConsentCatalogResponse)
+def list_owner_consents(
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(require_roles(UserRole.owner, UserRole.manager))],
+):
+    business = _owner_business(db, user)
+    custom = bool(getattr(business, "use_custom_consents", False))
+    if custom:
+        documents = list_catalog_documents(
+            db, scope=SCOPE_BUSINESS, business_id=business.id
+        )
+    else:
+        documents = list_catalog_documents(db, scope=SCOPE_PLATFORM, business_id=None)
+    return ConsentCatalogResponse(
+        use_custom_consents=custom,
+        can_edit=custom,
+        documents=[ConsentDocumentPayload(**catalog_item_payload(doc)) for doc in documents],
+    )
+
+
+@router.post("/me/consents", response_model=ConsentDocumentPayload)
+def create_owner_consent(
+    body: ConsentDocumentCreate,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(require_roles(UserRole.owner))],
+):
+    business = _owner_business(db, user)
+    require_business_custom(business)
+    document = create_document(
+        db,
+        scope=SCOPE_BUSINESS,
+        business_id=business.id,
+        title=body.title,
+        body_text=body.body_text,
+        consent_type=body.consent_type,
+        position=body.position,
+        is_active=body.is_active,
+        is_required=body.is_required,
+        version=body.version,
+        updated_by=user.id,
+    )
+    db.commit()
+    db.refresh(document)
+    return ConsentDocumentPayload(**catalog_item_payload(document))
+
+
+@router.patch("/me/consents/{document_id}", response_model=ConsentDocumentPayload)
+def update_owner_consent(
+    document_id: uuid.UUID,
+    body: ConsentDocumentUpdate,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(require_roles(UserRole.owner))],
+):
+    business = _owner_business(db, user)
+    require_business_custom(business)
+    document = get_document(db, document_id)
+    _assert_business_document(document, business)
+    update_document(
+        db,
+        document,
+        title=body.title,
+        body_text=body.body_text,
+        consent_type=body.consent_type,
+        position=body.position,
+        is_active=body.is_active,
+        is_required=body.is_required,
+        version=body.version,
+        bump_version=body.body_text is not None,
+        updated_by=user.id,
+    )
+    db.commit()
+    db.refresh(document)
+    return ConsentDocumentPayload(**catalog_item_payload(document))
+
+
+@router.delete("/me/consents/{document_id}")
+def delete_owner_consent(
+    document_id: uuid.UUID,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(require_roles(UserRole.owner))],
+):
+    business = _owner_business(db, user)
+    require_business_custom(business)
+    document = get_document(db, document_id)
+    _assert_business_document(document, business)
+    delete_document(db, document)
+    db.commit()
+    return {"status": "ok"}
+
+
+@router.post("/me/consents/reorder", response_model=ConsentCatalogResponse)
+def reorder_owner_consents(
+    body: ConsentDocumentReorder,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(require_roles(UserRole.owner))],
+):
+    business = _owner_business(db, user)
+    require_business_custom(business)
+    documents = reorder_documents(
+        db,
+        scope=SCOPE_BUSINESS,
+        business_id=business.id,
+        ordered_ids=body.ordered_ids,
+        updated_by=user.id,
+    )
+    db.commit()
+    return ConsentCatalogResponse(
+        use_custom_consents=True,
+        can_edit=True,
+        documents=[ConsentDocumentPayload(**catalog_item_payload(doc)) for doc in documents],
+    )
+
+
+@router.post("/me/consents/{document_id}/file", response_model=ConsentDocumentPayload)
+def upload_owner_consent_file(
+    document_id: uuid.UUID,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(require_roles(UserRole.owner))],
+    file: Annotated[UploadFile, File()],
+):
+    business = _owner_business(db, user)
+    require_business_custom(business)
+    document = get_document(db, document_id)
+    _assert_business_document(document, business)
+    save_document_file(db, document, file, updated_by=user.id)
+    db.commit()
+    db.refresh(document)
+    return ConsentDocumentPayload(**catalog_item_payload(document))
 
 
 @router.get("/me/registration-documents/{document_id}/file")

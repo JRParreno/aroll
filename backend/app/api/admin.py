@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Annotated
 from app.core.timezone import manila_now
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy import extract, func
 from sqlalchemy.orm import Session
@@ -44,7 +44,34 @@ from app.schemas.registration import (
     RegistrationReject,
     RegistrationResponse,
 )
+from app.schemas.legal_consent import (
+    PlatformLegalSettingsResponse,
+    PlatformLegalSettingsUpdate,
+)
+from app.schemas.consent_catalog import (
+    ConsentCatalogResponse,
+    ConsentDocumentCreate,
+    ConsentDocumentPayload,
+    ConsentDocumentReorder,
+    ConsentDocumentUpdate,
+)
 from app.services.activity_logger import create_log
+from app.services.consent_catalog import (
+    SCOPE_PLATFORM,
+    catalog_item_payload,
+    create_document,
+    delete_document,
+    ensure_platform_consent_documents,
+    get_document,
+    list_catalog_documents,
+    reorder_documents,
+    save_document_file,
+    update_document,
+)
+from app.services.legal_consent import (
+    apply_platform_legal_update,
+    platform_legal_payload,
+)
 from app.services.registration_documents import get_document_file_path
 from app.services.registration_service import document_response, registration_response
 
@@ -438,3 +465,142 @@ def get_activity_logs(
         }
         for log in logs
     ]
+
+
+@router.get("/legal", response_model=PlatformLegalSettingsResponse)
+def get_platform_legal_defaults(
+    db: Annotated[Session, Depends(get_db)],
+    _: Annotated[User, Depends(require_roles(UserRole.platform_admin))],
+):
+    return PlatformLegalSettingsResponse(**platform_legal_payload(db))
+
+
+@router.put("/legal", response_model=PlatformLegalSettingsResponse)
+def update_platform_legal_defaults(
+    body: PlatformLegalSettingsUpdate,
+    db: Annotated[Session, Depends(get_db)],
+    admin: Annotated[User, Depends(require_roles(UserRole.platform_admin))],
+):
+    apply_platform_legal_update(db, body, updated_by=admin.id)
+    db.commit()
+    return PlatformLegalSettingsResponse(**platform_legal_payload(db))
+
+
+def _assert_platform_document(document) -> None:
+    if document.scope != SCOPE_PLATFORM:
+        raise HTTPException(404, "Consent document not found")
+
+
+@router.get("/consents", response_model=ConsentCatalogResponse)
+def list_platform_consents(
+    db: Annotated[Session, Depends(get_db)],
+    _: Annotated[User, Depends(require_roles(UserRole.platform_admin))],
+):
+    ensure_platform_consent_documents(db)
+    db.commit()
+    documents = list_catalog_documents(db, scope=SCOPE_PLATFORM, business_id=None)
+    return ConsentCatalogResponse(
+        use_custom_consents=False,
+        can_edit=True,
+        documents=[ConsentDocumentPayload(**catalog_item_payload(doc)) for doc in documents],
+    )
+
+
+@router.post("/consents", response_model=ConsentDocumentPayload)
+def create_platform_consent(
+    body: ConsentDocumentCreate,
+    db: Annotated[Session, Depends(get_db)],
+    admin: Annotated[User, Depends(require_roles(UserRole.platform_admin))],
+):
+    document = create_document(
+        db,
+        scope=SCOPE_PLATFORM,
+        business_id=None,
+        title=body.title,
+        body_text=body.body_text,
+        consent_type=body.consent_type,
+        position=body.position,
+        is_active=body.is_active,
+        is_required=body.is_required,
+        version=body.version,
+        updated_by=admin.id,
+    )
+    db.commit()
+    db.refresh(document)
+    return ConsentDocumentPayload(**catalog_item_payload(document))
+
+
+@router.patch("/consents/{document_id}", response_model=ConsentDocumentPayload)
+def update_platform_consent(
+    document_id: uuid.UUID,
+    body: ConsentDocumentUpdate,
+    db: Annotated[Session, Depends(get_db)],
+    admin: Annotated[User, Depends(require_roles(UserRole.platform_admin))],
+):
+    document = get_document(db, document_id)
+    _assert_platform_document(document)
+    update_document(
+        db,
+        document,
+        title=body.title,
+        body_text=body.body_text,
+        consent_type=body.consent_type,
+        position=body.position,
+        is_active=body.is_active,
+        is_required=body.is_required,
+        version=body.version,
+        bump_version=body.body_text is not None,
+        updated_by=admin.id,
+    )
+    db.commit()
+    db.refresh(document)
+    return ConsentDocumentPayload(**catalog_item_payload(document))
+
+
+@router.delete("/consents/{document_id}")
+def delete_platform_consent(
+    document_id: uuid.UUID,
+    db: Annotated[Session, Depends(get_db)],
+    _: Annotated[User, Depends(require_roles(UserRole.platform_admin))],
+):
+    document = get_document(db, document_id)
+    _assert_platform_document(document)
+    delete_document(db, document)
+    db.commit()
+    return {"status": "ok"}
+
+
+@router.post("/consents/reorder", response_model=ConsentCatalogResponse)
+def reorder_platform_consents(
+    body: ConsentDocumentReorder,
+    db: Annotated[Session, Depends(get_db)],
+    admin: Annotated[User, Depends(require_roles(UserRole.platform_admin))],
+):
+    documents = reorder_documents(
+        db,
+        scope=SCOPE_PLATFORM,
+        business_id=None,
+        ordered_ids=body.ordered_ids,
+        updated_by=admin.id,
+    )
+    db.commit()
+    return ConsentCatalogResponse(
+        use_custom_consents=False,
+        can_edit=True,
+        documents=[ConsentDocumentPayload(**catalog_item_payload(doc)) for doc in documents],
+    )
+
+
+@router.post("/consents/{document_id}/file", response_model=ConsentDocumentPayload)
+def upload_platform_consent_file(
+    document_id: uuid.UUID,
+    db: Annotated[Session, Depends(get_db)],
+    admin: Annotated[User, Depends(require_roles(UserRole.platform_admin))],
+    file: Annotated[UploadFile, File()],
+):
+    document = get_document(db, document_id)
+    _assert_platform_document(document)
+    save_document_file(db, document, file, updated_by=admin.id)
+    db.commit()
+    db.refresh(document)
+    return ConsentDocumentPayload(**catalog_item_payload(document))

@@ -30,6 +30,7 @@ def test_internal_test_tenant_is_not_demo():
         assert lab.name == DEV_BUSINESS_NAME
         assert lab.is_demo is False
         assert lab.is_internal_test is True
+        assert lab.use_custom_consents is False
         assert lab.business_code != DEMO_BUSINESS_CODE
 
         owner = (

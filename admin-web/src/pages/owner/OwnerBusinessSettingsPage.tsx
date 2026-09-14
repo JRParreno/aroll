@@ -26,10 +26,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   fetchOwnerRegistrationDocumentFile,
+  getBusinessLegalSettings,
   getBusinessSettings,
+  listConsentDocuments,
+  updateBusinessLegalSettings,
   updateBusinessSettings,
   type BusinessBrandingSettings,
 } from "@/lib/api";
+import { ConsentDocumentManager } from "@/components/consents/ConsentDocumentManager";
 import { ME_QUERY_KEY } from "@/lib/authSession";
 import { formatBusinessType, formatVerificationStatus } from "@/lib/registrationDocuments";
 
@@ -50,11 +54,26 @@ export function OwnerBusinessSettingsPage() {
   });
   const [branding, setBranding] =
     useState<BusinessBrandingSettings>(defaultBusinessBranding);
+  const [useCustomConsents, setUseCustomConsents] = useState(false);
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ["business-settings"],
     queryFn: getBusinessSettings,
   });
+
+  const { data: legalData } = useQuery({
+    queryKey: ["business-legal"],
+    queryFn: getBusinessLegalSettings,
+  });
+  const { data: consentCatalog, isLoading: consentsLoading } = useQuery({
+    queryKey: ["owner-consents"],
+    queryFn: () => listConsentDocuments("owner"),
+  });
+
+  useEffect(() => {
+    if (!legalData) return;
+    setUseCustomConsents(legalData.use_custom_consents);
+  }, [legalData]);
 
   useEffect(() => {
     if (!data) return;
@@ -81,6 +100,19 @@ export function OwnerBusinessSettingsPage() {
       qc.invalidateQueries({ queryKey: ME_QUERY_KEY });
     },
     onError: () => toast.error("Failed to save business settings"),
+  });
+
+  const saveLegal = useMutation({
+    mutationFn: () =>
+      updateBusinessLegalSettings({
+        use_custom_consents: useCustomConsents,
+      }),
+    onSuccess: () => {
+      toast.success("Consent settings saved");
+      qc.invalidateQueries({ queryKey: ["business-legal"] });
+      qc.invalidateQueries({ queryKey: ["owner-consents"] });
+    },
+    onError: () => toast.error("Failed to save consent settings"),
   });
 
   if (isLoading) {
@@ -194,6 +226,63 @@ export function OwnerBusinessSettingsPage() {
               branding={branding}
               onChange={setBranding}
             />
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Workplace consents</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Employees always load consents from the API. This workplace uses
+              Aroll+ Admin defaults unless you enable custom workplace consents.
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <label className="flex items-start gap-3 rounded-lg border border-slate-200 px-3 py-3 text-sm">
+              <input
+                type="checkbox"
+                className="mt-1"
+                checked={useCustomConsents}
+                onChange={(event) => setUseCustomConsents(event.target.checked)}
+              />
+              <span>
+                <span className="font-medium">Use custom workplace consents</span>
+                <span className="mt-1 block text-muted-foreground">
+                  Off by default. When on, employees see only this workplace’s
+                  documents. Incomplete or unpublished custom catalogs fail
+                  closed and do not fall back to Admin defaults.
+                </span>
+              </span>
+            </label>
+            <Button
+              type="button"
+              onClick={() => saveLegal.mutate()}
+              disabled={saveLegal.isPending}
+            >
+              {saveLegal.isPending ? "Saving…" : "Save consent toggle"}
+            </Button>
+            {consentsLoading ? (
+              <p className="text-sm text-muted-foreground">Loading consents…</p>
+            ) : useCustomConsents ? (
+              <ConsentDocumentManager
+                scope="owner"
+                documents={consentCatalog?.documents ?? []}
+                canEdit={consentCatalog?.can_edit === true}
+                onChanged={() => {
+                  qc.invalidateQueries({ queryKey: ["owner-consents"] });
+                }}
+              />
+            ) : (
+              <ConsentDocumentManager
+                scope="owner"
+                documents={consentCatalog?.documents ?? []}
+                canEdit={false}
+                readOnlyHint="Admin defaults apply. Turn on custom workplace consents to upload or edit documents for this workplace only."
+                onChanged={() => {
+                  qc.invalidateQueries({ queryKey: ["owner-consents"] });
+                }}
+              />
+            )}
           </CardContent>
         </Card>
 

@@ -270,7 +270,7 @@ validation. Geofence still required.
 | Quick (blink/smile) | **Client** (MediaPipe / ML Kit) | Lower — server can't independently prove the blink | Highest (no instructions to follow) |
 | Strong (head turn) | **Server** (YuNet pose from 3 frames) | Higher — random direction can't be faked by a still photo | Slightly more friction |
 
-In both modes the **server** still performs the ArcFace identity match. Quick mode is a convenience trade-off: use Strong mode where anti-spoofing matters (e.g. real attendance clock-in). `clock-in-face` currently uses the Strong (head-turn) path.
+In both modes the **server** still performs the ArcFace identity match. Quick mode is a convenience trade-off: use Strong mode where anti-spoofing matters (e.g. real attendance clock-in). `clock-in-face` / `clock-out-face` currently use the **Quick** (client blink/smile) path. Wiring Strong liveness into those attendance endpoints is a separate task.
 
 Live status shows face found, yaw/scores, guidance, and (Strong mode) stability + time remaining. Loops stop on expiry, employee change, camera stop, success/error, unmount, or mode switch.
 
@@ -322,8 +322,9 @@ liveness and identity — never trust ML Kit alone for pass/fail.
 ### Clock-in with face + liveness (`scan_attendance_screen.dart`)
 
 Two liveness modes mirror the web demo (see the trade-off table above). Pick
-per your security needs — **Strong (head turn)** is server-verified and used by
-`clock-in-face` today; **Quick (blink/smile)** is a lighter, client-side option.
+per your security needs — **Strong (head turn)** is server-verified on the face
+demo path; **Quick (blink/smile)** is the lighter client-side option used by
+`clock-in-face` / `clock-out-face` today.
 
 #### Quick mode — ML Kit blink/smile auto-capture
 
