@@ -21,7 +21,7 @@ const navIcons: Record<string, LucideIcon> = {
   Dashboard: LayoutDashboard,
   "Approved Businesses": CheckSquare,
   "Registration Request": ClipboardList,
-  "Legal Defaults": Scale,
+  Consents: Scale,
   "Activity Logs": Activity,
   Profile: UserRound,
 };
