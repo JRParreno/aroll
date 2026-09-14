@@ -337,7 +337,7 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
                   ),
                   const SizedBox(height: 14),
                   OutlinedButton(
-                    onPressed: () => context.push('/legal-page'),
+                    onPressed: () => context.push('/consents?view=1'),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: brand.primary,
                       side: BorderSide(color: brand.primary.withValues(alpha: 0.45)),
@@ -347,7 +347,7 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
                       ),
                     ),
                     child: const Text(
-                      'Workplace Terms & Privacy',
+                      'View consents',
                       style: TextStyle(fontWeight: FontWeight.w700),
                     ),
                   ),

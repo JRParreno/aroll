@@ -45,6 +45,13 @@ abstract class EmployeeRepository {
     String client = 'mobile',
   });
 
+  Future<EmployeeConsents> getConsents();
+
+  Future<EmployeeConsents> acceptConsentDocument(
+    String documentId, {
+    String client = 'mobile',
+  });
+
   Future<PublicLegalPage> getPublicLegalPage(String businessCode);
 
   Future<FaceStatus> enrollFaceSamples(List<File> images);

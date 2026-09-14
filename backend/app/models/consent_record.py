@@ -48,6 +48,12 @@ class ConsentRecord(Base):
         String(64), nullable=True
     )
     content_snapshot: Mapped[str | None] = mapped_column(Text, nullable=True)
+    document_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("consent_document.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

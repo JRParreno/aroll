@@ -17,6 +17,7 @@ class UserSession extends Equatable {
     this.profileImageUrl,
     this.isDemo = false,
     this.isInternalTest = false,
+    this.consentsCompleted,
   });
 
   final String userId;
@@ -34,6 +35,7 @@ class UserSession extends Equatable {
   final String? profileImageUrl;
   final bool isDemo;
   final bool isInternalTest;
+  final bool? consentsCompleted;
 
   bool get isOwner => role == 'owner' || role == 'manager';
   bool get isEmployee => role == 'employee';
@@ -45,6 +47,7 @@ class UserSession extends Equatable {
     String? profileImageUrl,
     bool? isDemo,
     bool? isInternalTest,
+    bool? consentsCompleted,
   }) {
     return UserSession(
       userId: userId,
@@ -62,6 +65,7 @@ class UserSession extends Equatable {
       profileImageUrl: profileImageUrl ?? this.profileImageUrl,
       isDemo: isDemo ?? this.isDemo,
       isInternalTest: isInternalTest ?? this.isInternalTest,
+      consentsCompleted: consentsCompleted ?? this.consentsCompleted,
     );
   }
 
@@ -82,6 +86,7 @@ class UserSession extends Equatable {
         profileImageUrl,
         isDemo,
         isInternalTest,
+        consentsCompleted,
       ];
 }
 

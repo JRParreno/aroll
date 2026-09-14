@@ -1,7 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Building2, FileText, Palette } from "lucide-react";
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
 import { toast } from "sonner";
 import { BusinessRegistrationDocumentsSection } from "@/components/business/BusinessRegistrationDocumentsSection";
 import {
@@ -29,10 +28,12 @@ import {
   fetchOwnerRegistrationDocumentFile,
   getBusinessLegalSettings,
   getBusinessSettings,
+  listConsentDocuments,
   updateBusinessLegalSettings,
   updateBusinessSettings,
   type BusinessBrandingSettings,
 } from "@/lib/api";
+import { ConsentDocumentManager } from "@/components/consents/ConsentDocumentManager";
 import { ME_QUERY_KEY } from "@/lib/authSession";
 import { formatBusinessType, formatVerificationStatus } from "@/lib/registrationDocuments";
 
@@ -53,14 +54,6 @@ export function OwnerBusinessSettingsPage() {
   });
   const [branding, setBranding] =
     useState<BusinessBrandingSettings>(defaultBusinessBranding);
-  const [legalCustom, setLegalCustom] = useState({
-    terms_content: "",
-    privacy_content: "",
-    biometric_consent_content: "",
-    terms_version: "",
-    privacy_version: "",
-    biometric_consent_version: "",
-  });
   const [useCustomConsents, setUseCustomConsents] = useState(false);
 
   const { data, isLoading, isError } = useQuery({
@@ -72,20 +65,14 @@ export function OwnerBusinessSettingsPage() {
     queryKey: ["business-legal"],
     queryFn: getBusinessLegalSettings,
   });
+  const { data: consentCatalog, isLoading: consentsLoading } = useQuery({
+    queryKey: ["owner-consents"],
+    queryFn: () => listConsentDocuments("owner"),
+  });
 
   useEffect(() => {
     if (!legalData) return;
     setUseCustomConsents(legalData.use_custom_consents);
-    setLegalCustom({
-      terms_content: legalData.custom.terms_content ?? "",
-      privacy_content: legalData.custom.privacy_content ?? "",
-      biometric_consent_content:
-        legalData.custom.biometric_consent_content ?? "",
-      terms_version: legalData.custom.terms_version ?? "",
-      privacy_version: legalData.custom.privacy_version ?? "",
-      biometric_consent_version:
-        legalData.custom.biometric_consent_version ?? "",
-    });
   }, [legalData]);
 
   useEffect(() => {
@@ -119,18 +106,13 @@ export function OwnerBusinessSettingsPage() {
     mutationFn: () =>
       updateBusinessLegalSettings({
         use_custom_consents: useCustomConsents,
-        terms_content: legalCustom.terms_content,
-        privacy_content: legalCustom.privacy_content,
-        biometric_consent_content: legalCustom.biometric_consent_content,
-        terms_version: legalCustom.terms_version,
-        privacy_version: legalCustom.privacy_version,
-        biometric_consent_version: legalCustom.biometric_consent_version,
       }),
     onSuccess: () => {
-      toast.success("Legal page saved");
+      toast.success("Consent settings saved");
       qc.invalidateQueries({ queryKey: ["business-legal"] });
+      qc.invalidateQueries({ queryKey: ["owner-consents"] });
     },
-    onError: () => toast.error("Failed to save legal page"),
+    onError: () => toast.error("Failed to save consent settings"),
   });
 
   if (isLoading) {
@@ -249,42 +231,13 @@ export function OwnerBusinessSettingsPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Legal Content</CardTitle>
+            <CardTitle>Workplace consents</CardTitle>
             <p className="text-sm text-muted-foreground">
-              This workplace uses Aroll+ default Terms, Privacy, and Biometric
-              Consent unless you enable a custom override. Employees review the
-              effective page at the generated URL. You are not required to write
-              legal copy.
+              Employees always load consents from the API. This workplace uses
+              Aroll+ Admin defaults unless you enable custom workplace consents.
             </p>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
-              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                Effective legal page
-              </p>
-              <div className="mt-1 flex flex-wrap items-center gap-3">
-                <code className="text-xs">
-                  {legalData?.legal_page_url ||
-                    `/legal/b/${form.business_code}`}
-                </code>
-                {form.business_code ? (
-                  <Link
-                    className="text-sm font-medium text-[#1E3A5F] underline"
-                    to={`/legal/b/${form.business_code}`}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    Preview
-                  </Link>
-                ) : null}
-              </div>
-              <p className="mt-2 text-sm font-medium text-slate-800">
-                {useCustomConsents
-                  ? "Custom for this workplace"
-                  : "Using Aroll+ Defaults"}
-              </p>
-            </div>
-
             <label className="flex items-start gap-3 rounded-lg border border-slate-200 px-3 py-3 text-sm">
               <input
                 type="checkbox"
@@ -293,99 +246,43 @@ export function OwnerBusinessSettingsPage() {
                 onChange={(event) => setUseCustomConsents(event.target.checked)}
               />
               <span>
-                <span className="font-medium">Use custom legal content</span>
+                <span className="font-medium">Use custom workplace consents</span>
                 <span className="mt-1 block text-muted-foreground">
-                  When off, employees see the current Aroll+ defaults. When on,
-                  this workplace must publish its own Terms, Privacy, and
-                  Biometric Consent. Incomplete custom content cannot be
-                  accepted.
+                  Off by default. When on, employees see only this workplace’s
+                  documents. Incomplete or unpublished custom catalogs fail
+                  closed and do not fall back to Admin defaults.
                 </span>
               </span>
             </label>
-
-            <div className="space-y-3 rounded-lg border border-slate-200 p-3">
-              <p className="text-sm font-medium text-slate-800">
-                Aroll+ defaults (read-only)
-              </p>
-              {(
-                [
-                  ["terms", "Terms and Conditions"],
-                  ["privacy", "Privacy Policy"],
-                  ["biometric", "Biometric Consent"],
-                ] as const
-              ).map(([key, label]) => {
-                const section = legalData?.defaults?.[key];
-                return (
-                  <div key={key} className="space-y-1">
-                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                      {label}
-                      {section?.version ? ` · ${section.version}` : ""}
-                      {section?.published === false ? " · unpublished" : ""}
-                    </p>
-                    <pre className="max-h-40 overflow-auto whitespace-pre-wrap rounded-md bg-slate-50 p-3 text-xs leading-5 text-slate-700">
-                      {section?.content || "No platform default published yet."}
-                    </pre>
-                  </div>
-                );
-              })}
-            </div>
-
-            {useCustomConsents ? (
-              <>
-                {(
-                  [
-                    ["terms_content", "terms_version", "Terms and Conditions"],
-                    ["privacy_content", "privacy_version", "Privacy Policy"],
-                    [
-                      "biometric_consent_content",
-                      "biometric_consent_version",
-                      "Biometric Consent",
-                    ],
-                  ] as const
-                ).map(([contentKey, versionKey, label]) => (
-                  <div key={contentKey} className="space-y-2">
-                    <div className="flex items-end gap-3">
-                      <div className="flex-1 space-y-2">
-                        <Label htmlFor={contentKey}>{label}</Label>
-                        <textarea
-                          id={contentKey}
-                          className="min-h-32 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                          value={legalCustom[contentKey]}
-                          onChange={(event) =>
-                            setLegalCustom({
-                              ...legalCustom,
-                              [contentKey]: event.target.value,
-                            })
-                          }
-                        />
-                      </div>
-                      <div className="w-48 space-y-2">
-                        <Label htmlFor={versionKey}>Version</Label>
-                        <Input
-                          id={versionKey}
-                          value={legalCustom[versionKey]}
-                          onChange={(event) =>
-                            setLegalCustom({
-                              ...legalCustom,
-                              [versionKey]: event.target.value,
-                            })
-                          }
-                          placeholder="e.g. terms-2026-09-09"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </>
-            ) : null}
-
             <Button
               type="button"
               onClick={() => saveLegal.mutate()}
               disabled={saveLegal.isPending}
             >
-              Save legal settings
+              {saveLegal.isPending ? "Saving…" : "Save consent toggle"}
             </Button>
+            {consentsLoading ? (
+              <p className="text-sm text-muted-foreground">Loading consents…</p>
+            ) : useCustomConsents ? (
+              <ConsentDocumentManager
+                scope="owner"
+                documents={consentCatalog?.documents ?? []}
+                canEdit={consentCatalog?.can_edit === true}
+                onChanged={() => {
+                  qc.invalidateQueries({ queryKey: ["owner-consents"] });
+                }}
+              />
+            ) : (
+              <ConsentDocumentManager
+                scope="owner"
+                documents={consentCatalog?.documents ?? []}
+                canEdit={false}
+                readOnlyHint="Admin defaults apply. Turn on custom workplace consents to upload or edit documents for this workplace only."
+                onChanged={() => {
+                  qc.invalidateQueries({ queryKey: ["owner-consents"] });
+                }}
+              />
+            )}
           </CardContent>
         </Card>
 

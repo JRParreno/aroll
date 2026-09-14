@@ -5,6 +5,7 @@ from app.api import (
     attendance_corrections,
     auth,
     businesses,
+    consents,
     employee_mobile,
     employees,
     face,
@@ -15,6 +16,7 @@ from app.api import (
     owner_reports,
     payroll_adjustments,
     positions,
+    public_consents,
     public_legal,
     registrations,
     schedule_reuse,
@@ -25,6 +27,8 @@ from app.api import (
 api_router = APIRouter(prefix="/api/v1")
 api_router.include_router(auth.router)
 api_router.include_router(public_legal.router)
+api_router.include_router(public_consents.router)
+api_router.include_router(consents.router)
 api_router.include_router(registrations.router)
 api_router.include_router(admin.router)
 api_router.include_router(employee_mobile.router)

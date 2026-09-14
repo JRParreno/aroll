@@ -11,6 +11,7 @@ class AppState extends ChangeNotifier {
   /// null = unknown; false = must accept; true = current versions accepted.
   bool? legalConsentSatisfied;
   bool? biometricConsentSatisfied;
+  bool? consentsCompleted;
   bool permissionsIntroSeen = false;
   /// UI-only DEMO01 research notice. Not a demo-mode security flag.
   bool researchEvalAcknowledged = false;
@@ -20,8 +21,9 @@ class AppState extends ChangeNotifier {
     isLoggedIn = true;
     mustChangePassword = mustChange;
     researchEvalAcknowledged = false;
-    legalConsentSatisfied = s.isDemo ? true : null;
-    biometricConsentSatisfied = s.isDemo ? true : null;
+    consentsCompleted = s.isDemo ? true : s.consentsCompleted;
+    legalConsentSatisfied = consentsCompleted;
+    biometricConsentSatisfied = consentsCompleted;
     if (s.isEmployee) {
       employeeProfileImageUrl = s.profileImageUrl;
       // Locked until server confirms enrollment (login, restore, or resume).
@@ -44,9 +46,11 @@ class AppState extends ChangeNotifier {
   void setConsentStatus({
     required bool legalSatisfied,
     required bool biometricSatisfied,
+    bool? consentsCompleted,
   }) {
     legalConsentSatisfied = legalSatisfied;
     biometricConsentSatisfied = biometricSatisfied;
+    this.consentsCompleted = consentsCompleted ?? (legalSatisfied && biometricSatisfied);
     notifyListeners();
   }
 
@@ -63,6 +67,7 @@ class AppState extends ChangeNotifier {
     faceEnrolled = null;
     legalConsentSatisfied = null;
     biometricConsentSatisfied = null;
+    consentsCompleted = null;
     permissionsIntroSeen = false;
     researchEvalAcknowledged = false;
     notifyListeners();
@@ -106,6 +111,7 @@ class AppState extends ChangeNotifier {
         profileImageUrl: imageUrl,
         isDemo: current.isDemo,
         isInternalTest: current.isInternalTest,
+        consentsCompleted: current.consentsCompleted,
       );
     }
     notifyListeners();

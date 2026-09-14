@@ -11,19 +11,22 @@ Future<void> syncEmployeeConsentGate(
     appState.setConsentStatus(
       legalSatisfied: true,
       biometricSatisfied: true,
+      consentsCompleted: true,
     );
     return;
   }
   try {
-    final status = await repository.getConsentStatus();
+    final status = await repository.getConsents();
     appState.setConsentStatus(
-      legalSatisfied: status.legalSatisfied,
-      biometricSatisfied: status.biometricSatisfied,
+      legalSatisfied: status.consentsCompleted,
+      biometricSatisfied: status.consentsCompleted,
+      consentsCompleted: status.consentsCompleted,
     );
   } catch (_) {
     appState.setConsentStatus(
       legalSatisfied: false,
       biometricSatisfied: false,
+      consentsCompleted: false,
     );
   }
 }

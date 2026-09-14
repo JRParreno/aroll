@@ -27,6 +27,7 @@ class LegalConsentStatusResponse(BaseModel):
     use_custom_consents: bool = False
     legal_satisfied: bool
     biometric_satisfied: bool
+    consents_completed: bool = False
     adult_acknowledged: bool = False
     terms: ConsentTypeStatus
     privacy: ConsentTypeStatus

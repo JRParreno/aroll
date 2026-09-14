@@ -72,8 +72,9 @@ class _ArollAppState extends State<ArollApp> with WidgetsBindingObserver {
     // Already on the enroll screen — avoid fighting the camera/tutorial UI.
     final loc = _router?.routerDelegate.currentConfiguration.uri.path;
     if (loc == '/face-registration' ||
-        loc == '/legal-consent' ||
+        loc == '/consents' ||
         loc == '/permissions' ||
+        loc == '/legal-consent' ||
         loc == '/biometric-consent') {
       return;
     }

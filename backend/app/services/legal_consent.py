@@ -126,35 +126,33 @@ def platform_document(
 def resolve_legal_section(
     db: Session, business: Business, consent_type: str
 ) -> EffectiveLegalSection:
-    if getattr(business, "use_custom_consents", False):
-        content = custom_content(business, consent_type)
-        version = custom_version(business, consent_type)
-        published = section_published(content, version)
-        return EffectiveLegalSection(
-            consent_type=consent_type,
-            content=content if published else None,
-            version=version if published else None,
-            content_source=CONTENT_SOURCE_CUSTOM,
-            published=published,
-        )
+    from app.services.consent_catalog import (
+        document_by_type,
+        document_published,
+        document_source,
+    )
 
-    document = platform_document(db, consent_type)
-    if document is None or not document.published:
+    source = (
+        CONTENT_SOURCE_CUSTOM
+        if getattr(business, "use_custom_consents", False)
+        else CONTENT_SOURCE_ADMIN
+    )
+    document = document_by_type(db, business, consent_type)
+    if document is None:
         return EffectiveLegalSection(
             consent_type=consent_type,
             content=None,
             version=None,
-            content_source=CONTENT_SOURCE_ADMIN,
+            content_source=source,
             published=False,
         )
-    content = _trimmed(document.content) or None
-    version = _trimmed(document.version) or None
-    published = section_published(content, version)
+    published = document_published(document)
+    content = _trimmed(document.body_text) or None
     return EffectiveLegalSection(
         consent_type=consent_type,
         content=content if published else None,
-        version=version if published else None,
-        content_source=CONTENT_SOURCE_ADMIN,
+        version=_trimmed(document.version) if published else None,
+        content_source=document_source(document),
         published=published,
     )
 
@@ -188,28 +186,24 @@ def latest_record(
 def type_satisfied(
     db: Session, employee: Employee, business: Business, consent_type: str
 ) -> bool:
-    section = resolve_legal_section(db, business, consent_type)
-    if not section.published:
+    from app.services.consent_catalog import document_by_type, document_satisfied
+
+    document = document_by_type(db, business, consent_type)
+    if document is None:
         return False
-    record = latest_record(db, employee.id, consent_type)
-    if record is None or record.action != ACTION_ACCEPTED:
-        return False
-    if record.policy_version != section.version:
-        return False
-    if (
-        record.content_source
-        and record.content_source != section.content_source
-    ):
-        return False
-    return True
+    return document_satisfied(db, employee, business, document)
 
 
 def legal_satisfied(db: Session, employee: Employee, business: Business) -> bool:
-    return all(type_satisfied(db, employee, business, item) for item in LEGAL_TYPES)
+    from app.services.consent_catalog import legal_docs_satisfied
+
+    return legal_docs_satisfied(db, employee, business)
 
 
 def biometric_satisfied(db: Session, employee: Employee, business: Business) -> bool:
-    return type_satisfied(db, employee, business, CONSENT_BIOMETRIC)
+    from app.services.consent_catalog import biometric_docs_satisfied
+
+    return biometric_docs_satisfied(db, employee, business)
 
 
 def _section_public_dict(section: EffectiveLegalSection) -> dict:
@@ -253,6 +247,8 @@ def _type_status(
 def consent_status_payload(
     db: Session, employee: Employee, business: Business
 ) -> dict:
+    from app.services.consent_catalog import consents_completed as catalog_completed
+
     ensure_legal_page_url(business)
     terms = _type_status(db, employee, business, CONSENT_TERMS)
     privacy = _type_status(db, employee, business, CONSENT_PRIVACY)
@@ -272,6 +268,7 @@ def consent_status_payload(
         "use_custom_consents": bool(getattr(business, "use_custom_consents", False)),
         "legal_satisfied": bool(terms["satisfied"] and privacy["satisfied"]),
         "biometric_satisfied": bool(biometric["satisfied"]),
+        "consents_completed": catalog_completed(db, employee, business),
         "adult_acknowledged": adult,
         "terms": terms,
         "privacy": privacy,
@@ -481,6 +478,9 @@ def record_acceptances(
             )
         if type_satisfied(db, employee, business, consent_type):
             continue
+        from app.services.consent_catalog import document_by_type
+
+        document = document_by_type(db, business, consent_type)
         snapshot = section.content
         row = ConsentRecord(
             business_id=business.id,
@@ -493,11 +493,14 @@ def record_acceptances(
             ip_address=meta.get("ip_address"),
             device=meta.get("device"),
             platform=meta.get("platform"),
-            legal_page_url=page_url,
+            legal_page_url=(
+                f"/legal/c/{document.id}" if document is not None else page_url
+            ),
             adult_acknowledged=adult_acknowledged if needs_adult else None,
             content_source=section.content_source,
             accepted_content_hash=content_hash(snapshot),
             content_snapshot=snapshot,
+            document_id=document.id if document is not None else None,
             created_at=now,
         )
         db.add(row)
@@ -525,29 +528,68 @@ def withdraw_biometric_consent(
     request: Request | None,
 ) -> ConsentRecord:
     from app.core.request_meta import audit_meta_from_request
+    from app.services.consent_catalog import (
+        document_by_type,
+        document_content_hash,
+        document_page_path,
+        document_snapshot,
+        document_source,
+        required_published_documents,
+    )
 
     meta = audit_meta_from_request(request)
-    section = resolve_legal_section(db, business, CONSENT_BIOMETRIC)
-    version = section.version or "unpublished"
-    snapshot = section.content
-    row = ConsentRecord(
-        business_id=business.id,
-        employee_id=employee.id,
-        user_id=actor_user_id,
-        consent_type=CONSENT_BIOMETRIC,
-        policy_version=version,
-        action=ACTION_WITHDRAWN,
-        client=_normalize_client(client) or "web",
-        ip_address=meta.get("ip_address"),
-        device=meta.get("device"),
-        platform=meta.get("platform"),
-        legal_page_url=ensure_legal_page_url(business),
-        content_source=section.content_source,
-        accepted_content_hash=content_hash(snapshot),
-        content_snapshot=snapshot,
-        created_at=datetime.now(timezone.utc),
-    )
-    db.add(row)
+    docs = required_published_documents(db, business, biometric=True)
+    if not docs:
+        typed = document_by_type(db, business, CONSENT_BIOMETRIC)
+        docs = [typed] if typed is not None else []
+    now = datetime.now(timezone.utc)
+    client_value = _normalize_client(client) or "web"
+    last: ConsentRecord | None = None
+    if not docs:
+        section = resolve_legal_section(db, business, CONSENT_BIOMETRIC)
+        last = ConsentRecord(
+            business_id=business.id,
+            employee_id=employee.id,
+            user_id=actor_user_id,
+            consent_type=CONSENT_BIOMETRIC,
+            policy_version=section.version or "unpublished",
+            action=ACTION_WITHDRAWN,
+            client=client_value,
+            ip_address=meta.get("ip_address"),
+            device=meta.get("device"),
+            platform=meta.get("platform"),
+            legal_page_url=ensure_legal_page_url(business),
+            content_source=section.content_source,
+            accepted_content_hash=content_hash(section.content),
+            content_snapshot=section.content,
+            created_at=now,
+        )
+        db.add(last)
+        version = section.version or "unpublished"
+    else:
+        version = docs[0].version
+        for document in docs:
+            snapshot = document_snapshot(document)
+            last = ConsentRecord(
+                business_id=business.id,
+                employee_id=employee.id,
+                user_id=actor_user_id,
+                consent_type=document.consent_type,
+                policy_version=document.version,
+                action=ACTION_WITHDRAWN,
+                client=client_value,
+                ip_address=meta.get("ip_address"),
+                device=meta.get("device"),
+                platform=meta.get("platform"),
+                legal_page_url=document_page_path(document.id),
+                content_source=document_source(document),
+                accepted_content_hash=document_content_hash(document),
+                content_snapshot=snapshot,
+                document_id=document.id,
+                created_at=now,
+            )
+            db.add(last)
+    assert last is not None
     deleted = clear_employee_face_data(db, employee)
     add_log(
         db,
@@ -560,7 +602,7 @@ def withdraw_biometric_consent(
         device=meta.get("device"),
         ip_address=meta.get("ip_address"),
     )
-    return row
+    return last
 
 
 def clear_employee_face_data(db: Session, employee: Employee) -> int:
@@ -678,6 +720,9 @@ def ensure_platform_legal_defaults(
             existing.updated_at = now
             if updated_by is not None:
                 existing.updated_by = updated_by
+    from app.services.consent_catalog import ensure_platform_consent_documents
+
+    ensure_platform_consent_documents(db, force=force, updated_by=updated_by)
 
 
 def publish_default_legal(
@@ -697,28 +742,37 @@ def seed_accepted_consents(
     user_id: uuid.UUID,
     client: str = "mobile",
 ) -> None:
+    from app.services.consent_catalog import (
+        document_content_hash,
+        document_page_path,
+        document_satisfied,
+        document_snapshot,
+        document_source,
+        published_effective_documents,
+    )
+
     publish_default_legal(db, business)
     now = datetime.now(timezone.utc)
     page_url = ensure_legal_page_url(business)
-    for consent_type in ALL_TYPES:
-        if type_satisfied(db, employee, business, consent_type):
+    for document in published_effective_documents(db, business):
+        if document_satisfied(db, employee, business, document):
             continue
-        section = resolve_legal_section(db, business, consent_type)
-        snapshot = section.content
+        snapshot = document_snapshot(document)
         db.add(
             ConsentRecord(
                 business_id=business.id,
                 employee_id=employee.id,
                 user_id=user_id,
-                consent_type=consent_type,
-                policy_version=section.version or "",
+                consent_type=document.consent_type,
+                policy_version=document.version or "",
                 action=ACTION_ACCEPTED,
                 client=client,
-                legal_page_url=page_url,
+                legal_page_url=document_page_path(document.id) or page_url,
                 adult_acknowledged=True,
-                content_source=section.content_source,
-                accepted_content_hash=content_hash(snapshot),
+                content_source=document_source(document),
+                accepted_content_hash=document_content_hash(document),
                 content_snapshot=snapshot,
+                document_id=document.id,
                 created_at=now,
             )
         )
@@ -827,6 +881,33 @@ def apply_platform_legal_update(db: Session, body, *, updated_by: uuid.UUID) -> 
     if not changed:
         raise HTTPException(400, "No legal default fields to update")
 
+    from app.services.consent_catalog import sync_typed_platform_document
+
+    sync_typed_platform_document(
+        db,
+        CONSENT_TERMS,
+        content=body.terms_content,
+        version=body.terms_version,
+        published=body.terms_published,
+        updated_by=updated_by,
+    )
+    sync_typed_platform_document(
+        db,
+        CONSENT_PRIVACY,
+        content=body.privacy_content,
+        version=body.privacy_version,
+        published=body.privacy_published,
+        updated_by=updated_by,
+    )
+    sync_typed_platform_document(
+        db,
+        CONSENT_BIOMETRIC,
+        content=body.biometric_consent_content,
+        version=body.biometric_consent_version,
+        published=body.biometric_published,
+        updated_by=updated_by,
+    )
+
 
 def legal_settings_payload(db: Session, business: Business) -> dict:
     ensure_legal_page_url(business)
@@ -866,7 +947,9 @@ def legal_settings_payload(db: Session, business: Business) -> dict:
     }
 
 
-def apply_legal_settings_update(business: Business, body) -> None:
+def apply_legal_settings_update(
+    db: Session, business: Business, body, *, updated_by: uuid.UUID | None = None
+) -> None:
     ensure_legal_page_url(business)
 
     def assign_text(field: str, value: str | None) -> None:
@@ -906,6 +989,33 @@ def apply_legal_settings_update(business: Business, body) -> None:
         )
     ):
         business.legal_updated_at = datetime.now(timezone.utc)
+
+    from app.services.consent_catalog import sync_typed_business_document
+
+    sync_typed_business_document(
+        db,
+        business,
+        CONSENT_TERMS,
+        content=body.terms_content,
+        version=body.terms_version,
+        updated_by=updated_by,
+    )
+    sync_typed_business_document(
+        db,
+        business,
+        CONSENT_PRIVACY,
+        content=body.privacy_content,
+        version=body.privacy_version,
+        updated_by=updated_by,
+    )
+    sync_typed_business_document(
+        db,
+        business,
+        CONSENT_BIOMETRIC,
+        content=body.biometric_consent_content,
+        version=body.biometric_consent_version,
+        updated_by=updated_by,
+    )
 
 
 def lookup_business_by_code(db: Session, business_code: str) -> Business:

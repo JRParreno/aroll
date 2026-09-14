@@ -73,6 +73,24 @@ class ApiClient {
 
   Dio get dio => _dio;
 
+  String get apiOrigin {
+    final uri = Uri.parse(_dio.options.baseUrl);
+    if (uri.hasScheme && uri.host.isNotEmpty) {
+      return uri.origin;
+    }
+    return 'http://127.0.0.1:8000';
+  }
+
+  String resolvePublicUrl(String path) {
+    if (path.startsWith('http://') || path.startsWith('https://')) {
+      return path;
+    }
+    if (path.startsWith('/')) {
+      return '$apiOrigin$path';
+    }
+    return '$apiOrigin/${path}';
+  }
+
   Future<void> saveToken(String token) {
     _handlingUnauthorized = false;
     return _storage.write(key: _tokenKey, value: token);

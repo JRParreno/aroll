@@ -78,6 +78,20 @@ def _employee_auth_context(
     }
 
 
+def _consents_completed_for_user(user: User, db: Session) -> bool:
+    if user.role != UserRole.employee:
+        return True
+    if user.business_id is None:
+        return False
+    business = db.get(Business, user.business_id)
+    employee = db.query(Employee).filter(Employee.user_id == user.id).first()
+    if business is None or employee is None:
+        return False
+    from app.services.consent_catalog import consents_completed
+
+    return consents_completed(db, employee, business)
+
+
 def _token_response(user: User, db: Session) -> TokenResponse:
     token = create_access_token(
         str(user.id),
@@ -93,6 +107,7 @@ def _token_response(user: User, db: Session) -> TokenResponse:
         must_change_password=user.must_change_password,
         is_demo=is_demo,
         is_internal_test=is_internal_test,
+        consents_completed=_consents_completed_for_user(user, db),
         **_employee_auth_context(user, db),
     )
 
@@ -296,4 +311,5 @@ def me(
         profile_image_url=ctx["profile_image_url"],
         is_demo=is_demo,
         is_internal_test=is_internal_test,
+        consents_completed=_consents_completed_for_user(user, db),
     )

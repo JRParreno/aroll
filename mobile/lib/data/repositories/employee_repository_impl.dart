@@ -165,6 +165,24 @@ class EmployeeRepositoryImpl implements EmployeeRepository {
   }
 
   @override
+  Future<EmployeeConsents> getConsents() async {
+    final res = await _api.dio.get<Map<String, dynamic>>('/consents');
+    return EmployeeConsents.fromJson(res.data!);
+  }
+
+  @override
+  Future<EmployeeConsents> acceptConsentDocument(
+    String documentId, {
+    String client = 'mobile',
+  }) async {
+    final res = await _api.dio.post<Map<String, dynamic>>(
+      '/consents/$documentId/accept',
+      data: {'client': client},
+    );
+    return EmployeeConsents.fromJson(res.data!);
+  }
+
+  @override
   Future<PublicLegalPage> getPublicLegalPage(String businessCode) async {
     final res = await _api.dio.get<Map<String, dynamic>>(
       '/public/legal/${businessCode.trim().toUpperCase()}',

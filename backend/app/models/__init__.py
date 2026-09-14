@@ -3,6 +3,7 @@ from app.models.attendance_correction import AttendanceCorrectionRequest
 from app.models.attendance_policy import BusinessAttendancePolicy
 from app.models.business import Business, BusinessLocation, BusinessRegistration
 from app.models.consent_record import ConsentRecord
+from app.models.consent_document import ConsentDocument
 from app.models.platform_legal_document import PlatformLegalDocument
 from app.models.employee import Employee
 from app.models.face_embedding import EmployeeFaceEmbedding
@@ -26,6 +27,7 @@ __all__ = [
     "BusinessRegistration",
     "BusinessLocation",
     "ConsentRecord",
+    "ConsentDocument",
     "PlatformLegalDocument",
     "Employee",
     "EmployeeFaceEmbedding",

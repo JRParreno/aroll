@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     # Set to false in production and list explicit origins in CORS_ORIGINS instead.
     cors_allow_localhost_regex: bool = True
     registration_upload_dir: str = "uploads/registrations"
+    consent_upload_dir: str = "uploads/consents"
     # Attendance identity is 1:1 (logged-in employee gallery only).
     # Decision: mean + min (+ centroid) cosine vs that gallery.
     #
