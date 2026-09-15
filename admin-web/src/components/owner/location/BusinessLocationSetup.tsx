@@ -293,14 +293,16 @@ export function BusinessLocationSetup({
   }
 
   return (
-    <div className={cn("space-y-5", className)}>
+    <div className={cn("min-w-0 space-y-5", className)}>
       {isManager ? (
         <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-slate-800">
           Only the business owner can update the business location.
         </div>
       ) : null}
 
-      <p className="text-sm text-[#6B7280]">{description}</p>
+      {description ? (
+        <p className="text-sm text-[#6B7280]">{description}</p>
+      ) : null}
 
       <div
         className={cn(
@@ -325,7 +327,7 @@ export function BusinessLocationSetup({
 
       <div className="space-y-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
         <div>
-          <h2 className="text-base font-semibold text-[#111827]">
+          <h2 className="owner-section-title">
             Add Business Address
           </h2>
         </div>
@@ -395,10 +397,10 @@ export function BusinessLocationSetup({
 
         <div>
           <div className="mb-2 flex items-center justify-between gap-3">
-            <h3 className="text-base font-semibold text-[#111827]">
+            <h3 className="owner-section-title">
               Set Attendance Distance
             </h3>
-            <span className="rounded-lg border border-slate-200 bg-[#F3F4F6] px-2.5 py-1 text-xs font-bold text-[#111827]">
+            <span className="rounded-lg border border-slate-200 bg-[#F3F4F6] px-2.5 py-1 text-xs font-medium text-[#111827]">
               {form.geofence_radius_m}m
             </span>
           </div>

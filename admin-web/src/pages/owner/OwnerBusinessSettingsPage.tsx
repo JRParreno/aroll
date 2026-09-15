@@ -19,6 +19,7 @@ import {
   OwnerPage,
   OwnerPageBackLink,
   OwnerPageContent,
+  OwnerPageHeader,
 } from "@/components/owner/layout/OwnerPageLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -118,6 +119,10 @@ export function OwnerBusinessSettingsPage() {
   if (isLoading) {
     return (
       <OwnerPage>
+        <OwnerPageHeader
+          title="Business Settings"
+          description="Business profile, branding, and registration documents."
+        />
         <OwnerPageContent className="max-w-4xl">
           <p className="text-sm text-muted-foreground">Loading business settings…</p>
         </OwnerPageContent>
@@ -128,6 +133,10 @@ export function OwnerBusinessSettingsPage() {
   if (isError || !data) {
     return (
       <OwnerPage>
+        <OwnerPageHeader
+          title="Business Settings"
+          description="Business profile, branding, and registration documents."
+        />
         <OwnerPageContent className="max-w-4xl">
           <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
             Unable to load business settings. Please try again.
@@ -146,19 +155,18 @@ export function OwnerBusinessSettingsPage() {
 
   return (
     <OwnerPage>
+      <OwnerPageHeader
+        title="Business Settings"
+        description="Business profile, branding, and registration documents."
+      />
       <OwnerPageContent className="max-w-4xl">
         <OwnerPageBackLink to="/owner/settings/setup" label="Back to Business Setup" />
 
-        <div>
-          <h1 className="text-2xl font-semibold">Business Settings</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Business profile, branding, and registration documents.
-          </p>
-        </div>
-
         <Card>
           <CardHeader>
-            <CardTitle>Business Information</CardTitle>
+            <CardTitle className="text-[1.0625rem] font-semibold leading-snug tracking-[-0.015em]">
+              Business Information
+            </CardTitle>
           </CardHeader>
           <CardContent className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2 md:col-span-2">
@@ -211,11 +219,11 @@ export function OwnerBusinessSettingsPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
+            <CardTitle className="flex items-center gap-2 text-[1.0625rem] font-semibold leading-snug tracking-[-0.015em]">
               <Palette className="h-4 w-4" />
               Business Branding & Theme
             </CardTitle>
-            <p className="text-sm text-muted-foreground">
+            <p className="owner-section-subtitle mt-1">
               Logo and brand colors appear in the owner portal and employee
               mobile app. The separate display image field was removed in favor
               of the business logo.
@@ -231,8 +239,10 @@ export function OwnerBusinessSettingsPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Workplace consents</CardTitle>
-            <p className="text-sm text-muted-foreground">
+            <CardTitle className="text-[1.0625rem] font-semibold leading-snug tracking-[-0.015em]">
+              Workplace consents
+            </CardTitle>
+            <p className="owner-section-subtitle mt-1">
               Employees always load consents from the API. This workplace uses
               Aroll+ Admin defaults unless you enable custom workplace consents.
             </p>

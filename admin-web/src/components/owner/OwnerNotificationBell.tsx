@@ -27,7 +27,7 @@ export function OwnerNotificationBell({ className }: { className?: string }) {
     >
       <Bell className="h-[18px] w-[18px]" strokeWidth={2} />
       {unreadCount > 0 ? (
-        <span className="absolute -right-1.5 -top-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-[#DC2626] px-1 text-[10px] font-bold text-white ring-2 ring-white">
+        <span className="absolute -right-1.5 -top-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-[#DC2626] px-1 text-[10px] font-medium text-white ring-2 ring-white">
           {unreadCount > 99 ? "99+" : unreadCount}
         </span>
       ) : null}

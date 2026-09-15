@@ -33,7 +33,7 @@ export function OwnerComingSoon({
           </div>
           <div>
             <h2 className="text-base font-semibold text-[#1F2937]">{title}</h2>
-            <p className="mt-1 max-w-xl text-sm leading-relaxed text-[#6B7280]">
+            <p className="owner-section-subtitle mt-1 max-w-xl">
               We’re shaping this area to match the rest of your workspace. Check
               back soon for the full experience.
             </p>

@@ -152,7 +152,7 @@ export function OwnerPayrollPage() {
         description={
           isDemo
             ? "Demonstration payroll only. Not for actual salary payment."
-            : undefined
+            : "Review pay periods and employee earnings."
         }
       />
 

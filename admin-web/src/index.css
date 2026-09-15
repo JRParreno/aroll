@@ -34,10 +34,24 @@
   --owner-ink: #1f2937;
   --owner-muted: #6b7280;
   color: var(--owner-ink);
+  font-family: Inter, ui-sans-serif, system-ui, "Segoe UI", sans-serif;
+  font-size: 0.9375rem;
+  font-weight: 400;
+  line-height: 1.55;
+  letter-spacing: -0.011em;
   background:
     radial-gradient(1200px 480px at 100% -10%, rgba(30, 58, 95, 0.06), transparent 55%),
     radial-gradient(900px 420px at 0% 0%, rgba(40, 75, 115, 0.04), transparent 50%),
     var(--owner-page);
+  height: 100dvh;
+  max-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  overflow-x: hidden;
+  overscroll-behavior: none;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 @layer components {
@@ -53,13 +67,224 @@
     @apply inline-flex items-center justify-center rounded-xl bg-[#EEF3F8] text-[#1E3A5F];
   }
 
+  .owner-page-title {
+    font-size: 1.75rem;
+    font-weight: 600;
+    line-height: 1.22;
+    letter-spacing: -0.022em;
+    color: #1f2937;
+  }
+
   .owner-section-title {
-    @apply text-lg font-semibold tracking-tight text-[#1F2937];
+    font-size: 1.0625rem;
+    font-weight: 600;
+    line-height: 1.35;
+    letter-spacing: -0.015em;
+    color: #1f2937;
   }
 
   .owner-section-subtitle {
-    @apply text-sm text-[#6B7280];
+    font-size: 0.9375rem;
+    font-weight: 400;
+    line-height: 1.55;
+    letter-spacing: -0.006em;
+    color: #6b7280;
   }
+
+  .owner-label {
+    font-size: 0.75rem;
+    font-weight: 500;
+    line-height: 1.35;
+    letter-spacing: 0.04em;
+  }
+
+  .owner-page-header {
+    --owner-page-header-pad-x: 1.25rem;
+    --owner-page-header-pad-y: 1.5rem;
+    --owner-page-header-copy-height: 5.5rem;
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    flex-shrink: 0;
+    overflow: hidden;
+    border-bottom: 1px solid rgb(226 232 240 / 0.8);
+    background: rgb(255 255 255 / 0.9);
+    padding: var(--owner-page-header-pad-y) var(--owner-page-header-pad-x);
+    backdrop-filter: blur(4px);
+  }
+
+  .owner-page-header-inner {
+    position: relative;
+    display: flex;
+    max-width: 72rem;
+    margin-inline: auto;
+    min-height: var(--owner-page-header-copy-height);
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+
+  .owner-page-header-copy {
+    display: flex;
+    min-width: 0;
+    min-height: var(--owner-page-header-copy-height);
+    flex: 1 1 auto;
+    flex-direction: column;
+    justify-content: center;
+  }
+
+  .owner-page-header-eyebrow {
+    height: 1.0125rem;
+    margin: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .owner-page-header .owner-page-title {
+    margin-top: 0.375rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .owner-page-header-description {
+    margin-top: 0.375rem;
+    min-height: 1.453125rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .owner-page-header-tools {
+    display: flex;
+    min-height: var(--owner-page-header-copy-height);
+    flex-shrink: 0;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.5rem;
+  }
+}
+
+html:has(.owner-shell),
+body:has(.owner-shell),
+#root:has(.owner-shell) {
+  height: 100%;
+  max-height: 100dvh;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+.owner-main-scroll {
+  min-height: 0;
+  flex: 1 1 0%;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  overscroll-behavior-x: none;
+}
+
+.owner-dashboard-scroll {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.owner-dashboard-page {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.owner-dashboard-page .owner-page-header {
+  flex-shrink: 0;
+  --owner-page-header-pad-y: 0.85rem;
+  --owner-page-header-copy-height: 4.65rem;
+}
+
+.owner-dashboard-content {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 0.9rem;
+  overflow: hidden;
+  padding-top: 1rem;
+  padding-bottom: 1rem;
+}
+
+.owner-dashboard-content > :not([hidden]) ~ :not([hidden]) {
+  margin-top: 0;
+}
+
+.owner-dashboard-main {
+  display: grid;
+  min-height: 0;
+  flex: 1 1 auto;
+  height: 100%;
+  grid-template-rows: minmax(0, 1fr);
+}
+
+@media (min-width: 640px) {
+  .owner-page-title {
+    font-size: 1.875rem;
+  }
+
+  .owner-page-header {
+    --owner-page-header-pad-x: 2rem;
+  }
+}
+
+/* Keep Owner type weights to 400 / 500 / 600, including portaled dialogs. */
+.owner-shell .font-bold,
+.owner-shell .font-extrabold,
+.owner-shell .font-black,
+body:has(.owner-shell) .font-bold,
+body:has(.owner-shell) .font-extrabold,
+body:has(.owner-shell) .font-black {
+  font-weight: 600;
+}
+
+.owner-shell .text-xs.font-semibold,
+.owner-shell .text-xs.font-bold,
+.owner-shell .text-\[10px\].font-semibold,
+.owner-shell .text-\[10px\].font-bold,
+.owner-shell .text-\[11px\].font-semibold,
+.owner-shell .text-\[11px\].font-bold,
+.owner-shell .text-\[12px\].font-semibold,
+.owner-shell .text-\[12px\].font-bold,
+body:has(.owner-shell) .text-xs.font-semibold,
+body:has(.owner-shell) .text-xs.font-bold,
+body:has(.owner-shell) .text-\[10px\].font-semibold,
+body:has(.owner-shell) .text-\[10px\].font-bold,
+body:has(.owner-shell) .text-\[11px\].font-semibold,
+body:has(.owner-shell) .text-\[11px\].font-bold {
+  font-weight: 500;
+}
+
+.owner-shell h1,
+body:has(.owner-shell) h1 {
+  font-weight: 600;
+  letter-spacing: -0.022em;
+  line-height: 1.22;
+}
+
+.owner-shell h2,
+body:has(.owner-shell) h2 {
+  letter-spacing: -0.016em;
+  line-height: 1.35;
+}
+
+.owner-shell h3,
+body:has(.owner-shell) h3 {
+  font-size: 1.0625rem;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  line-height: 1.35;
 }
 
 @layer utilities {

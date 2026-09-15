@@ -14,8 +14,8 @@ const METRICS = [
   { label: "Absent", key: "absent_shifts" as const, color: "#EF4444" },
 ] as const;
 
-const CHART_HEIGHT = 148;
-const MAX_BAR_HEIGHT = 120;
+const CHART_HEIGHT = 132;
+const MAX_BAR_HEIGHT = 104;
 
 function hasMeaningfulData(summary: OwnerPerformanceSummary | undefined) {
   if (!summary?.has_performance_data) return false;
@@ -51,7 +51,7 @@ export function PerformanceOverviewChart({
               className="flex flex-1 flex-col items-center justify-end"
               key={bar.key}
             >
-              <span className="text-[10px] font-semibold text-[#374151]">
+              <span className="text-[11px] font-medium text-[#374151]">
                 {isLoading ? "..." : bar.value}
               </span>
               <div
@@ -61,7 +61,7 @@ export function PerformanceOverviewChart({
                   backgroundColor: bar.color,
                 }}
               />
-              <span className="mt-2 text-center text-[10px] text-[#6B7280]">
+              <span className="mt-2 text-center text-[11px] font-medium text-[#6B7280]">
                 {bar.label}
               </span>
             </div>
@@ -70,7 +70,7 @@ export function PerformanceOverviewChart({
       </div>
 
       {!isLoading && !hasData && (
-        <div className="mt-4 rounded-xl border border-dashed border-slate-200 bg-[#FAFBFC] px-4 py-3 text-center">
+        <div className="mt-3 rounded-xl border border-dashed border-slate-200 bg-[#FAFBFC] px-4 py-2.5 text-center">
           <p className="text-sm font-medium text-[#374151]">
             No attendance records yet.
           </p>

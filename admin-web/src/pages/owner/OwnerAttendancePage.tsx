@@ -301,7 +301,7 @@ export function OwnerAttendancePage() {
         description={
           isDemo
             ? "Simulated Time In / Time Out records for demonstration only."
-            : undefined
+            : "Review Time In and Time Out records for your team."
         }
       />
 

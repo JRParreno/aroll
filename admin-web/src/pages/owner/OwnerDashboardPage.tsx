@@ -55,7 +55,7 @@ export function OwnerDashboardPage() {
   ];
 
   return (
-    <OwnerPage>
+    <OwnerPage className="owner-dashboard-page">
       <OwnerPageHeader
         eyebrow="Welcome back"
         title={`${businessName} Dashboard`}
@@ -66,18 +66,18 @@ export function OwnerDashboardPage() {
         }
       />
 
-      <OwnerPageContent>
+      <OwnerPageContent className="owner-dashboard-content">
         <PrototypeNotice />
         {setupStatus && !setupStatus.setup_completed_at && (
           <SetupProgressCard status={setupStatus} />
         )}
 
-        <section className="grid gap-4 md:grid-cols-3">
+        <section className="grid shrink-0 gap-3 md:grid-cols-3">
           {metrics.map((metric) => {
             const Icon = metric.icon;
             return (
               <OwnerCard
-                className={`relative overflow-hidden bg-gradient-to-br ${metric.accent} p-5`}
+                className={`relative overflow-hidden bg-gradient-to-br ${metric.accent} p-4`}
                 key={metric.label}
               >
                 <div className="pointer-events-none absolute -right-6 -top-6 h-20 w-20 rounded-full bg-white/60" />
@@ -85,17 +85,17 @@ export function OwnerDashboardPage() {
                   <div className={`rounded-xl p-2.5 ${metric.iconTone}`}>
                     <Icon className="h-5 w-5" />
                   </div>
-                  <span className="rounded-full bg-white/80 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[#6B7280] ring-1 ring-slate-200/80">
+                  <span className="rounded-full bg-white/80 px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide text-[#6B7280] ring-1 ring-slate-200/80">
                     {isDemo ? "Simulated · 30 days" : "30 days"}
                   </span>
                 </div>
-                <p className="relative mt-5 text-2xl font-semibold tracking-tight text-[#1F2937]">
+                <p className="relative mt-3 text-2xl font-semibold tracking-tight text-[#1F2937]">
                   {isLoading ? "..." : metric.value}
                 </p>
-                <p className="relative mt-1 text-sm font-medium text-[#374151]">
+                <p className="relative mt-1 text-[0.9375rem] font-medium text-[#374151]">
                   {metric.label}
                 </p>
-                <p className="relative mt-2 text-xs leading-relaxed text-[#6B7280]">
+                <p className="owner-section-subtitle relative mt-1.5 text-[0.8125rem]">
                   {metric.helper}
                 </p>
               </OwnerCard>
@@ -103,9 +103,9 @@ export function OwnerDashboardPage() {
           })}
         </section>
 
-        <section className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
-          <OwnerCard className="p-5 sm:p-6">
-            <div className="mb-5">
+        <section className="owner-dashboard-main grid items-stretch gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(16rem,20rem)]">
+          <OwnerCard className="flex h-full min-h-0 flex-col p-4 sm:p-5">
+            <div className="mb-3 shrink-0">
               <h2 className="owner-section-title">Performance Overview</h2>
               <p className="owner-section-subtitle mt-1">
                 {isDemo
@@ -113,7 +113,11 @@ export function OwnerDashboardPage() {
                   : "Based on actual attendance and assigned shifts."}
               </p>
             </div>
-            <PerformanceOverviewChart isLoading={isLoading} summary={summary} />
+            <PerformanceOverviewChart
+              className="min-h-0 flex-1"
+              isLoading={isLoading}
+              summary={summary}
+            />
           </OwnerCard>
 
           <OwnerDashboardInsights />
