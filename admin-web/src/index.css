@@ -108,6 +108,332 @@ body:has(.owner-dashboard-scroll),
   }
 }
 
+html:has(.admin-shell),
+body:has(.admin-shell),
+#root:has(.admin-shell) {
+  height: 100%;
+  max-height: 100dvh;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+.admin-main-scroll {
+  min-height: 0;
+  flex: 1 1 0%;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  overscroll-behavior-x: none;
+}
+
+.admin-dashboard-scroll {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.admin-dashboard-page {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.admin-dashboard-page .admin-page-header {
+  flex-shrink: 0;
+  padding-top: 0.9rem;
+  padding-bottom: 0.9rem;
+}
+
+.admin-dashboard-content {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 1rem;
+  overflow: hidden;
+  padding-top: 1.1rem;
+  padding-bottom: 1.1rem;
+}
+
+.admin-dashboard-content > :not([hidden]) ~ :not([hidden]) {
+  margin-top: 0;
+}
+
+.admin-dashboard-ops {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.admin-dashboard-ops-grid {
+  display: grid;
+  min-height: 0;
+  flex: 1 1 auto;
+  height: 100%;
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.admin-shell {
+  display: flex;
+  height: 100dvh;
+  max-height: 100dvh;
+  flex-direction: column;
+  overflow: hidden;
+  overflow-x: hidden;
+  background: #f4f7fb;
+  overscroll-behavior: none;
+}
+
+.admin-sidebar {
+  --admin-nav-item-height: 2.75rem;
+  --admin-nav-pad-x: 0.875rem;
+  --admin-nav-icon: 1.125rem;
+  --admin-nav-gap: 0.75rem;
+  --admin-nav-radius: 0.75rem;
+  --admin-nav-font-size: 0.875rem;
+  --admin-nav-font-weight: 500;
+  position: relative;
+  display: flex;
+  max-height: 42vh;
+  width: 100%;
+  flex-shrink: 0;
+  flex-direction: column;
+  overflow: hidden;
+  background: #16324f;
+  color: #fff;
+}
+
+.admin-nav-list {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 0.25rem;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 1.25rem 0.75rem;
+}
+
+.admin-nav-item {
+  box-sizing: border-box;
+  display: flex;
+  height: var(--admin-nav-item-height);
+  min-height: var(--admin-nav-item-height);
+  max-height: var(--admin-nav-item-height);
+  width: 100%;
+  flex-shrink: 0;
+  align-items: center;
+  gap: var(--admin-nav-gap);
+  overflow: hidden;
+  border: 0;
+  border-radius: var(--admin-nav-radius);
+  padding-block: 0;
+  padding-inline: var(--admin-nav-pad-x);
+  appearance: none;
+  background: transparent;
+  font-family: inherit;
+  font-size: var(--admin-nav-font-size);
+  font-weight: var(--admin-nav-font-weight);
+  line-height: 1;
+  color: rgb(255 255 255 / 0.78);
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.admin-nav-item:hover {
+  background: rgb(255 255 255 / 0.08);
+  color: #fff;
+}
+
+.admin-nav-item:focus-visible {
+  outline: 2px solid rgb(255 255 255 / 0.45);
+  outline-offset: 2px;
+}
+
+.admin-nav-item-active {
+  background: #284b73;
+  color: #fff;
+}
+
+.admin-nav-item-active:hover {
+  background: #284b73;
+  color: #fff;
+}
+
+.admin-nav-item svg {
+  height: var(--admin-nav-icon);
+  width: var(--admin-nav-icon);
+  flex-shrink: 0;
+}
+
+.admin-nav-item-label {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1;
+}
+
+.admin-nav-footer {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  border-top: 1px solid rgb(255 255 255 / 0.1);
+  padding: 1rem 0.75rem 1.25rem;
+}
+
+.admin-main {
+  display: flex;
+  min-height: 0;
+  min-width: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  overflow: hidden;
+  overflow-x: hidden;
+  background: #f4f7fb;
+}
+
+.admin-page-header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  flex-shrink: 0;
+  border-bottom: 1px solid #e8eef5;
+  background: rgb(255 255 255 / 0.92);
+  padding: 1.15rem 1.25rem;
+  backdrop-filter: blur(8px);
+}
+
+.admin-page-header-inner {
+  display: flex;
+  max-width: 72rem;
+  margin-inline: auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.admin-page-header-copy {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.admin-page-header-eyebrow {
+  margin: 0;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  line-height: 1.35;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #6b7280;
+}
+
+.admin-page-title {
+  margin: 0.3rem 0 0;
+  font-size: 1.5rem;
+  font-weight: 700;
+  line-height: 1.22;
+  letter-spacing: -0.024em;
+  color: #10233a;
+}
+
+.admin-page-header-description {
+  margin: 0.35rem 0 0;
+  max-width: 40rem;
+  font-size: 0.875rem;
+  font-weight: 400;
+  line-height: 1.5;
+  color: #6b7280;
+}
+
+.admin-page-header-tools {
+  display: flex;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.admin-card {
+  border: 1px solid #e8eef5;
+  border-radius: 1.25rem;
+  background: #fff;
+  box-shadow: 0 1px 2px rgb(16 35 58 / 0.04);
+  transition: box-shadow 160ms ease;
+}
+
+.admin-card:hover {
+  box-shadow: 0 6px 18px rgb(16 35 58 / 0.06);
+}
+
+.admin-card-pad {
+  padding: 1.35rem 1.5rem;
+}
+
+.admin-icon-well {
+  display: inline-flex;
+  height: 2.25rem;
+  width: 2.25rem;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.75rem;
+  background: #e7f0fa;
+  color: #1e3a5f;
+}
+
+.admin-section-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  color: #10233a;
+}
+
+.admin-section-copy {
+  margin: 0.25rem 0 0;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: #6b7280;
+}
+
+@media (min-width: 640px) {
+  .admin-page-header {
+    padding-left: 2rem;
+    padding-right: 2rem;
+  }
+
+  .admin-page-title {
+    font-size: 1.625rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .admin-sidebar {
+    position: fixed;
+    inset-block: 0;
+    left: 0;
+    z-index: 30;
+    max-height: none;
+    width: 16rem;
+  }
+
+  .admin-main {
+    padding-left: 16rem;
+  }
+}
+
 @layer utilities {
   @keyframes shimmer {
     0% {

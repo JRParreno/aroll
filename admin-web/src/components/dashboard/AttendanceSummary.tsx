@@ -1,3 +1,4 @@
+import { Clock3 } from "lucide-react";
 import { ShimmerAttendance } from "@/components/ui/shimmer";
 
 const MOCK_ATTENDANCE = {
@@ -14,6 +15,7 @@ type AttendanceSummaryProps = {
   presentRate: number;
   hasData: boolean;
   loading?: boolean;
+  className?: string;
 };
 
 export function AttendanceSummary({
@@ -23,25 +25,28 @@ export function AttendanceSummary({
   presentRate,
   hasData,
   loading,
+  className,
 }: AttendanceSummaryProps) {
   const display = hasData
     ? { present, absent, late, present_rate: presentRate }
     : MOCK_ATTENDANCE;
-
-  const radius = 68;
-  const circumference = 2 * Math.PI * radius;
-  const progress = (display.present_rate / 100) * circumference;
+  const total = display.present + display.absent + display.late;
+  const share = (value: number) =>
+    total > 0 ? `${((value / total) * 100).toFixed(1)}%` : "0%";
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-      <div className="flex items-center justify-between gap-2">
-        <div>
-          <h2 className="text-lg font-semibold text-[#1F2937]">
-            Today&apos;s Attendance Summary
-          </h2>
-          <p className="mt-1 text-sm text-[#6B7280]">
-            Present, absent, and late counts across active businesses.
-          </p>
+    <section className={`admin-card admin-card-pad flex h-full min-h-0 flex-col ${className ?? ""}`}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-start gap-3">
+          <span className="admin-icon-well">
+            <Clock3 className="h-4 w-4" strokeWidth={2} />
+          </span>
+          <div>
+            <h2 className="admin-section-kicker">Attendance Summary</h2>
+            <p className="admin-section-copy">
+              Overview of employee attendance across all businesses.
+            </p>
+          </div>
         </div>
         {!hasData && !loading && (
           <span className="rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-medium text-amber-700">
@@ -53,66 +58,57 @@ export function AttendanceSummary({
       {loading ? (
         <ShimmerAttendance />
       ) : (
-        <div className="mt-4 flex flex-col items-center gap-6 sm:flex-row sm:items-center">
-          <div className="relative h-44 w-44 shrink-0">
-            <svg
-              viewBox="0 0 160 160"
-              className="h-full w-full -rotate-90"
-              aria-hidden
-            >
-              <circle
-                cx="80"
-                cy="80"
-                r={radius}
-                fill="none"
-                stroke="#e5e7eb"
-                strokeWidth="14"
-              />
-              <circle
-                cx="80"
-                cy="80"
-                r={radius}
-                fill="none"
-                stroke="#4D9A21"
-                strokeWidth="14"
-                strokeLinecap="round"
-                strokeDasharray={`${progress} ${circumference}`}
-              />
-            </svg>
-            <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-              <span className="text-2xl font-semibold text-[#4D9A21]">
-                {display.present_rate}%
-              </span>
-              <span className="text-xs text-muted-foreground">Present Rate</span>
-            </div>
-          </div>
-
-          <div className="w-full space-y-4 sm:flex-1">
-            <AttendanceStat label="Present" value={display.present} color="text-[#4D9A21]" />
-            <AttendanceStat label="Absent" value={display.absent} color="text-[#DC2626]" />
-            <AttendanceStat label="Late" value={display.late} color="text-[#D97706]" />
-          </div>
+        <div className="mt-4 grid flex-1 grid-cols-3 content-end gap-2">
+          <AttendanceStat
+            label="Present"
+            value={display.present}
+            share={hasData ? `${display.present_rate}%` : share(display.present)}
+            color="#16A34A"
+            well="bg-[#F3FBF6]"
+          />
+          <AttendanceStat
+            label="Late"
+            value={display.late}
+            share={share(display.late)}
+            color="#D97706"
+            well="bg-[#FFF8F1]"
+          />
+          <AttendanceStat
+            label="Absent"
+            value={display.absent}
+            share={share(display.absent)}
+            color="#DC2626"
+            well="bg-[#FDF4F4]"
+          />
         </div>
       )}
-    </div>
+    </section>
   );
 }
 
 function AttendanceStat({
   label,
   value,
+  share,
   color,
+  well,
 }: {
   label: string;
   value: number;
+  share: string;
   color: string;
+  well: string;
 }) {
   return (
-    <div className="flex items-baseline justify-between border-b border-dashed pb-2 last:border-0">
-      <span className={`text-2xl font-semibold ${color}`}>
+    <div className={`rounded-xl px-2.5 py-2.5 ${well}`}>
+      <p className="flex items-center gap-1.5 text-xs font-medium text-[#6B7280]">
+        <span className="h-2 w-2 rounded-full" style={{ backgroundColor: color }} />
+        {label}
+      </p>
+      <p className="mt-1.5 text-xl font-semibold tracking-tight text-[#10233A]">
         {value.toLocaleString()}
-      </span>
-      <span className="text-sm text-muted-foreground">{label}</span>
+      </p>
+      <p className="mt-1 text-xs text-[#6B7280]">{share}</p>
     </div>
   );
 }

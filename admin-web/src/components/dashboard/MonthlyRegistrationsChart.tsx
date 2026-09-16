@@ -1,65 +1,86 @@
+import { BarChart3 } from "lucide-react";
 import {
   Bar,
   BarChart,
   CartesianGrid,
   Cell,
+  LabelList,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from "recharts";
 import { Shimmer, ShimmerChart } from "@/components/ui/shimmer";
+import { cn } from "@/lib/utils";
 
-const BAR_COLORS = [
-  "#3B82F6",
-  "#F59E0B",
-  "#EF4444",
-  "#16A34A",
-  "#8B5CF6",
-  "#D97706",
-  "#0891B2",
-  "#DB2777",
-  "#4F46E5",
-  "#0F766E",
-  "#B45309",
-  "#7C3AED",
-];
+type MonthlyPoint = { month: string; count: number };
 
 type MonthlyRegistrationsChartProps = {
-  data: { month: string; count: number }[];
+  data: MonthlyPoint[];
   loading?: boolean;
+  className?: string;
 };
+
+function RegistrationsTooltip({
+  active,
+  payload,
+  label,
+}: {
+  active?: boolean;
+  payload?: { value: number }[];
+  label?: string;
+}) {
+  if (!active || !payload?.length) return null;
+
+  return (
+    <div className="rounded-xl border border-[#E8EEF5] bg-white px-3 py-2 shadow-[0_8px_20px_rgba(16,35,58,0.08)]">
+      <p className="text-xs text-[#6B7280]">{label}</p>
+      <p className="mt-0.5 text-sm font-semibold text-[#1E3A5F]">
+        {payload[0].value} registration{payload[0].value === 1 ? "" : "s"}
+      </p>
+    </div>
+  );
+}
 
 export function MonthlyRegistrationsChart({
   data,
   loading,
+  className,
 }: MonthlyRegistrationsChartProps) {
   const chartData = data.length > 0 ? data : [];
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+    <section className={cn("admin-card admin-card-pad flex h-full min-h-0 flex-col", className)}>
       {loading ? (
-        <Shimmer className="h-6 w-48" />
+        <Shimmer className="h-9 w-56" />
       ) : (
-        <div>
-          <h2 className="text-lg font-semibold text-[#1F2937]">
-            Monthly Registrations
-          </h2>
-          <p className="mt-1 text-sm text-[#6B7280]">
-            New business registration volume by month.
-          </p>
+        <div className="flex items-start gap-3">
+          <span className="admin-icon-well">
+            <BarChart3 className="h-4 w-4" strokeWidth={2} />
+          </span>
+          <div>
+            <h2 className="admin-section-kicker">Monthly Registrations</h2>
+            <p className="admin-section-copy">
+              New business registration volume by month.
+            </p>
+          </div>
         </div>
       )}
 
       {loading ? (
         <ShimmerChart />
       ) : (
-        <div className="mt-6 h-64 w-full">
+        <div className="mt-3 min-h-[9.5rem] w-full flex-1">
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={chartData} margin={{ top: 8, right: 8, left: -16, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
+            <BarChart
+              data={chartData}
+              barCategoryGap="22%"
+              margin={{ top: 18, right: 8, left: -8, bottom: 4 }}
+            >
+              <CartesianGrid strokeDasharray="4 6" vertical={false} stroke="#E8EEF5" />
               <XAxis
                 dataKey="month"
+                interval={0}
                 tick={{ fontSize: 12, fill: "#6b7280" }}
                 axisLine={false}
                 tickLine={false}
@@ -69,25 +90,34 @@ export function MonthlyRegistrationsChart({
                 tick={{ fontSize: 12, fill: "#6b7280" }}
                 axisLine={false}
                 tickLine={false}
+                width={28}
               />
               <Tooltip
-                cursor={{ fill: "rgba(0,0,0,0.04)" }}
-                contentStyle={{
-                  borderRadius: "12px",
-                  border: "1px solid #E5E7EB",
-                  boxShadow: "0 10px 24px rgba(15, 23, 42, 0.08)",
-                  fontSize: "13px",
-                }}
+                cursor={{ fill: "rgba(30, 58, 95, 0.04)" }}
+                content={<RegistrationsTooltip />}
               />
-              <Bar dataKey="count" radius={[6, 6, 0, 0]} maxBarSize={36}>
-                {chartData.map((_, index) => (
-                  <Cell key={index} fill={BAR_COLORS[index % BAR_COLORS.length]} />
+              <Bar
+                dataKey="count"
+                radius={[7, 7, 0, 0]}
+                maxBarSize={38}
+                minPointSize={6}
+              >
+                {chartData.map((entry) => (
+                  <Cell
+                    key={entry.month}
+                    fill={entry.count > 0 ? "#3B82F6" : "#D7E4F2"}
+                  />
                 ))}
+                <LabelList
+                  dataKey="count"
+                  position="top"
+                  className="fill-[#6B7280] text-[11px]"
+                />
               </Bar>
             </BarChart>
           </ResponsiveContainer>
         </div>
       )}
-    </div>
+    </section>
   );
 }

@@ -24,19 +24,20 @@ export function ShimmerStatCard({ className }: { className?: string }) {
   return (
     <div
       className={cn(
-        "rounded-2xl px-6 py-5 shadow-md",
+        "flex h-full min-h-[10.25rem] flex-col justify-center rounded-[1.15rem] border px-4 py-4",
         className
       )}
     >
-      <Shimmer variant="light" className="h-4 w-24" />
-      <Shimmer variant="light" className="mt-4 h-10 w-16" />
+      <Shimmer className="h-3 w-24" />
+      <Shimmer className="mt-4 h-8 w-16" />
+      <Shimmer className="mt-3 h-3 w-28" />
     </div>
   );
 }
 
 export function ShimmerChart() {
   return (
-    <div className="mt-6 flex h-64 items-end justify-between gap-2 px-2">
+    <div className="mt-4 flex h-44 items-end justify-between gap-2">
       {Array.from({ length: 12 }).map((_, i) => (
         <Shimmer
           key={i}
@@ -50,22 +51,19 @@ export function ShimmerChart() {
 
 export function ShimmerAttendance() {
   return (
-    <div className="mt-4 flex flex-col items-center gap-6 sm:flex-row sm:items-center">
-      <Shimmer className="h-44 w-44 shrink-0 rounded-full" />
-      <div className="w-full space-y-4 sm:flex-1">
-        <Shimmer className="h-10 w-full" />
-        <Shimmer className="h-10 w-full" />
-        <Shimmer className="h-10 w-full" />
-      </div>
+    <div className="mt-4 grid grid-cols-3 gap-2">
+      <Shimmer className="h-16 w-full rounded-xl" />
+      <Shimmer className="h-16 w-full rounded-xl" />
+      <Shimmer className="h-16 w-full rounded-xl" />
     </div>
   );
 }
 
 export function ShimmerActivityList() {
   return (
-    <div className="mt-4 space-y-3">
-      {Array.from({ length: 4 }).map((_, i) => (
-        <Shimmer key={i} className="h-14 w-full rounded-xl" />
+    <div className="mt-4 space-y-2">
+      {Array.from({ length: 5 }).map((_, i) => (
+        <Shimmer key={i} className="h-12 w-full rounded-lg" />
       ))}
     </div>
   );

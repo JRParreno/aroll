@@ -449,7 +449,9 @@ def get_activity_logs(
     _: User = Depends(require_roles(UserRole.platform_admin)),
 ):
     logs = (
-        db.query(ActivityLog)
+        db.query(ActivityLog, User)
+        .join(User, ActivityLog.user_id == User.id)
+        .filter(User.role == UserRole.platform_admin)
         .order_by(ActivityLog.created_at.desc())
         .limit(50)
         .all()
@@ -459,11 +461,13 @@ def get_activity_logs(
         {
             "id": str(log.id),
             "user_id": str(log.user_id) if log.user_id else None,
+            "actor_email": user.email,
+            "actor_role": user.role.value,
             "action": log.action,
             "description": log.description,
             "created_at": log.created_at,
         }
-        for log in logs
+        for log, user in logs
     ]
 
 
