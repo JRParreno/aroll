@@ -54,7 +54,7 @@ function InsightCard({
   linkLabel: string;
 }) {
   return (
-    <div className="owner-card p-5">
+    <div className="owner-card flex min-h-0 flex-1 flex-col p-4">
       <div className="flex items-start justify-between gap-3">
         <div className="owner-icon-well h-9 w-9">
           <Icon className="h-4 w-4" />
@@ -66,11 +66,11 @@ function InsightCard({
           {linkLabel}
         </Link>
       </div>
-      <p className="mt-4 text-sm font-medium text-[#374151]">{title}</p>
+      <p className="mt-3 text-sm font-medium text-[#374151]">{title}</p>
       <p className="mt-1 text-xl font-semibold tracking-tight text-[#1F2937]">
         {loading ? "..." : value}
       </p>
-      <p className="mt-2 text-xs leading-relaxed text-[#6B7280]">{helper}</p>
+      <p className="mt-1.5 text-xs leading-relaxed text-[#6B7280]">{helper}</p>
     </div>
   );
 }
@@ -105,7 +105,7 @@ export function OwnerDashboardInsights() {
       : null;
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex h-full min-h-0 flex-col gap-3">
       <InsightCard
         title={isDemo ? "Sample Payroll Status" : "Payroll Status"}
         icon={CalendarClock}

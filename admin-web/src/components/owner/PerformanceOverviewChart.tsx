@@ -14,8 +14,8 @@ const METRICS = [
   { label: "Absent", key: "absent_shifts" as const, color: "#EF4444" },
 ] as const;
 
-const CHART_HEIGHT = 148;
-const MAX_BAR_HEIGHT = 120;
+const CHART_HEIGHT = 132;
+const MAX_BAR_HEIGHT = 104;
 
 function hasMeaningfulData(summary: OwnerPerformanceSummary | undefined) {
   if (!summary?.has_performance_data) return false;
@@ -70,7 +70,7 @@ export function PerformanceOverviewChart({
       </div>
 
       {!isLoading && !hasData && (
-        <div className="mt-4 rounded-xl border border-dashed border-slate-200 bg-[#FAFBFC] px-4 py-3 text-center">
+        <div className="mt-3 rounded-xl border border-dashed border-slate-200 bg-[#FAFBFC] px-4 py-2.5 text-center">
           <p className="text-sm font-medium text-[#374151]">
             No attendance records yet.
           </p>

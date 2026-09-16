@@ -130,6 +130,8 @@ export function OwnerLayout() {
   const businessLogo = branding?.logo_url;
   const ownerProfileImage = branding?.owner_profile_image_url;
   const topBar = useMemo(() => resolveTopBarMeta(pathname), [pathname]);
+  const isDashboard =
+    pathname === "/owner/dashboard" || pathname === "/owner";
 
   function logout() {
     clearAuthSession();
@@ -138,7 +140,12 @@ export function OwnerLayout() {
   }
 
   return (
-    <div className="owner-shell min-h-screen text-[#1F2937] lg:flex">
+    <div
+      className={cn(
+        "owner-shell text-[#1F2937] lg:flex",
+        isDashboard ? "h-dvh max-h-dvh overflow-hidden" : "min-h-screen"
+      )}
+    >
       <aside
         className="relative flex w-full flex-col text-white lg:fixed lg:inset-y-0 lg:z-30 lg:w-64"
         style={{ backgroundColor: sidebarColor }}
@@ -251,8 +258,13 @@ export function OwnerLayout() {
         onConfirm={logout}
       />
 
-      <main className="min-h-screen flex-1 lg:pl-64">
-        <div className="sticky top-0 z-20 border-b border-slate-200/70 bg-white/80 backdrop-blur-md">
+      <main
+        className={cn(
+          "flex-1 lg:pl-64",
+          isDashboard ? "flex min-h-0 flex-col overflow-hidden" : "min-h-screen"
+        )}
+      >
+        <div className="sticky top-0 z-20 shrink-0 border-b border-slate-200/70 bg-white/80 backdrop-blur-md">
           <div className="px-5 py-3 sm:px-8">
             <div className="mx-auto flex max-w-6xl items-center justify-between gap-4">
               <div className="min-w-0">
@@ -268,7 +280,14 @@ export function OwnerLayout() {
           </div>
           <TenantModeBanner />
         </div>
-        <Outlet />
+        <div
+          className={cn(
+            "min-h-0 flex-1",
+            isDashboard && "owner-dashboard-scroll"
+          )}
+        >
+          <Outlet />
+        </div>
       </main>
       <ResearchEvaluationGate />
     </div>
