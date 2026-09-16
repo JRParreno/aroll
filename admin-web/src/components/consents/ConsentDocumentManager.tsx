@@ -52,12 +52,14 @@ export function ConsentDocumentManager({
   canEdit,
   onChanged,
   readOnlyHint,
+  addButtonClassName,
 }: {
   scope: "admin" | "owner";
   documents: ConsentDocument[];
   canEdit: boolean;
   onChanged: () => void;
   readOnlyHint?: string;
+  addButtonClassName?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -154,7 +156,7 @@ export function ConsentDocumentManager({
           {ordered.length} document{ordered.length === 1 ? "" : "s"}
         </p>
         {canEdit ? (
-          <Button type="button" onClick={openCreate}>
+          <Button type="button" className={addButtonClassName} onClick={openCreate}>
             Add consent
           </Button>
         ) : null}

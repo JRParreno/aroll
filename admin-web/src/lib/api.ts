@@ -605,8 +605,18 @@ export async function listEmployees(includeInactive = false) {
   return data;
 }
 
+export type AdminActivityLog = {
+  id: string;
+  user_id?: string | null;
+  actor_email?: string | null;
+  actor_role?: string | null;
+  action: string;
+  description: string;
+  created_at: string;
+};
+
 export async function listActivityLogs() {
-  const { data } = await api.get("/admin/activity-logs");
+  const { data } = await api.get<AdminActivityLog[]>("/admin/activity-logs");
   return data;
 }
 

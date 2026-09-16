@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Activity,
   CheckSquare,
@@ -9,7 +9,7 @@ import {
   UserRound,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { SignOutConfirmDialog } from "@/components/SignOutConfirmDialog";
 import { clearAuthSession } from "@/lib/authSession";
@@ -21,6 +21,7 @@ const navIcons: Record<string, LucideIcon> = {
   Dashboard: LayoutDashboard,
   "Approved Businesses": CheckSquare,
   "Registration Request": ClipboardList,
+  Consents: Scale,
   "Legal Defaults": Scale,
   "Activity Logs": Activity,
   Profile: UserRound,
@@ -29,9 +30,17 @@ const navIcons: Record<string, LucideIcon> = {
 export function AppLayout({ nav }: { nav: NavItem[] }) {
   const navigate = useNavigate();
   const qc = useQueryClient();
+  const { pathname } = useLocation();
   const [signOutOpen, setSignOutOpen] = useState(false);
+  const mainScrollRef = useRef<HTMLDivElement>(null);
   const primaryNav = nav.filter((item) => item.label !== "Profile");
   const profileNav = nav.find((item) => item.label === "Profile");
+  const isDashboard =
+    pathname === "/admin/dashboard" || pathname === "/admin";
+
+  useEffect(() => {
+    mainScrollRef.current?.scrollTo({ top: 0 });
+  }, [pathname]);
 
   function logout() {
     clearAuthSession();
@@ -40,15 +49,23 @@ export function AppLayout({ nav }: { nav: NavItem[] }) {
   }
 
   return (
-    <div className="min-h-screen bg-[#F7F8FA] text-[#1F2937] lg:flex">
-      <aside className="flex w-full flex-col bg-[#1E3A5F] text-white lg:fixed lg:inset-y-0 lg:z-30 lg:w-64">
-        <div className="flex h-20 items-center border-b border-white/10 px-6">
-          <p className="text-sm font-semibold uppercase tracking-[0.16em] text-white/75">
-            Admin Console
-          </p>
+    <div className="admin-shell text-[#1F2937]">
+      <aside className="admin-sidebar">
+        <div className="flex h-[4.5rem] shrink-0 items-center gap-3 border-b border-white/10 px-5">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white text-sm font-semibold text-[#16324F]">
+            A
+          </span>
+          <div className="min-w-0">
+            <p className="truncate text-[15px] font-semibold tracking-tight text-white">
+              Aroll+
+            </p>
+            <p className="mt-0.5 text-[10px] font-medium uppercase tracking-[0.16em] text-white/55">
+              Admin Console
+            </p>
+          </div>
         </div>
 
-        <nav className="flex flex-1 flex-col gap-1 px-3 py-5">
+        <nav className="admin-nav-list" aria-label="Admin">
           {primaryNav.map((item) => {
             const Icon = navIcons[item.label] ?? LayoutDashboard;
             return (
@@ -56,42 +73,35 @@ export function AppLayout({ nav }: { nav: NavItem[] }) {
                 key={item.to}
                 to={item.to}
                 className={({ isActive }) =>
-                  cn(
-                    "flex h-11 items-center gap-3 rounded-xl px-4 text-sm font-medium text-white/75 transition hover:bg-white/10 hover:text-white",
-                    isActive && "bg-[#284B73] text-white shadow-sm"
-                  )
+                  cn("admin-nav-item", isActive && "admin-nav-item-active")
                 }
               >
-                <Icon className="h-[18px] w-[18px] shrink-0" strokeWidth={2} />
-                <span className="truncate">{item.label}</span>
+                <Icon strokeWidth={2} />
+                <span className="admin-nav-item-label">{item.label}</span>
               </NavLink>
             );
           })}
         </nav>
 
-        <div className="border-t border-white/10 px-3 py-5">
+        <div className="admin-nav-footer">
           {profileNav && (
             <NavLink
-              key={profileNav.to}
               to={profileNav.to}
               className={({ isActive }) =>
-                cn(
-                  "mb-2 flex h-11 items-center gap-3 rounded-xl px-4 text-sm font-medium text-white/75 transition hover:bg-white/10 hover:text-white",
-                  isActive && "bg-[#284B73] text-white shadow-sm"
-                )
+                cn("admin-nav-item", isActive && "admin-nav-item-active")
               }
             >
-              <UserRound className="h-[18px] w-[18px]" strokeWidth={2} />
-              Profile
+              <UserRound strokeWidth={2} />
+              <span className="admin-nav-item-label">{profileNav.label}</span>
             </NavLink>
           )}
           <button
-            className="flex h-11 w-full items-center gap-3 rounded-xl px-4 text-sm font-medium text-white/75 transition hover:bg-white/10 hover:text-white"
+            className="admin-nav-item"
             onClick={() => setSignOutOpen(true)}
             type="button"
           >
-            <LogOut className="h-[18px] w-[18px]" strokeWidth={2} />
-            Log Out
+            <LogOut strokeWidth={2} />
+            <span className="admin-nav-item-label">Log Out</span>
           </button>
         </div>
       </aside>
@@ -100,8 +110,13 @@ export function AppLayout({ nav }: { nav: NavItem[] }) {
         onOpenChange={setSignOutOpen}
         onConfirm={logout}
       />
-      <main className="min-h-screen flex-1 bg-[#F7F8FA] lg:pl-64">
-        <Outlet />
+      <main className="admin-main">
+        <div
+          ref={mainScrollRef}
+          className={cn("admin-main-scroll", isDashboard && "admin-dashboard-scroll")}
+        >
+          <Outlet />
+        </div>
       </main>
     </div>
   );

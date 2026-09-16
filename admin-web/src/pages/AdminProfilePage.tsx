@@ -1,6 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
 import { Navigate } from "react-router-dom";
 import { Mail, ShieldCheck, UserRound } from "lucide-react";
+import {
+  AdminPage,
+  AdminPageContent,
+  AdminPageHeader,
+} from "@/components/admin/layout/AdminPageLayout";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getMe } from "@/lib/api";
@@ -37,23 +42,15 @@ export function AdminProfilePage() {
   }
 
   return (
-    <div className="min-h-full bg-[#F7F8FA]">
-      <header className="border-b border-slate-200 bg-white px-5 py-6 sm:px-8">
-        <div className="mx-auto max-w-6xl">
-          <p className="text-sm font-medium text-[#6B7280]">
-            Account center
-          </p>
-          <h1 className="mt-1 text-2xl font-semibold tracking-tight text-[#1F2937] sm:text-3xl">
-            Admin Profile
-          </h1>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-[#6B7280]">
-            View the currently signed-in platform administrator account.
-          </p>
-        </div>
-      </header>
+    <AdminPage>
+      <AdminPageHeader
+        eyebrow="Account center"
+        title="Admin Profile"
+        description="View the currently signed-in platform administrator account."
+      />
 
-      <main className="mx-auto max-w-6xl px-5 py-6 sm:px-8">
-        <Card className="overflow-hidden rounded-2xl border-slate-200 bg-white shadow-sm">
+      <AdminPageContent>
+        <Card className="admin-card overflow-hidden rounded-[1.25rem] border-[#E8EEF5] bg-white shadow-none">
           <div className="border-b border-slate-200 bg-gradient-to-r from-[#EAF2FB] to-white px-5 py-8 sm:px-8">
             {isLoading ? (
               <div className="animate-pulse">
@@ -138,8 +135,8 @@ export function AdminProfilePage() {
             )}
           </CardContent>
         </Card>
-      </main>
-    </div>
+      </AdminPageContent>
+    </AdminPage>
   );
 }
 

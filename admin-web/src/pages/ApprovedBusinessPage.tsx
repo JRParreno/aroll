@@ -1,6 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { Building2, ChevronRight, MapPin, Users } from "lucide-react";
+import {
+  AdminPage,
+  AdminPageContent,
+  AdminPageHeader,
+} from "@/components/admin/layout/AdminPageLayout";
 import { formatDateTime, StatusBadge } from "@/components/detail/DetailLayout";
 import { TenantKindBadge } from "@/components/tenant/SimulatedBadge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,24 +18,15 @@ export function ApprovedBusinessPage() {
   });
 
   return (
-    <div className="min-h-full bg-[#F7F8FA]">
-      <header className="border-b border-slate-200 bg-white px-5 py-6 sm:px-8">
-        <div className="mx-auto max-w-6xl">
-          <p className="text-sm font-medium text-[#6B7280]">
-            Business directory
-          </p>
-          <h1 className="mt-1 text-2xl font-semibold tracking-tight text-[#1F2937] sm:text-3xl">
-            Approved Businesses
-          </h1>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-[#6B7280]">
-            Browse approved businesses on the platform and open a profile to
-            review owner, employee, and location details.
-          </p>
-        </div>
-      </header>
+    <AdminPage>
+      <AdminPageHeader
+        eyebrow="Business directory"
+        title="Approved Businesses"
+        description="Browse approved businesses on the platform and open a profile to review owner, employee, and location details."
+      />
 
-      <main className="mx-auto max-w-6xl px-5 py-6 sm:px-8">
-        <Card className="overflow-hidden rounded-2xl border-slate-200 bg-white shadow-sm">
+      <AdminPageContent>
+        <Card className="admin-card overflow-hidden rounded-[1.25rem] border-[#E8EEF5] bg-white shadow-none">
           <CardHeader className="border-b border-slate-200 bg-[#FAFBFC] p-5 sm:p-6">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
@@ -134,7 +130,7 @@ export function ApprovedBusinessPage() {
             )}
           </CardContent>
         </Card>
-      </main>
-    </div>
+      </AdminPageContent>
+    </AdminPage>
   );
 }
