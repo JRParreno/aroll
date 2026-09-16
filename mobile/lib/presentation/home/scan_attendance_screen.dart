@@ -11,6 +11,7 @@ import 'package:aroll_mobile/domain/repositories/employee_repository.dart';
 import 'package:aroll_mobile/presentation/employee/employee_ui.dart';
 import 'package:aroll_mobile/presentation/employee/face_attendance_result_screen.dart';
 import 'package:aroll_mobile/presentation/employee/face_auto_attendance_screen.dart';
+import 'package:aroll_mobile/presentation/employee/time_out_confirm_dialog.dart';
 import 'package:aroll_mobile/core/tenant_mode.dart';
 import 'package:aroll_mobile/presentation/shared/tenant_mode_banner.dart';
 import 'package:flutter/material.dart';
@@ -198,6 +199,8 @@ class _ScanAttendanceScreenState extends State<ScanAttendanceScreen> {
   }
 
   Future<void> _clockOut() async {
+    final confirmed = await showTimeOutConfirmation(context);
+    if (!confirmed || !mounted) return;
     await _startAutoAttendance(FaceAttendanceAction.clockOut);
   }
 
