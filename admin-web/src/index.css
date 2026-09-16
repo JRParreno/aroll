@@ -40,6 +40,52 @@
     var(--owner-page);
 }
 
+html:has(.owner-dashboard-scroll),
+body:has(.owner-dashboard-scroll),
+#root:has(.owner-dashboard-scroll) {
+  height: 100%;
+  max-height: 100dvh;
+  overflow: hidden;
+}
+
+.owner-dashboard-scroll {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.owner-dashboard-page {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.owner-dashboard-content {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 0.9rem;
+  overflow: hidden;
+  padding-top: 1rem;
+  padding-bottom: 1rem;
+}
+
+.owner-dashboard-content > :not([hidden]) ~ :not([hidden]) {
+  margin-top: 0;
+}
+
+.owner-dashboard-main {
+  display: grid;
+  min-height: 0;
+  flex: 1 1 auto;
+  height: 100%;
+  grid-template-rows: minmax(0, 1fr);
+}
+
 @layer components {
   .owner-card {
     @apply rounded-2xl border border-slate-200/90 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_8px_24px_rgba(15,23,42,0.04)];
