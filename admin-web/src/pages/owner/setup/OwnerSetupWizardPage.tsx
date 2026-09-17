@@ -1,16 +1,21 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+﻿import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import {
   ArrowLeft,
   ArrowRight,
+  BadgeDollarSign,
+  BriefcaseBusiness,
+  CalendarDays,
   CheckCircle2,
   Circle,
   ClipboardCheck,
+  Clock3,
+  MapPin,
+  ShieldCheck,
 } from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -19,11 +24,28 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { OwnerNotificationBell } from "@/components/owner/OwnerNotificationBell";
 import { BusinessLocationSetup } from "@/components/owner/location/BusinessLocationSetup";
 import { HolidaySetupSection } from "@/components/owner/setup/HolidaySetupSection";
-import { OwnerPageBackLink } from "@/components/owner/layout/OwnerPageLayout";
+import {
+  WizardField,
+  WizardNotice,
+  WizardRecordList,
+  WizardSection,
+  WizardSelect,
+  WizardSettingRow,
+  WizardStepTrack,
+  wizardInputClass,
+  wizardOutlineBtnClass,
+  wizardPrimaryBtnClass,
+} from "@/components/owner/setup/wizardUi";
+import {
+  OwnerCard,
+  OwnerPage,
+  OwnerPageBackLink,
+} from "@/components/owner/layout/OwnerPageLayout";
 import { formatShiftTime } from "@/components/owner/schedule/scheduleUtils";
+import { cn } from "@/lib/utils";
 import {
   completeSetup,
   createPosition,
@@ -86,6 +108,16 @@ const STEP_HELP: Record<string, string> = {
 };
 
 const REQUIRED_SETUP_KEYS = new Set(["shifts", "positions", "payroll", "location"]);
+
+const STEP_ICONS = [
+  Clock3,
+  BriefcaseBusiness,
+  BadgeDollarSign,
+  ShieldCheck,
+  CalendarDays,
+  MapPin,
+  ClipboardCheck,
+] as const;
 
 const WEEKDAYS = [
   "monday",
@@ -611,68 +643,110 @@ export function OwnerSetupWizardPage() {
     }
   }
 
-  return (
-    <div className="min-h-screen bg-[#F7F8FA] px-4 py-6 text-[#1F2937] sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-5xl space-y-6">
-        {step < 0 ? (
-          <OwnerPageBackLink
-            to="/owner/settings/setup"
-            label="Back to Business Setup"
-          />
-        ) : (
-          <button
-            className="inline-flex items-center gap-2 rounded-lg px-1 py-0.5 text-sm font-medium text-[#6B7280] transition-colors hover:bg-white hover:text-[#1E3A5F]"
-            onClick={() => goToStep(-1)}
-            type="button"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            Back to setup menu
-          </button>
-        )}
+  const countableSteps = STEP_STATUS_KEYS.filter((key) => key !== "review");
+  const completedCount = countableSteps.filter((key) => isStepComplete(key)).length;
+  const wizardProgress =
+    step < 0
+      ? (setupStatus?.completion_percent ?? 0)
+      : Math.round(((step + 1) / STEPS.length) * 100);
+  const stepCompleteFlags = STEP_STATUS_KEYS.map((key) => isStepComplete(key));
 
-        <header className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+  return (
+    <OwnerPage className="flex min-h-full flex-col">
+      <header className="sticky top-0 z-10 border-b border-slate-200/80 bg-white/95 backdrop-blur-sm">
+        <div className="mx-auto w-full min-w-0 max-w-6xl px-5 py-3 sm:px-8">
+          {step < 0 ? (
+            <OwnerPageBackLink
+              to="/owner/settings/setup"
+              label="Back to Business Setup"
+            />
+          ) : (
+            <button
+              className="inline-flex items-center gap-2 rounded-lg px-1 py-0.5 text-sm font-medium text-[#6B7280] transition-colors hover:bg-[#F8FAFC] hover:text-[#1E3A5F]"
+              onClick={() => goToStep(-1)}
+              type="button"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              Back to setup menu
+            </button>
+          )}
+
+          <div className="mt-2 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0">
-              <div className="mb-3 inline-flex items-center gap-2 rounded-full bg-[#EAF2FB] px-3 py-1.5 text-xs font-medium text-[#1E3A5F]">
-                <ClipboardCheck className="h-4 w-4" />
-                Business setup
-              </div>
-              <h1 className="text-2xl font-semibold tracking-tight text-[#1F2937]">
+              <h1 className="owner-page-title">
                 Set Up Your Business
               </h1>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-[#6B7280]">
+              <p className="owner-section-subtitle mt-1.5 max-w-2xl">
                 {step < 0
                   ? "Choose a section below to set up. You can return anytime from Business Setup."
                   : STEP_HELP[STEPS[step]]}
               </p>
             </div>
-            {step >= 0 ? (
-              <div className="rounded-2xl bg-[#F3F6FA] px-4 py-3 text-sm">
-                <p className="font-medium text-[#1F2937]">
-                  Step {step + 1} of {STEPS.length}
-                </p>
-                <p className="text-xs text-[#6B7280]">{STEPS[step]}</p>
+            <div className="flex shrink-0 items-start gap-3">
+              <div className="w-full sm:w-[14.5rem]">
+                <div className="flex items-center justify-between gap-3 text-xs">
+                  <p className="font-medium text-[#1F2937]">
+                    {step < 0
+                      ? `${completedCount} of ${countableSteps.length} complete`
+                      : `Step ${step + 1} of ${STEPS.length}`}
+                  </p>
+                  <p className="tabular-nums text-[#6B7280]">{wizardProgress}%</p>
+                </div>
+                <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-[#E5E7EB]">
+                  <div
+                    className="h-full rounded-full bg-[#1E3A5F] transition-[width] duration-300"
+                    style={{ width: `${Math.min(Math.max(wizardProgress, 0), 100)}%` }}
+                  />
+                </div>
+                {step >= 0 ? (
+                  <p className="mt-1 truncate text-[11px] font-medium text-[#1E3A5F]">
+                    {STEPS[step]}
+                  </p>
+                ) : (
+                  <p className="mt-1 text-[11px] text-[#6B7280]">
+                    {setupStatus?.completion_percent ?? 0}% of required setup
+                  </p>
+                )}
               </div>
-            ) : null}
+              <OwnerNotificationBell />
+            </div>
           </div>
-        </header>
 
+          {step >= 0 ? (
+            <WizardStepTrack
+              current={step}
+              labels={STEPS}
+              complete={stepCompleteFlags}
+              onSelect={goToStep}
+            />
+          ) : null}
+        </div>
+      </header>
+
+      <div className="mx-auto w-full min-w-0 max-w-6xl flex-1 overflow-x-hidden px-5 py-6 sm:px-8">
         {step < 0 ? (
           <div className="grid gap-4 sm:grid-cols-2">
             {STEPS.map((label, index) => {
               const key = STEP_STATUS_KEYS[index];
               const complete = key ? isStepComplete(key) : false;
+              const Icon = STEP_ICONS[index] ?? ClipboardCheck;
               return (
                 <button
                   key={label}
                   type="button"
                   onClick={() => goToStep(index)}
-                  className="rounded-2xl border border-slate-200 bg-white p-5 text-left shadow-sm transition hover:border-[#B9C7D8] hover:bg-[#FAFBFC]"
+                  className="owner-card p-5 text-left transition hover:border-[#B9C7D8] hover:bg-[#FAFBFC]"
                 >
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="font-semibold text-[#1F2937]">{label}</p>
-                      <p className="mt-2 text-sm text-[#6B7280]">
+                  <div className="flex items-start gap-3">
+                    <span className="owner-icon-well h-10 w-10 shrink-0">
+                      <Icon className="h-4 w-4" />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="owner-label uppercase tracking-[0.12em] text-[#6B7280]">
+                        Step {index + 1}
+                      </p>
+                      <p className="owner-section-title mt-1">{label}</p>
+                      <p className="owner-section-subtitle mt-1">
                         {STEP_HELP[label]}
                       </p>
                     </div>
@@ -687,35 +761,28 @@ export function OwnerSetupWizardPage() {
             })}
           </div>
         ) : (
-          <>
-        <Card className="rounded-2xl border-slate-200 bg-white shadow-sm">
-          <CardHeader className="border-b border-slate-100 px-5 py-5 sm:px-6">
-            <CardTitle className="text-xl font-semibold text-[#1F2937]">
-              {STEPS[step]}
-            </CardTitle>
-            <p className="mt-2 text-sm leading-6 text-[#6B7280]">
-              {STEP_HELP[STEPS[step]]}
-            </p>
-          </CardHeader>
-          <CardContent className="space-y-6 px-5 py-6 sm:px-6">
+          <OwnerCard className="min-w-0 p-5 sm:p-6">
+            <div className="min-w-0 space-y-5">
+              <div className="min-w-0">
+                <h2 className="owner-section-title text-base sm:text-lg">
+                  {STEPS[step]}
+                </h2>
+              </div>
             {step === 0 && (
               <>
-                <div className="grid gap-5 sm:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label>Shift name</Label>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <WizardField label="Shift name">
                     <Input
-                      className="h-11 rounded-xl border-slate-200 bg-white"
+                      className={wizardInputClass}
                       value={shiftForm.name}
                       onChange={(e) =>
                         setShiftForm({ ...shiftForm, name: e.target.value })
                       }
                       placeholder="Morning Shift"
                     />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Shift type</Label>
-                    <select
-                      className="flex h-11 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
+                  </WizardField>
+                  <WizardField label="Shift type">
+                    <WizardSelect
                       value={shiftForm.shift_type}
                       onChange={(e) =>
                         setShiftForm({ ...shiftForm, shift_type: e.target.value })
@@ -725,34 +792,31 @@ export function OwnerSetupWizardPage() {
                       <option value="afternoon">Afternoon</option>
                       <option value="evening">Evening</option>
                       <option value="night">Night</option>
-                    </select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Start time</Label>
+                    </WizardSelect>
+                  </WizardField>
+                  <WizardField label="Start time">
                     <Input
-                      className="h-11 rounded-xl border-slate-200 bg-white"
+                      className={wizardInputClass}
                       type="time"
                       value={shiftForm.start_time}
                       onChange={(e) =>
                         setShiftForm({ ...shiftForm, start_time: e.target.value })
                       }
                     />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>End time</Label>
+                  </WizardField>
+                  <WizardField label="End time">
                     <Input
-                      className="h-11 rounded-xl border-slate-200 bg-white"
+                      className={wizardInputClass}
                       type="time"
                       value={shiftForm.end_time}
                       onChange={(e) =>
                         setShiftForm({ ...shiftForm, end_time: e.target.value })
                       }
                     />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Break minutes</Label>
+                  </WizardField>
+                  <WizardField label="Break minutes">
                     <Input
-                      className="h-11 rounded-xl border-slate-200 bg-white"
+                      className={wizardInputClass}
                       type="number"
                       value={shiftForm.break_minutes}
                       onChange={(e) =>
@@ -762,11 +826,10 @@ export function OwnerSetupWizardPage() {
                         })
                       }
                     />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Employees needed</Label>
+                  </WizardField>
+                  <WizardField label="Employees needed">
                     <Input
-                      className="h-11 rounded-xl border-slate-200 bg-white"
+                      className={wizardInputClass}
                       type="number"
                       value={shiftForm.employee_capacity}
                       onChange={(e) =>
@@ -776,29 +839,32 @@ export function OwnerSetupWizardPage() {
                         })
                       }
                     />
-                  </div>
+                  </WizardField>
                 </div>
                 <Button
-                  className="rounded-xl bg-[#1E3A5F] hover:bg-[#284B73]"
+                  className={wizardPrimaryBtnClass}
                   onClick={() => addShift.mutate()}
                   disabled={!shiftForm.name || addShift.isPending}
                 >
                   Add work shift
                 </Button>
-                <ul className="overflow-hidden rounded-2xl border border-slate-200 text-sm">
+                <WizardRecordList empty="No work shifts yet. Add one above.">
                   {shifts.map((s) => (
                     <li
                       key={s.id}
-                      className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-3 last:border-b-0"
+                      className="flex items-center justify-between gap-3 px-4 py-3"
                     >
-                      <span>
-                        {s.name} ({formatShiftTime(s.start_time)}–
-                        {formatShiftTime(s.end_time)})
-                      </span>
+                      <div className="min-w-0">
+                        <p className="truncate font-medium text-[#1F2937]">{s.name}</p>
+                        <p className="mt-0.5 text-xs text-[#6B7280]">
+                          {formatShiftTime(s.start_time)}–{formatShiftTime(s.end_time)}
+                        </p>
+                      </div>
                       <div className="flex shrink-0 items-center gap-2">
                         <Button
                           size="sm"
                           variant="outline"
+                          className="h-8 rounded-lg px-2.5 text-xs"
                           onClick={() => openEditShiftTimes(s)}
                         >
                           Edit times
@@ -806,6 +872,7 @@ export function OwnerSetupWizardPage() {
                         <Button
                           size="sm"
                           variant="outline"
+                          className="h-8 rounded-lg px-2.5 text-xs"
                           onClick={() =>
                             deleteShift(s.id).then(() => refetchShifts())
                           }
@@ -815,76 +882,76 @@ export function OwnerSetupWizardPage() {
                       </div>
                     </li>
                   ))}
-                </ul>
+                </WizardRecordList>
               </>
             )}
 
             {step === 1 && (
               <>
-                <div className="grid gap-5 sm:grid-cols-2">
-                  <div className="space-y-2 sm:col-span-2">
-                    <Label>Job role name</Label>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <WizardField label="Job role name" className="sm:col-span-2">
                     <Input
-                      className="h-11 rounded-xl border-slate-200 bg-white"
+                      className={wizardInputClass}
                       value={posForm.title}
                       onChange={(e) =>
                         setPosForm({ ...posForm, title: e.target.value })
                       }
                     />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Daily pay (₱)</Label>
+                  </WizardField>
+                  <WizardField label="Daily pay (₱)">
                     <Input
-                      className="h-11 rounded-xl border-slate-200 bg-white"
+                      className={wizardInputClass}
                       type="number"
                       value={posForm.daily_rate}
                       onChange={(e) =>
                         setPosForm({ ...posForm, daily_rate: e.target.value })
                       }
                     />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Hourly pay (₱, optional)</Label>
+                  </WizardField>
+                  <WizardField label="Hourly pay (₱, optional)">
                     <Input
-                      className="h-11 rounded-xl border-slate-200 bg-white"
+                      className={wizardInputClass}
                       type="number"
                       value={posForm.hourly_rate}
                       onChange={(e) =>
                         setPosForm({ ...posForm, hourly_rate: e.target.value })
                       }
                     />
-                  </div>
-                  <div className="space-y-2 sm:col-span-2">
-                    <Label>Description</Label>
+                  </WizardField>
+                  <WizardField label="Description" className="sm:col-span-2">
                     <Input
-                      className="h-11 rounded-xl border-slate-200 bg-white"
+                      className={wizardInputClass}
                       value={posForm.description}
                       onChange={(e) =>
                         setPosForm({ ...posForm, description: e.target.value })
                       }
                     />
-                  </div>
+                  </WizardField>
                 </div>
                 <Button
-                  className="rounded-xl bg-[#1E3A5F] hover:bg-[#284B73]"
+                  className={wizardPrimaryBtnClass}
                   onClick={() => addPosition.mutate()}
                   disabled={!positionDraftValid}
                 >
                   Add job role
                 </Button>
-                <ul className="overflow-hidden rounded-2xl border border-slate-200 text-sm">
+                <WizardRecordList empty="No job roles yet. Add one above.">
                   {positions.map((p) => (
                     <li
                       key={p.id}
-                      className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-3 last:border-b-0"
+                      className="flex items-center justify-between gap-3 px-4 py-3"
                     >
-                      <span>
-                        {p.title} — ₱{p.daily_rate}/day
-                        {p.hourly_rate != null ? ` · ₱${p.hourly_rate}/hr` : ""}
-                      </span>
+                      <div className="min-w-0">
+                        <p className="truncate font-medium text-[#1F2937]">{p.title}</p>
+                        <p className="mt-0.5 text-xs text-[#6B7280]">
+                          ₱{p.daily_rate}/day
+                          {p.hourly_rate != null ? ` · ₱${p.hourly_rate}/hr` : ""}
+                        </p>
+                      </div>
                       <Button
                         size="sm"
                         variant="outline"
+                        className="h-8 rounded-lg px-2.5 text-xs"
                         onClick={() =>
                           deletePosition(p.id).then(() => refetchPositions())
                         }
@@ -893,190 +960,181 @@ export function OwnerSetupWizardPage() {
                       </Button>
                     </li>
                   ))}
-                </ul>
+                </WizardRecordList>
               </>
             )}
 
             {step === 2 && (
               <>
-                <div className="grid gap-5 sm:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label>How often employees get paid</Label>
-                    <select
-                      className="flex h-11 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
-                      value={payrollForm.pay_period_type}
-                      onChange={(e) =>
-                        setPayrollForm({
-                          ...payrollForm,
-                          pay_period_type: e.target.value,
-                        })
-                      }
-                    >
-                      <option value="weekly">Weekly</option>
-                      <option value="semi_monthly">Twice a month</option>
-                      <option value="monthly">Monthly</option>
-                    </select>
-                  </div>
-                  {payrollForm.pay_period_type === "weekly" && (
-                    <div className="space-y-2">
-                      <Label>Payday</Label>
-                      <select
-                        className="flex h-11 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
-                        value={payrollForm.weekly_payday_weekday}
+                <WizardSection title="Payday schedule">
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <WizardField label="How often employees get paid">
+                      <WizardSelect
+                        value={payrollForm.pay_period_type}
                         onChange={(e) =>
                           setPayrollForm({
                             ...payrollForm,
-                            weekly_payday_weekday: e.target.value,
+                            pay_period_type: e.target.value,
                           })
                         }
                       >
-                        {WEEKDAYS.map((d) => (
-                          <option key={d} value={d}>
-                            Every {d.charAt(0).toUpperCase() + d.slice(1)}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  )}
-
-                  {payrollForm.pay_period_type === "semi_monthly" && (
-                    <div className="space-y-2">
-                      <Label>Payday Schedule</Label>
-                      <select
-                        className="flex h-11 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
-                        value={payrollForm.semi_monthly_preset}
-                        onChange={(e) => {
-                          const preset = e.target.value;
-                          const days = SEMI_MONTHLY_PRESETS[preset];
-                          setPayrollForm({
-                            ...payrollForm,
-                            semi_monthly_preset: preset,
-                            semi_monthly_payday_1: days
-                              ? String(days[0])
-                              : payrollForm.semi_monthly_payday_1,
-                            semi_monthly_payday_2: days
-                              ? String(days[1])
-                              : payrollForm.semi_monthly_payday_2,
-                          });
-                        }}
-                      >
-                        <option value="15_30">
-                          Every 15th &amp; 30th (end of month)
-                        </option>
-                        <option value="10_25">Every 10th &amp; 25th</option>
-                        <option value="5_20">Every 5th &amp; 20th</option>
-                        <option value="custom">Custom days…</option>
-                      </select>
-                    </div>
-                  )}
-
-                  {payrollForm.pay_period_type === "monthly" && (
-                    <div className="space-y-2">
-                      <Label>Payday (day of month)</Label>
-                      <Input
-                        className="h-11 rounded-xl border-slate-200 bg-white"
-                        type="number"
-                        min="1"
-                        max="31"
-                        value={payrollForm.monthly_payday_day}
-                        onChange={(e) =>
-                          setPayrollForm({
-                            ...payrollForm,
-                            monthly_payday_day: e.target.value,
-                          })
-                        }
-                      />
-                      <p className="text-xs text-muted-foreground">
-                        Use 31 for "last day of the month".
-                      </p>
-                    </div>
-                  )}
-
-                  {payrollForm.pay_period_type === "semi_monthly" &&
-                    payrollForm.semi_monthly_preset === "custom" && (
-                      <>
-                        <div className="space-y-2">
-                          <Label>First Payday (day of month)</Label>
-                          <Input
-                            className="h-11 rounded-xl border-slate-200 bg-white"
-                            type="number"
-                            min="1"
-                            max="15"
-                            value={payrollForm.semi_monthly_payday_1}
-                            onChange={(e) =>
-                              setPayrollForm({
-                                ...payrollForm,
-                                semi_monthly_payday_1: e.target.value,
-                              })
-                            }
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <Label>Second Payday (day of month)</Label>
-                          <Input
-                            className="h-11 rounded-xl border-slate-200 bg-white"
-                            type="number"
-                            min="16"
-                            max="31"
-                            value={payrollForm.semi_monthly_payday_2}
-                            onChange={(e) =>
-                              setPayrollForm({
-                                ...payrollForm,
-                                semi_monthly_payday_2: e.target.value,
-                              })
-                            }
-                          />
-                        </div>
-                      </>
-                    )}
-                </div>
-
-                <p className="rounded-xl bg-[#F3F6FA] px-4 py-3 text-sm text-[#6B7280]">
-                  {nextPaydayDate ? (
-                    <>
-                      Next payday:{" "}
-                      <span className="font-medium text-[#1F2937]">
-                        {new Date(`${nextPaydayDate}T00:00:00`).toLocaleDateString(
-                          undefined,
-                          {
-                            weekday: "long",
-                            year: "numeric",
-                            month: "long",
-                            day: "numeric",
+                        <option value="weekly">Weekly</option>
+                        <option value="semi_monthly">Twice a month</option>
+                        <option value="monthly">Monthly</option>
+                      </WizardSelect>
+                    </WizardField>
+                    {payrollForm.pay_period_type === "weekly" && (
+                      <WizardField label="Payday">
+                        <WizardSelect
+                          value={payrollForm.weekly_payday_weekday}
+                          onChange={(e) =>
+                            setPayrollForm({
+                              ...payrollForm,
+                              weekly_payday_weekday: e.target.value,
+                            })
                           }
-                        )}
-                      </span>{" "}
-                      — calculated from the schedule above.
-                    </>
-                  ) : (
-                    "Choose a valid payday schedule to see the next payday."
-                  )}
-                </p>
-                <label className="flex items-center gap-2 rounded-xl border border-slate-200 bg-[#FAFBFC] px-4 py-3 text-sm">
-                  <input
-                    type="checkbox"
+                        >
+                          {WEEKDAYS.map((d) => (
+                            <option key={d} value={d}>
+                              Every {d.charAt(0).toUpperCase() + d.slice(1)}
+                            </option>
+                          ))}
+                        </WizardSelect>
+                      </WizardField>
+                    )}
+
+                    {payrollForm.pay_period_type === "semi_monthly" && (
+                      <WizardField label="Payday Schedule">
+                        <WizardSelect
+                          value={payrollForm.semi_monthly_preset}
+                          onChange={(e) => {
+                            const preset = e.target.value;
+                            const days = SEMI_MONTHLY_PRESETS[preset];
+                            setPayrollForm({
+                              ...payrollForm,
+                              semi_monthly_preset: preset,
+                              semi_monthly_payday_1: days
+                                ? String(days[0])
+                                : payrollForm.semi_monthly_payday_1,
+                              semi_monthly_payday_2: days
+                                ? String(days[1])
+                                : payrollForm.semi_monthly_payday_2,
+                            });
+                          }}
+                        >
+                          <option value="15_30">
+                            Every 15th &amp; 30th (end of month)
+                          </option>
+                          <option value="10_25">Every 10th &amp; 25th</option>
+                          <option value="5_20">Every 5th &amp; 20th</option>
+                          <option value="custom">Custom days…</option>
+                        </WizardSelect>
+                      </WizardField>
+                    )}
+
+                    {payrollForm.pay_period_type === "monthly" && (
+                      <WizardField
+                        label="Payday (day of month)"
+                        hint='Use 31 for "last day of the month".'
+                      >
+                        <Input
+                          className={wizardInputClass}
+                          type="number"
+                          min="1"
+                          max="31"
+                          value={payrollForm.monthly_payday_day}
+                          onChange={(e) =>
+                            setPayrollForm({
+                              ...payrollForm,
+                              monthly_payday_day: e.target.value,
+                            })
+                          }
+                        />
+                      </WizardField>
+                    )}
+
+                    {payrollForm.pay_period_type === "semi_monthly" &&
+                      payrollForm.semi_monthly_preset === "custom" && (
+                        <>
+                          <WizardField label="First Payday (day of month)">
+                            <Input
+                              className={wizardInputClass}
+                              type="number"
+                              min="1"
+                              max="15"
+                              value={payrollForm.semi_monthly_payday_1}
+                              onChange={(e) =>
+                                setPayrollForm({
+                                  ...payrollForm,
+                                  semi_monthly_payday_1: e.target.value,
+                                })
+                              }
+                            />
+                          </WizardField>
+                          <WizardField label="Second Payday (day of month)">
+                            <Input
+                              className={wizardInputClass}
+                              type="number"
+                              min="16"
+                              max="31"
+                              value={payrollForm.semi_monthly_payday_2}
+                              onChange={(e) =>
+                                setPayrollForm({
+                                  ...payrollForm,
+                                  semi_monthly_payday_2: e.target.value,
+                                })
+                              }
+                            />
+                          </WizardField>
+                        </>
+                      )}
+                  </div>
+                  <WizardNotice>
+                    {nextPaydayDate ? (
+                      <>
+                        Next payday:{" "}
+                        <span className="font-medium text-[#1F2937]">
+                          {new Date(`${nextPaydayDate}T00:00:00`).toLocaleDateString(
+                            undefined,
+                            {
+                              weekday: "long",
+                              year: "numeric",
+                              month: "long",
+                              day: "numeric",
+                            }
+                          )}
+                        </span>{" "}
+                        — calculated from the schedule above.
+                      </>
+                    ) : (
+                      "Choose a valid payday schedule to see the next payday."
+                    )}
+                  </WizardNotice>
+                  <WizardSettingRow
+                    title="Start a new pay period after payday"
                     checked={payrollForm.auto_reset_payroll_cycle}
-                    onChange={(e) =>
+                    onChange={(next) =>
                       setPayrollForm({
                         ...payrollForm,
-                        auto_reset_payroll_cycle: e.target.checked,
+                        auto_reset_payroll_cycle: next,
                       })
                     }
                   />
-                  Start a new pay period after payday
-                </label>
+                </WizardSection>
 
-                <div className="space-y-4 rounded-2xl border border-slate-200 bg-[#FAFBFC] p-4">
-                  <div>
-                    <p className="text-sm font-medium text-[#1F2937]">
-                      Holiday pay rules
-                    </p>
-                    <p className="mt-1 text-xs text-[#6B7280]">
-                      Choose how unworked and worked holidays are paid.
-                    </p>
-                  </div>
+                <WizardSection
+                  title="Holiday pay rules"
+                  description="Choose how unworked and worked holidays are paid."
+                >
                   <div className="space-y-2">
-                    <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm">
+                    <label
+                      className={cn(
+                        "flex cursor-pointer items-start gap-3 rounded-xl border bg-white px-4 py-3 text-sm",
+                        payrollForm.holiday_rules_mode === "philippine_labor"
+                          ? "border-[#1E3A5F]/30 bg-[#F4F8FC]"
+                          : "border-slate-200"
+                      )}
+                    >
                       <input
                         type="radio"
                         className="mt-1"
@@ -1101,7 +1159,14 @@ export function OwnerSetupWizardPage() {
                         </span>
                       </span>
                     </label>
-                    <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm">
+                    <label
+                      className={cn(
+                        "flex cursor-pointer items-start gap-3 rounded-xl border bg-white px-4 py-3 text-sm",
+                        payrollForm.holiday_rules_mode === "custom_company"
+                          ? "border-[#1E3A5F]/30 bg-[#F4F8FC]"
+                          : "border-slate-200"
+                      )}
+                    >
                       <input
                         type="radio"
                         className="mt-1"
@@ -1127,29 +1192,22 @@ export function OwnerSetupWizardPage() {
                       </span>
                     </label>
                   </div>
-                </div>
+                </WizardSection>
 
-                <div className="space-y-4 rounded-2xl border border-slate-200 bg-[#FAFBFC] p-4">
-                  <p className="text-sm font-medium text-[#1F2937]">
-                    Pay rules
-                  </p>
-                  <label className="flex items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={payrollForm.late_deduction_enabled}
-                      onChange={(e) =>
-                        setPayrollForm({
-                          ...payrollForm,
-                          late_deduction_enabled: e.target.checked,
-                        })
-                      }
-                    />
-                    Pay less when late
-                  </label>
-                  <div className="space-y-2">
-                    <Label>Amount per late minute (₱)</Label>
+                <WizardSection title="Pay rules">
+                  <WizardSettingRow
+                    title="Pay less when late"
+                    checked={payrollForm.late_deduction_enabled}
+                    onChange={(next) =>
+                      setPayrollForm({
+                        ...payrollForm,
+                        late_deduction_enabled: next,
+                      })
+                    }
+                  />
+                  <WizardField label="Amount per late minute (₱)">
                     <Input
-                      className="h-11 rounded-xl border-slate-200 bg-white"
+                      className={wizardInputClass}
                       type="number"
                       step="0.01"
                       min="0"
@@ -1162,24 +1220,20 @@ export function OwnerSetupWizardPage() {
                       }
                       disabled={!payrollForm.late_deduction_enabled}
                     />
-                  </div>
-                  <label className="flex items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={payrollForm.overtime_enabled}
-                      onChange={(e) =>
-                        setPayrollForm({
-                          ...payrollForm,
-                          overtime_enabled: e.target.checked,
-                        })
-                      }
-                    />
-                    Pay for overtime
-                  </label>
-                  <div className="space-y-2">
-                    <Label>Extra pay per overtime minute (₱)</Label>
+                  </WizardField>
+                  <WizardSettingRow
+                    title="Pay for overtime"
+                    checked={payrollForm.overtime_enabled}
+                    onChange={(next) =>
+                      setPayrollForm({
+                        ...payrollForm,
+                        overtime_enabled: next,
+                      })
+                    }
+                  />
+                  <WizardField label="Extra pay per overtime minute (₱)">
                     <Input
-                      className="h-11 rounded-xl border-slate-200 bg-white"
+                      className={wizardInputClass}
                       type="number"
                       step="0.01"
                       min="0"
@@ -1192,49 +1246,32 @@ export function OwnerSetupWizardPage() {
                       }
                       disabled={!payrollForm.overtime_enabled}
                     />
-                  </div>
-                  <div className="space-y-2 sm:col-span-2">
-                    <label className="flex items-start gap-2 text-sm">
-                      <input
-                        type="checkbox"
-                        className="mt-1"
-                        checked={payrollForm.enable_late_overtime_balancing}
-                        onChange={(e) =>
-                          setPayrollForm({
-                            ...payrollForm,
-                            enable_late_overtime_balancing: e.target.checked,
-                          })
-                        }
-                        disabled={!payrollForm.overtime_enabled}
-                      />
-                      <span>
-                        <span className="font-medium text-[#1F2937]">
-                          Late–OT Balancing
-                        </span>
-                        <span className="mt-1 block text-xs text-[#6B7280]">
-                          When enabled, overtime minutes are first used to
-                          recover late arrival. Only the remaining overtime
-                          minutes are paid.
-                        </span>
-                      </span>
-                    </label>
-                  </div>
-                </div>
+                  </WizardField>
+                  <WizardSettingRow
+                    title="Late–OT Balancing"
+                    description="When enabled, overtime minutes are first used to recover late arrival. Only the remaining overtime minutes are paid."
+                    checked={payrollForm.enable_late_overtime_balancing}
+                    onChange={(next) =>
+                      setPayrollForm({
+                        ...payrollForm,
+                        enable_late_overtime_balancing: next,
+                      })
+                    }
+                    disabled={!payrollForm.overtime_enabled}
+                  />
+                </WizardSection>
 
-                <div className="space-y-4 rounded-2xl border border-slate-200 bg-[#FAFBFC] p-4">
-                  <div>
-                    <p className="text-sm font-medium text-[#1F2937]">
-                      Extra pay on rest days
-                    </p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      Set the extra pay when an employee works on an approved
-                      rest day.
-                    </p>
-                  </div>
-                  <div className="space-y-2 sm:max-w-xs">
-                    <Label>Extra pay (%)</Label>
+                <WizardSection
+                  title="Extra pay on rest days"
+                  description="Set the extra pay when an employee works on an approved rest day."
+                >
+                  <WizardField
+                    label="Extra pay (%)"
+                    className="sm:max-w-xs"
+                    hint="Example: 30% adds 0.30 × the employee's daily pay."
+                  >
                     <Input
-                      className="h-11 rounded-xl border-slate-200 bg-white"
+                      className={wizardInputClass}
                       type="number"
                       min="0"
                       value={restForm.rest_day_premium_percent}
@@ -1245,14 +1282,11 @@ export function OwnerSetupWizardPage() {
                         })
                       }
                     />
-                    <p className="text-xs text-muted-foreground">
-                      Example: 30% adds 0.30 × the employee&apos;s daily pay.
-                    </p>
-                  </div>
-                </div>
+                  </WizardField>
+                </WizardSection>
 
                 <Button
-                  className="rounded-xl bg-[#1E3A5F] hover:bg-[#284B73]"
+                  className={wizardPrimaryBtnClass}
                   onClick={() => savePayroll.mutate()}
                   disabled={!payrollFormValid || savePayroll.isPending}
                 >
@@ -1263,77 +1297,119 @@ export function OwnerSetupWizardPage() {
 
             {step === 3 && (
               <>
-                <div className="grid gap-5 sm:grid-cols-2">
-                  {(
-                    [
+                <WizardSection title="Time-in windows">
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    {(
                       [
-                        "early_clock_in_minutes",
-                        "Early time-in window (min)",
-                        "How early employees may time in before shift start.",
-                      ],
-                      [
-                        "on_time_grace_minutes",
-                        "Extra minutes before late",
-                        "Grace after shift start before status becomes Late.",
-                      ],
-                      [
-                        "absent_threshold_percent",
-                        "Absent if under (% of shift)",
-                        "Status cutoff as percent of scheduled shift length.",
-                      ],
-                      [
-                        "half_day_threshold_percent",
-                        "Half-day if under (% of shift)",
-                        "Status cutoff as percent of scheduled shift length.",
-                      ],
-                      [
-                        "half_day_threshold_minutes",
-                        "Payroll half-day cutoff (min)",
-                        "Used for payslip half-day math (minutes).",
-                      ],
-                      [
-                        "absent_threshold_minutes",
-                        "Payroll absent cutoff (min)",
-                        "Fallback minute cutoff when shift length is unavailable.",
-                      ],
-                      [
-                        "overtime_minimum_minutes",
-                        "Minimum overtime minutes",
-                        "OT pay starts only after this many minutes past shift end.",
-                      ],
-                      [
-                        "maximum_overtime_minutes",
-                        "Maximum overtime duration (min)",
-                        "How long an employee may stay timed in after shift end before attendance becomes Incomplete.",
-                      ],
-                    ] as const
-                  ).map(([key, label, hint]) => (
-                    <div key={key} className="space-y-2">
-                      <Label>{label}</Label>
-                      <Input
-                        className="h-11 rounded-xl border-slate-200 bg-white"
-                        type="number"
-                        min="0"
-                        value={attForm[key]}
-                        onChange={(e) =>
-                          setAttForm({ ...attForm, [key]: e.target.value })
-                        }
-                      />
-                      <p className="text-xs text-[#6B7280]">{hint}</p>
-                    </div>
-                  ))}
-                </div>
+                        [
+                          "early_clock_in_minutes",
+                          "Early time-in window (min)",
+                          "How early employees may time in before shift start.",
+                        ],
+                        [
+                          "on_time_grace_minutes",
+                          "Extra minutes before late",
+                          "Grace after shift start before status becomes Late.",
+                        ],
+                      ] as const
+                    ).map(([key, label, hint]) => (
+                      <WizardField key={key} label={label} hint={hint}>
+                        <Input
+                          className={wizardInputClass}
+                          type="number"
+                          min="0"
+                          value={attForm[key]}
+                          onChange={(e) =>
+                            setAttForm({ ...attForm, [key]: e.target.value })
+                          }
+                        />
+                      </WizardField>
+                    ))}
+                  </div>
+                </WizardSection>
 
-                <p className="rounded-xl bg-[#F3F6FA] px-4 py-3 text-sm text-[#6B7280]">
+                <WizardSection title="Attendance status cutoffs">
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    {(
+                      [
+                        [
+                          "absent_threshold_percent",
+                          "Absent if under (% of shift)",
+                          "Status cutoff as percent of scheduled shift length.",
+                        ],
+                        [
+                          "half_day_threshold_percent",
+                          "Half-day if under (% of shift)",
+                          "Status cutoff as percent of scheduled shift length.",
+                        ],
+                        [
+                          "half_day_threshold_minutes",
+                          "Payroll half-day cutoff (min)",
+                          "Used for payslip half-day math (minutes).",
+                        ],
+                        [
+                          "absent_threshold_minutes",
+                          "Payroll absent cutoff (min)",
+                          "Fallback minute cutoff when shift length is unavailable.",
+                        ],
+                      ] as const
+                    ).map(([key, label, hint]) => (
+                      <WizardField key={key} label={label} hint={hint}>
+                        <Input
+                          className={wizardInputClass}
+                          type="number"
+                          min="0"
+                          value={attForm[key]}
+                          onChange={(e) =>
+                            setAttForm({ ...attForm, [key]: e.target.value })
+                          }
+                        />
+                      </WizardField>
+                    ))}
+                  </div>
+                </WizardSection>
+
+                <WizardSection title="Overtime">
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    {(
+                      [
+                        [
+                          "overtime_minimum_minutes",
+                          "Minimum overtime minutes",
+                          "OT pay starts only after this many minutes past shift end.",
+                        ],
+                        [
+                          "maximum_overtime_minutes",
+                          "Maximum overtime duration (min)",
+                          "How long an employee may stay timed in after shift end before attendance becomes Incomplete.",
+                        ],
+                      ] as const
+                    ).map(([key, label, hint]) => (
+                      <WizardField key={key} label={label} hint={hint}>
+                        <Input
+                          className={wizardInputClass}
+                          type="number"
+                          min="0"
+                          value={attForm[key]}
+                          onChange={(e) =>
+                            setAttForm({ ...attForm, [key]: e.target.value })
+                          }
+                        />
+                      </WizardField>
+                    ))}
+                  </div>
+                </WizardSection>
+
+                <WizardNotice>
                   Absent and half-day status use percent of each employee&apos;s
                   scheduled shift. Maximum overtime duration is an attendance
                   cutoff only — overtime pay still uses ₱
                   {payrollForm.overtime_per_minute} per minute (
                   {payrollForm.overtime_enabled ? "turned on" : "turned off"} in
                   pay settings).
-                </p>
+                </WizardNotice>
                 <Button
-                  className="rounded-xl bg-[#1E3A5F] hover:bg-[#284B73]"
+                  className={wizardPrimaryBtnClass}
                   onClick={() => saveAttendance.mutate()}
                   disabled={saveAttendance.isPending}
                 >
@@ -1341,88 +1417,109 @@ export function OwnerSetupWizardPage() {
                 </Button>
               </>
             )}
-
             {step === 4 && <HolidaySetupSection />}
 
             {step === 5 && (
               <BusinessLocationSetup
-                description="Set your workplace on the map and choose how close employees must be before they can time in or time out."
-                mapHeightClassName="h-[280px] sm:h-[340px]"
+                description=""
+                mapHeightClassName="h-[240px] sm:h-[300px]"
                 saveLabel="Save Workplace Location"
               />
             )}
 
             {step === 6 && (
               <>
-                <p className="rounded-xl bg-[#F3F6FA] px-4 py-3 text-sm text-[#6B7280]">
+                <WizardNotice>
                   Review your setup and finish when the required steps are done.
                   Required: work shifts, job roles, pay settings, and work
                   location.
-                </p>
-                <ul className="grid gap-2 text-sm sm:grid-cols-2">
+                </WizardNotice>
+                <ul className="grid gap-3 sm:grid-cols-2">
                   {setupStatus?.steps
                     .filter((s) => s.key !== "review")
                     .map((s) => (
-                      <li key={s.key}>
-                        {s.complete ? "✓" : "✗"} {s.label}
+                      <li
+                        key={s.key}
+                        className="flex items-center gap-3 rounded-xl border border-slate-200/90 bg-[#FAFBFC] px-3.5 py-3"
+                      >
+                        {s.complete ? (
+                          <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-600" />
+                        ) : (
+                          <Circle className="h-5 w-5 shrink-0 text-[#9CA3AF]" />
+                        )}
+                        <span className="min-w-0 flex-1 text-sm font-medium text-[#1F2937]">
+                          {s.label}
+                        </span>
+                        <span
+                          className={cn(
+                            "text-[11px] font-semibold uppercase tracking-wide",
+                            s.complete ? "text-emerald-700" : "text-[#9CA3AF]"
+                          )}
+                        >
+                          {s.complete ? "Done" : "Needed"}
+                        </span>
                       </li>
                     ))}
                 </ul>
                 {!canCompleteSetup && setupStatus?.missing_items.length ? (
-                  <p className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                  <WizardNotice tone="warning">
                     Still needed: {setupStatus.missing_items.join(", ")}
-                  </p>
+                  </WizardNotice>
                 ) : null}
+              </>
+            )}
+            </div>
+          </OwnerCard>
+        )}
+        </div>
+
+      {step >= 0 ? (
+        <footer className="sticky bottom-0 z-10 border-t border-slate-200/80 bg-white/95 backdrop-blur-sm">
+          <div className="mx-auto flex w-full min-w-0 max-w-6xl flex-col-reverse gap-2 px-5 py-3 sm:flex-row sm:items-center sm:justify-end sm:px-8">
+            {step < STEPS.length - 1 ? (
+              <>
                 <Button
-                  className="rounded-xl bg-[#1E3A5F] hover:bg-[#284B73]"
-                  onClick={() => finishSetup.mutate()}
-                  disabled={finishSetup.isPending || !canCompleteSetup}
+                  variant="ghost"
+                  className="h-10 rounded-xl"
+                  onClick={() => goToStep(step + 1)}
                 >
-                  Finish Setup
+                  Skip for Now
                 </Button>
+                {currentStepCanContinue && (
+                  <Button
+                    className={wizardPrimaryBtnClass}
+                    onClick={() => {
+                      void handleContinue();
+                    }}
+                    disabled={continuePending}
+                  >
+                    Continue
+                    <ArrowRight className="ml-2 h-4 w-4" />
+                  </Button>
+                )}
+              </>
+            ) : (
+              <>
                 <Button
                   variant="outline"
-                  className="rounded-xl border-slate-200"
+                  className={wizardOutlineBtnClass}
                   onClick={() => navigate("/owner/dashboard")}
                   type="button"
                 >
                   Go to Dashboard
                 </Button>
+                <Button
+                  className={wizardPrimaryBtnClass}
+                  onClick={() => finishSetup.mutate()}
+                  disabled={finishSetup.isPending || !canCompleteSetup}
+                >
+                  Finish Setup
+                </Button>
               </>
             )}
-          </CardContent>
-        </Card>
-
-        {step < STEPS.length - 1 ? (
-        <div className="flex flex-col-reverse gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-end">
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <>
-              <Button
-                variant="ghost"
-                className="h-10 rounded-xl"
-                onClick={() => goToStep(step + 1)}
-              >
-                Skip for Now
-              </Button>
-              {currentStepCanContinue && (
-                <Button
-                  className="h-10 rounded-xl bg-[#1E3A5F] hover:bg-[#284B73]"
-                  onClick={() => {
-                    void handleContinue();
-                  }}
-                  disabled={continuePending}
-                >
-                  Continue
-                  <ArrowRight className="ml-2 h-4 w-4" />
-                </Button>
-              )}
-            </>
           </div>
-        </div>
-        ) : null}
-          </>
-        )}
-      </div>
+        </footer>
+      ) : null}
 
       <Dialog
         open={Boolean(editingShift)}
@@ -1437,39 +1534,37 @@ export function OwnerSetupWizardPage() {
             </DialogTitle>
           </DialogHeader>
           <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label>Start time</Label>
+            <WizardField label="Start time">
               <Input
-                className="h-11 rounded-xl border-slate-200 bg-white"
+                className={wizardInputClass}
                 type="time"
                 value={editTimes.start_time}
                 onChange={(e) =>
                   setEditTimes({ ...editTimes, start_time: e.target.value })
                 }
               />
-            </div>
-            <div className="space-y-2">
-              <Label>End time</Label>
+            </WizardField>
+            <WizardField label="End time">
               <Input
-                className="h-11 rounded-xl border-slate-200 bg-white"
+                className={wizardInputClass}
                 type="time"
                 value={editTimes.end_time}
                 onChange={(e) =>
                   setEditTimes({ ...editTimes, end_time: e.target.value })
                 }
               />
-            </div>
+            </WizardField>
           </div>
           <DialogFooter className="gap-2 sm:justify-end">
             <Button
-              className="rounded-xl"
+              className={wizardOutlineBtnClass}
               variant="outline"
               onClick={() => setEditingShift(null)}
             >
               Cancel
             </Button>
             <Button
-              className="rounded-xl bg-[#1E3A5F] hover:bg-[#284B73]"
+              className={wizardPrimaryBtnClass}
               disabled={
                 !editTimes.start_time ||
                 !editTimes.end_time ||
@@ -1482,6 +1577,6 @@ export function OwnerSetupWizardPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </OwnerPage>
   );
 }

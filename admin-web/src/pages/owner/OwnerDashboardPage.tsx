@@ -57,7 +57,6 @@ export function OwnerDashboardPage() {
   return (
     <OwnerPage className="owner-dashboard-page">
       <OwnerPageHeader
-        className="shrink-0 py-4 sm:py-5"
         eyebrow="Welcome back"
         title={`${businessName} Dashboard`}
         description={
@@ -86,17 +85,17 @@ export function OwnerDashboardPage() {
                   <div className={`rounded-xl p-2.5 ${metric.iconTone}`}>
                     <Icon className="h-5 w-5" />
                   </div>
-                  <span className="rounded-full bg-white/80 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[#6B7280] ring-1 ring-slate-200/80">
+                  <span className="rounded-full bg-white/80 px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide text-[#6B7280] ring-1 ring-slate-200/80">
                     {isDemo ? "Simulated · 30 days" : "30 days"}
                   </span>
                 </div>
                 <p className="relative mt-3 text-2xl font-semibold tracking-tight text-[#1F2937]">
                   {isLoading ? "..." : metric.value}
                 </p>
-                <p className="relative mt-1 text-sm font-medium text-[#374151]">
+                <p className="relative mt-1 text-[0.9375rem] font-medium text-[#374151]">
                   {metric.label}
                 </p>
-                <p className="relative mt-1.5 text-xs leading-relaxed text-[#6B7280]">
+                <p className="owner-section-subtitle relative mt-1.5 text-[0.8125rem]">
                   {metric.helper}
                 </p>
               </OwnerCard>

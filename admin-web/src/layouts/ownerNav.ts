@@ -17,12 +17,24 @@ export const ownerNavItems: OwnerNavItem[] = [
     to: "/owner/settings/setup",
     label: "Settings",
     activePaths: [
-      "/owner/settings/setup",
-      "/owner/settings/account",
-      "/owner/settings/business",
+      "/owner/settings",
       "/owner/positions-salary-rates",
       "/owner/payroll-schedule",
+      "/owner/business-documents",
+      "/owner/setup-wizard",
     ],
   },
   { to: "/owner/help", label: "Help" },
 ];
+
+export function isOwnerNavItemActive(
+  pathname: string,
+  to: string,
+  activePaths?: string[]
+) {
+  const matches = (path: string) =>
+    pathname === path || pathname.startsWith(`${path}/`);
+
+  if (matches(to)) return true;
+  return (activePaths ?? []).some(matches);
+}

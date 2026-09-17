@@ -9,6 +9,7 @@ import {
   OwnerPage,
   OwnerPageBackLink,
   OwnerPageContent,
+  OwnerPageHeader,
 } from "@/components/owner/layout/OwnerPageLayout";
 import {
   PasswordInput,
@@ -142,15 +143,12 @@ export function OwnerAccountSettingsPage() {
 
   return (
     <OwnerPage>
+      <OwnerPageHeader
+        title="Account Settings"
+        description="Manage your profile picture, personal information, and password."
+      />
       <OwnerPageContent className="max-w-3xl">
         <OwnerPageBackLink to="/owner/settings/setup" label="Back to Business Setup" />
-
-        <div>
-          <h1 className="text-2xl font-semibold">Account Settings</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Manage your profile picture, personal information, and password.
-          </p>
-        </div>
 
         {isLoading && (
           <p className="text-sm text-muted-foreground">Loading account settings...</p>

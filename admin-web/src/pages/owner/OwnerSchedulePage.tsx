@@ -521,8 +521,8 @@ export function OwnerSchedulePage() {
   return (
     <OwnerPage>
       <OwnerPageHeader
-        //eyebrow="Scheduling"
         title={mode === "assign" ? "Assign Schedule" : "Schedule Viewer"}
+        description="Assign shifts and review the weekly roster for your team."
         actions={
           <>
             <Button
@@ -620,7 +620,7 @@ export function OwnerSchedulePage() {
 
             {showNewShift && (
               <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-                <h2 className="mb-4 text-base font-semibold text-[#1F2937]">
+                <h2 className="owner-section-title mb-4">
                   Create Shift
                 </h2>
                 <div className="grid gap-4 md:grid-cols-4">
@@ -679,10 +679,10 @@ export function OwnerSchedulePage() {
                   >
                     <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                       <div>
-                        <h2 className="text-base font-semibold text-[#1F2937]">
+                        <h2 className="owner-section-title">
                           {shift.name}
                         </h2>
-                        <p className="text-sm text-[#6B7280]">
+                        <p className="owner-section-subtitle">
                           {formatShiftTime(shift.start_time)} -{" "}
                           {formatShiftTime(shift.end_time)} · Capacity{" "}
                           {shift.employee_capacity}
@@ -864,10 +864,10 @@ export function OwnerSchedulePage() {
           <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
               <div>
-                <h2 className="text-lg font-semibold text-[#1F2937]">
+                <h2 className="owner-section-title">
                   Download Schedule
                 </h2>
-                <p className="text-sm text-[#6B7280]">{formatWeekRange(weekStart)}</p>
+                <p className="owner-section-subtitle">{formatWeekRange(weekStart)}</p>
               </div>
               <div className="flex flex-wrap gap-2">
                 <Button variant="outline" onClick={() => setWeekStart((current) => navigateWeek(current, "prev"))}>

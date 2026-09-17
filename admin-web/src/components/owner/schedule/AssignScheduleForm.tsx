@@ -64,7 +64,7 @@ export function AssignScheduleForm({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Assign Schedule</CardTitle>
+        <CardTitle className="text-[1.0625rem] font-semibold leading-snug tracking-[-0.015em]">Assign Schedule</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="grid gap-4 md:grid-cols-2">

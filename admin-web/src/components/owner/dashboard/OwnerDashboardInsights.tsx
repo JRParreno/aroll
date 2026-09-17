@@ -44,6 +44,7 @@ function InsightCard({
   helper,
   to,
   linkLabel,
+  className,
 }: {
   title: string;
   icon: typeof CalendarClock;
@@ -52,9 +53,10 @@ function InsightCard({
   helper: string;
   to: string;
   linkLabel: string;
+  className?: string;
 }) {
   return (
-    <div className="owner-card flex min-h-0 flex-1 flex-col p-4">
+    <div className={`owner-card flex min-h-0 flex-1 flex-col p-4 ${className ?? ""}`}>
       <div className="flex items-start justify-between gap-3">
         <div className="owner-icon-well h-9 w-9">
           <Icon className="h-4 w-4" />
@@ -66,11 +68,11 @@ function InsightCard({
           {linkLabel}
         </Link>
       </div>
-      <p className="mt-3 text-sm font-medium text-[#374151]">{title}</p>
+      <p className="mt-3 text-[0.9375rem] font-medium text-[#374151]">{title}</p>
       <p className="mt-1 text-xl font-semibold tracking-tight text-[#1F2937]">
         {loading ? "..." : value}
       </p>
-      <p className="mt-1.5 text-xs leading-relaxed text-[#6B7280]">{helper}</p>
+      <p className="owner-section-subtitle mt-1.5 text-[0.8125rem]">{helper}</p>
     </div>
   );
 }

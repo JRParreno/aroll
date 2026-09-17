@@ -7,6 +7,7 @@ import {
   OwnerPage,
   OwnerPageBackLink,
   OwnerPageContent,
+  OwnerPageHeader,
 } from "@/components/owner/layout/OwnerPageLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -169,12 +170,12 @@ export function OwnerProfilePage() {
 
   return (
     <OwnerPage>
+      <OwnerPageHeader
+        title="Owner Profile"
+        description="Your owner account and workspace identity."
+      />
       <OwnerPageContent className="max-w-4xl">
         <OwnerPageBackLink to="/owner/settings/account" label="Back to Account Settings" />
-
-        <div>
-          <h1 className="text-2xl font-semibold text-[#1F2937]">Owner Profile</h1>
-        </div>
 
         <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
           <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
@@ -188,10 +189,10 @@ export function OwnerProfilePage() {
               )}
             </div>
             <div>
-              <h2 className="text-xl font-semibold text-[#1F2937]">
+              <h2 className="text-lg font-semibold tracking-tight text-[#1F2937]">
                 {form.owner_name || "Business Owner"}
               </h2>
-              <p className="text-sm text-[#6B7280]">{form.business_name}</p>
+              <p className="owner-section-subtitle">{form.business_name}</p>
               <div className="mt-3 flex flex-wrap gap-2">
                 <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-[#374151]">
                   <Camera className="h-4 w-4" />
@@ -222,7 +223,7 @@ export function OwnerProfilePage() {
 
         <section className="grid gap-6 xl:grid-cols-2">
           <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-            <h2 className="mb-4 text-lg font-semibold text-[#1F2937]">Personal Information</h2>
+            <h2 className="owner-section-title mb-4">Personal Information</h2>
             <div className="space-y-4">
               <Field label="Full Name" value={form.owner_name} onChange={(value) => setForm({ ...form, owner_name: value })} />
               <Field label="Contact Number" value={form.contact_phone} onChange={(value) => setForm({ ...form, contact_phone: value })} />
@@ -232,7 +233,7 @@ export function OwnerProfilePage() {
           </div>
 
           <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-            <h2 className="mb-4 text-lg font-semibold text-[#1F2937]">Business Information</h2>
+            <h2 className="owner-section-title mb-4">Business Information</h2>
             <div className="space-y-4">
               <Field label="Business Name" value={form.business_name} onChange={(value) => setForm({ ...form, business_name: value })} />
               <Field label="Business Type" value={form.business_type} onChange={(value) => setForm({ ...form, business_type: value })} />
