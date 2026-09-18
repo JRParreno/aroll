@@ -27,6 +27,7 @@ import {
   type OwnerAttendanceCorrection,
   type OwnerAttendanceReport,
 } from "@/lib/api";
+import { formatAttendanceTime } from "@/lib/attendanceTime";
 
 function todayIso() {
   const now = new Date();
@@ -36,12 +37,8 @@ function todayIso() {
   return `${y}-${m}-${d}`;
 }
 
-function formatTime(value: string | null) {
-  if (!value) return "--:--";
-  return new Date(value).toLocaleTimeString([], {
-    hour: "numeric",
-    minute: "2-digit",
-  });
+function formatTime(value: string | null, timeZone?: string | null) {
+  return formatAttendanceTime(value, timeZone);
 }
 
 function formatWeekday(value?: string) {
@@ -153,7 +150,7 @@ function EmployeeInfoRow({
 
 export function OwnerAttendancePage() {
   const queryClient = useQueryClient();
-  const { isDemo } = useTenantMode();
+  const { isDemo, me } = useTenantMode();
   const [search, setSearch] = useState("");
   const [date, setDate] = useState(todayIso);
   const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -180,6 +177,7 @@ export function OwnerAttendancePage() {
         q: debouncedSearch || undefined,
       }),
   });
+  const attendanceTz = data?.timezone ?? me?.timezone;
 
   const {
     data: pendingCorrections = [],
@@ -334,6 +332,7 @@ export function OwnerAttendancePage() {
                 <CorrectionCard
                   key={item.id}
                   item={item}
+                  timeZone={attendanceTz}
                   approving={
                     approveMutation.isPending &&
                     approveMutation.variables === item.id
@@ -548,8 +547,8 @@ export function OwnerAttendancePage() {
                         {record.shift_name ? ` · ${record.shift_name}` : ""}
                       </p>
                       <p className="text-xs text-[#6B7280]">
-                        In {formatTime(record.time_in)} · Out{" "}
-                        {formatTime(record.time_out)}
+                        In {formatTime(record.time_in, attendanceTz)} · Out{" "}
+                        {formatTime(record.time_out, attendanceTz)}
                       </p>
                     </div>
                     <span
@@ -691,7 +690,7 @@ export function OwnerAttendancePage() {
                             ? "Holiday"
                             : onLeave
                               ? "Leave"
-                              : formatTime(record.time_in)}
+                              : formatTime(record.time_in, attendanceTz)}
                     </span>
                   </div>
                 );
@@ -754,11 +753,11 @@ export function OwnerAttendancePage() {
                 />
                 <EmployeeInfoRow
                   label="Time In"
-                  value={formatTime(detailsEmployee.time_in)}
+                  value={formatTime(detailsEmployee.time_in, attendanceTz)}
                 />
                 <EmployeeInfoRow
                   label="Time Out"
-                  value={formatTime(detailsEmployee.time_out)}
+                  value={formatTime(detailsEmployee.time_out, attendanceTz)}
                 />
               </div>
             </div>
@@ -797,7 +796,7 @@ export function OwnerAttendancePage() {
                   {completing.employee_name}
                 </span>{" "}
                 on {formatDisplayDate(completing.date)}. Time In was{" "}
-                {formatTime(completing.time_in)}.
+                {formatTime(completing.time_in, attendanceTz)}.
               </p>
               <div>
                 <label className="mb-1 block text-xs font-semibold text-[#374151]">
@@ -849,6 +848,7 @@ export function OwnerAttendancePage() {
 
 function CorrectionCard({
   item,
+  timeZone,
   approving,
   rejecting,
   isRejectOpen,
@@ -860,6 +860,7 @@ function CorrectionCard({
   onConfirmReject,
 }: {
   item: OwnerAttendanceCorrection;
+  timeZone?: string | null;
   approving: boolean;
   rejecting: boolean;
   isRejectOpen: boolean;
@@ -892,12 +893,12 @@ function CorrectionCard({
           </p>
           <div className="mt-2 grid gap-1 text-xs text-[#374151] sm:grid-cols-2">
             <p>
-              Recorded: In {formatTime(item.recorded_time_in)} · Out{" "}
-              {formatTime(item.recorded_time_out)}
+              Recorded: In {formatTime(item.recorded_time_in, timeZone)} · Out{" "}
+              {formatTime(item.recorded_time_out, timeZone)}
             </p>
             <p>
-              Requested: In {formatTime(item.requested_time_in)} · Out{" "}
-              {formatTime(item.requested_time_out)}
+              Requested: In {formatTime(item.requested_time_in, timeZone)} · Out{" "}
+              {formatTime(item.requested_time_out, timeZone)}
             </p>
           </div>
           <p className="mt-2 text-sm text-[#4B5563]">

@@ -177,8 +177,10 @@ def test_balancing_off_pays_full_raw_ot():
         ot_minimum=30,
     )
     assert slip["overtime_minutes"] == 60.0
-    assert slip["overtime_pay"] == 60.0
-    assert slip["deductions"] == 0.0
+    assert abs(slip["overtime_pay"] - 60.0) < 0.01
+    assert abs(slip["late_deductions"] - 10.0) < 0.01
+    assert slip["undertime_deductions"] == 0.0
+    assert abs(slip["deductions"] - 10.0) < 0.01
 
 
 def test_balancing_on_equal_late_and_ot_zero_payable():
@@ -192,6 +194,9 @@ def test_balancing_on_equal_late_and_ot_zero_payable():
     )
     assert slip["overtime_minutes"] == 0.0
     assert slip["overtime_pay"] == 0.0
+    # OT 20 recovers 20 late-from-start; remaining monetary late (after grace) is 0.
+    assert slip["late_deductions"] == 0.0
+    assert slip["undertime_deductions"] == 0.0
     assert slip["deductions"] == 0.0
 
 
@@ -205,8 +210,8 @@ def test_balancing_on_late_20_ot_60_pays_40():
         ot_minimum=30,
     )
     assert slip["overtime_minutes"] == 40.0
-    assert slip["overtime_pay"] == 40.0
-    assert slip["deductions"] == 0.0
+    assert abs(slip["overtime_pay"] - 40.0) < 0.01
+    assert slip["late_deductions"] == 0.0
 
 
 def test_balancing_on_no_late_full_ot():
@@ -219,7 +224,7 @@ def test_balancing_on_no_late_full_ot():
         ot_minimum=30,
     )
     assert slip["overtime_minutes"] == 60.0
-    assert slip["overtime_pay"] == 60.0
+    assert abs(slip["overtime_pay"] - 60.0) < 0.01
 
 
 def test_balancing_on_raw_ot_less_than_late_zero_payable():
@@ -240,10 +245,11 @@ def test_balancing_on_raw_ot_less_than_late_zero_payable():
     )
     assert slip_on["overtime_minutes"] == 0.0
     assert slip_off["overtime_minutes"] == 0.0
-    # Worked 525 vs scheduled 540 → 15 unpaid minutes at minute_rate 2700/540=5
-    assert slip_on["unpaid_minutes"] == 15.0
-    assert slip_on["deductions"] == slip_off["deductions"]
-    assert slip_on["deductions"] == 75.0
+    # OT 5 recovers 5 of the 10 monetary late minutes (8:20, grace 10).
+    assert abs(slip_on["late_deductions"] - 5.0) < 0.01
+    assert abs(slip_off["late_deductions"] - 10.0) < 0.01
+    assert slip_on["undertime_deductions"] == 0.0
+    assert slip_off["undertime_deductions"] == 0.0
 
 
 def test_balancing_uses_start_not_grace():
@@ -537,4 +543,6 @@ def test_holiday_premium_uses_day_earned_not_ot_balancing():
     # day_earned = 2700; holiday premium = 2700 * 0.3 = 810
     assert slip["holiday_pay"] == 810.0
     assert slip["overtime_minutes"] == 40.0
+    assert slip["late_deductions"] == 0.0
+    assert slip["undertime_deductions"] == 0.0
     assert slip["deductions"] == 0.0

@@ -54,12 +54,21 @@ function sortByDate(items: Holiday[]) {
   return [...items].sort((a, b) => a.holiday_date.localeCompare(b.holiday_date));
 }
 
+function parseOptionalPercent(value: string): number | null | false {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const parsed = Number(trimmed);
+  if (Number.isNaN(parsed) || parsed < 0) return false;
+  return parsed;
+}
+
 export function HolidaySetupSection() {
   const qc = useQueryClient();
   const [customForm, setCustomForm] = useState({
     name: "",
     holiday_date: "",
     pay_multiplier: "1.0",
+    ot_premium_percent: "",
     is_paid: true,
   });
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -98,6 +107,7 @@ export function HolidaySetupSection() {
       payload: {
         is_paid?: boolean;
         pay_multiplier?: number;
+        ot_premium_percent?: number | null;
         name?: string;
         holiday_date?: string;
       };
@@ -121,11 +131,16 @@ export function HolidaySetupSection() {
       if (multiplier <= 0) {
         throw new Error("Please enter a holiday pay rate greater than 0");
       }
+      const otPremium = parseOptionalPercent(customForm.ot_premium_percent);
+      if (otPremium === false) {
+        throw new Error("OT premium must be 0 or greater, or left blank");
+      }
       return createHoliday({
         name: customForm.name.trim(),
         holiday_date: customForm.holiday_date,
         is_paid: customForm.is_paid,
         pay_multiplier: multiplier,
+        ot_premium_percent: otPremium,
         holiday_type: "company",
       });
     },
@@ -135,6 +150,7 @@ export function HolidaySetupSection() {
         name: "",
         holiday_date: "",
         pay_multiplier: "1.0",
+        ot_premium_percent: "",
         is_paid: true,
       });
       qc.invalidateQueries({ queryKey: ["holidays"] });
@@ -163,6 +179,18 @@ export function HolidaySetupSection() {
     updateRow.mutate({
       id: holiday.id,
       payload: { pay_multiplier: multiplier },
+    });
+  }
+
+  function handleOtPremiumChange(holiday: Holiday, value: string) {
+    const parsed = parseOptionalPercent(value);
+    if (parsed === false) {
+      toast.error("OT premium must be 0 or greater, or left blank");
+      return;
+    }
+    updateRow.mutate({
+      id: holiday.id,
+      payload: { ot_premium_percent: parsed },
     });
   }
 
@@ -200,6 +228,12 @@ export function HolidaySetupSection() {
         </WizardNotice>
       )}
 
+      <WizardNotice>
+        Overtime pay uses the owner OT ₱/minute rate. Ordinary days and rest
+        days have no extra OT premium. Only a holiday's own OT premium below
+        can increase OT pay; leave that field blank for 0%.
+      </WizardNotice>
+
       {!isLoading && defaultHolidays.length > 0 && (
         <section className="min-w-0 space-y-3">
           <div className="flex flex-wrap items-end justify-between gap-2">
@@ -225,6 +259,7 @@ export function HolidaySetupSection() {
                 pending={updateRow.isPending || removeCustom.isPending}
                 onEdit={setEditingId}
                 onMultiplierChange={handleMultiplierChange}
+                onOtPremiumChange={handleOtPremiumChange}
                 onPaidChange={(holiday, isPaid) =>
                   updateRow.mutate({
                     id: holiday.id,
@@ -266,6 +301,7 @@ export function HolidaySetupSection() {
               pending={updateRow.isPending || removeCustom.isPending}
               onEdit={setEditingId}
               onMultiplierChange={handleMultiplierChange}
+              onOtPremiumChange={handleOtPremiumChange}
               onPaidChange={(holiday, isPaid) =>
                 updateRow.mutate({
                   id: holiday.id,
@@ -326,6 +362,25 @@ export function HolidaySetupSection() {
               disabled={!customForm.is_paid}
             />
           </WizardField>
+          <WizardField
+            label="OT premium (%)"
+            hint="Leave blank for 0% extra OT premium."
+          >
+            <Input
+              className={wizardInputClass}
+              type="number"
+              min="0"
+              step="0.01"
+              value={customForm.ot_premium_percent}
+              onChange={(e) =>
+                setCustomForm({
+                  ...customForm,
+                  ot_premium_percent: e.target.value,
+                })
+              }
+              placeholder="Optional"
+            />
+          </WizardField>
           <div className="flex items-end">
             <div className="flex w-full items-center justify-between gap-3 rounded-xl border border-slate-200/80 bg-white px-4 py-2.5">
               <span className="text-sm font-medium text-[#1F2937]">
@@ -380,6 +435,7 @@ function HolidayGroup({
   onEdit,
   onPaidChange,
   onMultiplierChange,
+  onOtPremiumChange,
   onNameChange,
   onDateChange,
   onRemove,
@@ -391,6 +447,7 @@ function HolidayGroup({
   onEdit: (id: string | null) => void;
   onPaidChange: (holiday: Holiday, isPaid: boolean) => void;
   onMultiplierChange: (holiday: Holiday, value: string) => void;
+  onOtPremiumChange: (holiday: Holiday, value: string) => void;
   onNameChange: (holiday: Holiday, name: string) => void;
   onDateChange: (holiday: Holiday, date: string) => void;
   onRemove: (id: string) => void;
@@ -404,11 +461,12 @@ function HolidayGroup({
           </p>
         </div>
       ) : null}
-      <div className="hidden grid-cols-[minmax(0,1.5fr)_8.5rem_7.5rem_6.75rem_minmax(0,7.5rem)] gap-3 px-4 py-2 text-[11px] font-semibold uppercase tracking-wide text-[#6B7280] md:grid">
+      <div className="hidden grid-cols-[minmax(0,1.4fr)_7.5rem_6.5rem_5.5rem_5.5rem_minmax(0,7rem)] gap-3 px-4 py-2 text-[11px] font-semibold uppercase tracking-wide text-[#6B7280] md:grid">
         <span>Holiday</span>
         <span>Date</span>
         <span>Holiday pay</span>
         <span>Pay rate</span>
+        <span>OT premium</span>
         <span className="text-right">Actions</span>
       </div>
       <ul className="divide-y divide-slate-100">
@@ -418,7 +476,7 @@ function HolidayGroup({
           const typeMeta = holidayTypeMeta(holiday.holiday_type);
           return (
             <li key={holiday.id} className="px-4 py-3">
-              <div className="grid min-w-0 items-center gap-3 md:grid-cols-[minmax(0,1.5fr)_8.5rem_7.5rem_6.75rem_minmax(0,7.5rem)]">
+              <div className="grid min-w-0 items-center gap-3 md:grid-cols-[minmax(0,1.4fr)_7.5rem_6.5rem_5.5rem_5.5rem_minmax(0,7rem)]">
                 <div className="min-w-0">
                   {editing ? (
                     <Input
@@ -501,6 +559,25 @@ function HolidayGroup({
                     defaultValue={holiday.pay_multiplier}
                     disabled={!holiday.is_paid || pending}
                     onBlur={(e) => onMultiplierChange(holiday, e.target.value)}
+                  />
+                </div>
+                <div className="min-w-0">
+                  <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-[#9CA3AF] md:hidden">
+                    OT premium
+                  </p>
+                  <Input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    className={wizardInputClass}
+                    defaultValue={
+                      holiday.ot_premium_percent == null
+                        ? ""
+                        : holiday.ot_premium_percent
+                    }
+                    placeholder="—"
+                    disabled={pending}
+                    onBlur={(e) => onOtPremiumChange(holiday, e.target.value)}
                   />
                 </div>
                 <div className="min-w-0 md:text-right">

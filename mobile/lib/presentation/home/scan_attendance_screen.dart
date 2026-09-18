@@ -5,6 +5,7 @@ import 'package:aroll_mobile/core/di/injection.dart';
 import 'package:aroll_mobile/core/face/face_api_errors.dart';
 import 'package:aroll_mobile/core/location/employee_location_service.dart';
 import 'package:aroll_mobile/core/theme/business_brand_theme.dart';
+import 'package:aroll_mobile/core/utils/business_time.dart';
 import 'package:aroll_mobile/domain/entities/employee_portal.dart';
 import 'package:aroll_mobile/domain/entities/face_liveness.dart';
 import 'package:aroll_mobile/domain/repositories/employee_repository.dart';
@@ -16,7 +17,6 @@ import 'package:aroll_mobile/core/tenant_mode.dart';
 import 'package:aroll_mobile/presentation/shared/tenant_mode_banner.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:intl/intl.dart';
 
 class ScanAttendanceScreen extends StatefulWidget {
   const ScanAttendanceScreen({
@@ -77,6 +77,9 @@ class _ScanAttendanceScreenState extends State<ScanAttendanceScreen> {
       final appState = sl<AppState>();
       appState.updateEmployeeProfileImage(dashboard.profile.profileImageUrl);
       appState.updateBusinessBranding(dashboard.profile.branding);
+      appState.updateSessionTimezone(
+        dashboard.profile.timezone ?? dashboard.attendanceStatus.timezone,
+      );
       setState(() {
         _worksite = worksite;
         _profile = dashboard.profile;
@@ -92,13 +95,22 @@ class _ScanAttendanceScreenState extends State<ScanAttendanceScreen> {
       final completed = dashboard.attendanceStatus.timeOut != null;
       final clockedIn = dashboard.attendanceStatus.timeIn != null &&
           dashboard.attendanceStatus.timeOut == null;
+      final canTimeIn = resolveEmployeeTimeInAvailable(
+        backendFlag: dashboard.attendanceStatus.timeInAvailable,
+        workDate: dashboard.todaySchedule?.workDate,
+        startHmm: dashboard.todaySchedule?.startTime,
+        endHmm: dashboard.todaySchedule?.endTime,
+        timeZone: dashboard.profile.timezone ??
+            dashboard.attendanceStatus.timezone ??
+            appState.session?.timezone,
+      );
       if (!completed && !_autoStarted) {
         _autoStarted = true;
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted || _submitting) return;
           if (clockedIn) {
             unawaited(_clockOut());
-          } else {
+          } else if (canTimeIn) {
             unawaited(_clockIn());
           }
         });
@@ -149,16 +161,29 @@ class _ScanAttendanceScreenState extends State<ScanAttendanceScreen> {
         _todaySchedule?.assignmentId;
   }
 
+  bool get _canTimeIn {
+    if (_isClockedIn || _isCompleted) return false;
+    return resolveEmployeeTimeInAvailable(
+      backendFlag: _attendanceStatus?.timeInAvailable,
+      workDate: _todaySchedule?.workDate,
+      startHmm: _todaySchedule?.startTime,
+      endHmm: _todaySchedule?.endTime,
+      timeZone: _businessTimeZone,
+    );
+  }
+
   String get _statusHeadline {
     if (_isCompleted) return 'Already Completed';
     if (_isClockedIn) return 'Ready to Time Out';
-    return 'Ready to Time In';
+    if (_canTimeIn) return 'Ready to Time In';
+    return 'Time In is closed';
   }
 
   String get _statusDetail {
     if (_isCompleted) return 'Time Out';
     if (_isClockedIn) return 'Time In';
-    return 'Not timed in yet';
+    if (_canTimeIn) return 'Not timed in yet';
+    return 'This shift has already ended';
   }
 
   bool get _isDemo => sl<AppState>().session?.isDemo == true;
@@ -168,24 +193,32 @@ class _ScanAttendanceScreenState extends State<ScanAttendanceScreen> {
       if (_submitting) return 'Recording demo attendance…';
       if (_isCompleted) return 'Attendance already completed';
       if (_isClockedIn) return 'Demo Time Out';
-      return 'Demo Time In';
+      if (_canTimeIn) return 'Demo Time In';
+      return 'Time In is closed';
     }
     if (_submitting) return 'Opening camera…';
     if (_isCompleted) return 'Attendance already completed';
     if (_isClockedIn) return 'Look at camera to Time Out';
-    return 'Look at camera to Time In';
+    if (_canTimeIn) return 'Look at camera to Time In';
+    return 'Time In is closed';
   }
 
   String get _primaryButtonHelper {
     if (_isDemo) {
       if (_submitting) return 'Using seeded demo identity and fictional location…';
       if (_isCompleted) return 'You already finished this shift.';
-      return 'No camera or personal location is required.';
+      if (_isClockedIn || _canTimeIn) {
+        return 'No camera or personal location is required.';
+      }
+      return 'Time In is closed because this shift has already ended.';
     }
     if (_submitting) return 'Preparing face check and location…';
     if (_isCompleted) return 'You already finished this shift.';
     if (_isClockedIn) return 'Stay in the work area, then look at the camera.';
-    return 'Stay in the work area, then look at the camera.';
+    if (_canTimeIn) {
+      return 'Stay in the work area, then look at the camera.';
+    }
+    return 'Time In is closed because this shift has already ended.';
   }
 
   Color _statusAccent(BuildContext context) {
@@ -208,7 +241,7 @@ class _ScanAttendanceScreenState extends State<ScanAttendanceScreen> {
     if (_isCompleted || _submitting) return;
     if (_isClockedIn) {
       await _clockOut();
-    } else {
+    } else if (_canTimeIn) {
       await _clockIn();
     }
   }
@@ -351,9 +384,16 @@ class _ScanAttendanceScreenState extends State<ScanAttendanceScreen> {
     return faceApiErrorMessage(error, fallback: fallback);
   }
 
+  String? get _businessTimeZone {
+    return resolveBusinessTimeZoneName([
+      _profile?.timezone,
+      _attendanceStatus?.timezone,
+      sl<AppState>().session?.timezone,
+    ]);
+  }
+
   @override
   Widget build(BuildContext context) {
-    final now = DateTime.now();
     final profile = _profile;
     final appState = sl<AppState>();
     final brand = BrandColors.of(context);
@@ -434,10 +474,25 @@ class _ScanAttendanceScreenState extends State<ScanAttendanceScreen> {
                           },
                         ),
                         const SizedBox(height: 12),
-                        _LiveClockCard(
-                          dateLabel: DateFormat('EEEE, MMMM d').format(now),
-                          timeLabel: DateFormat.jm().format(now),
-                          accent: primary,
+                        ListenableBuilder(
+                          listenable: appState,
+                          builder: (context, _) {
+                            final timeZone = _businessTimeZone;
+                            final nowUtc = DateTime.now().toUtc();
+                            return _LiveClockCard(
+                              dateLabel: formatBusinessDateLabel(
+                                nowUtc,
+                                timeZone: timeZone,
+                              ),
+                              timeLabel: formatBusinessAttendanceTime(
+                                nowUtc,
+                                timeZone: timeZone,
+                              ),
+                              timezoneCaption:
+                                  formatBusinessTimezoneCaption(timeZone),
+                              accent: primary,
+                            );
+                          },
                         ),
                         const SizedBox(height: 12),
                         _DetailsCard(
@@ -454,7 +509,7 @@ class _ScanAttendanceScreenState extends State<ScanAttendanceScreen> {
                         _ScanFaceButton(
                           label: _primaryButtonLabel,
                           helper: _primaryButtonHelper,
-                          enabled: !_isCompleted && !_submitting,
+                          enabled: !_submitting && (_isClockedIn || _canTimeIn),
                           submitting: _submitting,
                           accent: _isClockedIn ? brand.accent : primary,
                           onPressed: _onPrimaryTap,
@@ -665,11 +720,13 @@ class _LiveClockCard extends StatelessWidget {
   const _LiveClockCard({
     required this.dateLabel,
     required this.timeLabel,
+    required this.timezoneCaption,
     required this.accent,
   });
 
   final String dateLabel;
   final String timeLabel;
+  final String timezoneCaption;
   final Color accent;
 
   @override
@@ -733,6 +790,15 @@ class _LiveClockCard extends StatelessWidget {
                     fontWeight: FontWeight.w800,
                     height: 1.1,
                     letterSpacing: -0.4,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  timezoneCaption,
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.78),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ],

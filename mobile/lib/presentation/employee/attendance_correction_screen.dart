@@ -1,5 +1,6 @@
 import 'package:aroll_mobile/core/di/injection.dart';
 import 'package:aroll_mobile/core/face/face_api_errors.dart';
+import 'package:aroll_mobile/core/utils/business_time.dart';
 import 'package:aroll_mobile/core/theme/business_brand_theme.dart';
 import 'package:aroll_mobile/domain/entities/employee_portal.dart';
 import 'package:aroll_mobile/domain/repositories/employee_repository.dart';
@@ -46,8 +47,11 @@ class _AttendanceCorrectionScreenState
 
   TimeOfDay? _todFrom(DateTime? value) {
     if (value == null) return null;
-    final local = value.toLocal();
-    return TimeOfDay(hour: local.hour, minute: local.minute);
+    final tzName = sessionBusinessTimeZone();
+    final wall = (tzName == null || tzName.trim().isEmpty)
+        ? value.toUtc()
+        : toBusinessWallClock(value, tzName);
+    return TimeOfDay(hour: wall.hour, minute: wall.minute);
   }
 
   TimeOfDay? _todFromLabel(String? label) {
@@ -147,7 +151,7 @@ class _AttendanceCorrectionScreenState
 
   String _recordedTime(DateTime? value) {
     if (value == null) return 'Not recorded';
-    return DateFormat.jm().format(value.toLocal());
+    return timeOnly(value);
   }
 
   @override

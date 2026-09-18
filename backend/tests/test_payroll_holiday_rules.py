@@ -436,7 +436,7 @@ def test_ot_unchanged_on_ordinary_day():
         scheduled=[(assignment, shift)],
     )
     assert slip["overtime_minutes"] == 60.0
-    assert slip["overtime_pay"] == 120.0  # 60 * 2.0
+    assert slip["overtime_pay"] == 120.0
     assert slip["gross_pay"] == 920.0
 
 

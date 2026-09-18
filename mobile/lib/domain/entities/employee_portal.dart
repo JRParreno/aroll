@@ -19,6 +19,7 @@ class EmployeeProfile extends Equatable {
     required this.ownerName,
     required this.faceRegistrationStatus,
     required this.branding,
+    this.timezone,
   });
 
   final String employeeId;
@@ -37,6 +38,7 @@ class EmployeeProfile extends Equatable {
   final String? ownerName;
   final String faceRegistrationStatus;
   final BusinessBrandingSettings? branding;
+  final String? timezone;
 
   bool get faceRegistered => faceRegistrationStatus == 'completed';
 
@@ -58,6 +60,7 @@ class EmployeeProfile extends Equatable {
         ownerName,
         faceRegistrationStatus,
         branding,
+        timezone,
       ];
 }
 
@@ -506,6 +509,8 @@ class EmployeeAttendanceStatus extends Equatable {
     required this.timeIn,
     required this.timeOut,
     this.shiftAssignmentId,
+    this.timeInAvailable,
+    this.timezone,
   });
 
   final String status;
@@ -513,8 +518,19 @@ class EmployeeAttendanceStatus extends Equatable {
   final DateTime? timeOut;
   final String? shiftAssignmentId;
 
+  /// Backend Time In window. Null means the payload omitted the flag.
+  final bool? timeInAvailable;
+  final String? timezone;
+
   @override
-  List<Object?> get props => [status, timeIn, timeOut, shiftAssignmentId];
+  List<Object?> get props => [
+        status,
+        timeIn,
+        timeOut,
+        shiftAssignmentId,
+        timeInAvailable,
+        timezone,
+      ];
 }
 
 class EmployeeShiftHistoryItem extends Equatable {

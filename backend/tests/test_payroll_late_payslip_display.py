@@ -147,10 +147,9 @@ def _run_payslip(*, status, time_in, time_out, shift_start, shift_end, daily_rat
     return slip, record
 
 
-def test_late_but_completed_scheduled_hours_hides_late_on_payslip():
-    """Arrived late, stayed longer, completed scheduled hours → no late on slip."""
+def test_late_without_makeup_shows_late_and_shortfall():
+    """Arrived late; post-end time is OT, not regular makeup, when balancing is off."""
     # Shift 16:00–00:00 (480 min). In 18:09 local (late), out 12:00 next day.
-    # Matches Yan A-style make-up: worked >> scheduled.
     time_in = datetime(2026, 8, 2, 10, 9, tzinfo=timezone.utc)  # 18:09 PH
     time_out = datetime(2026, 8, 3, 4, 0, tzinfo=timezone.utc)  # 12:00 PH
 
@@ -163,15 +162,11 @@ def test_late_but_completed_scheduled_hours_hides_late_on_payslip():
     )
 
     row = next(r for r in slip["attendance_records"] if r["date"] == "2026-08-02")
-    assert row["status"] == "late"  # attendance status still late on slip row
-    assert row["late_minutes"] == 0.0
-    assert row["late_deduction"] == 0.0
-    assert row["shortfall_deduction"] == 0.0
-    assert slip["late_minutes"] == 0.0
-    assert slip["late_deductions"] == 0.0
-    assert slip["deductions"] == 0.0
-    assert slip["net_pay"] == slip["gross_pay"]
-    # Attendance record object unchanged
+    assert row["status"] == "late"
+    assert row["late_minutes"] > 0
+    assert slip["deductions"] > 0
+    assert slip["late_minutes"] > 0
+    assert abs(slip["undertime_deductions"] + slip["late_deductions"] - slip["deductions"]) < 0.01
     assert record.status == AttendanceStatus.late
 
 
@@ -194,17 +189,17 @@ def test_late_without_completing_scheduled_hours_shows_late_on_payslip():
     row = next(r for r in slip["attendance_records"] if r["date"] == "2026-08-02")
     assert row["status"] == "late"
     assert row["late_minutes"] == 120.0
-    assert row["late_deduction"] > 0
-    assert row["shortfall_deduction"] > 0
+    assert abs(row["late_deduction"] - 120.0) < 0.01
+    assert row["undertime_minutes"] == 0.0
     assert slip["late_minutes"] == 120.0
-    assert slip["late_deductions"] > 0
-    assert slip["deductions"] == row["shortfall_deduction"]
+    assert abs(slip["late_deductions"] - 120.0) < 0.01
+    assert abs(slip["deductions"] - 120.0) < 0.01
     assert slip["net_pay"] < slip["gross_pay"]
     assert record.status == AttendanceStatus.late
 
 
-def test_late_makeup_net_pay_unchanged_from_zero_shortfall_rule():
-    """Display change must not alter deductions/net when shortfall is zero."""
+def test_late_without_balancing_does_not_treat_post_end_as_regular():
+    """Staying past shift end is OT, not a regular-hour makeup, when balancing is off."""
     time_in = datetime(2026, 8, 2, 10, 9, tzinfo=timezone.utc)
     time_out = datetime(2026, 8, 3, 4, 0, tzinfo=timezone.utc)
 
@@ -217,7 +212,6 @@ def test_late_makeup_net_pay_unchanged_from_zero_shortfall_rule():
         daily_rate=2500.0,
     )
 
-    assert slip["deductions"] == 0.0
-    assert slip["net_pay"] == slip["gross_pay"]
-    # Daily rate credited; OT may add on top — net still equals gross (no late cut).
-    assert slip["gross_pay"] >= 2500.0
+    assert slip["deductions"] > 0
+    assert slip["net_pay"] < slip["gross_pay"]
+    assert abs(slip["undertime_deductions"] + slip["late_deductions"] - slip["deductions"]) < 0.01

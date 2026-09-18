@@ -108,6 +108,7 @@ def _token_response(user: User, db: Session) -> TokenResponse:
         is_demo=is_demo,
         is_internal_test=is_internal_test,
         consents_completed=_consents_completed_for_user(user, db),
+        timezone=business.timezone if business is not None else None,
         **_employee_auth_context(user, db),
     )
 
@@ -312,4 +313,5 @@ def me(
         is_demo=is_demo,
         is_internal_test=is_internal_test,
         consents_completed=_consents_completed_for_user(user, db),
+        timezone=business.timezone if business is not None else None,
     )

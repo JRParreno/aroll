@@ -37,3 +37,6 @@ class BusinessAttendancePolicy(Base):
         Enum(MissingClockOutPolicy), default=MissingClockOutPolicy.auto_clock_out
     )
     attendance_based_salary_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Business-level: when True, break minutes stay in scheduled paid minutes.
+    # Default False preserves historical unpaid-break payroll math.
+    breaktime_is_paid: Mapped[bool] = mapped_column(Boolean, default=False)

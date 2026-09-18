@@ -1,6 +1,7 @@
 import 'package:aroll_mobile/core/app_state.dart';
 import 'package:aroll_mobile/core/di/injection.dart';
 import 'package:aroll_mobile/core/theme/business_brand_theme.dart';
+import 'package:aroll_mobile/core/utils/business_time.dart';
 import 'package:aroll_mobile/domain/entities/employee_portal.dart';
 import 'package:aroll_mobile/domain/entities/user_session.dart';
 import 'package:aroll_mobile/domain/repositories/employee_repository.dart';
@@ -47,6 +48,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final appState = sl<AppState>();
     appState.updateEmployeeProfileImage(dashboard.profile.profileImageUrl);
     appState.updateBusinessBranding(dashboard.profile.branding);
+    appState.updateSessionTimezone(
+      dashboard.profile.timezone ?? dashboard.attendanceStatus.timezone,
+    );
     return dashboard;
   }
 
@@ -70,7 +74,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   void _openAttendance(EmployeeDashboard data) {
-    final assignmentId = data.todaySchedule?.assignmentId;
+    final assignmentId = data.attendanceStatus.shiftAssignmentId ??
+        data.todaySchedule?.assignmentId;
     if (assignmentId != null) {
       context.go('/scan-attendance?shift_assignment_id=$assignmentId');
     } else {
@@ -171,6 +176,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                               const SizedBox(height: _sectionGap),
                               _AttendanceStatusCard(
                                 status: data.attendanceStatus,
+                                schedule: data.todaySchedule,
+                                timeZone: data.profile.timezone ??
+                                    data.attendanceStatus.timezone ??
+                                    widget.session.timezone,
                               ),
                               const SizedBox(height: _sectionGap),
                               _ScheduleHero(
@@ -410,14 +419,28 @@ class _DashboardHeader extends StatelessWidget {
 }
 
 class _AttendanceStatusCard extends StatelessWidget {
-  const _AttendanceStatusCard({required this.status});
+  const _AttendanceStatusCard({
+    required this.status,
+    this.schedule,
+    this.timeZone,
+  });
 
   final EmployeeAttendanceStatus status;
+  final EmployeeScheduleItem? schedule;
+  final String? timeZone;
 
   @override
   Widget build(BuildContext context) {
+    final timeInOpen = resolveEmployeeTimeInAvailable(
+      backendFlag: status.timeInAvailable,
+      workDate: schedule?.workDate,
+      startHmm: schedule?.startTime,
+      endHmm: schedule?.endTime,
+      timeZone: timeZone,
+    );
     final color = statusColor(status.status);
     final label = switch (status.status) {
+      'not_started' when !timeInOpen => 'Time In closed',
       'not_started' => 'Not timed in yet',
       'in_progress' => 'Timed in',
       'completed' => 'Shift completed',
