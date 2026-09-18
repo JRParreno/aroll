@@ -38,6 +38,9 @@ def _holiday_response(h: Holiday) -> HolidayResponse:
         holiday_date=h.holiday_date,
         is_paid=h.is_paid,
         pay_multiplier=float(h.pay_multiplier),
+        ot_premium_percent=(
+            float(h.ot_premium_percent) if h.ot_premium_percent is not None else None
+        ),
         holiday_type=h.holiday_type.value,
         is_active=h.is_active,
     )
@@ -76,6 +79,7 @@ def create_holiday(
         holiday_date=body.holiday_date,
         is_paid=body.is_paid,
         pay_multiplier=body.pay_multiplier,
+        ot_premium_percent=body.ot_premium_percent,
         holiday_type=body.holiday_type,
     )
     db.add(holiday)

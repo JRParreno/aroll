@@ -294,6 +294,7 @@ export function OwnerSetupWizardPage() {
     maximum_overtime_minutes: "180",
     missing_clock_out_policy: "auto_clock_out",
     attendance_based_salary_enabled: true,
+    breaktime_is_paid: false,
   });
   const [restForm, setRestForm] = useState({
     rest_day_premium_percent: "30",
@@ -351,6 +352,7 @@ export function OwnerSetupWizardPage() {
       missing_clock_out_policy: attendancePolicy.missing_clock_out_policy,
       attendance_based_salary_enabled:
         attendancePolicy.attendance_based_salary_enabled,
+      breaktime_is_paid: attendancePolicy.breaktime_is_paid === true,
     });
   }, [attendancePolicy]);
 
@@ -557,6 +559,18 @@ export function OwnerSetupWizardPage() {
     },
   });
 
+  const saveBreaktime = useMutation({
+    mutationFn: (breaktime_is_paid: boolean) =>
+      updateAttendancePolicy({
+        ...(attendancePolicy ?? {}),
+        breaktime_is_paid,
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["attendance-policy"] });
+    },
+    onError: () => toast.error("Could not save breaktime setting"),
+  });
+
   const saveAttendance = useMutation({
     mutationFn: () =>
       updateAttendancePolicy({
@@ -574,6 +588,7 @@ export function OwnerSetupWizardPage() {
         maximum_overtime_minutes: Number(attForm.maximum_overtime_minutes),
         missing_clock_out_policy: attForm.missing_clock_out_policy,
         attendance_based_salary_enabled: attForm.attendance_based_salary_enabled,
+        breaktime_is_paid: attForm.breaktime_is_paid,
       }),
     onSuccess: () => {
       toast.success("Time-in settings saved");
@@ -841,6 +856,16 @@ export function OwnerSetupWizardPage() {
                     />
                   </WizardField>
                 </div>
+                <WizardSettingRow
+                  title="Breaktime is paid"
+                  description="ON: Include breaktime in paid working hours. OFF: Breaktime is unpaid."
+                  checked={attForm.breaktime_is_paid}
+                  onChange={(next) => {
+                    setAttForm({ ...attForm, breaktime_is_paid: next });
+                    saveBreaktime.mutate(next);
+                  }}
+                  disabled={!attendancePolicy || saveBreaktime.isPending}
+                />
                 <Button
                   className={wizardPrimaryBtnClass}
                   onClick={() => addShift.mutate()}

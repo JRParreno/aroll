@@ -15,7 +15,6 @@ from app.models.attendance import AttendanceRecord
 from app.models.face_embedding import EmployeeFaceEmbedding
 from app.models.face_liveness import FaceLivenessChallenge
 from app.models.payroll import Position
-from app.models.payroll import Payslip
 from app.models.scheduling import ShiftAssignment
 from app.models.user import User
 from app.schemas.employee import (
@@ -371,9 +370,7 @@ def delete_employee(
     db.query(ShiftAssignment).filter(ShiftAssignment.employee_id == emp.id).delete(
         synchronize_session=False
     )
-    db.query(Payslip).filter(Payslip.employee_id == emp.id).delete(
-        synchronize_session=False
-    )
+    # Keep finalized Payslip snapshots. employee_id SET NULL via FK.
     db.query(EmployeeFaceEmbedding).filter(
         EmployeeFaceEmbedding.employee_id == emp.id
     ).delete(synchronize_session=False)

@@ -50,6 +50,7 @@ class TokenResponse(BaseModel):
     is_demo: bool = False
     is_internal_test: bool = False
     consents_completed: bool = True
+    timezone: str | None = None
 
 
 class UserMeResponse(BaseModel):
@@ -69,3 +70,4 @@ class UserMeResponse(BaseModel):
     is_demo: bool = False
     is_internal_test: bool = False
     consents_completed: bool = True
+    timezone: str | None = None

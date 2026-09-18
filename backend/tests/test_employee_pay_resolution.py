@@ -326,8 +326,8 @@ def test_backfilled_equal_rates_match_legacy_behavior():
     assert slip_emp["overtime_pay"] == slip_fallback["overtime_pay"]
 
 
-def test_shortfall_uses_resolved_employee_rate():
-    # Late in, leave at shift end → unpaid minutes × (720/540)
+def test_late_uses_owner_per_minute_not_daily_rate():
+    # Late 10:10, out at end. Grace 10 → 120 late minutes × ₱1.
     slip = _run_payslip(
         employee_daily_rate=720.0,
         position_daily_rate=650.0,
@@ -335,9 +335,10 @@ def test_shortfall_uses_resolved_employee_rate():
         time_in=_ph(10, 10),
         time_out=_ph(17, 0),
     )
-    # Worked 410 vs 540 → 130 unpaid; minute_rate = 720/540 = 4/3
-    assert slip["unpaid_minutes"] == 130.0
-    assert abs(slip["deductions"] - (130.0 * (720.0 / 540.0))) < 0.01
+    assert slip["late_minutes"] == 120.0
+    assert slip["undertime_minutes"] == 0.0
+    assert abs(slip["late_deductions"] - 120.0) < 0.01
+    assert abs(slip["deductions"] - 120.0) < 0.01
     assert slip["daily_rate"] == 720.0
 
 
@@ -363,13 +364,13 @@ def test_holiday_pay_uses_resolved_employee_rate():
     assert slip["daily_rate"] == 720.0
 
 
-def test_ot_unchanged_uses_config_rate_not_daily_rate():
+def test_ot_uses_config_overtime_per_minute():
     slip = _run_payslip(
         employee_daily_rate=720.0,
         position_daily_rate=650.0,
         ot_out_hour=18,
     )
-    # 60 min OT × ₱1/min config rate
+    # 60 min OT × ₱1/min × 1.00 (ordinary OT premium is 0%)
     assert slip["overtime_minutes"] == 60.0
-    assert slip["overtime_pay"] == 60.0
-    assert slip["gross_pay"] == 720.0 + 60.0
+    assert abs(slip["overtime_pay"] - 60.0) < 0.01
+    assert abs(slip["gross_pay"] - (720.0 + 60.0)) < 0.01

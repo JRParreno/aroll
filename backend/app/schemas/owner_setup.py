@@ -85,6 +85,9 @@ class PayrollConfigResponse(BaseModel):
     overtime_enabled: bool
     overtime_per_minute: float
     enable_late_overtime_balancing: bool
+    # Stored for API compatibility. Active payroll OT premium does not read these.
+    ordinary_ot_premium_percent: float
+    rest_day_ot_premium_percent: float
     weekly_payday_weekday: str | None
     semi_monthly_payday_1: int | None
     semi_monthly_payday_2: int | None
@@ -102,6 +105,9 @@ class PayrollConfigUpdate(BaseModel):
     overtime_per_minute: float = 1.0
     # Optional so older clients do not reset an existing setting.
     enable_late_overtime_balancing: bool | None = None
+    # Stored for API compatibility. Active payroll OT premium does not read these.
+    ordinary_ot_premium_percent: float | None = Field(default=None, ge=0)
+    rest_day_ot_premium_percent: float | None = Field(default=None, ge=0)
     weekly_payday_weekday: Weekday | None = None
     semi_monthly_payday_1: int | None = Field(default=None, ge=1, le=31)
     semi_monthly_payday_2: int | None = Field(default=None, ge=1, le=31)
@@ -143,6 +149,7 @@ class AttendancePolicyResponse(BaseModel):
     overtime_rate_per_minute: float
     missing_clock_out_policy: str
     attendance_based_salary_enabled: bool
+    breaktime_is_paid: bool
 
 
 class AttendancePolicyUpdate(BaseModel):
@@ -162,6 +169,7 @@ class AttendancePolicyUpdate(BaseModel):
         MissingClockOutPolicy.auto_clock_out
     )
     attendance_based_salary_enabled: bool = True
+    breaktime_is_paid: bool | None = None
 
     @model_validator(mode="after")
     def _percent_order(self):
@@ -204,6 +212,7 @@ class HolidayCreate(BaseModel):
     holiday_date: date
     is_paid: bool = True
     pay_multiplier: float = Field(default=1.0, gt=0)
+    ot_premium_percent: float | None = Field(default=None, ge=0)
     holiday_type: HolidayType = HolidayType.company
 
 
@@ -212,6 +221,7 @@ class HolidayUpdate(BaseModel):
     holiday_date: date | None = None
     is_paid: bool | None = None
     pay_multiplier: float | None = Field(default=None, gt=0)
+    ot_premium_percent: float | None = Field(default=None, ge=0)
     holiday_type: HolidayType | None = None
     is_active: bool | None = None
 
@@ -223,6 +233,7 @@ class HolidayResponse(BaseModel):
     holiday_date: date
     is_paid: bool
     pay_multiplier: float
+    ot_premium_percent: float | None = None
     holiday_type: str
     is_active: bool
 

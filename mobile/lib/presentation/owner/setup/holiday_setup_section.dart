@@ -1,5 +1,6 @@
 import 'package:aroll_mobile/core/di/injection.dart';
 import 'package:aroll_mobile/data/repositories/owner_repository.dart';
+import 'package:aroll_mobile/presentation/owner/setup/holiday_ot_premium.dart';
 import 'package:aroll_mobile/presentation/owner/setup/setup_ui.dart';
 import 'package:aroll_mobile/presentation/owner/setup/setup_wizard_constants.dart';
 import 'package:aroll_mobile/presentation/shared/app_ui.dart';
@@ -24,6 +25,7 @@ class _HolidaySetupSectionState extends State<HolidaySetupSection> {
   final _repo = sl<OwnerRepository>();
   final _nameController = TextEditingController();
   final _multiplierController = TextEditingController(text: '1.0');
+  final _otPremiumController = TextEditingController();
 
   List<Map<String, dynamic>> _holidays = const [];
   bool _loading = true;
@@ -44,6 +46,7 @@ class _HolidaySetupSectionState extends State<HolidaySetupSection> {
   void dispose() {
     _nameController.dispose();
     _multiplierController.dispose();
+    _otPremiumController.dispose();
     super.dispose();
   }
 
@@ -145,6 +148,10 @@ class _HolidaySetupSectionState extends State<HolidaySetupSection> {
       _showSnack('Please enter a holiday pay rate greater than 0');
       return;
     }
+    if (isHolidayOtPremiumInvalid(_otPremiumController.text)) {
+      _showSnack('OT premium must be 0 or greater, or left blank');
+      return;
+    }
 
     setState(() => _busy = true);
     try {
@@ -153,9 +160,11 @@ class _HolidaySetupSectionState extends State<HolidaySetupSection> {
         holidayDate: formatApiDate(_customDate!),
         isPaid: _customIsPaid,
         payMultiplier: _customIsPaid ? multiplier : 1.0,
+        otPremiumPercent: parseHolidayOtPremium(_otPremiumController.text),
       );
       _nameController.clear();
       _multiplierController.text = '1.0';
+      _otPremiumController.clear();
       _customDate = null;
       _customIsPaid = true;
       widget.onChanged();
@@ -306,6 +315,27 @@ class _HolidaySetupSectionState extends State<HolidaySetupSection> {
               _updateHoliday(id, {'pay_multiplier': multiplier});
             },
           ),
+          const SizedBox(height: 8),
+          TextFormField(
+            initialValue: holidayOtPremiumDisplay(holiday['ot_premium_percent']),
+            enabled: !_busy,
+            style: const TextStyle(fontSize: 14),
+            decoration: _compactInput(
+              'OT premium (%)',
+              hint: 'Blank = 0% extra OT premium',
+            ),
+            keyboardType:
+                const TextInputType.numberWithOptions(decimal: true),
+            onFieldSubmitted: (value) {
+              if (isHolidayOtPremiumInvalid(value)) {
+                _showSnack('OT premium must be 0 or greater, or left blank');
+                return;
+              }
+              _updateHoliday(id, {
+                'ot_premium_percent': parseHolidayOtPremium(value),
+              });
+            },
+          ),
           if (isCustom) ...[
             const SizedBox(height: 8),
             Row(
@@ -378,6 +408,16 @@ class _HolidaySetupSectionState extends State<HolidaySetupSection> {
               ),
             ),
           ],
+        ),
+        const SizedBox(height: _fieldGap),
+        TextField(
+          controller: _otPremiumController,
+          style: const TextStyle(fontSize: 14),
+          decoration: _compactInput(
+            'OT premium (%)',
+            hint: 'Optional. Blank = 0% extra OT premium',
+          ),
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
         ),
         SetupCompactSwitch(
           title: 'Employees get holiday pay',

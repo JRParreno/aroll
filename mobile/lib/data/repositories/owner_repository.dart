@@ -652,6 +652,7 @@ class OwnerRepository {
     required String holidayDate,
     bool isPaid = true,
     required double payMultiplier,
+    double? otPremiumPercent,
     String holidayType = 'company',
   }) async =>
       (await _api.dio.post<Map<String, dynamic>>(
@@ -661,6 +662,7 @@ class OwnerRepository {
           'holiday_date': holidayDate,
           'is_paid': isPaid,
           'pay_multiplier': payMultiplier,
+          'ot_premium_percent': otPremiumPercent,
           'holiday_type': holidayType,
         },
       ))

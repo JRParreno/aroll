@@ -112,6 +112,7 @@ class AppState extends ChangeNotifier {
         isDemo: current.isDemo,
         isInternalTest: current.isInternalTest,
         consentsCompleted: current.consentsCompleted,
+        timezone: current.timezone,
       );
     }
     notifyListeners();
@@ -153,6 +154,15 @@ class AppState extends ChangeNotifier {
     if (session == null || branding == null) return;
     if (session!.branding == branding) return;
     session = session!.copyWith(branding: branding);
+    notifyListeners();
+  }
+
+  void updateSessionTimezone(String? timezone) {
+    if (session == null) return;
+    final name = timezone?.trim();
+    if (name == null || name.isEmpty) return;
+    if (session!.timezone == name) return;
+    session = session!.copyWith(timezone: name);
     notifyListeners();
   }
 

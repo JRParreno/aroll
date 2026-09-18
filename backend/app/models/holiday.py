@@ -22,6 +22,10 @@ class Holiday(Base):
     holiday_date: Mapped[date] = mapped_column(Date, nullable=False)
     is_paid: Mapped[bool] = mapped_column(Boolean, default=True)
     pay_multiplier: Mapped[float] = mapped_column(Numeric(5, 2), default=1.0)
+    # None = not configured (fall back to rest-day or ordinary OT). 0 = 0%.
+    ot_premium_percent: Mapped[float | None] = mapped_column(
+        Numeric(5, 2), nullable=True, default=None
+    )
     holiday_type: Mapped[HolidayType] = mapped_column(Enum(HolidayType), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(

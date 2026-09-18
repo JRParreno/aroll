@@ -18,6 +18,7 @@ class UserSession extends Equatable {
     this.isDemo = false,
     this.isInternalTest = false,
     this.consentsCompleted,
+    this.timezone,
   });
 
   final String userId;
@@ -36,6 +37,7 @@ class UserSession extends Equatable {
   final bool isDemo;
   final bool isInternalTest;
   final bool? consentsCompleted;
+  final String? timezone;
 
   bool get isOwner => role == 'owner' || role == 'manager';
   bool get isEmployee => role == 'employee';
@@ -48,6 +50,7 @@ class UserSession extends Equatable {
     bool? isDemo,
     bool? isInternalTest,
     bool? consentsCompleted,
+    String? timezone,
   }) {
     return UserSession(
       userId: userId,
@@ -66,6 +69,7 @@ class UserSession extends Equatable {
       isDemo: isDemo ?? this.isDemo,
       isInternalTest: isInternalTest ?? this.isInternalTest,
       consentsCompleted: consentsCompleted ?? this.consentsCompleted,
+      timezone: timezone ?? this.timezone,
     );
   }
 
@@ -87,6 +91,7 @@ class UserSession extends Equatable {
         isDemo,
         isInternalTest,
         consentsCompleted,
+        timezone,
       ];
 }
 

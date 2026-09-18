@@ -65,6 +65,7 @@ export type UserMe = {
   profile_image_url?: string | null;
   is_demo?: boolean;
   is_internal_test?: boolean;
+  timezone?: string | null;
 };
 
 export type Registration = {
@@ -233,6 +234,7 @@ export type OwnerPerformance = {
 };
 
 export type OwnerAttendanceReport = {
+  timezone?: string | null;
   summary: {
     present: number;
     late: number;
@@ -295,6 +297,8 @@ export type OwnerPayrollReport = {
     monthly_salary?: number | null;
     worked_days: number;
     hours_worked?: number;
+    pending_attendance_count?: number;
+    pending_work_dates?: string[];
     late_deductions?: number;
     undertime_deductions?: number;
     overtime_pay: number;
@@ -313,6 +317,7 @@ export type OwnerPayrollReport = {
   payroll_status?: string;
   as_of?: string;
   incomplete_attendance_count?: number;
+  pending_attendance_count?: number;
   can_finalize?: boolean;
   is_finalized?: boolean;
   finalized_at?: string | null;
@@ -355,6 +360,7 @@ export type EmployeePayslip = {
   hourly_rate_configured?: number | null;
   monthly_salary_configured?: number | null;
   worked_days: number;
+  hours_worked?: number;
   overtime_minutes: number;
   overtime_hours: number;
   overtime_pay: number;
@@ -382,6 +388,8 @@ export type EmployeePayslip = {
   absent_days: number;
   paid_leave_days?: number;
   unpaid_leave_days?: number;
+  pending_attendance_count?: number;
+  pending_work_dates?: string[];
   gross_pay: number;
   net_pay: number;
   base_net_pay?: number;
@@ -399,6 +407,7 @@ export type EmployeePayslip = {
     holiday_name: string | null;
     is_rest_day?: boolean;
     rest_day_premium_pay?: number | null;
+    payroll_status?: string;
   }[];
 };
 
@@ -1261,6 +1270,8 @@ export type PayrollConfig = {
   overtime_enabled: boolean;
   overtime_per_minute: number;
   enable_late_overtime_balancing: boolean;
+  ordinary_ot_premium_percent: number;
+  rest_day_ot_premium_percent: number;
   weekly_payday_weekday: string | null;
   semi_monthly_payday_1: number | null;
   semi_monthly_payday_2: number | null;
@@ -1283,6 +1294,7 @@ export type AttendancePolicy = {
   overtime_rate_per_minute: number;
   missing_clock_out_policy: string;
   attendance_based_salary_enabled: boolean;
+  breaktime_is_paid: boolean;
 };
 
 export type LeavePolicyItem = {
@@ -1325,6 +1337,7 @@ export type Holiday = {
   holiday_date: string;
   is_paid: boolean;
   pay_multiplier: number;
+  ot_premium_percent: number | null;
   holiday_type: string;
   is_active: boolean;
 };
@@ -1502,6 +1515,7 @@ export async function createHoliday(payload: {
   holiday_date: string;
   is_paid?: boolean;
   pay_multiplier?: number;
+  ot_premium_percent?: number | null;
   holiday_type?: string;
 }) {
   const { data } = await api.post<Holiday>("/holidays", payload);
@@ -1515,6 +1529,7 @@ export async function updateHoliday(
     holiday_date?: string;
     is_paid?: boolean;
     pay_multiplier?: number;
+    ot_premium_percent?: number | null;
     holiday_type?: string;
   }
 ) {

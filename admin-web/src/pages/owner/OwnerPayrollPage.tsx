@@ -46,6 +46,35 @@ function money(value: number) {
   }).format(value);
 }
 
+function isUnfinalizedPending(item: {
+  pending_attendance_count?: number;
+  worked_days?: number;
+}) {
+  return (item.pending_attendance_count ?? 0) > 0 && !(item.worked_days);
+}
+
+function moneyOrPending(value: number, pending: boolean) {
+  return pending ? "—" : money(value);
+}
+
+function hoursLabel(value: number | undefined, pending: boolean) {
+  if (pending) return "—";
+  return `${Number(value ?? 0).toFixed(2)} hrs`;
+}
+
+function overtimeHoursLabel(item: {
+  overtime_hours?: number;
+  overtime_minutes?: number;
+  pending?: boolean;
+}) {
+  if (item.pending) return "—";
+  const hours =
+    item.overtime_hours != null
+      ? Number(item.overtime_hours)
+      : Number(item.overtime_minutes ?? 0) / 60;
+  return `${hours.toFixed(2)} hrs`;
+}
+
 function asOfForMonth(year: number, month: number) {
   const lastDay = new Date(year, month, 0).getDate();
   const day = Math.min(new Date().getDate(), lastDay);
@@ -124,6 +153,7 @@ export function OwnerPayrollPage() {
   const canEditPayslip = me?.role === "owner" || me?.role === "manager";
   const isDemo = sessionIsDemo(me);
   const incompleteCount = data?.incomplete_attendance_count ?? 0;
+  const pendingCount = data?.pending_attendance_count ?? 0;
   const canFinalize = Boolean(data?.can_finalize);
   const isFinalized = Boolean(data?.is_finalized);
   const finalizeError = (() => {
@@ -222,6 +252,7 @@ export function OwnerPayrollPage() {
                 !canEditPayslip ||
                 isFinalized ||
                 incompleteCount > 0 ||
+                pendingCount > 0 ||
                 !canFinalize ||
                 finalizeMutation.isPending
               }
@@ -259,13 +290,19 @@ export function OwnerPayrollPage() {
               incomplete attendance ({incompleteCount}). Resolve all attendance
               corrections first. You can still preview payslips.
             </div>
+          ) : pendingCount > 0 ? (
+            <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-900">
+              Payroll cannot be finalized because there are employees with
+              pending scheduled assignments ({pendingCount}). Resolve all
+              pending attendance first. You can still preview payslips.
+            </div>
           ) : null}
           {finalizeError ? (
             <div className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-800">
               {finalizeError}
             </div>
           ) : null}
-          {finalizeMutation.isSuccess && !incompleteCount ? (
+          {finalizeMutation.isSuccess && !incompleteCount && !pendingCount ? (
             <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-800">
               {isDemo
                 ? "Sample payroll period marked complete for demonstration."
@@ -287,6 +324,7 @@ export function OwnerPayrollPage() {
                 (item as { final_net_pay?: number }).final_net_pay ??
                 item.net_pay ??
                 item.total_salary;
+              const pendingOnly = isUnfinalizedPending(item);
               const initials = item.employee_name
                 .split(" ")
                 .filter(Boolean)
@@ -338,6 +376,12 @@ export function OwnerPayrollPage() {
                     </div>
                   </div>
                   <div className="mt-5 space-y-2.5 text-sm">
+                    {(item.pending_attendance_count ?? 0) > 0 ? (
+                      <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                        Pending attendance is not included in payroll until Time
+                        Out is recorded.
+                      </p>
+                    ) : null}
                     <Row
                       label={salaryRateLabel()}
                       value={formatSalaryRate(item)}
@@ -345,26 +389,40 @@ export function OwnerPayrollPage() {
                     <Row label="Worked Days" value={`${item.worked_days} days`} />
                     <Row
                       label="Hours Worked"
-                      value={`${item.hours_worked ?? item.worked_days * 8}`}
+                      value={hoursLabel(item.hours_worked, pendingOnly)}
                     />
-                    <Row label="Overtime Pay" value={money(item.overtime_pay)} />
+                    <Row
+                      label="Overtime Hours"
+                      value={overtimeHoursLabel({
+                        overtime_hours: item.overtime_hours,
+                        pending: pendingOnly,
+                      })}
+                    />
+                    <Row
+                      label="Overtime Pay"
+                      value={moneyOrPending(item.overtime_pay, pendingOnly)}
+                    />
                     <Row
                       label="Late Deductions"
-                      value={money(item.late_deductions ?? 0)}
+                      value={moneyOrPending(item.late_deductions ?? 0, pendingOnly)}
                     />
                     <Row
                       label="Undertime Deductions"
-                      value={money(item.undertime_deductions ?? 0)}
+                      value={moneyOrPending(
+                        item.undertime_deductions ?? 0,
+                        pendingOnly
+                      )}
                     />
                     <Row
                       label="Gross Pay"
-                      value={money(
-                        item.gross_pay ?? item.total_salary + item.deductions
+                      value={moneyOrPending(
+                        item.gross_pay ?? item.total_salary + item.deductions,
+                        pendingOnly
                       )}
                     />
                     <Row
                       label="Attendance Deductions"
-                      value={money(item.deductions)}
+                      value={moneyOrPending(item.deductions, pendingOnly)}
                     />
                     <Row
                       label="Payroll Adjustments"
@@ -380,7 +438,7 @@ export function OwnerPayrollPage() {
                     Final Net Pay
                   </span>
                   <span className="text-base font-bold text-emerald-700">
-                    {money(finalNet)}
+                    {moneyOrPending(finalNet, pendingOnly)}
                   </span>
                 </div>
               </div>
@@ -427,7 +485,10 @@ export function OwnerPayrollPage() {
                       Final Net Pay
                     </p>
                     <p className="text-xl font-bold text-emerald-700">
-                      {money(payslip.final_net_pay ?? payslip.net_pay)}
+                      {moneyOrPending(
+                        payslip.final_net_pay ?? payslip.net_pay,
+                        isUnfinalizedPending(payslip)
+                      )}
                     </p>
                   </div>
                   <PayslipPreview
@@ -583,10 +644,44 @@ function PayslipPreview({
         <Row label="Employment Type" value={payslip.employment_type.replace("_", "-")} />
       </Section>
 
+      {(payslip.pending_attendance_count ?? 0) > 0 ? (
+        <p className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          Payroll Status: Pending. Open attendance is not finalized until Time
+          Out is recorded.
+        </p>
+      ) : null}
+
       <Section title={settings.earningsSection} color={settings.earningsColor}>
         <Row label={salaryRateLabel()} value={formatSalaryRate(payslip)} />
-        <Row label="Basic Salary" value={money(payslip.regular_pay ?? 0)} />
-        <Row label="Overtime" value={money(payslip.overtime_pay)} />
+        <Row
+          label="Hours Worked"
+          value={hoursLabel(
+            payslip.hours_worked,
+            isUnfinalizedPending(payslip)
+          )}
+        />
+        <Row
+          label="Overtime Hours"
+          value={overtimeHoursLabel({
+            overtime_hours: payslip.overtime_hours,
+            overtime_minutes: payslip.overtime_minutes,
+            pending: isUnfinalizedPending(payslip),
+          })}
+        />
+        <Row
+          label="Basic Salary"
+          value={moneyOrPending(
+            payslip.regular_pay ?? 0,
+            isUnfinalizedPending(payslip)
+          )}
+        />
+        <Row
+          label="Overtime"
+          value={moneyOrPending(
+            payslip.overtime_pay,
+            isUnfinalizedPending(payslip)
+          )}
+        />
         <Row label="Holiday Pay" value={money(payslip.holiday_pay)} />
         <Row
           label={`Rest Day Premium${
@@ -596,7 +691,11 @@ function PayslipPreview({
           }`}
           value={money(payslip.rest_day_pay ?? 0)}
         />
-        <Row label="Total Earnings" value={money(payslip.gross_pay)} strong />
+        <Row
+          label="Total Earnings"
+          value={moneyOrPending(payslip.gross_pay, isUnfinalizedPending(payslip))}
+          strong
+        />
       </Section>
 
       {(payslip.rest_day_records?.length ?? 0) > 0 && (
@@ -655,12 +754,24 @@ function PayslipPreview({
       )}
 
       <Section title={settings.deductionsSection} color={settings.deductionsColor}>
-        <Row label="Late Deduction" value={money(payslip.late_deductions ?? 0)} />
+        <Row
+          label="Late Deduction"
+          value={moneyOrPending(
+            payslip.late_deductions ?? 0,
+            isUnfinalizedPending(payslip)
+          )}
+        />
         <Row
           label="Undertime Deduction"
-          value={money(payslip.undertime_deductions ?? 0)}
+          value={moneyOrPending(
+            payslip.undertime_deductions ?? 0,
+            isUnfinalizedPending(payslip)
+          )}
         />
-        <Row label="Attendance Deduction Total" value={money(payslip.deductions)} />
+        <Row
+          label="Attendance Deduction Total"
+          value={moneyOrPending(payslip.deductions, isUnfinalizedPending(payslip))}
+        />
         <Row label="Absent Days" value={`${payslip.absent_days}`} />
         <Row
           label="Paid Leave"
@@ -700,10 +811,19 @@ function PayslipPreview({
       </Section>
 
       <Section title={settings.netPaySection} color={settings.netColor}>
-        <Row label="Base Net Pay" value={money(payslip.base_net_pay ?? payslip.net_pay)} />
+        <Row
+          label="Base Net Pay"
+          value={moneyOrPending(
+            payslip.base_net_pay ?? payslip.net_pay,
+            isUnfinalizedPending(payslip)
+          )}
+        />
         <Row
           label="Final Net Pay"
-          value={money(payslip.final_net_pay ?? payslip.net_pay)}
+          value={moneyOrPending(
+            payslip.final_net_pay ?? payslip.net_pay,
+            isUnfinalizedPending(payslip)
+          )}
           strong
         />
       </Section>
@@ -1121,6 +1241,14 @@ function downloadPayslip(
     ["Position", payslip.position_title ?? "Employee"],
     ["Period", `${payslip.period_start} to ${payslip.period_end}`],
     ["Worked Days", String(payslip.worked_days)],
+    ["Hours Worked", hoursLabel(payslip.hours_worked, false)],
+    [
+      "Overtime Hours",
+      overtimeHoursLabel({
+        overtime_hours: payslip.overtime_hours,
+        overtime_minutes: payslip.overtime_minutes,
+      }),
+    ],
     [settings.earningsSection, ""],
     [salaryRateLabel(), formatSalaryRate(payslip)],
     ["Basic Salary", money(payslip.regular_pay ?? 0)],

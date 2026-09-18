@@ -58,6 +58,7 @@ class AuthRepositoryImpl implements AuthRepository {
       isDemo: m['is_demo'] as bool? ?? false,
       isInternalTest: m['is_internal_test'] as bool? ?? false,
       consentsCompleted: m['consents_completed'] as bool?,
+      timezone: m['timezone'] as String?,
     );
   }
 

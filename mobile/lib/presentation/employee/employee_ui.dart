@@ -1,6 +1,9 @@
 import 'dart:math' as math;
 
+import 'package:aroll_mobile/core/app_state.dart';
+import 'package:aroll_mobile/core/di/injection.dart';
 import 'package:aroll_mobile/core/theme/business_brand_theme.dart';
+import 'package:aroll_mobile/core/utils/business_time.dart';
 import 'package:aroll_mobile/core/utils/data_uri_image.dart';
 import 'package:aroll_mobile/core/utils/format.dart';
 import 'package:aroll_mobile/domain/entities/employee_portal.dart';
@@ -87,9 +90,17 @@ String dayName(DateTime value) => DateFormat('E').format(value);
 
 String dayNumber(DateTime value) => DateFormat('d').format(value);
 
-String timeOnly(DateTime? value) {
+String timeOnly(DateTime? value, {String? timeZone}) {
   if (value == null) return '--';
-  return DateFormat.jm().format(value);
+  return formatBusinessAttendanceTime(
+    value,
+    timeZone: timeZone ?? sessionBusinessTimeZone(),
+  );
+}
+
+String? sessionBusinessTimeZone() {
+  if (!sl.isRegistered<AppState>()) return null;
+  return sl<AppState>().session?.timezone;
 }
 
 String titleCase(String value) {
