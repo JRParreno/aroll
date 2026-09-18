@@ -54,7 +54,7 @@ class _EmployeePayrollScreenState extends State<EmployeePayrollScreen> {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return loadingView();
           }
-          if (snapshot.hasError) return errorView(snapshot.error);
+          if (snapshot.hasError) return payrollErrorView(snapshot.error);
           final data = snapshot.data!;
           final payroll = data.payroll;
           final primary = employeePrimary(data.profile.branding, context);

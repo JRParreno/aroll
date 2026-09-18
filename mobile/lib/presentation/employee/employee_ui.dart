@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:aroll_mobile/core/app_state.dart';
 import 'package:aroll_mobile/core/di/injection.dart';
+import 'package:aroll_mobile/core/network/api_error_detail.dart';
 import 'package:aroll_mobile/core/theme/business_brand_theme.dart';
 import 'package:aroll_mobile/core/utils/business_time.dart';
 import 'package:aroll_mobile/core/utils/data_uri_image.dart';
@@ -874,6 +875,27 @@ Widget errorView(Object? error, {Future<void> Function()? onRetry}) {
     message: 'Unable to load employee data. Please try again.\n$error',
     onRetry: onRetry,
   );
+}
+
+class PayrollSnapshotUnavailableState extends StatelessWidget {
+  const PayrollSnapshotUnavailableState({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return const EmployeeEmptyState(
+      title: 'Payroll unavailable',
+      description:
+          'No finalized payroll record is available for this employee for the selected period.',
+      icon: Icons.receipt_long_outlined,
+    );
+  }
+}
+
+Widget payrollErrorView(Object? error, {Future<void> Function()? onRetry}) {
+  if (isPayslipSnapshotUnavailable(error)) {
+    return const PayrollSnapshotUnavailableState();
+  }
+  return errorView(error, onRetry: onRetry);
 }
 
 class BusinessLogo extends StatelessWidget {
