@@ -8,7 +8,7 @@ from uuid import uuid4
 import pytest
 from fastapi import HTTPException
 
-from app.api.employee_mobile import _simple_payslip_pdf, payslip as mobile_payslip
+from app.api.employee_mobile import _payroll_response, _simple_payslip_pdf, payslip as mobile_payslip
 from app.api.employee_mobile import payroll as mobile_payroll
 from app.api.employee_mobile import payslip_pdf
 from app.api.owner_reports import employee_payslip, my_payslip, payroll_report
@@ -703,6 +703,39 @@ def test_missing_snapshot_owner_employee_mobile_and_pdf_do_not_live_calculate():
         assert exc.value.status_code == 404
         assert exc.value.detail["code"] == "payslip_snapshot_unavailable"
     assert report["items"] == []
+    calc.assert_not_called()
+
+
+def test_dashboard_payroll_does_not_404_when_snapshot_missing():
+    employee = _employee()
+    run = _run(business_id=employee.business_id)
+    db = FakeDB()
+    db.runs = [run]
+    db.payslips = []
+    db.employees = [employee]
+    calc = MagicMock(return_value=_live_changed_slip(employee.id))
+    business = SimpleNamespace(name="Cafe", id=employee.business_id)
+    with (
+        patch("app.api.employee_mobile._calculate_employee_payslip", calc),
+        patch("app.api.employee_mobile._branding_response", return_value={}),
+    ):
+        payload = _payroll_response(
+            db,
+            employee,
+            business,
+            as_of=date(2026, 9, 10),
+            require_slip=False,
+        )
+        with pytest.raises(HTTPException) as exc:
+            _payroll_response(
+                db, employee, business, as_of=date(2026, 9, 10)
+            )
+    assert payload["summary"]["period_start"] == "2026-09-01"
+    assert payload["summary"]["period_end"] == "2026-09-15"
+    assert payload["summary"]["net_pay"] == 0
+    assert payload["rows"] == []
+    assert exc.value.status_code == 404
+    assert exc.value.detail["code"] == "payslip_snapshot_unavailable"
     calc.assert_not_called()
 
 

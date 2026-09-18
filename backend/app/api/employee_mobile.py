@@ -705,6 +705,37 @@ def _payroll_status(period_start: date, period_end: date, today: date) -> str:
     return "upcoming"
 
 
+def _empty_payroll_summary(loaded, *, payroll_status: str) -> dict:
+    period_start = loaded.period_start.isoformat()
+    period_end = loaded.period_end.isoformat()
+    return {
+        "employee_id": "",
+        "employee_name": "",
+        "period_start": period_start,
+        "period_end": period_end,
+        "pay_date": period_end,
+        "payroll_status": payroll_status,
+        "daily_rate": 0,
+        "worked_days": 0,
+        "hours_worked": 0,
+        "regular_pay": 0,
+        "overtime_hours": 0,
+        "overtime_pay": 0,
+        "holiday_pay": 0,
+        "rest_day_pay": 0,
+        "deductions": 0,
+        "late_deductions": 0,
+        "undertime_deductions": 0,
+        "absent_days": 0,
+        "gross_pay": 0,
+        "net_pay": 0,
+        "final_net_pay": 0,
+        "payroll_adjustments": [],
+        "payroll_adjustments_total": 0,
+        "attendance_records": [],
+    }
+
+
 def _payroll_response(
     db: Session,
     employee: Employee,
@@ -712,6 +743,7 @@ def _payroll_response(
     *,
     as_of: date | None = None,
     history_limit: int = 0,
+    require_slip: bool = True,
 ) -> dict:
     from app.services.pay_period import list_pay_periods
 
@@ -723,6 +755,23 @@ def _payroll_response(
         as_of=today,
         calculate_payslip=_calculate_employee_payslip,
     )
+    if loaded.slip is None and not require_slip:
+        status = _payroll_status(
+            loaded.period_start, loaded.period_end, date.today()
+        )
+        empty = _empty_payroll_summary(loaded, payroll_status=status)
+        return {
+            "business_name": business.name,
+            "business_branding": _branding_response(business),
+            "pay_period_type": config.pay_period_type.value if config else "monthly",
+            "period_start": empty["period_start"],
+            "period_end": empty["period_end"],
+            "pay_date": empty["pay_date"],
+            "payroll_status": status,
+            "summary": empty,
+            "rows": [],
+            "history": [],
+        }
     payslip = require_loaded_slip(loaded)
     period_start, period_end = loaded.period_start, loaded.period_end
     rows = []
@@ -857,7 +906,7 @@ def dashboard(
         end_date=today + timedelta(days=7),
         today=today,
     )
-    payroll = _payroll_response(db, employee, business)
+    payroll = _payroll_response(db, employee, business, require_slip=False)
     incomplete_rows = list_incomplete_for_employee(db, employee)
     latest_incomplete = incomplete_rows[0] if incomplete_rows else None
     attendance_status = _today_attendance_status(
