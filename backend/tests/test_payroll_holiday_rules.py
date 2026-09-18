@@ -464,6 +464,7 @@ def test_paid_leave_unchanged():
             scheduled=[(assignment, shift)],
         )
     assert slip["paid_leave_days"] == 1
+    assert slip["leave_pay"] == 800.0
     assert slip["gross_pay"] == 800.0
     assert slip["holiday_pay"] == 0.0
 

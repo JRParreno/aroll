@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import jsPDF from "jspdf";
 import { Download, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -20,6 +21,7 @@ import {
   createPayrollAdjustment,
   deletePayrollAdjustment,
   finalizeOwnerPayroll,
+  unfinalizeOwnerPayroll,
   getMe,
   getEmployeePayslip,
   getOwnerPayrollReport,
@@ -91,6 +93,7 @@ export function OwnerPayrollPage() {
   const [editingAdjustment, setEditingAdjustment] =
     useState<PayrollAdjustment | null>(null);
   const [showAdjustmentForm, setShowAdjustmentForm] = useState(false);
+  const [unfinalizeOpen, setUnfinalizeOpen] = useState(false);
   const [payslipSettings, setPayslipSettings] = useState({
     title: "Payslip",
     employeeSection: "Employee Information",
@@ -135,6 +138,15 @@ export function OwnerPayrollPage() {
       await refreshPayroll();
     },
   });
+  const unfinalizeMutation = useMutation({
+    mutationFn: () => unfinalizeOwnerPayroll(asOf),
+    onSuccess: async () => {
+      toast.success("Payroll period reopened successfully.");
+      setUnfinalizeOpen(false);
+      finalizeMutation.reset();
+      await refreshPayroll();
+    },
+  });
 
   const items = useMemo(() => {
     const needle = search.toLowerCase();
@@ -151,6 +163,7 @@ export function OwnerPayrollPage() {
   const themeButtonColor = me?.branding?.theme.button_color || "#1E3A5F";
   const themeButtonHoverColor = me?.branding?.theme.secondary_color || "#284B73";
   const canEditPayslip = me?.role === "owner" || me?.role === "manager";
+  const canUnfinalize = me?.role === "owner";
   const isDemo = sessionIsDemo(me);
   const incompleteCount = data?.incomplete_attendance_count ?? 0;
   const pendingCount = data?.pending_attendance_count ?? 0;
@@ -173,6 +186,24 @@ export function OwnerPayrollPage() {
     if (typeof detail === "string") return detail;
     if (error instanceof Error) return error.message;
     return "Could not finalize payroll.";
+  })();
+  const unfinalizeError = (() => {
+    const error = unfinalizeMutation.error;
+    if (!error || typeof error !== "object" || error === null) return null;
+    const detail = (
+      error as { response?: { data?: { detail?: unknown } } }
+    ).response?.data?.detail;
+    if (
+      typeof detail === "object" &&
+      detail !== null &&
+      "message" in detail &&
+      typeof (detail as { message?: unknown }).message === "string"
+    ) {
+      return (detail as { message: string }).message;
+    }
+    if (typeof detail === "string") return detail;
+    if (error instanceof Error) return error.message;
+    return "Could not unfinalize payroll.";
   })();
 
   return (
@@ -199,7 +230,7 @@ export function OwnerPayrollPage() {
               </p>
             </div>
           </div>
-          <div className="grid gap-3 lg:grid-cols-[1fr_auto_auto_auto_auto]">
+          <div className="grid gap-3 lg:grid-cols-[1fr_auto_auto_auto_auto_auto]">
             <div className="relative">
               <Search className="absolute left-3 top-2.5 h-4 w-4 text-[#9CA3AF]" />
               <Input className="pl-9" placeholder="Search employee" value={search} onChange={(e) => setSearch(e.target.value)} />
@@ -274,6 +305,18 @@ export function OwnerPayrollPage() {
                     ? "Finalize sample payroll"
                     : "Finalize Payroll"}
             </Button>
+            {isFinalized && canUnfinalize ? (
+              <Button
+                variant="outline"
+                className="gap-2"
+                disabled={unfinalizeMutation.isPending}
+                onClick={() => setUnfinalizeOpen(true)}
+              >
+                {unfinalizeMutation.isPending
+                  ? "Reopening…"
+                  : "Unfinalize Payroll"}
+              </Button>
+            ) : null}
           </div>
           {data?.period_start && data?.period_end ? (
             <div className="mt-3 inline-flex items-center gap-2 rounded-xl bg-[#E7EEF5] px-3 py-2 text-xs font-medium text-[#1E3A5F]">
@@ -300,6 +343,11 @@ export function OwnerPayrollPage() {
           {finalizeError ? (
             <div className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-800">
               {finalizeError}
+            </div>
+          ) : null}
+          {unfinalizeError ? (
+            <div className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-800">
+              {unfinalizeError}
             </div>
           ) : null}
           {finalizeMutation.isSuccess && !incompleteCount && !pendingCount ? (
@@ -559,6 +607,35 @@ export function OwnerPayrollPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <Dialog open={unfinalizeOpen} onOpenChange={setUnfinalizeOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Unfinalize Payroll?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm leading-6 text-[#4B5563]">
+            This will reopen the payroll period and allow attendance and payroll
+            calculations to be recalculated using the current records. The
+            current finalized payslips will no longer be treated as final.
+          </p>
+          <DialogFooter className="border-t border-slate-100 pt-4">
+            <Button
+              variant="outline"
+              onClick={() => setUnfinalizeOpen(false)}
+              disabled={unfinalizeMutation.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              disabled={unfinalizeMutation.isPending}
+              onClick={() => unfinalizeMutation.mutate()}
+            >
+              {unfinalizeMutation.isPending
+                ? "Reopening…"
+                : "Unfinalize Payroll"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </OwnerPage>
   );
 }
@@ -672,6 +749,13 @@ function PayslipPreview({
           label="Basic Salary"
           value={moneyOrPending(
             payslip.regular_pay ?? 0,
+            isUnfinalizedPending(payslip)
+          )}
+        />
+        <Row
+          label="Leave Pay"
+          value={moneyOrPending(
+            payslip.leave_pay ?? 0,
             isUnfinalizedPending(payslip)
           )}
         />
@@ -1252,6 +1336,7 @@ function downloadPayslip(
     [settings.earningsSection, ""],
     [salaryRateLabel(), formatSalaryRate(payslip)],
     ["Basic Salary", money(payslip.regular_pay ?? 0)],
+    ["Leave Pay", money(payslip.leave_pay ?? 0)],
     ["Overtime Pay", money(payslip.overtime_pay)],
     ["Holiday Pay", money(payslip.holiday_pay)],
     [

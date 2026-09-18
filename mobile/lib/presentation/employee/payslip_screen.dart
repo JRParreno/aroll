@@ -124,6 +124,7 @@ class _EmployeePayslipScreenState extends State<EmployeePayslipScreen> {
                       'Basic Salary',
                       money(payslip.regularPay),
                     ),
+                    _Row('Leave Pay', money(payslip.leavePay)),
                     _Row('Overtime', money(payslip.overtimePay)),
                     _Row('Holiday Pay', money(payslip.holidayPay)),
                     _Row(

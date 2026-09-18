@@ -633,6 +633,7 @@ def test_hourly_pdf_uses_regular_pay_not_daily_times_days():
             "hourly_rate": 100.0,
             "daily_rate": 650.0,
             "regular_pay": 900.0,
+            "leave_pay": 0.0,
             "overtime_pay": 125.0,
             "holiday_pay": 0.0,
             "rest_day_pay": 0.0,
@@ -642,6 +643,7 @@ def test_hourly_pdf_uses_regular_pay_not_daily_times_days():
         }
     )
     assert b"Basic salary: PHP 900.00" in pdf
+    assert b"Leave pay: PHP 0.00" in pdf
     assert b"Hourly rate: PHP 100.00" in pdf
     assert b"1,300.00" not in pdf
     assert b"Hours worked: 9.0" in pdf
@@ -670,6 +672,7 @@ def test_pdf_totals_agree_with_backend_regular_pay():
             "hourly_rate": slip["hourly_rate"],
             "daily_rate": slip["daily_rate"],
             "regular_pay": slip["regular_pay"],
+            "leave_pay": slip.get("leave_pay", 0),
             "overtime_pay": slip["overtime_pay"],
             "holiday_pay": slip["holiday_pay"],
             "rest_day_pay": slip["rest_day_pay"],
@@ -679,6 +682,7 @@ def test_pdf_totals_agree_with_backend_regular_pay():
         }
     )
     assert f"Basic salary: PHP {slip['regular_pay']:,.2f}".encode() in pdf
+    assert f"Leave pay: PHP {slip.get('leave_pay', 0):,.2f}".encode() in pdf
     assert f"Gross pay: PHP {slip['gross_pay']:,.2f}".encode() in pdf
 
 
@@ -940,7 +944,8 @@ def test_daily_two_leave_rows_same_date_one_daily_rate():
         rows=rows,
         scheduled=[(morning_asg, morning), (evening_asg, evening)],
     )
-    assert abs(slip["regular_pay"] - 850.0) < 0.01
+    assert abs(slip["leave_pay"] - 850.0) < 0.01
+    assert abs(slip["regular_pay"] - 0.0) < 0.01
     assert slip["paid_leave_days"] == 1
     assert slip["worked_days"] == 1.0
 

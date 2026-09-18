@@ -304,6 +304,7 @@ export type OwnerPayrollReport = {
     overtime_pay: number;
     overtime_hours?: number;
     regular_pay?: number;
+    leave_pay?: number;
     gross_pay?: number;
     deductions: number;
     total_salary: number;
@@ -366,6 +367,8 @@ export type EmployeePayslip = {
   overtime_pay: number;
   /** Engine base earnings — source for UI Basic Salary. */
   regular_pay?: number;
+  /** Approved paid leave with a scheduled shift. Not included in regular_pay. */
+  leave_pay?: number;
   holiday_pay: number;
   rest_day_days?: number;
   rest_day_premium_percent?: number;
@@ -954,6 +957,20 @@ export async function finalizeOwnerPayroll(asOf?: string) {
     period_end: string;
     finalized_at?: string | null;
   }>("/owner/reports/payroll/finalize", null, {
+    params: asOf ? { as_of: asOf } : undefined,
+  });
+  return data;
+}
+
+export async function unfinalizeOwnerPayroll(asOf?: string) {
+  const { data } = await api.post<{
+    status: string;
+    payroll_run_id: string;
+    period_start: string;
+    period_end: string;
+    previous_status?: string;
+    new_status?: string;
+  }>("/owner/reports/payroll/unfinalize", null, {
     params: asOf ? { as_of: asOf } : undefined,
   });
   return data;

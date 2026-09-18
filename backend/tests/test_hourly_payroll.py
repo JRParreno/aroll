@@ -284,6 +284,8 @@ def test_hourly_overtime_uses_config_rate():
 def test_hourly_paid_leave():
     slip = _run_payslip(hourly_rate=100.0, is_leave=True)
     assert slip["paid_leave_days"] == 1
+    assert slip["leave_pay"] == 800.0
+    assert slip["regular_pay"] == 0.0
     assert slip["gross_pay"] == 800.0
     assert slip["overtime_minutes"] == 0.0
 
@@ -295,6 +297,8 @@ def test_hourly_leave_reconciliation():
         approved_leave_dates=[date(2026, 8, 4)],
     )
     assert slip["paid_leave_days"] == 1
+    assert slip["leave_pay"] == 800.0
+    assert slip["regular_pay"] == 0.0
     assert slip["gross_pay"] == 800.0
 
 

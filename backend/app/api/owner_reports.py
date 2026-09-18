@@ -22,6 +22,7 @@ from app.models.enums import (
 )
 from app.models.holiday import Holiday
 from app.models.payroll import BusinessPayrollConfig, PayrollRun, Position
+from app.services.activity_logger import add_log
 from app.services.payroll_snapshot import (
     PAYSLIP_SNAPSHOT_VERSION,
     build_calculation_config_json,
@@ -30,6 +31,7 @@ from app.services.payroll_snapshot import (
     load_period_payslip,
     load_period_payslip_for_employee_id,
     require_loaded_slip,
+    unfinalize_period_for_as_of,
 )
 from app.models.rest_day_policy import BusinessRestDayPolicy
 from app.models.scheduling import Shift, ShiftAssignment
@@ -193,6 +195,8 @@ def _leave_day_payslip_row(
     holiday: Holiday | None,
     paid: bool,
     daily_rate: float,
+    scheduled_minutes: float = 0.0,
+    hourly_rate: float = 0.0,
 ) -> dict:
     """Payslip detail for approved leave credited without on_leave attendance."""
     earned = daily_rate if paid else 0.0
@@ -205,9 +209,9 @@ def _leave_day_payslip_row(
         "is_rest_day": False,
         "rest_day_premium_pay": None,
         "day_rate_factor": 1.0 if paid else 0.0,
-        "scheduled_minutes": 0.0,
+        "scheduled_minutes": round(float(scheduled_minutes or 0.0), 2),
         "worked_minutes": 0.0,
-        "hourly_rate": 0.0,
+        "hourly_rate": round(float(hourly_rate or 0.0), 4),
         "late_minutes": 0.0,
         "undertime_minutes": 0.0,
         "unpaid_minutes": 0.0,
@@ -360,6 +364,7 @@ def _calculate_employee_payslip(
     )
 
     regular_pay = 0.0
+    leave_pay = 0.0
     worked_days = 0.0
     overtime_minutes = 0.0
     late_minutes = 0.0
@@ -382,6 +387,18 @@ def _calculate_employee_payslip(
     daily_holiday_credited: set[date] = set()
     # Dates already credited via AttendanceRecord(status=on_leave).
     leave_dates_from_attendance: set[date] = set()
+    paid_leave_dates: set[date] = set()
+    dates_with_worked_regular_pay: set[date] = set()
+
+    def _leave_pay_value(scheduled_minutes: float) -> float:
+        """Option 2 leave pesos. Never invent an 8-hour day for leave."""
+        minutes = float(scheduled_minutes or 0.0)
+        if is_hourly:
+            if minutes <= 0:
+                return 0.0
+            return _pay_ctx(minutes).scheduled_day_value
+        ctx_minutes = minutes if minutes > 0 else DEFAULT_SCHEDULED_MINUTES
+        return _pay_ctx(ctx_minutes).scheduled_day_value
 
     for record, assignment, shift in rows:
         work_date = assignment.work_date if assignment else record.created_at.date()
@@ -433,20 +450,32 @@ def _calculate_employee_payslip(
             else:
                 paid = paid_flag
             if paid:
-                day_rate_factor = 1.0
-                if shift is not None:
+                # Option 2: leave pay requires a scheduled assignment on this date.
+                if shift is None:
+                    day_regular = 0.0
+                    day_earned = 0.0
+                else:
                     scheduled_minutes = _paid_shift_minutes(work_date, shift)
-                leave_ctx = _pay_ctx(scheduled_minutes or DEFAULT_SCHEDULED_MINUTES)
-                scheduled_minutes = leave_ctx.scheduled_minutes
-                hourly_rate = leave_ctx.hourly_rate
-                day_regular = leave_ctx.scheduled_day_value
-                day_earned = leave_ctx.scheduled_day_value
-                paid_work_dates.add(work_date)
-                if is_hourly or work_date not in daily_base_credited:
-                    paid_leave_days += 1
-                    regular_pay += day_regular
-                    if not is_hourly:
-                        daily_base_credited.add(work_date)
+                    day_value = _leave_pay_value(scheduled_minutes)
+                    day_rate_factor = 1.0
+                    day_regular = day_value
+                    day_earned = day_value
+                    if scheduled_minutes > 0:
+                        leave_ctx = _pay_ctx(scheduled_minutes)
+                        hourly_rate = leave_ctx.hourly_rate
+                    elif resolved_pay.hourly_rate is not None:
+                        hourly_rate = float(resolved_pay.hourly_rate)
+                    already_got_daily_base = (
+                        not is_hourly and work_date in daily_base_credited
+                    )
+                    if not already_got_daily_base:
+                        leave_pay += day_value
+                        if not is_hourly:
+                            daily_base_credited.add(work_date)
+                        if work_date not in paid_leave_dates:
+                            paid_leave_days += 1
+                            paid_leave_dates.add(work_date)
+                        paid_work_dates.add(work_date)
             else:
                 unpaid_leave_days += 1
         elif record.status == AttendanceStatus.absent:
@@ -558,6 +587,7 @@ def _calculate_employee_payslip(
                 day_earned = max(day_regular - day_undertime_deduction, 0.0)
                 day_rate_factor = 1.0
                 paid_work_dates.add(work_date)
+                dates_with_worked_regular_pay.add(work_date)
                 if 0 < payable < half_day_threshold:
                     half_day_days += 1
                 regular_pay += day_regular
@@ -598,6 +628,7 @@ def _calculate_employee_payslip(
             if day_rate_factor > 0:
                 if is_hourly or work_date not in daily_base_credited:
                     paid_work_dates.add(work_date)
+                    dates_with_worked_regular_pay.add(work_date)
                     regular_pay += day_regular
                     if not is_hourly:
                         daily_base_credited.add(work_date)
@@ -739,6 +770,7 @@ def _calculate_employee_payslip(
             regular_pay += ctx.scheduled_day_value
             daily_base_credited.add(work_date)
         paid_work_dates.add(work_date)
+        dates_with_worked_regular_pay.add(work_date)
 
         holiday = bucket.get("holiday")
         worked_holiday_policy = resolve_holiday_policy(
@@ -773,13 +805,11 @@ def _calculate_employee_payslip(
         for record, _assignment, _shift in rows
         if record.shift_assignment_id is not None
     }
-    shift_by_date = {
-        assignment.work_date: shift for assignment, shift in scheduled_assignments
-    }
 
     # Leave reconciliation (payroll calculation only — no DB writes).
     # Credits approved LeaveRequest days that have no AttendanceRecord(on_leave).
     # Must run before no-show so leave is never underpaid as a silent skip.
+    # Option 2: credit only when the date has a scheduled assignment.
     for leave_date in approved_leave_dates_for_employee(
         db,
         employee_id=employee.id,
@@ -789,6 +819,15 @@ def _calculate_employee_payslip(
         if leave_date in leave_dates_from_attendance:
             continue
         if leave_date in pending_work_dates:
+            continue
+        if leave_date in dates_with_worked_regular_pay:
+            continue
+        assignments_for_date = [
+            (assignment, shift)
+            for assignment, shift in scheduled_assignments
+            if assignment.work_date == leave_date
+        ]
+        if not assignments_for_date:
             continue
         paid_flag = leave_is_paid_for_attendance_day(
             db, employee_id=employee.id, work_date=leave_date
@@ -800,20 +839,28 @@ def _calculate_employee_payslip(
             paid = is_leave_type_paid(leave_type) if leave_type else True
         else:
             paid = paid_flag
-        leave_shift = shift_by_date.get(leave_date)
-        leave_scheduled = (
-            _paid_shift_minutes(leave_date, leave_shift)
-            if leave_shift is not None
-            else DEFAULT_SCHEDULED_MINUTES
-        )
-        leave_day_value = _pay_ctx(leave_scheduled).scheduled_day_value
+        leave_scheduled = scheduled_minutes_by_date.get(leave_date, 0.0)
+        if leave_scheduled <= 0:
+            _leave_shift = assignments_for_date[0][1]
+            leave_scheduled = _paid_shift_minutes(leave_date, _leave_shift)
+        leave_day_value = _leave_pay_value(leave_scheduled)
+        leave_hourly = 0.0
+        if leave_scheduled > 0:
+            leave_hourly = _pay_ctx(leave_scheduled).hourly_rate
+        elif resolved_pay.hourly_rate is not None:
+            leave_hourly = float(resolved_pay.hourly_rate)
         if paid:
-            paid_work_dates.add(leave_date)
-            if is_hourly or leave_date not in daily_base_credited:
-                paid_leave_days += 1
-                regular_pay += leave_day_value
+            already_got_daily_base = (
+                not is_hourly and leave_date in daily_base_credited
+            )
+            if not already_got_daily_base:
+                leave_pay += leave_day_value
                 if not is_hourly:
                     daily_base_credited.add(leave_date)
+                if leave_date not in paid_leave_dates:
+                    paid_leave_days += 1
+                    paid_leave_dates.add(leave_date)
+                paid_work_dates.add(leave_date)
         else:
             unpaid_leave_days += 1
         leave_dates_from_attendance.add(leave_date)
@@ -823,6 +870,8 @@ def _calculate_employee_payslip(
                 holiday=holidays.get(leave_date),
                 paid=paid,
                 daily_rate=leave_day_value,
+                scheduled_minutes=leave_scheduled,
+                hourly_rate=leave_hourly,
             )
         )
 
@@ -895,7 +944,7 @@ def _calculate_employee_payslip(
     # Late and undertime are independent deductions (not a split shortfall).
     deductions = late_deductions_amount + undertime_deductions_amount
     remaining_unpaid_deductions = 0.0
-    gross_pay = regular_pay + overtime_pay + holiday_pay + rest_day_pay
+    gross_pay = regular_pay + leave_pay + overtime_pay + holiday_pay + rest_day_pay
     net_pay = max(gross_pay - deductions, 0)
     worked_days = float(len(paid_work_dates))
     hours_worked = hours_worked_from_payable_minutes(payable_minutes_total)
@@ -948,6 +997,8 @@ def _calculate_employee_payslip(
         ],
         # Base earnings for UI "Basic Salary" — do not recompute in clients.
         "regular_pay": round(regular_pay, 2),
+        # Approved paid leave with a scheduled shift. Not included in regular_pay.
+        "leave_pay": round(leave_pay, 2),
         "gross_pay": round(gross_pay, 2),
         "net_pay": round(net_pay, 2),
         "attendance_records": attendance_records,
@@ -1267,6 +1318,7 @@ def payroll_report(
                 "overtime_pay": slip["overtime_pay"],
                 "overtime_hours": slip["overtime_hours"],
                 "regular_pay": slip.get("regular_pay"),
+                "leave_pay": slip.get("leave_pay", 0),
                 "gross_pay": slip["gross_pay"],
                 "deductions": slip["deductions"],
                 "total_salary": slip["final_net_pay"],
@@ -1472,6 +1524,60 @@ def finalize_payroll(
         "finalized_at": (
             run.finalized_at.isoformat() if run.finalized_at else None
         ),
+    }
+
+
+@router.post("/payroll/unfinalize")
+def unfinalize_payroll(
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(require_roles(UserRole.owner))],
+    as_of: Annotated[
+        date | None,
+        Query(description="Resolve the pay period containing this date (YYYY-MM-DD)"),
+    ] = None,
+):
+    """Reopen a finalized pay period so live calculation is used again.
+
+    The previous PayrollRun is marked cancelled. Payslip snapshot rows are
+    kept for history and are no longer the active source for this period.
+    """
+    if user.business_id is None:
+        raise HTTPException(400, "No business context")
+
+    today = as_of or date.today()
+    try:
+        run, period_start, period_end = unfinalize_period_for_as_of(
+            db,
+            business_id=user.business_id,
+            as_of=today,
+        )
+        add_log(
+            db,
+            user.id,
+            action="payroll_unfinalized",
+            description=(
+                f"Payroll period {period_start.isoformat()} to "
+                f"{period_end.isoformat()} reopened."
+            ),
+            previous_value="finalized",
+            new_value="open",
+        )
+        db.commit()
+        db.refresh(run)
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception:
+        db.rollback()
+        raise
+
+    return {
+        "status": "unfinalized",
+        "payroll_run_id": str(run.id),
+        "period_start": period_start.isoformat(),
+        "period_end": period_end.isoformat(),
+        "previous_status": "finalized",
+        "new_status": "open",
     }
 
 

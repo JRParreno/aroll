@@ -57,6 +57,7 @@ def _slip(*, employee_id, name="Ana", **overrides):
         "paid_leave_days": 0,
         "unpaid_leave_days": 0,
         "regular_pay": 730.0,
+        "leave_pay": 0.0,
         "gross_pay": 760.48,
         "net_pay": 741.26,
         "base_net_pay": 741.26,
@@ -113,6 +114,9 @@ class FakeDB:
         self.runs = []
         self.payslips = []
         self.employees = []
+        self.added = []
+        self.committed = False
+        self.rolled_back = False
         self.config = SimpleNamespace(
             pay_period_type=SimpleNamespace(value="semi_monthly")
         )
@@ -139,6 +143,18 @@ class FakeDB:
             q.filter.return_value.all.return_value = active
             return q
         return _Query([])
+
+    def add(self, obj):
+        self.added.append(obj)
+
+    def commit(self):
+        self.committed = True
+
+    def rollback(self):
+        self.rolled_back = True
+
+    def refresh(self, obj):
+        return obj
 
 
 def _employee(*, name="Ana", active=True):

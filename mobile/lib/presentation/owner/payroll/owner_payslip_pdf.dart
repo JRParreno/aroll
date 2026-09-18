@@ -14,6 +14,7 @@ Future<String> generateOwnerPayslipPdf({
   final employeeName = '${payslip['employee_name'] ?? 'Employee'}';
   final workedDays = parsePayrollAmount(payslip['worked_days']).toInt();
   final basicSalary = parsePayrollAmount(payslip['regular_pay']);
+  final leavePay = parsePayrollAmount(payslip['leave_pay']);
   final overtimePay = parsePayrollAmount(payslip['overtime_pay']);
   final holidayPay = parsePayrollAmount(payslip['holiday_pay']);
   final restDayPay = parsePayrollAmount(payslip['rest_day_pay']);
@@ -90,6 +91,7 @@ Future<String> generateOwnerPayslipPdf({
         pw.SizedBox(height: 6),
         _pdfRow(ownerSalaryRateLabel(), ownerSalaryRate(payslip)),
         _pdfRow('Basic Salary', ownerPayrollMoney(basicSalary)),
+        _pdfRow('Leave Pay', ownerPayrollMoney(leavePay)),
         _pdfRow('Overtime Pay', ownerPayrollMoney(overtimePay)),
         _pdfRow('Holiday Pay', ownerPayrollMoney(holidayPay)),
         _pdfRow('Rest Day Premium', ownerPayrollMoney(restDayPay)),

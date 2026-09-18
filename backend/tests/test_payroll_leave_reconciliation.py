@@ -176,6 +176,8 @@ def test_paid_leave_with_on_leave_attendance():
     )
     assert slip["paid_leave_days"] == 1
     assert slip["unpaid_leave_days"] == 0
+    assert slip["leave_pay"] == 800.0
+    assert slip["regular_pay"] == 0.0
     assert slip["gross_pay"] == 800.0
     assert slip["absent_days"] == 0
     # One attendance-backed row only (no duplicate leave recon credit)
@@ -195,6 +197,8 @@ def test_paid_leave_without_on_leave_attendance():
         employee_on_leave=lambda *a, **k: True,
     )
     assert slip["paid_leave_days"] == 1
+    assert slip["leave_pay"] == 800.0
+    assert slip["regular_pay"] == 0.0
     assert slip["gross_pay"] == 800.0
     assert slip["absent_days"] == 0
     leave_rows = [r for r in slip["attendance_records"] if r["status"] == "on_leave"]
@@ -239,6 +243,7 @@ def test_unpaid_leave_without_on_leave_attendance():
     )
     assert slip["unpaid_leave_days"] == 1
     assert slip["paid_leave_days"] == 0
+    assert slip["leave_pay"] == 0.0
     assert slip["gross_pay"] == 0.0
     assert slip["absent_days"] == 0
     leave_rows = [r for r in slip["attendance_records"] if r["status"] == "on_leave"]
@@ -285,6 +290,7 @@ def test_leave_overlapping_holiday_no_holiday_premium_double():
     )
     assert slip["paid_leave_days"] == 1
     assert slip["holiday_pay"] == 0.0
+    assert slip["leave_pay"] == 800.0
     assert slip["gross_pay"] == 800.0
     assert slip["absent_days"] == 0
 

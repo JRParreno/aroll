@@ -51,6 +51,7 @@ def _slip(*, employee_id, name, **overrides):
         "paid_leave_days": 0,
         "unpaid_leave_days": 0,
         "regular_pay": 730.0,
+        "leave_pay": 0.0,
         "gross_pay": 760.48,
         "net_pay": 741.26,
         "attendance_records": [{"date": "2026-08-04", "earned": 730.0}],

@@ -272,6 +272,12 @@ class _OwnerPayrollDetailScreenState extends State<OwnerPayrollDetailScreen> {
                               ownerPayrollMoney(basicSalary),
                             ),
                             _DetailRow(
+                              'Leave Pay',
+                              ownerPayrollMoney(
+                                parsePayrollAmount(payslip['leave_pay']),
+                              ),
+                            ),
+                            _DetailRow(
                               'Overtime Pay',
                               ownerPayrollMoney(
                                 parsePayrollAmount(payslip['overtime_pay']),

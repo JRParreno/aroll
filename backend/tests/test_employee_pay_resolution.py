@@ -349,6 +349,8 @@ def test_leave_pay_uses_resolved_employee_rate():
         is_leave=True,
     )
     assert slip["paid_leave_days"] == 1
+    assert slip["leave_pay"] == 720.0
+    assert slip["regular_pay"] == 0.0
     assert slip["gross_pay"] == 720.0
     assert slip["overtime_minutes"] == 0.0
 

@@ -282,6 +282,59 @@ def find_finalized_run_for_period(
     )
 
 
+def mark_payroll_run_unfinalized(run: PayrollRun) -> PayrollRun:
+    """Reopen a finalized run without deleting its historical payslip rows.
+
+    ``cancelled`` is the existing schema status that is not treated as the
+    active snapshot. Payslip.breakdown_json stays attached to this run.
+    """
+    run.status = PayrollRunStatus.cancelled
+    return run
+
+
+def unfinalize_period_for_as_of(
+    db: Session,
+    *,
+    business_id: uuid.UUID,
+    as_of: date,
+) -> tuple[PayrollRun, date, date]:
+    """Cancel the active finalized run currently shown for ``as_of``.
+
+    Uses the same period resolution as owner/employee payroll reads so the
+    snapshot being viewed is the one that is reopened.
+    """
+    period_start, period_end, run, _snapshot_mode = resolve_view_period(
+        db,
+        business_id=business_id,
+        as_of=as_of,
+    )
+    if run is None or run.status != PayrollRunStatus.finalized:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "payroll_not_finalized",
+                "message": "This payroll period is not finalized.",
+                "period_start": period_start.isoformat(),
+                "period_end": period_end.isoformat(),
+            },
+        )
+    siblings = (
+        db.query(PayrollRun)
+        .filter(
+            PayrollRun.business_id == business_id,
+            PayrollRun.period_start == period_start,
+            PayrollRun.period_end == period_end,
+            PayrollRun.status == PayrollRunStatus.finalized,
+        )
+        .all()
+    )
+    for sibling in siblings:
+        mark_payroll_run_unfinalized(sibling)
+    if run.status == PayrollRunStatus.finalized:
+        mark_payroll_run_unfinalized(run)
+    return run, period_start, period_end
+
+
 def payslips_for_run(db: Session, run: PayrollRun) -> list[Payslip]:
     return (
         db.query(Payslip)

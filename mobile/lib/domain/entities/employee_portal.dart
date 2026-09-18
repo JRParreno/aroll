@@ -198,6 +198,7 @@ class EmployeePayslip extends Equatable {
     this.monthlySalary,
     required this.workedDays,
     this.regularPay = 0,
+    this.leavePay = 0,
     required this.overtimeHours,
     required this.overtimePay,
     required this.holidayPay,
@@ -236,6 +237,8 @@ class EmployeePayslip extends Equatable {
   final int workedDays;
   /// Engine base earnings — source for UI Basic Salary.
   final double regularPay;
+  /// Approved paid leave with a scheduled shift. Not included in regularPay.
+  final double leavePay;
   final double hoursWorked;
   final double overtimeHours;
   final double overtimePay;
@@ -275,6 +278,7 @@ class EmployeePayslip extends Equatable {
         monthlySalary,
         workedDays,
         regularPay,
+        leavePay,
         hoursWorked,
         overtimeHours,
         overtimePay,
@@ -309,6 +313,7 @@ class EmployeePayrollHistoryItem extends Equatable {
     this.monthlySalary,
     required this.workedDays,
     this.regularPay = 0,
+    this.leavePay = 0,
     required this.hoursWorked,
     required this.lateDeductions,
     required this.undertimeDeductions,
@@ -332,6 +337,7 @@ class EmployeePayrollHistoryItem extends Equatable {
   final double? monthlySalary;
   final double workedDays;
   final double regularPay;
+  final double leavePay;
   final double hoursWorked;
   final double lateDeductions;
   final double undertimeDeductions;
@@ -358,6 +364,7 @@ class EmployeePayrollHistoryItem extends Equatable {
         monthlySalary,
         workedDays,
         regularPay,
+        leavePay,
         hoursWorked,
         lateDeductions,
         undertimeDeductions,
