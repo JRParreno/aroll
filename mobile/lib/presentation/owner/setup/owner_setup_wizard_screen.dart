@@ -75,6 +75,7 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
   final _attMaximumOvertime = TextEditingController(text: '180');
   String _attMissingClockOutPolicy = 'auto_clock_out';
   bool _attAttendanceBasedSalaryEnabled = true;
+  bool _breaktimeIsPaid = false;
 
   final _restPremiumPercent = TextEditingController(text: '30');
 
@@ -206,6 +207,7 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
         '${attendance['missing_clock_out_policy'] ?? 'auto_clock_out'}';
     _attAttendanceBasedSalaryEnabled =
         attendance['attendance_based_salary_enabled'] != false;
+    _breaktimeIsPaid = attendance['breaktime_is_paid'] == true;
   }
 
   void _applyLocation(Map<String, dynamic> location) {
@@ -501,6 +503,7 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
         'maximum_overtime_minutes': int.parse(_attMaximumOvertime.text),
         'missing_clock_out_policy': _attMissingClockOutPolicy,
         'attendance_based_salary_enabled': _attAttendanceBasedSalaryEnabled,
+        'breaktime_is_paid': _breaktimeIsPaid,
       });
       _showSnack('Time-in settings saved');
       await _refreshSetupStatus();
@@ -940,6 +943,27 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
                   ),
                 ),
               ],
+            ),
+            const SizedBox(height: 10),
+            SetupCompactSwitch(
+              title: 'Breaktime is paid',
+              subtitle:
+                  'ON: Include breaktime in paid working hours. OFF: Breaktime is unpaid.',
+              value: _breaktimeIsPaid,
+              onChanged: _busy
+                  ? null
+                  : (value) async {
+                      setState(() => _breaktimeIsPaid = value);
+                      try {
+                        await _repo.updateAttendancePolicy({
+                          'breaktime_is_paid': value,
+                        });
+                      } catch (_) {
+                        if (!mounted) return;
+                        setState(() => _breaktimeIsPaid = !value);
+                        _showSnack('Could not save breaktime setting');
+                      }
+                    },
             ),
             const SizedBox(height: 10),
             SizedBox(

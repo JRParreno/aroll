@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:aroll_mobile/core/network/api_client.dart';
+import 'package:aroll_mobile/core/utils/business_time.dart';
 import 'package:aroll_mobile/domain/entities/employee_portal.dart';
 import 'package:aroll_mobile/domain/entities/face_liveness.dart';
 import 'package:aroll_mobile/domain/entities/leave_request.dart';
@@ -229,9 +230,10 @@ class EmployeeRepositoryImpl implements EmployeeRepository {
   }
 
   @override
-  Future<String> downloadPayslipPdf() async {
+  Future<String> downloadPayslipPdf({DateTime? asOf}) async {
     final res = await _api.dio.get<List<int>>(
       '/employee/payslip/pdf',
+      queryParameters: employeePayslipPdfQueryParameters(asOf),
       options: Options(responseType: ResponseType.bytes),
     );
     final dir = await getTemporaryDirectory();
@@ -465,6 +467,8 @@ EmployeeAttendanceStatus _attendanceStatusFromJson(Map<String, dynamic> json) {
     timeIn: _dateTime(json['time_in'] as String?),
     timeOut: _dateTime(json['time_out'] as String?),
     shiftAssignmentId: json['shift_assignment_id'] as String?,
+    timeInAvailable: parseTimeInAvailableFlag(json),
+    timezone: json['timezone'] as String?,
   );
 }
 
@@ -487,6 +491,7 @@ EmployeeProfile _profileFromJson(Map<String, dynamic> json) {
     faceRegistrationStatus:
         json['face_registration_status'] as String? ?? 'not_registered',
     branding: _brandingFromJson(json),
+    timezone: json['timezone'] as String?,
   );
 }
 
@@ -727,6 +732,11 @@ String _apiDate(DateTime value) =>
     '${value.year.toString().padLeft(4, '0')}-'
     '${value.month.toString().padLeft(2, '0')}-'
     '${value.day.toString().padLeft(2, '0')}';
+
+/// Query params for GET /employee/payslip/pdf. Keep in sync with the screen asOf.
+Map<String, String> employeePayslipPdfQueryParameters(DateTime? asOf) => {
+      if (asOf != null) 'as_of': _apiDate(asOf),
+    };
 
 DateTime? _dateTime(String? value) {
   if (value == null) return null;

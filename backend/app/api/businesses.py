@@ -99,6 +99,12 @@ def _branding_response(business: Business) -> BusinessBrandingSettings:
     )
 
 
+def _ot_percent(value, default: float) -> float:
+    if value is None:
+        return float(default)
+    return float(value)
+
+
 def _attendance_policy_response(
     db: Session, business_id, policy: BusinessAttendancePolicy | None
 ) -> AttendancePolicyResponse:
@@ -124,6 +130,7 @@ def _attendance_policy_response(
             overtime_rate_per_minute=float(policy.overtime_rate_per_minute),
             missing_clock_out_policy=policy.missing_clock_out_policy.value,
             attendance_based_salary_enabled=policy.attendance_based_salary_enabled,
+            breaktime_is_paid=bool(getattr(policy, "breaktime_is_paid", False)),
         )
 
     payroll_cfg = db.get(BusinessPayrollConfig, business_id)
@@ -144,6 +151,7 @@ def _attendance_policy_response(
         else 1.0,
         missing_clock_out_policy=MissingClockOutPolicy.auto_clock_out.value,
         attendance_based_salary_enabled=True,
+        breaktime_is_paid=False,
     )
 
 
@@ -217,6 +225,15 @@ def get_payroll_config(
         enable_late_overtime_balancing=bool(
             getattr(cfg, "enable_late_overtime_balancing", False)
         ),
+        # Stored for schema/API compatibility only. Active OT premium is 0%
+        # on ordinary/rest days and holiday.ot_premium_percent on holidays.
+        ordinary_ot_premium_percent=_ot_percent(
+            getattr(cfg, "ordinary_ot_premium_percent", None), 25.0
+        ),
+        rest_day_ot_premium_percent=_ot_percent(
+            getattr(cfg, "rest_day_ot_premium_percent", None),
+            _ot_percent(getattr(cfg, "ordinary_ot_premium_percent", None), 25.0),
+        ),
         weekly_payday_weekday=(
             cfg.weekly_payday_weekday.value if cfg.weekly_payday_weekday else None
         ),
@@ -253,6 +270,10 @@ def update_payroll_config(
     cfg.overtime_per_minute = body.overtime_per_minute
     if body.enable_late_overtime_balancing is not None:
         cfg.enable_late_overtime_balancing = body.enable_late_overtime_balancing
+    if body.ordinary_ot_premium_percent is not None:
+        cfg.ordinary_ot_premium_percent = body.ordinary_ot_premium_percent
+    if body.rest_day_ot_premium_percent is not None:
+        cfg.rest_day_ot_premium_percent = body.rest_day_ot_premium_percent
     cfg.weekly_payday_weekday = body.weekly_payday_weekday
     cfg.semi_monthly_payday_1 = body.semi_monthly_payday_1
     cfg.semi_monthly_payday_2 = body.semi_monthly_payday_2
@@ -294,11 +315,13 @@ def update_attendance_policy(
         policy = BusinessAttendancePolicy(business_id=user.business_id)
         db.add(policy)
     payroll_cfg = db.get(BusinessPayrollConfig, user.business_id)
-    payload = body.model_dump()
+    payload = body.model_dump(exclude_unset=True)
     if payroll_cfg is not None:
         payload["overtime_rate_per_minute"] = float(payroll_cfg.overtime_per_minute)
         payload["overtime_enabled"] = payroll_cfg.overtime_enabled
     for field, value in payload.items():
+        if value is None and field == "breaktime_is_paid":
+            continue
         setattr(policy, field, value)
     db.commit()
     return {"status": "ok"}

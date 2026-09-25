@@ -22,7 +22,9 @@ class _EmployeePayslipScreenState extends State<EmployeePayslipScreen> {
   Future<void> _download() async {
     setState(() => _downloading = true);
     try {
-      final path = await sl<EmployeeRepository>().downloadPayslipPdf();
+      final path = await sl<EmployeeRepository>().downloadPayslipPdf(
+        asOf: widget.asOf,
+      );
       if (!mounted) return;
       await SharePlus.instance.share(
         ShareParams(

@@ -60,7 +60,7 @@ abstract class EmployeeRepository {
 
   Future<EmployeeProfile> removeProfileImage();
 
-  Future<String> downloadPayslipPdf();
+  Future<String> downloadPayslipPdf({DateTime? asOf});
 
   Future<EmployeeWorksite> getWorksite();
 

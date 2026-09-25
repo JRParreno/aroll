@@ -13,9 +13,24 @@ from app.models.attendance import AttendanceRecord
 from app.models.attendance_policy import BusinessAttendancePolicy
 from app.models.business import Business
 from app.models.employee import Employee
-from app.models.enums import AttendanceStatus, PayrollRunStatus, UserRole, Weekday
+from app.models.enums import (
+    AttendanceStatus,
+    PayBasis,
+    PayrollRunStatus,
+    UserRole,
+    Weekday,
+)
 from app.models.holiday import Holiday
 from app.models.payroll import BusinessPayrollConfig, PayrollRun, Position
+from app.services.payroll_snapshot import (
+    PAYSLIP_SNAPSHOT_VERSION,
+    build_calculation_config_json,
+    create_finalized_payslip_snapshots,
+    load_period_payroll,
+    load_period_payslip,
+    load_period_payslip_for_employee_id,
+    require_loaded_slip,
+)
 from app.models.rest_day_policy import BusinessRestDayPolicy
 from app.models.scheduling import Shift, ShiftAssignment
 from app.models.user import User
@@ -25,6 +40,7 @@ from app.services.holiday_pay import (
 )
 from app.services.payroll_incomplete_gate import (
     count_incomplete_attendance_in_period,
+    count_unresolved_scheduled_assignments_in_period,
 )
 from app.services.leave_requests import (
     approved_leave_dates_for_employee,
@@ -43,10 +59,19 @@ from app.services.employee_pay import (
     resolve_employee_pay_context,
 )
 from app.services.pay_period import resolve_pay_period
-from app.services.payroll_adjustments import (
-    apply_adjustments_to_slip,
-    list_active_adjustments,
-    list_active_adjustments_for_employees,
+from app.services.payroll_engine import (
+    collect_unresolved_scheduled_assignments,
+    early_departure_minutes,
+    hours_worked_from_payable_minutes,
+    hours_worked_from_slip,
+    in_shift_payable_minutes,
+    monetary_late_minutes,
+    remaining_monetary_late_minutes,
+    overtime_pay_amount,
+    overtime_premium_percent,
+    qualifying_overtime_minutes,
+    scheduled_paid_minutes,
+    scheduled_shift_end_at,
 )
 
 router = APIRouter(prefix="/owner/reports", tags=["owner-reports"])
@@ -63,21 +88,28 @@ _WEEKDAY_BY_INDEX = (
 
 
 def _shift_end_at(work_date: date, shift: Shift) -> datetime:
-    end_at = datetime.combine(work_date, shift.end_time)
-    if shift.end_time <= shift.start_time:
-        end_at += timedelta(days=1)
-    return end_at
+    return scheduled_shift_end_at(work_date, shift)
 
 
 def _shift_start_at(work_date: date, shift: Shift) -> datetime:
     return datetime.combine(work_date, shift.start_time)
 
 
-def _scheduled_shift_minutes(work_date: date, shift: Shift) -> float:
-    """Scheduled working minutes from the assigned shift (supports overnight)."""
+def _scheduled_shift_minutes(
+    work_date: date,
+    shift: Shift,
+    *,
+    breaktime_is_paid: bool = False,
+) -> float:
+    """Canonical scheduled paid minutes for a shift (breaktime setting applied)."""
     start = _shift_start_at(work_date, shift)
     end = _shift_end_at(work_date, shift)
-    return max((end - start).total_seconds() / 60.0, 0.0)
+    span = max((end - start).total_seconds() / 60.0, 0.0)
+    return scheduled_paid_minutes(
+        span_minutes=span,
+        break_minutes=getattr(shift, "break_minutes", 0),
+        breaktime_is_paid=breaktime_is_paid,
+    )
 
 
 def _weekday_for_date(work_date: date) -> Weekday:
@@ -225,8 +257,28 @@ def _calculate_employee_payslip(
             resolved=resolved_pay,
         )
 
-    overtime_rate = float(config.overtime_per_minute) if config else 0.0
+    breaktime_is_paid = bool(getattr(att_policy, "breaktime_is_paid", False))
+
+    def _paid_shift_minutes(work_date: date, shift: Shift) -> float:
+        return _scheduled_shift_minutes(
+            work_date, shift, breaktime_is_paid=breaktime_is_paid
+        )
+
     late_rate = float(config.late_deduction_per_minute) if config else 0.0
+    late_money_enabled = config is None or bool(
+        getattr(config, "late_deduction_enabled", True)
+    )
+    ot_rate = float(config.overtime_per_minute) if config else 0.0
+    is_hourly = resolved_pay.pay_basis == PayBasis.hourly
+    overtime_pay = 0.0
+    payable_minutes_total = 0.0
+    paid_work_dates: set[date] = set()
+    daily_work_buckets: dict[date, dict] = {}
+    overtime_enabled = True
+    if config is not None and not config.overtime_enabled:
+        overtime_enabled = False
+    if att_policy is not None and not att_policy.overtime_enabled:
+        overtime_enabled = False
     late_ot_balancing = bool(
         config is not None
         and getattr(config, "enable_late_overtime_balancing", False)
@@ -267,6 +319,46 @@ def _calculate_employee_payslip(
         .all()
     }
 
+    scheduled_assignments = (
+        db.query(ShiftAssignment, Shift)
+        .join(Shift, ShiftAssignment.shift_id == Shift.id)
+        .filter(
+            ShiftAssignment.employee_id == employee.id,
+            ShiftAssignment.work_date >= period_start,
+            ShiftAssignment.work_date <= period_end,
+        )
+        .all()
+    )
+    scheduled_minutes_by_date: dict[date, float] = {}
+    for scheduled_assignment, scheduled_shift in scheduled_assignments:
+        scheduled_minutes_by_date[scheduled_assignment.work_date] = (
+            scheduled_minutes_by_date.get(scheduled_assignment.work_date, 0.0)
+            + (
+                _paid_shift_minutes(
+                    scheduled_assignment.work_date, scheduled_shift
+                )
+                or 0.0
+            )
+        )
+
+    today = business_today(tz_name)
+    now_local = business_now(tz_name).replace(tzinfo=None)
+    records_by_assignment_id: dict = {}
+    for record, assignment, _shift in rows:
+        if assignment is None:
+            continue
+        records_by_assignment_id.setdefault(assignment.id, []).append(record)
+
+    pending_work_dates, unresolved_assignment_ids = (
+        collect_unresolved_scheduled_assignments(
+            scheduled_assignments,
+            records_by_assignment_id,
+            now_local=now_local,
+            today=today,
+            grace_minutes=grace_minutes,
+        )
+    )
+
     regular_pay = 0.0
     worked_days = 0.0
     overtime_minutes = 0.0
@@ -277,17 +369,17 @@ def _calculate_employee_payslip(
     paid_leave_days = 0
     unpaid_leave_days = 0
     half_day_days = 0
+    pending_attendance_count = len(unresolved_assignment_ids)
     holiday_pay = 0.0
     rest_day_pay = 0.0
     rest_day_days = 0
     attendance_records = []
     rest_day_records = []
-    # Unworked scheduled time valued at Daily Rate ÷ assigned shift hours.
-    attendance_shortfall_deductions = 0.0
     late_deductions_amount = 0.0
     undertime_deductions_amount = 0.0
-    # Config-rate late only for incomplete/no-shift fallback rows.
-    legacy_late_deductions = 0.0
+    # Dates that already received the one Daily Rate (or holiday unworked credit).
+    daily_base_credited: set[date] = set()
+    daily_holiday_credited: set[date] = set()
     # Dates already credited via AttendanceRecord(status=on_leave).
     leave_dates_from_attendance: set[date] = set()
 
@@ -295,6 +387,15 @@ def _calculate_employee_payslip(
         work_date = assignment.work_date if assignment else record.created_at.date()
         holiday = holidays.get(work_date)
         is_rest = _is_rest_day_work(assignment)
+        date_is_pending = work_date in pending_work_dates
+        if (
+            assignment is None
+            and record.time_in is not None
+            and record.time_out is None
+            and record.status != AttendanceStatus.incomplete
+        ):
+            pending_attendance_count += 1
+            date_is_pending = True
 
         worked_minutes = 0.0
         if record.time_in is not None and record.time_out is not None:
@@ -315,7 +416,10 @@ def _calculate_employee_payslip(
         scheduled_minutes = 0.0
         hourly_rate = 0.0
 
-        if record.status == AttendanceStatus.on_leave:
+        if date_is_pending:
+            if record.status == AttendanceStatus.on_leave:
+                leave_dates_from_attendance.add(work_date)
+        elif record.status == AttendanceStatus.on_leave:
             leave_dates_from_attendance.add(work_date)
             # Use stored leave_request.is_paid snapshot — never live company policy.
             paid_flag = leave_is_paid_for_attendance_day(
@@ -329,17 +433,20 @@ def _calculate_employee_payslip(
             else:
                 paid = paid_flag
             if paid:
-                paid_leave_days += 1
                 day_rate_factor = 1.0
                 if shift is not None:
-                    scheduled_minutes = _scheduled_shift_minutes(work_date, shift)
+                    scheduled_minutes = _paid_shift_minutes(work_date, shift)
                 leave_ctx = _pay_ctx(scheduled_minutes or DEFAULT_SCHEDULED_MINUTES)
                 scheduled_minutes = leave_ctx.scheduled_minutes
                 hourly_rate = leave_ctx.hourly_rate
                 day_regular = leave_ctx.scheduled_day_value
                 day_earned = leave_ctx.scheduled_day_value
-                worked_days += 1.0
-                regular_pay += day_regular
+                paid_work_dates.add(work_date)
+                if is_hourly or work_date not in daily_base_credited:
+                    paid_leave_days += 1
+                    regular_pay += day_regular
+                    if not is_hourly:
+                        daily_base_credited.add(work_date)
             else:
                 unpaid_leave_days += 1
         elif record.status == AttendanceStatus.absent:
@@ -348,17 +455,25 @@ def _calculate_employee_payslip(
             )
             if absent_policy is not None and absent_policy.pay_if_not_worked:
                 if shift is not None:
-                    scheduled_minutes = _scheduled_shift_minutes(work_date, shift)
+                    scheduled_minutes = _paid_shift_minutes(work_date, shift)
                 absent_ctx = _pay_ctx(scheduled_minutes or DEFAULT_SCHEDULED_MINUTES)
                 scheduled_minutes = absent_ctx.scheduled_minutes
                 hourly_rate = absent_ctx.hourly_rate
-                holiday_pay += absent_ctx.scheduled_day_value
+                if is_hourly or work_date not in daily_holiday_credited:
+                    holiday_pay += absent_ctx.scheduled_day_value
+                    if not is_hourly:
+                        daily_holiday_credited.add(work_date)
                 day_earned = absent_ctx.scheduled_day_value
                 day_rate_factor = 1.0
             else:
                 absent_days += 1
         elif record.status == AttendanceStatus.incomplete:
-            # Forgotten clock-out: do not finalize hours, OT, undertime, or pay.
+            # Window exceeded without a finalized Time Out. ₱0 payable.
+            # Status is the source of truth — do not credit scheduled hours.
+            pass
+        elif record.time_in is not None and record.time_out is None:
+            # Still inside the incomplete window: wait for Time Out.
+            # Counted in pending_work_dates / unresolved_assignment_ids above.
             pass
         elif (
             record.time_in is not None
@@ -367,110 +482,165 @@ def _calculate_employee_payslip(
             and assignment is not None
         ):
             # Rate source: PayrollPayContext (daily or hourly).
-            # Daily: credit scheduled_day_value (= daily_rate), deduct shortfall.
-            # Hourly: same structure; scheduled_day_value = hourly × scheduled hours;
-            #         net day earnings = paid_worked × minute_rate.
-            scheduled_minutes = _scheduled_shift_minutes(work_date, shift)
-            if scheduled_minutes <= 0:
-                scheduled_minutes = DEFAULT_SCHEDULED_MINUTES
-            pay_ctx = _pay_ctx(scheduled_minutes)
-            scheduled_minutes = pay_ctx.scheduled_minutes
+            # Payable regular minutes = in-shift overlap only. Early arrival
+            # never offsets early departure. Daily employees credit one
+            # daily_rate per calendar work_date after the loop.
+            scheduled_start = _shift_start_at(work_date, shift)
+            shift_end = _shift_end_at(work_date, shift)
+            time_in_local = _to_business_naive(record.time_in, tz_name)
+            time_out_local = _to_business_naive(record.time_out, tz_name)
+            assignment_scheduled = _paid_shift_minutes(work_date, shift)
+            if assignment_scheduled <= 0:
+                assignment_scheduled = DEFAULT_SCHEDULED_MINUTES
+            if is_hourly:
+                ctx_minutes = assignment_scheduled
+            else:
+                ctx_minutes = (
+                    scheduled_minutes_by_date.get(work_date) or assignment_scheduled
+                )
+            pay_ctx = _pay_ctx(ctx_minutes)
+            scheduled_minutes = assignment_scheduled
             hourly_rate = pay_ctx.hourly_rate
             minute_rate = pay_ctx.minute_rate
 
-            paid_worked = min(worked_minutes, scheduled_minutes)
-            day_unpaid_minutes = max(scheduled_minutes - paid_worked, 0.0)
-            day_shortfall = day_unpaid_minutes * minute_rate
+            payable = in_shift_payable_minutes(
+                time_in=time_in_local,
+                time_out=time_out_local,
+                scheduled_start=scheduled_start,
+                scheduled_end=shift_end,
+                scheduled_working=assignment_scheduled,
+            )
+            payable_minutes_total += payable
 
-            # Base the day on the full scheduled day value; shortfall is deducted below.
-            day_regular = pay_ctx.scheduled_day_value
-            day_earned = max(day_regular - day_shortfall, 0.0)
-            day_rate_factor = 1.0
-            worked_days += 1.0
-            if 0 < worked_minutes < half_day_threshold:
-                half_day_days += 1
-
-            regular_pay += day_regular
-            attendance_shortfall_deductions += day_shortfall
-            unpaid_minutes += day_unpaid_minutes
-
-            scheduled_start = _shift_start_at(work_date, shift)
-            grace_end = scheduled_start + timedelta(minutes=grace_minutes)
-            time_in_local = _to_business_naive(record.time_in, tz_name)
-            time_out_local = _to_business_naive(record.time_out, tz_name)
-            shift_end = _shift_end_at(work_date, shift)
-
-            if time_in_local > grace_end:
-                # Payslip presentation only: show late minutes/deduction when
-                # lateness coincided with unpaid scheduled time (shortfall > 0).
-                # If the employee made up the hours (shortfall == 0), hide late
-                # on the payslip — attendance status remains Late unchanged.
-                # Payroll net deductions still use attendance_shortfall only.
-                computed_late_minutes = (
-                    time_in_local - grace_end
-                ).total_seconds() / 60.0
-                computed_late_deduction = computed_late_minutes * minute_rate
-                if day_shortfall > 0:
-                    day_late_minutes = computed_late_minutes
-                    day_late_deduction = computed_late_deduction
-                    late_minutes += day_late_minutes
-                    late_deductions_amount += day_late_deduction
-
-            if time_out_local < shift_end:
-                day_undertime_minutes = (
-                    shift_end - time_out_local
-                ).total_seconds() / 60.0
-                early_out_minutes += day_undertime_minutes
-                day_undertime_deduction = day_undertime_minutes * minute_rate
-                undertime_deductions_amount += day_undertime_deduction
-
-            raw_ot = max((time_out_local - shift_end).total_seconds() / 60.0, 0.0)
-            # Optional company policy: post-end minutes first recover late-from-
-            # scheduled-start (not grace). Shortfall / status unchanged.
-            if late_ot_balancing:
-                late_for_balancing = max(
-                    (time_in_local - scheduled_start).total_seconds() / 60.0,
-                    0.0,
+            ot_mins, recovered_late = qualifying_overtime_minutes(
+                time_in=time_in_local,
+                time_out=time_out_local,
+                scheduled_start=scheduled_start,
+                scheduled_end=shift_end,
+                ot_minimum=ot_minimum,
+                late_ot_balancing=late_ot_balancing,
+            )
+            overtime_minutes += ot_mins
+            if overtime_enabled:
+                overtime_pay += overtime_pay_amount(
+                    ot_mins,
+                    ot_rate,
+                    overtime_premium_percent(config, holiday, is_rest),
                 )
-                recoverable = min(raw_ot, late_for_balancing)
-                raw_ot = max(raw_ot - recoverable, 0.0)
-            if raw_ot >= ot_minimum:
-                overtime_minutes += raw_ot
-        elif record.time_in is not None:
-            # Incomplete punch and/or no linked shift: keep prior fallback rules.
+
+            day_late_minutes = remaining_monetary_late_minutes(
+                monetary_late=monetary_late_minutes(
+                    time_in=time_in_local,
+                    scheduled_start=scheduled_start,
+                    grace_minutes=grace_minutes,
+                ),
+                recovered_late_minutes=recovered_late,
+                late_ot_balancing=late_ot_balancing,
+            )
+            day_undertime_minutes = early_departure_minutes(
+                time_out=time_out_local,
+                scheduled_end=shift_end,
+            )
+            day_late_deduction = (
+                day_late_minutes * late_rate if late_money_enabled else 0.0
+            )
+            day_undertime_deduction = day_undertime_minutes * minute_rate
+            late_minutes += day_late_minutes
+            late_deductions_amount += day_late_deduction
+            if day_undertime_minutes > 0:
+                early_out_minutes += day_undertime_minutes
+            undertime_deductions_amount += day_undertime_deduction
+            day_unpaid_minutes = day_undertime_minutes
+            day_shortfall = day_undertime_deduction
+
+            if is_hourly:
+                day_regular = pay_ctx.scheduled_day_value
+                day_earned = max(day_regular - day_undertime_deduction, 0.0)
+                day_rate_factor = 1.0
+                paid_work_dates.add(work_date)
+                if 0 < payable < half_day_threshold:
+                    half_day_days += 1
+                regular_pay += day_regular
+                unpaid_minutes += day_undertime_minutes
+            else:
+                bucket = daily_work_buckets.setdefault(
+                    work_date,
+                    {
+                        "payable": 0.0,
+                        "undertime_deduction": 0.0,
+                        "scheduled": ctx_minutes,
+                        "holiday": holiday,
+                        "is_rest": is_rest,
+                        "minute_rate": minute_rate,
+                    },
+                )
+                bucket["payable"] += payable
+                bucket["undertime_deduction"] += day_undertime_deduction
+                bucket["is_rest"] = bool(bucket["is_rest"] or is_rest)
+                day_regular = 0.0
+                day_earned = payable * minute_rate
+                day_rate_factor = 1.0
+                if 0 < payable < half_day_threshold:
+                    half_day_days += 1
+                unpaid_minutes += day_undertime_minutes
+        elif record.time_in is not None and record.time_out is not None:
+            # Closed punch without a linked shift: keep prior fallback rules.
             day_rate_factor = 1.0
             if 0 < worked_minutes < half_day_threshold:
                 day_rate_factor = 0.5
                 half_day_days += 1
             if shift is not None and assignment is not None:
-                scheduled_minutes = _scheduled_shift_minutes(work_date, shift)
+                scheduled_minutes = _paid_shift_minutes(work_date, shift)
             fallback_ctx = _pay_ctx(scheduled_minutes or DEFAULT_SCHEDULED_MINUTES)
             scheduled_minutes = fallback_ctx.scheduled_minutes
             hourly_rate = fallback_ctx.hourly_rate
-            worked_days += day_rate_factor
             day_regular = fallback_ctx.scheduled_day_value * day_rate_factor
+            if day_rate_factor > 0:
+                if is_hourly or work_date not in daily_base_credited:
+                    paid_work_dates.add(work_date)
+                    regular_pay += day_regular
+                    if not is_hourly:
+                        daily_base_credited.add(work_date)
             day_earned = day_regular
-            regular_pay += day_regular
 
             if shift is not None and assignment is not None:
                 scheduled_start = _shift_start_at(work_date, shift)
-                grace_end = scheduled_start + timedelta(minutes=grace_minutes)
                 time_in_local = _to_business_naive(record.time_in, tz_name)
-                if time_in_local > grace_end:
-                    day_late_minutes = (
-                        time_in_local - grace_end
-                    ).total_seconds() / 60.0
-                    late_minutes += day_late_minutes
-                    if config is None or config.late_deduction_enabled:
-                        legacy_late_deductions += day_late_minutes * late_rate
-                        day_late_deduction = day_late_minutes * late_rate
-                        late_deductions_amount += day_late_deduction
+                day_late_minutes = monetary_late_minutes(
+                    time_in=time_in_local,
+                    scheduled_start=scheduled_start,
+                    grace_minutes=grace_minutes,
+                )
+                late_minutes += day_late_minutes
+                if late_money_enabled:
+                    day_late_deduction = day_late_minutes * late_rate
+                    late_deductions_amount += day_late_deduction
+
+        open_unfinalized = (
+            date_is_pending
+            or (record.time_in is not None and record.time_out is None)
+        )
+        completed_shifted = (
+            record.time_in is not None
+            and record.time_out is not None
+            and shift is not None
+            and assignment is not None
+            and record.status
+            not in (
+                AttendanceStatus.absent,
+                AttendanceStatus.incomplete,
+                AttendanceStatus.on_leave,
+            )
+        )
+        apply_row_holiday_rest = is_hourly or not completed_shifted
 
         worked_holiday_policy = resolve_holiday_policy(
             holiday=holiday, mode=holiday_rules_mode
         )
         if (
-            worked_holiday_policy is not None
+            apply_row_holiday_rest
+            and worked_holiday_policy is not None
+            and not open_unfinalized
             and record.status
             not in (
                 AttendanceStatus.absent,
@@ -492,8 +662,9 @@ def _calculate_employee_payslip(
                 AttendanceStatus.on_leave,
             )
             and record.time_in is not None
+            and record.time_out is not None
         )
-        if is_rest and worked and day_earned > 0:
+        if apply_row_holiday_rest and is_rest and worked and day_earned > 0:
             day_rest_premium = day_earned * (premium_percent / 100.0)
             rest_day_pay += day_rest_premium
             rest_day_days += 1
@@ -550,27 +721,58 @@ def _calculate_employee_payslip(
                 "payroll_status": (
                     "pending_attendance_correction"
                     if record.status == AttendanceStatus.incomplete
+                    else "pending"
+                    if date_is_pending
+                    or (record.time_in is not None and record.time_out is None)
                     else "finalized"
                 ),
             }
         )
 
-    # Scheduled assignments (shared by leave recon + no-show).
+    # Daily employees: one daily_rate per calendar work_date.
+    for work_date, bucket in daily_work_buckets.items():
+        sched = bucket["scheduled"] if bucket["scheduled"] > 0 else DEFAULT_SCHEDULED_MINUTES
+        ctx = _pay_ctx(sched)
+        undertime_for_date = float(bucket.get("undertime_deduction") or 0.0)
+        day_earned = max(ctx.scheduled_day_value - undertime_for_date, 0.0)
+        if work_date not in daily_base_credited:
+            regular_pay += ctx.scheduled_day_value
+            daily_base_credited.add(work_date)
+        paid_work_dates.add(work_date)
+
+        holiday = bucket.get("holiday")
+        worked_holiday_policy = resolve_holiday_policy(
+            holiday=holiday, mode=holiday_rules_mode
+        )
+        if worked_holiday_policy is not None:
+            holiday_pay += max(
+                day_earned * (worked_holiday_policy.worked_multiplier - 1),
+                0,
+            )
+        if bucket.get("is_rest") and day_earned > 0:
+            day_rest_premium = day_earned * (premium_percent / 100.0)
+            rest_day_pay += day_rest_premium
+            rest_day_days += 1
+            rest_day_records.append(
+                {
+                    "date": work_date.isoformat(),
+                    "weekday": _weekday_for_date(work_date).value,
+                    "status": "complete",
+                    "time_in": None,
+                    "time_out": None,
+                    "shift_name": None,
+                    "premium_percent": premium_percent,
+                    "premium_pay": round(day_rest_premium, 2),
+                    "authorized": rest_day_work_allowed,
+                }
+            )
+
+    # Scheduled assignments already loaded above (leave recon + no-show).
     seen_assignment_ids = {
         record.shift_assignment_id
         for record, _assignment, _shift in rows
         if record.shift_assignment_id is not None
     }
-    scheduled_assignments = (
-        db.query(ShiftAssignment, Shift)
-        .join(Shift, ShiftAssignment.shift_id == Shift.id)
-        .filter(
-            ShiftAssignment.employee_id == employee.id,
-            ShiftAssignment.work_date >= period_start,
-            ShiftAssignment.work_date <= period_end,
-        )
-        .all()
-    )
     shift_by_date = {
         assignment.work_date: shift for assignment, shift in scheduled_assignments
     }
@@ -586,6 +788,8 @@ def _calculate_employee_payslip(
     ):
         if leave_date in leave_dates_from_attendance:
             continue
+        if leave_date in pending_work_dates:
+            continue
         paid_flag = leave_is_paid_for_attendance_day(
             db, employee_id=employee.id, work_date=leave_date
         )
@@ -598,15 +802,18 @@ def _calculate_employee_payslip(
             paid = paid_flag
         leave_shift = shift_by_date.get(leave_date)
         leave_scheduled = (
-            _scheduled_shift_minutes(leave_date, leave_shift)
+            _paid_shift_minutes(leave_date, leave_shift)
             if leave_shift is not None
             else DEFAULT_SCHEDULED_MINUTES
         )
         leave_day_value = _pay_ctx(leave_scheduled).scheduled_day_value
         if paid:
-            paid_leave_days += 1
-            worked_days += 1.0
-            regular_pay += leave_day_value
+            paid_work_dates.add(leave_date)
+            if is_hourly or leave_date not in daily_base_credited:
+                paid_leave_days += 1
+                regular_pay += leave_day_value
+                if not is_hourly:
+                    daily_base_credited.add(leave_date)
         else:
             unpaid_leave_days += 1
         leave_dates_from_attendance.add(leave_date)
@@ -622,11 +829,12 @@ def _calculate_employee_payslip(
     # No-show reconciliation (payroll calculation only — no DB writes).
     # Scheduled assignments with no AttendanceRecord are treated like
     # AttendanceStatus.absent: increment absent_days, ₱0 earned, list in output.
-    today = business_today(tz_name)
-    now_local = business_now(tz_name).replace(tzinfo=None)
+    daily_absent_dates: set[date] = set()
 
     for assignment, shift in scheduled_assignments:
         if assignment.id in seen_assignment_ids:
+            continue
+        if assignment.work_date in pending_work_dates:
             continue
         # True days off have no assignment; is_rest_day_work means scheduled to work.
         if employee_on_approved_leave(
@@ -648,9 +856,12 @@ def _calculate_employee_payslip(
             holiday=holiday, mode=holiday_rules_mode
         )
         if unworked_policy is not None and unworked_policy.pay_if_not_worked:
-            noshow_sched = _scheduled_shift_minutes(assignment.work_date, shift)
+            noshow_sched = _paid_shift_minutes(assignment.work_date, shift)
             noshow_day_value = _pay_ctx(noshow_sched).scheduled_day_value
-            holiday_pay += noshow_day_value
+            if is_hourly or assignment.work_date not in daily_holiday_credited:
+                holiday_pay += noshow_day_value
+                if not is_hourly:
+                    daily_holiday_credited.add(assignment.work_date)
             attendance_records.append(
                 _holiday_credit_payslip_row(
                     work_date=assignment.work_date,
@@ -661,7 +872,16 @@ def _calculate_employee_payslip(
             )
             continue
 
+        if not is_hourly and (
+            assignment.work_date in daily_work_buckets
+            or assignment.work_date in paid_work_dates
+            or assignment.work_date in daily_absent_dates
+        ):
+            continue
+
         absent_days += 1
+        if not is_hourly:
+            daily_absent_dates.add(assignment.work_date)
         attendance_records.append(
             _absent_day_payslip_row(
                 work_date=assignment.work_date,
@@ -670,21 +890,15 @@ def _calculate_employee_payslip(
             )
         )
 
-    overtime_pay = overtime_minutes * overtime_rate
-    if config is not None and not config.overtime_enabled:
-        overtime_pay = 0.0
-    if att_policy is not None and not att_policy.overtime_enabled:
-        overtime_pay = 0.0
+    overtime_pay = round(overtime_pay, 2) if overtime_enabled else 0.0
 
-    # Net deductions = unworked scheduled minutes at dynamic hourly/minute rate
-    # (covers late + undertime + any remaining unpaid gap without double-counting).
-    deductions = attendance_shortfall_deductions + legacy_late_deductions
-    remaining_unpaid_deductions = max(
-        deductions - late_deductions_amount - undertime_deductions_amount,
-        0.0,
-    )
+    # Late and undertime are independent deductions (not a split shortfall).
+    deductions = late_deductions_amount + undertime_deductions_amount
+    remaining_unpaid_deductions = 0.0
     gross_pay = regular_pay + overtime_pay + holiday_pay + rest_day_pay
     net_pay = max(gross_pay - deductions, 0)
+    worked_days = float(len(paid_work_dates))
+    hours_worked = hours_worked_from_payable_minutes(payable_minutes_total)
 
     # Display rates: daily_rate may still include Position fallback for legacy
     # clients. UI salary-rate labels must use pay_basis + hourly_rate /
@@ -706,6 +920,7 @@ def _calculate_employee_payslip(
         "hourly_rate_configured": resolved_pay.hourly_rate,
         "monthly_salary_configured": resolved_pay.monthly_salary,
         "worked_days": round(worked_days, 2),
+        "hours_worked": hours_worked,
         "half_day_days": half_day_days,
         "overtime_minutes": round(overtime_minutes, 2),
         "overtime_hours": round(overtime_minutes / 60, 2),
@@ -727,6 +942,10 @@ def _calculate_employee_payslip(
         "absent_days": absent_days,
         "paid_leave_days": paid_leave_days,
         "unpaid_leave_days": unpaid_leave_days,
+        "pending_attendance_count": pending_attendance_count,
+        "pending_work_dates": [
+            work_date.isoformat() for work_date in sorted(pending_work_dates)
+        ],
         # Base earnings for UI "Basic Salary" — do not recompute in clients.
         "regular_pay": round(regular_pay, 2),
         "gross_pay": round(gross_pay, 2),
@@ -957,6 +1176,8 @@ def attendance_report(
             }
         )
 
+    tz_name = business.timezone if business is not None else "Asia/Manila"
+
     records.sort(key=lambda item: (item["date"], item["employee_name"]), reverse=True)
 
     return {
@@ -969,6 +1190,7 @@ def attendance_report(
             "rest_day": rest_day,
             "holiday_paid": holiday_paid,
         },
+        "timezone": tz_name,
         "rest_day_premium_percent": premium_percent,
         "rest_day_work_allowed": rest_day_work_allowed,
         "rest_day_work": rest_day_work,
@@ -999,7 +1221,13 @@ def payroll_report(
     config = db.get(BusinessPayrollConfig, user.business_id)
     business = db.get(Business, user.business_id)
     today = as_of or date.today()
-    period_start, period_end = resolve_pay_period(config, today=today)
+    loaded = load_period_payroll(
+        db,
+        business_id=user.business_id,
+        as_of=today,
+        calculate_payslip=_calculate_employee_payslip,
+    )
+    period_start, period_end = loaded.period_start, loaded.period_end
     incomplete_count = count_incomplete_attendance_in_period(
         db,
         business_id=user.business_id,
@@ -1007,42 +1235,24 @@ def payroll_report(
         period_end=period_end,
         business_timezone=business.timezone if business else None,
     )
-    finalized_run = (
-        db.query(PayrollRun)
-        .filter(
-            PayrollRun.business_id == user.business_id,
-            PayrollRun.period_start == period_start,
-            PayrollRun.period_end == period_end,
-            PayrollRun.status == PayrollRunStatus.finalized,
-        )
-        .order_by(PayrollRun.created_at.desc())
-        .first()
-    )
-    employees = (
-        db.query(Employee)
-        .filter(Employee.business_id == user.business_id, Employee.is_active.is_(True))
-        .order_by(Employee.full_name)
-        .all()
-    )
-    adjustment_map = list_active_adjustments_for_employees(
+    pending_attendance_count = count_unresolved_scheduled_assignments_in_period(
         db,
         business_id=user.business_id,
-        employee_ids=[employee.id for employee in employees],
         period_start=period_start,
         period_end=period_end,
+        business_timezone=business.timezone if business else None,
     )
+    finalized_run = loaded.payroll_run
     items = []
-    for employee in employees:
-        slip = apply_adjustments_to_slip(
-            _calculate_employee_payslip(db, employee, period_start, period_end),
-            adjustment_map.get(employee.id, []),
-        )
+    for employee, slip in loaded.entries:
         items.append(
             {
                 "employee_id": slip["employee_id"],
                 "employee_name": slip["employee_name"],
                 "position_title": slip["position_title"],
-                "profile_image_url": employee.profile_image_url,
+                "profile_image_url": (
+                    employee.profile_image_url if employee is not None else None
+                ),
                 "period_start": slip["period_start"],
                 "period_end": slip["period_end"],
                 "pay_date": slip["period_end"],
@@ -1051,11 +1261,7 @@ def payroll_report(
                 "hourly_rate": slip.get("hourly_rate"),
                 "monthly_salary": slip.get("monthly_salary"),
                 "worked_days": slip["worked_days"],
-                "hours_worked": round(
-                    float(slip.get("worked_days") or 0) * 8.0
-                    + float(slip.get("overtime_hours") or 0),
-                    2,
-                ),
+                "hours_worked": hours_worked_from_slip(slip),
                 "late_deductions": slip["late_deductions"],
                 "undertime_deductions": slip["undertime_deductions"],
                 "overtime_pay": slip["overtime_pay"],
@@ -1074,6 +1280,8 @@ def payroll_report(
                 "payroll_adjustments_allowance_total": slip[
                     "payroll_adjustments_allowance_total"
                 ],
+                "pending_attendance_count": slip.get("pending_attendance_count", 0),
+                "pending_work_dates": slip.get("pending_work_dates", []),
                 "payroll_status": _payroll_status(
                     period_start, period_end, date.today()
                 ),
@@ -1089,7 +1297,12 @@ def payroll_report(
         "payroll_status": _payroll_status(period_start, period_end, date.today()),
         "as_of": today.isoformat(),
         "incomplete_attendance_count": incomplete_count,
-        "can_finalize": incomplete_count == 0 and finalized_run is None,
+        "pending_attendance_count": pending_attendance_count,
+        "can_finalize": (
+            incomplete_count == 0
+            and pending_attendance_count == 0
+            and finalized_run is None
+        ),
         "is_finalized": finalized_run is not None,
         "finalized_at": (
             finalized_run.finalized_at.isoformat()
@@ -1108,7 +1321,11 @@ def finalize_payroll(
         Query(description="Resolve the pay period containing this date (YYYY-MM-DD)"),
     ] = None,
 ):
-    """Finalize the current pay period. Blocked while incomplete attendance exists."""
+    """Finalize the current pay period.
+
+    Blocked while incomplete attendance or unresolved scheduled assignments
+    remain in the period.
+    """
     if user.business_id is None:
         raise HTTPException(400, "No business context")
 
@@ -1138,12 +1355,13 @@ def finalize_payroll(
             ),
         }
 
+    tz_name = business.timezone if business else None
     incomplete_count = count_incomplete_attendance_in_period(
         db,
         business_id=user.business_id,
         period_start=period_start,
         period_end=period_end,
-        business_timezone=business.timezone if business else None,
+        business_timezone=tz_name,
     )
     if incomplete_count > 0:
         raise HTTPException(
@@ -1159,6 +1377,35 @@ def finalize_payroll(
             },
         )
 
+    pending_attendance_count = count_unresolved_scheduled_assignments_in_period(
+        db,
+        business_id=user.business_id,
+        period_start=period_start,
+        period_end=period_end,
+        business_timezone=tz_name,
+    )
+    if pending_attendance_count > 0:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "pending_attendance",
+                "message": (
+                    "Payroll cannot be finalized because there are employees "
+                    "with pending scheduled assignments. Resolve all pending "
+                    "attendance first."
+                ),
+                "incomplete_count": incomplete_count,
+                "pending_attendance_count": pending_attendance_count,
+            },
+        )
+
+    employees = (
+        db.query(Employee)
+        .filter(Employee.business_id == user.business_id, Employee.is_active.is_(True))
+        .order_by(Employee.full_name)
+        .all()
+    )
+
     run = PayrollRun(
         business_id=user.business_id,
         period_start=period_start,
@@ -1166,10 +1413,25 @@ def finalize_payroll(
         status=PayrollRunStatus.finalized,
         run_by=user.id,
         finalized_at=datetime.now(timezone.utc),
+        snapshot_version=PAYSLIP_SNAPSHOT_VERSION,
+        calculation_config_json=build_calculation_config_json(db, user.business_id),
     )
-    db.add(run)
-    db.commit()
-    db.refresh(run)
+    try:
+        db.add(run)
+        db.flush()
+        create_finalized_payslip_snapshots(
+            db,
+            run=run,
+            employees=employees,
+            period_start=period_start,
+            period_end=period_end,
+            calculate_payslip=_calculate_employee_payslip,
+        )
+        db.commit()
+        db.refresh(run)
+    except Exception:
+        db.rollback()
+        raise
 
     # Employee inbox: payroll available (does not change payslip math).
     try:
@@ -1227,27 +1489,24 @@ def my_payslip(
     employee = db.query(Employee).filter(Employee.user_id == user.id).first()
     if employee is None:
         raise HTTPException(404, "Employee not found")
-    config = db.get(BusinessPayrollConfig, employee.business_id)
-    period_start, period_end = resolve_pay_period(config, today=as_of)
-    slip = apply_adjustments_to_slip(
-        _calculate_employee_payslip(db, employee, period_start, period_end),
-        list_active_adjustments(
-            db,
-            business_id=employee.business_id,
-            employee_id=employee.id,
-            period_start=period_start,
-            period_end=period_end,
-        ),
+    loaded = load_period_payslip(
+        db,
+        employee,
+        as_of=as_of,
+        calculate_payslip=_calculate_employee_payslip,
     )
+    return _payslip_detail_payload(loaded)
+
+
+def _payslip_detail_payload(loaded) -> dict:
+    slip = require_loaded_slip(loaded)
     return {
         **slip,
         "pay_date": slip["period_end"],
-        "payroll_status": _payroll_status(period_start, period_end, date.today()),
-        "hours_worked": round(
-            float(slip.get("worked_days") or 0) * 8.0
-            + float(slip.get("overtime_hours") or 0),
-            2,
+        "payroll_status": _payroll_status(
+            loaded.period_start, loaded.period_end, date.today()
         ),
+        "hours_worked": hours_worked_from_slip(slip),
     }
 
 
@@ -1265,39 +1524,39 @@ def employee_payslip(
         raise HTTPException(400, "No business context")
 
     employee = db.get(Employee, employee_id)
-    if employee is None or employee.business_id != user.business_id:
+    if employee is not None and employee.business_id != user.business_id:
         raise HTTPException(404, "Employee not found")
 
-    if user.role == UserRole.employee:
-        own_employee = (
-            db.query(Employee)
-            .filter(Employee.user_id == user.id, Employee.id == employee.id)
-            .first()
-        )
-        if own_employee is None:
-            raise HTTPException(403, "Employees can only view their own payslip")
-    elif user.role not in (UserRole.owner, UserRole.manager):
-        raise HTTPException(403, "Insufficient permissions")
-
-    config = db.get(BusinessPayrollConfig, employee.business_id)
-    period_start, period_end = resolve_pay_period(config, today=as_of)
-    slip = apply_adjustments_to_slip(
-        _calculate_employee_payslip(db, employee, period_start, period_end),
-        list_active_adjustments(
+    if employee is not None:
+        if user.role == UserRole.employee:
+            own_employee = (
+                db.query(Employee)
+                .filter(Employee.user_id == user.id, Employee.id == employee.id)
+                .first()
+            )
+            if own_employee is None:
+                raise HTTPException(403, "Employees can only view their own payslip")
+        elif user.role not in (UserRole.owner, UserRole.manager):
+            raise HTTPException(403, "Insufficient permissions")
+        loaded = load_period_payslip(
             db,
-            business_id=employee.business_id,
-            employee_id=employee.id,
-            period_start=period_start,
-            period_end=period_end,
-        ),
+            employee,
+            as_of=as_of,
+            calculate_payslip=_calculate_employee_payslip,
+        )
+        return _payslip_detail_payload(loaded)
+
+    if user.role not in (UserRole.owner, UserRole.manager):
+        raise HTTPException(404, "Employee not found")
+
+    loaded = load_period_payslip_for_employee_id(
+        db,
+        business_id=user.business_id,
+        employee_id=employee_id,
+        as_of=as_of,
+        calculate_payslip=_calculate_employee_payslip,
+        employee=None,
     )
-    return {
-        **slip,
-        "pay_date": slip["period_end"],
-        "payroll_status": _payroll_status(period_start, period_end, date.today()),
-        "hours_worked": round(
-            float(slip.get("worked_days") or 0) * 8.0
-            + float(slip.get("overtime_hours") or 0),
-            2,
-        ),
-    }
+    if loaded.slip is None:
+        raise HTTPException(404, "Employee not found")
+    return _payslip_detail_payload(loaded)

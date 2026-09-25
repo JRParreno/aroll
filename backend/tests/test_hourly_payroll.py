@@ -53,7 +53,12 @@ def _run_payslip(
 
     if time_in is None and include_attendance and not is_leave:
         time_in = _ph(8, 0)
-    if time_out is None and include_attendance and not is_leave:
+    if (
+        time_out is None
+        and include_attendance
+        and not is_leave
+        and status != AttendanceStatus.incomplete
+    ):
         time_out = _ph(16, 0)
 
     employee = SimpleNamespace(
@@ -272,8 +277,8 @@ def test_hourly_overtime_uses_config_rate():
         time_out=_ph(17, 0),
     )
     assert slip["overtime_minutes"] == 60.0
-    assert slip["overtime_pay"] == 60.0
-    assert slip["net_pay"] == 800.0 + 60.0
+    assert abs(slip["overtime_pay"] - 60.0) < 0.01
+    assert abs(slip["net_pay"] - (800.0 + 60.0)) < 0.01
 
 
 def test_hourly_paid_leave():
@@ -354,8 +359,8 @@ def test_hourly_falls_back_to_position_hourly_rate():
     assert slip["gross_pay"] == 800.0
 
 
-def test_daily_payroll_unchanged_vs_phase2_shape():
-    """Daily shortfall math identical: credit daily_rate, deduct unpaid × rate."""
+def test_daily_late_uses_owner_per_minute_not_daily_divisor():
+    """Late after grace uses late_deduction_per_minute, not daily_rate / minutes."""
     slip = _run_payslip(
         pay_basis=PayBasis.daily,
         daily_rate=720.0,
@@ -368,8 +373,9 @@ def test_daily_payroll_unchanged_vs_phase2_shape():
         time_out=_ph(17, 0),
     )
     assert slip["daily_rate"] == 720.0
-    assert slip["unpaid_minutes"] == 130.0
-    assert abs(slip["deductions"] - (130.0 * (720.0 / 540.0))) < 0.01
+    assert slip["late_minutes"] == 120.0
+    assert slip["undertime_minutes"] == 0.0
+    assert abs(slip["late_deductions"] - 120.0) < 0.01
     assert abs(slip["gross_pay"] - 720.0) < 0.01
 
 
@@ -542,7 +548,8 @@ def test_hourly_two_shifts_same_day_are_paid_independently():
         "Morning",
         "Evening",
     }
-    assert slip["worked_days"] == 2.0
+    assert slip["worked_days"] == 1.0
+    assert slip["hours_worked"] == 9.0
     # 4h × ₱100 + 5h × ₱100
     assert abs(slip["gross_pay"] - 900.0) < 0.01
     assert abs(slip["net_pay"] - 900.0) < 0.01

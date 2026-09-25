@@ -11,6 +11,7 @@ from sqlalchemy import (
     Numeric,
     String,
     Text,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
@@ -52,11 +53,32 @@ class BusinessPayrollConfig(Base):
         Numeric(10, 2), default=1.0
     )
     overtime_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Owner-configured OT pesos per qualifying overtime minute (before premium).
     overtime_per_minute: Mapped[float] = mapped_column(Numeric(10, 2), default=1.0)
     # When True, minutes past shift end first recover late-from-start before
     # accruing payable OT. Default False preserves existing payslip behavior.
     enable_late_overtime_balancing: Mapped[bool] = mapped_column(
         Boolean, default=False
+    )
+    # Deprecated legacy columns. Kept for backward-compatible schema only.
+    # Active OT premium is 0% on ordinary/rest days and holiday.ot_premium_percent
+    # on holidays. Payroll OT premium selection does not read these fields.
+    ordinary_ot_premium_percent: Mapped[float] = mapped_column(
+        Numeric(5, 2), default=25.0
+    )
+    rest_day_ot_premium_percent: Mapped[float] = mapped_column(
+        Numeric(5, 2), default=25.0
+    )
+    # Deprecated legacy columns. Kept for backward-compatible schema only.
+    # Payroll OT premium selection does not read these fields.
+    special_day_ot_premium_percent: Mapped[float] = mapped_column(
+        Numeric(5, 2), default=30.0
+    )
+    regular_holiday_ot_premium_percent: Mapped[float] = mapped_column(
+        Numeric(5, 2), default=30.0
+    )
+    holiday_rest_day_ot_premium_percent: Mapped[float] = mapped_column(
+        Numeric(5, 2), default=30.0
     )
     next_payday_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     auto_reset_payroll_cycle: Mapped[bool] = mapped_column(Boolean, default=True)
@@ -95,6 +117,10 @@ class PayrollRun(Base):
     finalized_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # 1 = Phase 1 JSON snapshot written at finalize. NULL = legacy run (no slips).
+    snapshot_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Audit-only copy of business flags used at finalize. Not used to recalculate.
+    calculation_config_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -102,6 +128,13 @@ class PayrollRun(Base):
 
 class Payslip(Base):
     __tablename__ = "payslip"
+    __table_args__ = (
+        UniqueConstraint(
+            "payroll_run_id",
+            "employee_id",
+            name="uq_payslip_run_employee",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
@@ -109,8 +142,11 @@ class Payslip(Base):
     payroll_run_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("payroll_run.id"), nullable=False
     )
-    employee_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("employee.id"), nullable=False
+    # Nullable so deleting an employee SET NULL and keeps the historical row.
+    employee_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("employee.id", ondelete="SET NULL"),
+        nullable=True,
     )
     regular_hours: Mapped[float] = mapped_column(Numeric(8, 2), default=0)
     overtime_hours: Mapped[float] = mapped_column(Numeric(8, 2), default=0)

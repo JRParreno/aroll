@@ -1,5 +1,6 @@
 import 'package:aroll_mobile/core/app_state.dart';
 import 'package:aroll_mobile/core/di/injection.dart';
+import 'package:aroll_mobile/core/utils/business_time.dart';
 import 'package:aroll_mobile/presentation/shared/tenant_mode_banner.dart';
 import 'package:aroll_mobile/core/face/face_api_errors.dart';
 import 'package:aroll_mobile/data/repositories/owner_repository.dart';
@@ -9,6 +10,10 @@ import 'package:aroll_mobile/presentation/owner/setup/setup_ui.dart';
 import 'package:aroll_mobile/presentation/shared/app_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+
+String _formatTime(String? value, {String? timeZone}) {
+  return formatBusinessAttendanceTimeIso(value, timeZone: timeZone);
+}
 
 class OwnerAttendanceScreen extends StatefulWidget {
   const OwnerAttendanceScreen({super.key});
@@ -29,6 +34,7 @@ class _OwnerAttendanceScreenState extends State<OwnerAttendanceScreen> {
   List<Map<String, dynamic>> _records = const [];
   List<Map<String, dynamic>> _pendingCorrections = const [];
   Map<String, String?> _profileImages = const {};
+  String? _reportTimezone;
   String? _busyCorrectionId;
   String? _rejectingCorrectionId;
   final _rejectNoteController = TextEditingController();
@@ -48,6 +54,9 @@ class _OwnerAttendanceScreenState extends State<OwnerAttendanceScreen> {
     _rejectNoteController.dispose();
     super.dispose();
   }
+
+  String? get _attendanceTimeZone =>
+      sl<AppState>().session?.timezone ?? _reportTimezone;
 
   Future<void> _loadData() async {
     setState(() {
@@ -80,6 +89,7 @@ class _OwnerAttendanceScreenState extends State<OwnerAttendanceScreen> {
             .toList();
         _pendingCorrections = corrections;
         _profileImages = images;
+        _reportTimezone = attendance['timezone'] as String?;
         _loading = false;
       });
     } catch (_) {
@@ -99,8 +109,14 @@ class _OwnerAttendanceScreenState extends State<OwnerAttendanceScreen> {
     final recordImage = '${record['profile_image_url'] ?? ''}'.trim();
     final imageUrl =
         recordImage.isNotEmpty ? recordImage : _profileImages[name];
-    final timeIn = _formatTime(record['time_in'] as String?);
-    final timeOut = _formatTime(record['time_out'] as String?);
+    final timeIn = _formatTime(
+      record['time_in'] as String?,
+      timeZone: _attendanceTimeZone,
+    );
+    final timeOut = _formatTime(
+      record['time_out'] as String?,
+      timeZone: _attendanceTimeZone,
+    );
     final rows = <(String, String)>[
       ('Complete Name', name.isEmpty ? 'Not set' : name),
       ('Role', role.isEmpty ? 'Not set' : role),
@@ -451,6 +467,7 @@ class _OwnerAttendanceScreenState extends State<OwnerAttendanceScreen> {
                         },
                         correctionsButton: _PendingCorrectionsButton(
                           items: _pendingCorrections,
+                          timeZone: _attendanceTimeZone,
                           busyId: _busyCorrectionId,
                           rejectingId: _rejectingCorrectionId,
                           rejectNoteController: _rejectNoteController,
@@ -484,6 +501,7 @@ class _OwnerAttendanceScreenState extends State<OwnerAttendanceScreen> {
                         const SizedBox(height: 16),
                         _RestDayWorkSection(
                           records: _restDayRecords,
+                          timeZone: _attendanceTimeZone,
                           profileImages: _profileImages,
                           onEmployeeTap: _showEmployeeDetails,
                         ),
@@ -497,6 +515,7 @@ class _OwnerAttendanceScreenState extends State<OwnerAttendanceScreen> {
                             padding: const EdgeInsets.only(bottom: 10),
                             child: _AttendanceEmployeeCard(
                               record: record,
+                              timeZone: _attendanceTimeZone,
                               profileImageUrl: _profileImages[
                                   '${record['employee_name'] ?? ''}'.trim()],
                               onTap: () => _showEmployeeDetails(record),
@@ -603,11 +622,13 @@ class _RestDayWorkSection extends StatelessWidget {
     required this.records,
     required this.profileImages,
     required this.onEmployeeTap,
+    this.timeZone,
   });
 
   final List<Map<String, dynamic>> records;
   final Map<String, String?> profileImages;
   final ValueChanged<Map<String, dynamic>> onEmployeeTap;
+  final String? timeZone;
 
   @override
   Widget build(BuildContext context) {
@@ -651,8 +672,14 @@ class _RestDayWorkSection extends StatelessWidget {
           const SizedBox(height: 12),
           ...records.map((record) {
             final name = '${record['employee_name'] ?? 'Employee'}';
-            final timeIn = _formatTime(record['time_in'] as String?);
-            final timeOut = _formatTime(record['time_out'] as String?);
+            final timeIn = _formatTime(
+              record['time_in'] as String?,
+              timeZone: timeZone,
+            );
+            final timeOut = _formatTime(
+              record['time_out'] as String?,
+              timeZone: timeZone,
+            );
             final shift = record['shift_name'] ?? record['position_title'];
             final unauthorized = record['rest_day_authorized'] == false;
             final accent = unauthorized
@@ -743,11 +770,13 @@ class _AttendanceEmployeeCard extends StatelessWidget {
   const _AttendanceEmployeeCard({
     required this.record,
     required this.profileImageUrl,
+    this.timeZone,
     this.onTap,
     this.onComplete,
   });
 
   final Map<String, dynamic> record;
+  final String? timeZone;
   final String? profileImageUrl;
   final VoidCallback? onTap;
   final VoidCallback? onComplete;
@@ -757,8 +786,14 @@ class _AttendanceEmployeeCard extends StatelessWidget {
     final name = '${record['employee_name'] ?? 'Employee'}';
     final status = '${record['status'] ?? ''}';
     final shift = record['shift_name'] ?? record['position_title'];
-    final timeIn = _formatTime(record['time_in'] as String?);
-    final timeOut = _formatTime(record['time_out'] as String?);
+    final timeIn = _formatTime(
+      record['time_in'] as String?,
+      timeZone: timeZone,
+    );
+    final timeOut = _formatTime(
+      record['time_out'] as String?,
+      timeZone: timeZone,
+    );
     final late = status == 'late';
     final absent = status == 'absent';
     final holidayPaid = status == 'holiday_paid';
@@ -899,9 +934,11 @@ class _PendingCorrectionsButton extends StatefulWidget {
     required this.onOpenReject,
     required this.onCancelReject,
     required this.onConfirmReject,
+    this.timeZone,
   });
 
   final List<Map<String, dynamic>> items;
+  final String? timeZone;
   final String? busyId;
   final String? rejectingId;
   final TextEditingController rejectNoteController;
@@ -938,9 +975,11 @@ class _PendingCorrectionsButtonState extends State<_PendingCorrectionsButton> {
   String _fmtTime(Object? value) {
     final raw = value?.toString();
     if (raw == null || raw.isEmpty) return '--';
-    final dt = DateTime.tryParse(raw)?.toLocal();
-    if (dt == null) return '--';
-    return DateFormat.jm().format(dt);
+    return formatBusinessAttendanceTimeIso(
+      raw,
+      timeZone: widget.timeZone,
+      fallback: '--',
+    );
   }
 
   String _fmtDate(Object? value) {
@@ -1348,11 +1387,6 @@ String _isoDate(DateTime value) =>
 
 int _number(Object? value) =>
     value is num ? value.round() : int.tryParse('$value') ?? 0;
-
-String _formatTime(String? value) {
-  if (value == null || value.isEmpty) return '--:--';
-  return DateFormat.jm().format(DateTime.parse(value).toLocal());
-}
 
 String _employmentLabel(Object? value) {
   switch ('$value') {

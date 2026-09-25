@@ -32,8 +32,42 @@ KINDS = frozenset({"deduction", "allowance"})
 
 
 def adjustments_editable(period_end: date, *, today: date | None = None) -> bool:
-    """Editable until the pay period ends (no finalize action exists yet)."""
+    """Editable until the pay period ends, unless the period is finalized.
+
+    Finalized-period locking is enforced separately in mutation functions
+    because it requires a database check against PayrollRun.
+    """
     return (today or date.today()) <= period_end
+
+
+def raise_if_period_finalized(
+    db: Session,
+    *,
+    business_id: uuid.UUID,
+    period_start: date,
+    period_end: date,
+) -> None:
+    """Reject adjustment writes once a PayrollRun exists for this period."""
+    from app.services.payroll_snapshot import find_finalized_run_for_period
+
+    run = find_finalized_run_for_period(
+        db,
+        business_id=business_id,
+        period_start=period_start,
+        period_end=period_end,
+    )
+    if run is None:
+        return
+    raise HTTPException(
+        status_code=409,
+        detail={
+            "code": "payroll_finalized",
+            "message": (
+                "This payroll period is already finalized. "
+                "Adjustments cannot be created, changed, or deleted."
+            ),
+        },
+    )
 
 
 def display_name(row: PayrollAdjustment) -> str:
@@ -208,6 +242,12 @@ def create_adjustment(
     amount: float,
     actor_id: uuid.UUID | None,
 ) -> PayrollAdjustment:
+    raise_if_period_finalized(
+        db,
+        business_id=business_id,
+        period_start=period_start,
+        period_end=period_end,
+    )
     if not adjustments_editable(period_end):
         raise HTTPException(
             400, "Payroll adjustments are read-only after the pay period ends"
@@ -259,6 +299,12 @@ def update_adjustment(
     )
     if row is None:
         raise HTTPException(404, "Payroll adjustment not found")
+    raise_if_period_finalized(
+        db,
+        business_id=business_id,
+        period_start=row.period_start,
+        period_end=row.period_end,
+    )
     if not adjustments_editable(row.period_end):
         raise HTTPException(
             400, "Payroll adjustments are read-only after the pay period ends"
@@ -309,6 +355,12 @@ def soft_delete_adjustment(
     )
     if row is None:
         raise HTTPException(404, "Payroll adjustment not found")
+    raise_if_period_finalized(
+        db,
+        business_id=business_id,
+        period_start=row.period_start,
+        period_end=row.period_end,
+    )
     if not adjustments_editable(row.period_end):
         raise HTTPException(
             400, "Payroll adjustments are read-only after the pay period ends"

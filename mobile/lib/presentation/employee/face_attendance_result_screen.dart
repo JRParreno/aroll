@@ -2,6 +2,7 @@ import 'package:aroll_mobile/core/app_state.dart';
 import 'package:aroll_mobile/core/di/injection.dart';
 import 'package:aroll_mobile/core/face/face_api_errors.dart';
 import 'package:aroll_mobile/core/theme/business_brand_theme.dart';
+import 'package:aroll_mobile/core/utils/business_time.dart';
 import 'package:aroll_mobile/domain/entities/employee_portal.dart';
 import 'package:aroll_mobile/presentation/employee/employee_ui.dart';
 import 'package:flutter/material.dart';
@@ -86,13 +87,19 @@ class _FaceAttendanceResultScreenState
   }
 
   String _formatTime(DateTime? value) {
-    if (value == null) return '--:--';
-    return DateFormat.jm().format(value.toLocal());
+    return formatBusinessAttendanceTime(
+      value,
+      timeZone: sl<AppState>().session?.timezone,
+    );
   }
 
   String _formatDate(DateTime? value) {
-    final date = (value ?? DateTime.now()).toLocal();
-    return DateFormat('MMMM d, yyyy').format(date);
+    final tzName = sl<AppState>().session?.timezone;
+    final source = value ?? DateTime.now();
+    final wall = (tzName == null || tzName.trim().isEmpty)
+        ? source.toUtc()
+        : toBusinessWallClock(source, tzName);
+    return DateFormat('MMMM d, yyyy', 'en_US').format(wall);
   }
 
   @override

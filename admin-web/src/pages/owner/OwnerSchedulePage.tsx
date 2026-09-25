@@ -27,6 +27,7 @@ import {
   OwnerPageContent,
   OwnerPageHeader,
 } from "@/components/owner/layout/OwnerPageLayout";
+import { WizardSettingRow } from "@/components/owner/setup/wizardUi";
 import {
   Dialog,
   DialogContent,
@@ -47,6 +48,8 @@ import {
   listShifts,
   updateScheduleAssignment,
   updateShift,
+  getAttendancePolicy,
+  updateAttendancePolicy,
   type Employee,
   type ScheduleAssignment,
   type Shift,
@@ -188,6 +191,21 @@ export function OwnerSchedulePage() {
     queryKey: ["schedule-leave-availability", workDate],
     queryFn: () => getLeaveAvailability(workDate),
     enabled: Boolean(workDate),
+  });
+  const { data: attendancePolicy } = useQuery({
+    queryKey: ["attendance-policy"],
+    queryFn: getAttendancePolicy,
+  });
+  const saveBreaktime = useMutation({
+    mutationFn: (breaktime_is_paid: boolean) =>
+      updateAttendancePolicy({
+        ...(attendancePolicy ?? {}),
+        breaktime_is_paid,
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["attendance-policy"] });
+    },
+    onError: () => toast.error("Could not save breaktime setting"),
   });
 
   const leaveByEmployee = useMemo(() => {
@@ -555,6 +573,15 @@ export function OwnerSchedulePage() {
       />
 
       <OwnerPageContent>
+        <div className="mb-4">
+          <WizardSettingRow
+            title="Breaktime is paid"
+            description="ON: Include breaktime in paid working hours. OFF: Breaktime is unpaid."
+            checked={attendancePolicy?.breaktime_is_paid === true}
+            onChange={(next) => saveBreaktime.mutate(next)}
+            disabled={!attendancePolicy || saveBreaktime.isPending}
+          />
+        </div>
         {mode === "assign" ? (
           <>
             <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">

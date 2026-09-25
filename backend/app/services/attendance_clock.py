@@ -125,6 +125,29 @@ def _scheduled_end(work_date: date, shift: Shift) -> datetime:
     return end_at
 
 
+def is_open_for_time_in(
+    work_date: date,
+    shift: Shift,
+    now_local: datetime,
+) -> bool:
+    """True while business-local now is still before scheduled end."""
+    return now_local < _scheduled_end(work_date, shift)
+
+
+def select_open_time_in_assignment(
+    rows: list[tuple[ShiftAssignment, Shift]],
+    records_by_assignment_id: dict[uuid.UUID, AttendanceRecord],
+    now_local: datetime,
+) -> tuple[ShiftAssignment, Shift] | None:
+    """First assignment with no punch whose scheduled end is still in the future."""
+    for assignment, shift in rows:
+        if records_by_assignment_id.get(assignment.id) is not None:
+            continue
+        if is_open_for_time_in(assignment.work_date, shift, now_local):
+            return assignment, shift
+    return None
+
+
 def _list_assignment_candidates(
     db: Session,
     employee: Employee,
@@ -186,6 +209,10 @@ def pick_assignment_for_time_in(
 
     Assignments that already have an attendance record are skipped so a completed
     morning shift does not block Time In for an evening shift on the same day.
+
+    Legitimate late Time In (after scheduled start, still before scheduled end)
+    stays eligible. Once ``now_local >= scheduled_end`` the assignment is closed
+    and is not selected.
     """
     open_rows = [
         (assignment, shift)
@@ -200,13 +227,18 @@ def pick_assignment_for_time_in(
 
     in_shift: list[tuple[ShiftAssignment, Shift]] = []
     early_window: list[tuple[ShiftAssignment, Shift]] = []
-    late: list[tuple[ShiftAssignment, Shift]] = []
     upcoming: list[tuple[ShiftAssignment, Shift, datetime]] = []
+    ended = False
 
     for assignment, shift in open_rows:
         scheduled_start = _scheduled_start(assignment.work_date, shift)
         scheduled_end = _scheduled_end(assignment.work_date, shift)
         earliest = scheduled_start - timedelta(minutes=early_clock_in_minutes)
+        # Late Time In stays valid while still inside the shift (now < end).
+        # Once the scheduled end has been reached, this assignment is closed.
+        if now_local >= scheduled_end:
+            ended = True
+            continue
         if now_local < earliest:
             upcoming.append((assignment, shift, earliest))
             continue
@@ -214,8 +246,6 @@ def pick_assignment_for_time_in(
             in_shift.append((assignment, shift))
         elif now_local < scheduled_start:
             early_window.append((assignment, shift))
-        else:
-            late.append((assignment, shift))
 
     def _prefer(
         group: list[tuple[ShiftAssignment, Shift]],
@@ -230,13 +260,16 @@ def pick_assignment_for_time_in(
         return _prefer(in_shift)
     if early_window:
         return _prefer(early_window)
-    if late:
-        # Prefer the most recently started past shift (last in start-time order).
-        if preferred_assignment_id is not None:
-            for assignment, shift in reversed(late):
-                if assignment.id == preferred_assignment_id:
-                    return assignment, shift
-        return late[-1]
+    if upcoming:
+        raise HTTPException(
+            400,
+            f"Time In opens {early_clock_in_minutes} minutes before shift start.",
+        )
+    if ended:
+        raise HTTPException(
+            400,
+            "Time In is closed because this shift has already ended.",
+        )
 
     raise HTTPException(
         400,
@@ -677,6 +710,12 @@ def clock_in_employee(
         )
 
     scheduled_start = _scheduled_start(assignment.work_date, shift)
+    scheduled_end = _scheduled_end(assignment.work_date, shift)
+    if now_local >= scheduled_end:
+        raise HTTPException(
+            400,
+            "Time In is closed because this shift has already ended.",
+        )
     earliest = scheduled_start - timedelta(minutes=policy.early_clock_in_minutes)
     if now_local < earliest:
         raise HTTPException(
