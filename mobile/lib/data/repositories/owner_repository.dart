@@ -11,9 +11,12 @@ class OwnerRepository {
     int days = 30,
     int? year,
     int? month,
+    String? period,
   }) async {
     final query = <String, dynamic>{};
-    if (year != null && month != null) {
+    if (period == 'week' || period == 'month' || period == 'year') {
+      query['period'] = period;
+    } else if (year != null && month != null) {
       query['year'] = year;
       query['month'] = month;
     } else {
@@ -98,6 +101,21 @@ class OwnerRepository {
           .data ??
       {'status': 'ok'};
 
+  Future<List<Map<String, dynamic>>> activityLogs({
+    int limit = 50,
+    int offset = 0,
+  }) async =>
+      _list(await _api.dio.get<List<dynamic>>(
+        '/owner/activity-logs',
+        queryParameters: {'limit': limit, 'offset': offset},
+      ));
+
+  Future<Map<String, dynamic>> deactivateEmployee(String employeeId) async =>
+      (await _api.dio.post<Map<String, dynamic>>(
+        '/employees/$employeeId/deactivate',
+      ))
+          .data!;
+
   Future<Map<String, dynamic>> reactivateEmployee(String employeeId) async =>
       (await _api.dio.post<Map<String, dynamic>>(
         '/employees/$employeeId/reactivate',
@@ -144,6 +162,33 @@ class OwnerRepository {
       (await _api.dio.post<Map<String, dynamic>>(
         '/owner/attendance-corrections/$requestId/reject',
         data: {'review_note': reviewNote},
+      ))
+          .data!;
+
+  Future<List<Map<String, dynamic>>> overtimeApprovals({
+    String status = 'pending',
+  }) async {
+    final response = await _api.dio.get<Map<String, dynamic>>(
+      '/owner/overtime-approvals',
+      queryParameters: {'status': status},
+    );
+    final items = response.data?['items'];
+    if (items is! List) return const [];
+    return items
+        .whereType<Map>()
+        .map((row) => Map<String, dynamic>.from(row))
+        .toList();
+  }
+
+  Future<Map<String, dynamic>> approveOvertime(String recordId) async =>
+      (await _api.dio.post<Map<String, dynamic>>(
+        '/owner/attendance-records/$recordId/overtime/approve',
+      ))
+          .data!;
+
+  Future<Map<String, dynamic>> rejectOvertime(String recordId) async =>
+      (await _api.dio.post<Map<String, dynamic>>(
+        '/owner/attendance-records/$recordId/overtime/reject',
       ))
           .data!;
 
@@ -280,9 +325,52 @@ class OwnerRepository {
       ))
           .data!;
 
+  Future<Map<String, dynamic>> resolveHistoricalRate({
+    required String recordId,
+    required String payBasis,
+    double? dailyRate,
+    double? hourlyRate,
+    double? monthlySalary,
+  }) async =>
+      (await _api.dio.post<Map<String, dynamic>>(
+        '/owner/attendance-records/$recordId/historical-rate',
+        data: {
+          'pay_basis': payBasis,
+          if (dailyRate != null) 'daily_rate': dailyRate,
+          if (hourlyRate != null) 'hourly_rate': hourlyRate,
+          if (monthlySalary != null) 'monthly_salary': monthlySalary,
+        },
+      ))
+          .data!;
+
+  Future<Map<String, dynamic>> resolveDailyWorkdayRate({
+    required String employeeId,
+    required String workDate,
+    required double dailyRate,
+  }) async =>
+      (await _api.dio.post<Map<String, dynamic>>(
+        '/owner/daily-workday-historical-rate',
+        data: {
+          'employee_id': employeeId,
+          'work_date': workDate,
+          'daily_rate': dailyRate,
+        },
+      ))
+          .data!;
+
   Future<Map<String, dynamic>> payroll({DateTime? asOf}) async =>
       (await _api.dio.get<Map<String, dynamic>>(
         '/owner/reports/payroll',
+        queryParameters: {
+          if (asOf != null) 'as_of': _date(asOf),
+        },
+      ))
+          .data!;
+
+  /// Pay-period shift/attendance history from authoritative payslip day rows.
+  Future<Map<String, dynamic>> shiftHistory({DateTime? asOf}) async =>
+      (await _api.dio.get<Map<String, dynamic>>(
+        '/owner/reports/shift-history',
         queryParameters: {
           if (asOf != null) 'as_of': _date(asOf),
         },
@@ -392,15 +480,22 @@ class OwnerRepository {
   Future<List<Map<String, dynamic>>> shifts() async =>
       _list(await _api.dio.get<List<dynamic>>('/shifts'));
 
-  Future<List<Map<String, dynamic>>> holidays() async =>
-      _list(await _api.dio.get<List<dynamic>>('/holidays'));
+  Future<List<Map<String, dynamic>>> holidays({
+    bool includeInactive = false,
+  }) async =>
+      _list(
+        await _api.dio.get<List<dynamic>>(
+          '/holidays',
+          queryParameters:
+              includeInactive ? {'include_inactive': true} : null,
+        ),
+      );
 
   Future<Map<String, dynamic>> assignSchedule({
     required String shiftId,
     required String workDate,
     required List<String> employeeIds,
     bool isRestDayWork = false,
-    bool overrideLeave = false,
   }) async =>
       (await _api.dio.post<Map<String, dynamic>>(
         '/schedules/assign',
@@ -409,7 +504,6 @@ class OwnerRepository {
           'work_date': workDate,
           'employee_ids': employeeIds,
           'is_rest_day_work': isRestDayWork,
-          if (overrideLeave) 'override_leave': true,
         },
         options: Options(headers: _mobileHeaders),
       ))
@@ -420,7 +514,6 @@ class OwnerRepository {
     required String shiftId,
     required String workDate,
     bool? isRestDayWork,
-    bool overrideLeave = false,
   }) async =>
       (await _api.dio.put<Map<String, dynamic>>(
         '/schedules/assignments/$assignmentId',
@@ -428,7 +521,6 @@ class OwnerRepository {
           'shift_id': shiftId,
           'work_date': workDate,
           if (isRestDayWork != null) 'is_rest_day_work': isRestDayWork,
-          'override_leave': overrideLeave,
         },
       ))
           .data!;
@@ -563,18 +655,50 @@ class OwnerRepository {
 
   Future<Map<String, dynamic>> createPosition({
     required String title,
-    required double dailyRate,
+    required String employmentType,
+    String? payBasis,
+    double? dailyRate,
     double? hourlyRate,
+    List<Map<String, dynamic>>? payConfigs,
     String? description,
   }) async =>
       (await _api.dio.post<Map<String, dynamic>>(
         '/positions',
         data: {
           'title': title,
-          'daily_rate': dailyRate,
+          'employment_type': employmentType,
+          if (payConfigs != null) 'pay_configs': payConfigs,
+          if (payBasis != null) 'pay_basis': payBasis,
+          if (dailyRate != null) 'daily_rate': dailyRate,
           if (hourlyRate != null) 'hourly_rate': hourlyRate,
           if (description != null && description.isNotEmpty)
             'description': description,
+        },
+      ))
+          .data!;
+
+  Future<Map<String, dynamic>> updatePosition({
+    required String positionId,
+    String? title,
+    String? employmentType,
+    String? payBasis,
+    double? dailyRate,
+    double? hourlyRate,
+    List<Map<String, dynamic>>? payConfigs,
+    String? description,
+    bool? isActive,
+  }) async =>
+      (await _api.dio.put<Map<String, dynamic>>(
+        '/positions/$positionId',
+        data: {
+          if (title != null) 'title': title,
+          if (employmentType != null) 'employment_type': employmentType,
+          if (payConfigs != null) 'pay_configs': payConfigs,
+          if (payBasis != null) 'pay_basis': payBasis,
+          if (dailyRate != null) 'daily_rate': dailyRate,
+          if (hourlyRate != null) 'hourly_rate': hourlyRate,
+          if (description != null) 'description': description,
+          if (isActive != null) 'is_active': isActive,
         },
       ))
           .data!;
@@ -626,6 +750,70 @@ class OwnerRepository {
       (await _api.dio.put<Map<String, dynamic>>(
         '/businesses/me/leave-policy',
         data: payload,
+      ))
+          .data!;
+
+  Future<Map<String, dynamic>> leaveAllowances({required int year}) async =>
+      (await _api.dio.get<Map<String, dynamic>>(
+        '/businesses/me/leave-policy/allowances',
+        queryParameters: {'year': year},
+      ))
+          .data!;
+
+  Future<Map<String, dynamic>> updateLeaveAllowances(
+    Map<String, dynamic> payload,
+  ) async =>
+      (await _api.dio.put<Map<String, dynamic>>(
+        '/businesses/me/leave-policy/allowances',
+        data: payload,
+      ))
+          .data!;
+
+  Future<Map<String, dynamic>> businessLegalSettings() async =>
+      (await _api.dio.get<Map<String, dynamic>>('/businesses/me/legal')).data!;
+
+  Future<Map<String, dynamic>> updateBusinessLegalSettings(
+    Map<String, dynamic> payload,
+  ) async =>
+      (await _api.dio.put<Map<String, dynamic>>(
+        '/businesses/me/legal',
+        data: payload,
+      ))
+          .data!;
+
+  Future<Map<String, dynamic>> consentCatalog() async =>
+      (await _api.dio.get<Map<String, dynamic>>('/businesses/me/consents'))
+          .data!;
+
+  Future<Map<String, dynamic>> createConsentDocument(
+    Map<String, dynamic> payload,
+  ) async =>
+      (await _api.dio.post<Map<String, dynamic>>(
+        '/businesses/me/consents',
+        data: payload,
+      ))
+          .data!;
+
+  Future<Map<String, dynamic>> updateConsentDocument(
+    String documentId,
+    Map<String, dynamic> payload,
+  ) async =>
+      (await _api.dio.patch<Map<String, dynamic>>(
+        '/businesses/me/consents/$documentId',
+        data: payload,
+      ))
+          .data!;
+
+  Future<void> deleteConsentDocument(String documentId) async {
+    await _api.dio.delete<void>('/businesses/me/consents/$documentId');
+  }
+
+  Future<Map<String, dynamic>> reorderConsentDocuments(
+    List<String> orderedIds,
+  ) async =>
+      (await _api.dio.post<Map<String, dynamic>>(
+        '/businesses/me/consents/reorder',
+        data: {'ordered_ids': orderedIds},
       ))
           .data!;
 
@@ -720,7 +908,7 @@ class OwnerRepository {
       (await _api.dio.get<Map<String, dynamic>>(
         '/registrations/by-email/${Uri.encodeComponent(email.trim())}',
       ))
-          .data!;
+            .data!;
 
   Future<void> uploadRegistrationDocument(
     String registrationId,

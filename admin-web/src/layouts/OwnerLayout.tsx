@@ -41,6 +41,13 @@ const ownerNavIcons: Record<string, LucideIcon> = {
   Help: CircleHelp,
 };
 
+/** Shared visual treatment for all sidebar clickables (nav, profile, logout). */
+const ownerSidebarItemClass =
+  "group flex h-10 w-full items-center gap-3 rounded-xl px-3 text-[14px] font-medium text-white/70 transition hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35 focus-visible:ring-offset-0";
+
+const ownerSidebarIconWellClass =
+  "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/5 transition group-hover:bg-white/10";
+
 export function OwnerLayout() {
   const navigate = useNavigate();
   const qc = useQueryClient();
@@ -62,9 +69,6 @@ export function OwnerLayout() {
   const profileActive =
     pathname === "/owner/profile" || pathname.startsWith("/owner/profile/");
 
-  const isDashboard =
-    pathname === "/owner/dashboard" || pathname === "/owner";
-
   useEffect(() => {
     mainScrollRef.current?.scrollTo({ top: 0 });
   }, [pathname, search]);
@@ -78,7 +82,7 @@ export function OwnerLayout() {
   return (
     <div className="owner-shell font-sans flex h-full flex-col text-[#1F2937]">
       <aside
-        className="relative flex max-h-[42vh] w-full shrink-0 flex-col text-white lg:fixed lg:inset-y-0 lg:z-30 lg:max-h-none lg:w-64"
+        className="relative flex max-h-56 w-full shrink-0 flex-col text-white lg:fixed lg:inset-y-0 lg:z-30 lg:max-h-none lg:w-64"
         style={{ backgroundColor: sidebarColor }}
       >
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.12),transparent_42%)]" />
@@ -109,10 +113,10 @@ export function OwnerLayout() {
         </div>
 
         <nav className="relative flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden px-3 py-4">
-          <p className="mb-2 px-3 text-[10px] font-medium uppercase tracking-[0.16em] text-white/40">
+          <p className="mb-2.5 px-3 text-[10px] font-medium uppercase tracking-[0.16em] text-white/40">
             Menu
           </p>
-          <div className="space-y-1">
+          <div className="space-y-1.5">
             {ownerNavItems.map((item) => {
               const active = isOwnerNavItemActive(
                 pathname,
@@ -127,8 +131,7 @@ export function OwnerLayout() {
                   to={item.to}
                   aria-current={active ? "page" : undefined}
                   className={cn(
-                    "group flex h-10 items-center gap-3 rounded-xl px-3 text-[14.5px] font-medium text-white/70 transition",
-                    "hover:bg-white/10 hover:text-white",
+                    ownerSidebarItemClass,
                     active &&
                       "text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]"
                   )}
@@ -136,14 +139,13 @@ export function OwnerLayout() {
                 >
                   <span
                     className={cn(
-                      "flex h-8 w-8 items-center justify-center rounded-lg bg-white/5 transition",
-                      active && "bg-white/15",
-                      !active && "group-hover:bg-white/10"
+                      ownerSidebarIconWellClass,
+                      active && "bg-white/15 group-hover:bg-white/15"
                     )}
                   >
                     <Icon className="h-4 w-4 shrink-0" strokeWidth={2} />
                   </span>
-                  <span className="truncate">
+                  <span className="min-w-0 flex-1 truncate text-left leading-none">
                     {item.label === "Payroll" && sessionIsDemo(me)
                       ? "Sample Payroll"
                       : item.label}
@@ -153,11 +155,13 @@ export function OwnerLayout() {
             })}
           </div>
 
-          <div className="mt-auto space-y-3 px-1 pb-5 pt-6">
+          <div className="mt-auto space-y-1.5 border-t border-white/10 px-0 pb-5 pt-4">
             <button
               className={cn(
-                "flex w-full items-center gap-3 rounded-xl bg-white/10 p-3 text-left transition hover:bg-white/15",
-                profileActive && "ring-1 ring-white/25"
+                ownerSidebarItemClass,
+                "h-auto min-h-10 py-2 text-left",
+                profileActive &&
+                  "bg-white/10 text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]"
               )}
               onClick={() => navigate("/owner/profile")}
               type="button"
@@ -165,31 +169,35 @@ export function OwnerLayout() {
             >
               {ownerProfileImage ? (
                 <img
-                  className="h-9 w-9 rounded-full object-cover ring-2 ring-white/20"
+                  className="h-8 w-8 shrink-0 rounded-lg object-cover ring-1 ring-white/20"
                   src={ownerProfileImage}
                   alt={me?.full_name ?? "Owner profile"}
                 />
               ) : (
-                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-white/20 text-sm font-semibold text-white">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/15 text-[12px] font-semibold text-white">
                   {(me?.full_name ?? "O").slice(0, 1).toUpperCase()}
                 </div>
               )}
-              <div className="min-w-0">
-                <p className="truncate text-sm font-medium text-white">
+              <span className="min-w-0 flex-1 truncate leading-none">
+                <span className="block truncate text-[14px] font-medium text-white">
                   {me?.full_name ?? "Owner"}
-                </p>
-                <p className="text-xs font-medium text-white/55">View profile</p>
-              </div>
+                </span>
+                <span className="mt-0.5 block truncate text-[11px] font-medium text-white/55">
+                  View profile
+                </span>
+              </span>
             </button>
             <button
-              className="flex h-10 w-full items-center gap-3 rounded-xl px-3 text-[14.5px] font-medium text-white/70 transition hover:bg-white/10 hover:text-white"
+              className={ownerSidebarItemClass}
               onClick={() => setSignOutOpen(true)}
               type="button"
             >
-              <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/5">
-                <LogOut className="h-4 w-4" strokeWidth={2} />
+              <span className={ownerSidebarIconWellClass}>
+                <LogOut className="h-4 w-4 shrink-0" strokeWidth={2} />
               </span>
-              Log Out
+              <span className="min-w-0 flex-1 truncate text-left leading-none">
+                Log Out
+              </span>
             </button>
           </div>
         </nav>
@@ -205,7 +213,7 @@ export function OwnerLayout() {
         <TenantModeBanner />
         <div
           ref={mainScrollRef}
-          className={cn("owner-main-scroll", isDashboard && "owner-dashboard-scroll")}
+          className="owner-main-scroll"
         >
           <Outlet />
         </div>

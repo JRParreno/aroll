@@ -295,7 +295,7 @@ export function BusinessLocationSetup({
   return (
     <div className={cn("min-w-0 space-y-5", className)}>
       {isManager ? (
-        <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-slate-800">
+        <div className="rounded-xl border border-[color-mix(in_srgb,var(--owner-accent)_28%,white)] bg-[var(--owner-well)] px-4 py-3 text-sm text-slate-800">
           Only the business owner can update the business location.
         </div>
       ) : null}
@@ -306,7 +306,7 @@ export function BusinessLocationSetup({
 
       <div
         className={cn(
-          "overflow-hidden rounded-2xl border border-slate-200 shadow-sm",
+          "owner-card overflow-hidden",
           mapHeightClassName
         )}
       >
@@ -325,7 +325,7 @@ export function BusinessLocationSetup({
         />
       </div>
 
-      <div className="space-y-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+      <div className="owner-panel space-y-5 sm:p-6">
         <div>
           <h2 className="owner-section-title">
             Add Business Address
@@ -384,7 +384,7 @@ export function BusinessLocationSetup({
 
           {!isManager ? (
             <button
-              className="inline-flex items-center gap-2 text-sm font-semibold text-[#1F456B] hover:underline disabled:opacity-60"
+              className="inline-flex items-center gap-2 text-sm font-semibold text-[var(--owner-navy)] hover:underline disabled:opacity-60"
               disabled={locating}
               onClick={useCurrentLocation}
               type="button"
@@ -405,7 +405,7 @@ export function BusinessLocationSetup({
             </span>
           </div>
           <input
-            className="w-full accent-[#1F456B] disabled:opacity-50"
+            className="w-full accent-[var(--owner-accent)] disabled:opacity-50"
             disabled={isManager}
             max={MAX_GEOFENCE_RADIUS_M}
             min={MIN_GEOFENCE_RADIUS_M}
@@ -434,7 +434,7 @@ export function BusinessLocationSetup({
 
         <div className="flex flex-col-reverse gap-3 pt-1 sm:flex-row">
           <Button
-            className="h-12 flex-1 rounded-xl bg-[#B9D8EE] text-white hover:bg-[#A9CCE6]"
+            className="h-12 flex-1 rounded-xl border-[color-mix(in_srgb,var(--owner-accent)_35%,white)] bg-[var(--owner-well)] text-[var(--owner-navy)] hover:bg-[color-mix(in_srgb,var(--owner-accent)_18%,white)]"
             disabled={isManager || !snapshot}
             onClick={cancelEdits}
             type="button"
@@ -443,7 +443,7 @@ export function BusinessLocationSetup({
             Cancel
           </Button>
           <Button
-            className="h-12 flex-1 rounded-xl bg-[#1F456B] text-white hover:bg-[#17395D]"
+            className="h-12 flex-1 rounded-xl bg-[var(--owner-button)] text-white hover:bg-[var(--owner-navy-soft)]"
             disabled={!canSave}
             onClick={() => save.mutate()}
             type="button"

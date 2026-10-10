@@ -205,7 +205,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                   Expanded(
                                     child: _QuickActionCard(
                                       icon: Icons.center_focus_strong_rounded,
-                                      label: ' Attendance',
+                                      label: 'Attendance',
                                       helper: widget.session.isDemo
                                           ? 'Demo identity · fictional location'
                                           : 'Face & GPS check',
@@ -330,27 +330,34 @@ class _DashboardHeader extends StatelessWidget {
           ),
           child: Row(
             children: [
-              Container(
-                width: 58,
-                height: 58,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.85),
-                    width: 2.5,
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.12),
-                      blurRadius: 8,
-                      offset: const Offset(0, 3),
+              Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  customBorder: const CircleBorder(),
+                  onTap: () => context.push('/profile'),
+                  child: Container(
+                    width: 58,
+                    height: 58,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.85),
+                        width: 2.5,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.12),
+                          blurRadius: 8,
+                          offset: const Offset(0, 3),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
-                child: EmployeeAvatar(
-                  imageUrl: avatarUrl,
-                  name: profile.fullName,
-                  size: 53,
+                    child: EmployeeAvatar(
+                      imageUrl: avatarUrl,
+                      name: profile.fullName,
+                      size: 53,
+                    ),
+                  ),
                 ),
               ),
               const SizedBox(width: 14),
@@ -393,21 +400,31 @@ class _DashboardHeader extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 8),
-              Container(
-                width: 46,
-                height: 46,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.85),
+              Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  customBorder: const CircleBorder(),
+                  onTap: () => context.push(
+                    '/business-details',
+                    extra: profile,
                   ),
-                ),
-                clipBehavior: Clip.antiAlias,
-                child: BusinessLogo(
-                  logoUrl: profile.branding?.logoUrl,
-                  height: 46,
-                  width: 46,
+                  child: Container(
+                    width: 46,
+                    height: 46,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.85),
+                      ),
+                    ),
+                    clipBehavior: Clip.antiAlias,
+                    child: BusinessLogo(
+                      logoUrl: profile.branding?.logoUrl,
+                      height: 46,
+                      width: 46,
+                    ),
+                  ),
                 ),
               ),
             ],
@@ -863,7 +880,7 @@ class _SalaryCard extends StatelessWidget {
                 sample ? 'Sample net pay' : 'Current Salary',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: TextStyle(
+                style: const TextStyle(
                   fontWeight: FontWeight.w700,
                   fontSize: 12.5,
                   height: 1.2,
@@ -874,7 +891,7 @@ class _SalaryCard extends StatelessWidget {
               Text(
                 sample ? 'View sample payslip' : 'View payslip',
                 maxLines: 1,
-                style: TextStyle(
+                style: const TextStyle(
                   color: EmployeeColors.textMuted,
                   fontSize: 10.5,
                 ),

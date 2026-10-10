@@ -1,7 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Library, MoreHorizontal } from "lucide-react";
+import { Library, MoreHorizontal, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+import { ConfirmActionDialog } from "@/components/ConfirmActionDialog";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -182,8 +183,8 @@ export function ScheduleReusePanel({
           onClick={() => setOpen((value) => !value)}
           className={`inline-flex h-10 w-10 items-center justify-center rounded-xl border transition ${
             open
-              ? "border-[#1E3A5F] bg-[#1E3A5F] text-white"
-              : "border-slate-200 bg-white text-[#1E3A5F] hover:bg-[#F3F6F9]"
+              ? "border-[var(--owner-navy)] bg-[var(--owner-button)] text-white"
+              : "border-slate-200 bg-white text-[var(--owner-navy)] hover:bg-[#F3F6F9]"
           }`}
         >
           <Library className="h-4 w-4" />
@@ -192,7 +193,7 @@ export function ScheduleReusePanel({
         {open && (
           <div className="absolute right-0 top-[calc(100%+0.5rem)] z-40 w-[min(20rem,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl">
             <div className="flex items-start gap-3 border-b border-slate-100 px-4 py-3">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#E7EEF5] text-[#1E466E]">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[var(--owner-well)] text-[var(--owner-navy)]">
                 <Library className="h-4 w-4" />
               </div>
               <div>
@@ -206,7 +207,7 @@ export function ScheduleReusePanel({
             </div>
 
             {suggestPrevious && (
-              <div className="mx-3 mt-3 rounded-xl bg-[#E7EEF5] px-3 py-2 text-xs text-[#1E3A5F]">
+              <div className="mx-3 mt-3 rounded-xl bg-[var(--owner-well)] px-3 py-2 text-xs text-[var(--owner-navy)]">
                 Tip: this week is empty. Copy last week to get started.
               </div>
             )}
@@ -339,41 +340,24 @@ export function ScheduleReusePanel({
         )}
       </div>
 
-      <Dialog
+      <ConfirmActionDialog
         open={Boolean(templateToDelete)}
         onOpenChange={(open) => {
           if (!open && !deleteMutation.isPending) setTemplateToDelete(null);
         }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Delete template</DialogTitle>
-          </DialogHeader>
-          <p className="text-sm text-[#6B7280]">
-            {`Are you sure you want to delete "${templateToDelete?.name ?? "this template"}"? This cannot be undone.`}
-          </p>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setTemplateToDelete(null)}
-              disabled={deleteMutation.isPending}
-            >
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              disabled={!templateToDelete || deleteMutation.isPending}
-              onClick={() => {
-                if (templateToDelete) {
-                  deleteMutation.mutate(templateToDelete.id);
-                }
-              }}
-            >
-              Delete
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        icon={<Trash2 className="h-5 w-5" strokeWidth={2.25} aria-hidden />}
+        title="Delete template"
+        description={`Are you sure you want to delete "${templateToDelete?.name ?? "this template"}"? This cannot be undone.`}
+        confirmLabel="Delete"
+        tone="danger"
+        cancelDisabled={deleteMutation.isPending}
+        confirmDisabled={!templateToDelete || deleteMutation.isPending}
+        onConfirm={() => {
+          if (templateToDelete) {
+            deleteMutation.mutate(templateToDelete.id);
+          }
+        }}
+      />
 
       <Dialog open={saveOpen} onOpenChange={setSaveOpen}>
         <DialogContent>
@@ -393,7 +377,7 @@ export function ScheduleReusePanel({
               Cancel
             </Button>
             <Button
-              className="bg-[#1E3A5F] hover:bg-[#284B73]"
+              className="bg-[var(--owner-button)] hover:bg-[var(--owner-navy-soft)]"
               disabled={!templateName.trim() || saveTemplateMutation.isPending}
               onClick={() => saveTemplateMutation.mutate()}
             >
@@ -460,7 +444,7 @@ export function ScheduleReusePanel({
                         variant={conflictMode === "merge" ? "default" : "outline"}
                         className={
                           conflictMode === "merge"
-                            ? "bg-[#1E3A5F] hover:bg-[#284B73]"
+                            ? "bg-[var(--owner-button)] hover:bg-[var(--owner-navy-soft)]"
                             : ""
                         }
                         onClick={() => setConflictMode("merge")}
@@ -472,7 +456,7 @@ export function ScheduleReusePanel({
                         variant={conflictMode === "replace" ? "default" : "outline"}
                         className={
                           conflictMode === "replace"
-                            ? "bg-[#1E3A5F] hover:bg-[#284B73]"
+                            ? "bg-[var(--owner-button)] hover:bg-[var(--owner-navy-soft)]"
                             : ""
                         }
                         onClick={() => setConflictMode("replace")}
@@ -542,7 +526,7 @@ export function ScheduleReusePanel({
               Cancel
             </Button>
             <Button
-              className="bg-[#1E3A5F] hover:bg-[#284B73]"
+              className="bg-[var(--owner-button)] hover:bg-[var(--owner-navy-soft)]"
               disabled={!pendingSource || applyMutation.isPending}
               onClick={() => {
                 if (!pendingSource) return;

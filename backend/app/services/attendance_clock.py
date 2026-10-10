@@ -924,6 +924,26 @@ def clock_out_employee(
         if now_local < scheduled_end:
             early_out_minutes = (scheduled_end - now_local).total_seconds() / 60.0
 
+    from app.services.ot_approval import sync_ot_approval_after_close
+
+    sync_ot_approval_after_close(
+        db,
+        record,
+        assignment=assignment,
+        shift=shift,
+        business_timezone=business_timezone or "Asia/Manila",
+        force_rereview=True,
+    )
+
+    from app.models.payroll import Position
+    from app.services.employee_pay import stamp_attendance_completion_pay
+
+    position = (
+        db.get(Position, employee.position_id) if employee.position_id else None
+    )
+    stamp_attendance_completion_pay(record, employee, position=position)
+    db.flush()
+
     db.commit()
     db.refresh(record)
 
@@ -952,6 +972,8 @@ def clock_out_employee(
         message = f"{message} Face match score: {face_match_score:.3f}."
     if liveness_passed is True:
         message = f"{message} Liveness passed."
+    if getattr(record, "ot_approval_status", None) is not None:
+        message = f"{message} Overtime awaiting approval."
 
     return {
         "id": str(record.id),
@@ -961,6 +983,11 @@ def clock_out_employee(
         "geofence": geofence,
         "shift_name": shift_name,
         "message": message,
+        "ot_approval_status": (
+            record.ot_approval_status.value
+            if getattr(record, "ot_approval_status", None) is not None
+            else None
+        ),
         "face_match_score": (
             float(record.face_match_score)
             if record.face_match_score is not None

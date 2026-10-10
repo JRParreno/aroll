@@ -17,6 +17,7 @@ from app.models.user import User
 from app.models.business import Business
 from app.schemas.owner_performance import (
     EmployeePerformanceItem,
+    OwnerPerformanceEventItem,
     OwnerPerformanceResponse,
     OwnerPerformanceSummary,
     OwnerPerformanceTrendItem,
@@ -68,11 +69,13 @@ def get_owner_performance(
     days: Annotated[int, Query(ge=1, le=366)] = 30,
     year: Annotated[int | None, Query(ge=2000, le=2100)] = None,
     month: Annotated[int | None, Query(ge=1, le=12)] = None,
+    period: Annotated[str | None, Query()] = None,
 ):
     """Owner attendance performance analytics.
 
-    Prefer ``year`` + ``month`` for a calendar-month window.
-    When omitted, fall back to a rolling ``days`` window (Owner Dashboard default).
+    Prefer ``period`` = ``week`` | ``month`` | ``year`` for calendar windows
+    relative to business today. Prefer ``year`` + ``month`` for an explicit
+    calendar month. When omitted, fall back to a rolling ``days`` window.
     """
     if user.business_id is None:
         raise HTTPException(400, "No business context")
@@ -86,7 +89,18 @@ def get_owner_performance(
     )
 
     today = business_today(tz_name)
-    if year is not None and month is not None:
+    period_key = (period or "").strip().lower()
+    if period_key == "week":
+        # Monday–Sunday of the current business week (capped at today).
+        start_date = today - timedelta(days=today.weekday())
+        end_date = min(start_date + timedelta(days=6), today)
+    elif period_key == "month":
+        start_date = date(today.year, today.month, 1)
+        end_date = today
+    elif period_key == "year":
+        start_date = date(today.year, 1, 1)
+        end_date = today
+    elif year is not None and month is not None:
         start_date = date(year, month, 1)
         if month == 12:
             month_end = date(year + 1, 1, 1) - timedelta(days=1)
@@ -121,6 +135,7 @@ def get_owner_performance(
         .order_by(Employee.full_name)
         .all()
     )
+    employees_by_id = {employee.id: employee for employee in employees}
 
     if start_date > end_date:
         return OwnerPerformanceResponse(
@@ -140,6 +155,7 @@ def get_owner_performance(
             ),
             trend=[],
             employees=[],
+            events=[],
         )
 
     assignments = (
@@ -182,6 +198,25 @@ def get_owner_performance(
         }
     )
     trend = defaultdict(lambda: {"on_time": 0, "late": 0, "undertime": 0, "overtime": 0, "absent": 0})
+    events: list[OwnerPerformanceEventItem] = []
+
+    def _append_event(
+        *,
+        category: str,
+        assignment: ShiftAssignment,
+        record: AttendanceRecord | None,
+    ) -> None:
+        employee = employees_by_id.get(assignment.employee_id)
+        events.append(
+            OwnerPerformanceEventItem(
+                category=category,
+                employee_id=str(assignment.employee_id),
+                full_name=employee.full_name if employee is not None else "Employee",
+                work_date=assignment.work_date,
+                time_in=record.time_in if record is not None else None,
+                time_out=record.time_out if record is not None else None,
+            )
+        )
 
     for assignment, shift in assignments:
         record = attendance_by_assignment.get(assignment.id)
@@ -211,6 +246,7 @@ def get_owner_performance(
         if not has_time_in or record.status == AttendanceStatus.absent:
             employee_stat["absent"] += 1
             trend[label]["absent"] += 1
+            _append_event(category="absent", assignment=assignment, record=record)
             continue
 
         employee_stat["attended"] += 1
@@ -221,9 +257,11 @@ def get_owner_performance(
         if time_in_local <= scheduled_start + timedelta(minutes=grace_minutes):
             employee_stat["on_time"] += 1
             trend[label]["on_time"] += 1
+            _append_event(category="on_time", assignment=assignment, record=record)
         else:
             employee_stat["late"] += 1
             trend[label]["late"] += 1
+            _append_event(category="late", assignment=assignment, record=record)
 
         if record.time_out is not None:
             employee_stat["completed"] += 1
@@ -231,11 +269,17 @@ def get_owner_performance(
             if time_out < scheduled_end:
                 employee_stat["undertime"] += 1
                 trend[label]["undertime"] += 1
+                _append_event(
+                    category="undertime", assignment=assignment, record=record
+                )
             overtime_minutes = max((time_out - scheduled_end).total_seconds() / 60, 0)
             if overtime_minutes >= overtime_minimum:
                 employee_stat["overtime_minutes"] += overtime_minutes
                 employee_stat["overtime_shifts"] += 1
                 trend[label]["overtime"] += 1
+                _append_event(
+                    category="overtime", assignment=assignment, record=record
+                )
 
     employee_items: list[EmployeePerformanceItem] = []
     for employee in employees:
@@ -279,6 +323,7 @@ def get_owner_performance(
         )
 
     employee_items.sort(key=lambda item: item.full_name.lower())
+    events.sort(key=lambda item: (item.work_date, item.full_name.lower()))
 
     total_assigned = sum(int(item["assigned"]) for item in stats.values())
     total_attended = sum(int(item["attended"]) for item in stats.values())
@@ -323,4 +368,5 @@ def get_owner_performance(
         ),
         trend=trend_items,
         employees=employee_items,
+        events=events,
     )

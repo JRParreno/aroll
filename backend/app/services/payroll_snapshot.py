@@ -132,6 +132,10 @@ def build_calculation_config_json(db: Session, business_id: uuid.UUID) -> dict:
         "overtime_per_minute": _optional_float(
             getattr(config, "overtime_per_minute", None) if config is not None else None
         ),
+        "overtime_approval_required": bool(
+            config is not None
+            and getattr(config, "overtime_approval_required", False)
+        ),
         "overtime_minimum_minutes": getattr(
             att_policy, "overtime_minimum_minutes", None
         )

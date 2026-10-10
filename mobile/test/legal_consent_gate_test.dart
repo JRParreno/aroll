@@ -1,5 +1,8 @@
 import 'package:aroll_mobile/core/app_state.dart';
 import 'package:aroll_mobile/core/di/injection.dart';
+import 'package:aroll_mobile/core/legal/consent_sync.dart';
+import 'package:aroll_mobile/core/legal/employee_gate_loader.dart';
+import 'package:aroll_mobile/core/legal/privacy_preferences.dart';
 import 'package:aroll_mobile/core/router/app_router.dart';
 import 'package:aroll_mobile/domain/entities/legal_consent.dart';
 import 'package:aroll_mobile/domain/entities/user_session.dart';
@@ -13,9 +16,11 @@ void main() {
     bool demo = false,
     bool mustChange = false,
     bool? consentsCompleted,
+    bool? permissionsOnboardingCompleted,
+    String userId = 'u1',
   }) {
     return UserSession(
-      userId: 'u1',
+      userId: userId,
       employeeId: 'e1',
       businessId: 'b1',
       fullName: 'Casey',
@@ -26,6 +31,7 @@ void main() {
       mustChangePassword: mustChange,
       isDemo: demo,
       consentsCompleted: consentsCompleted,
+      permissionsOnboardingCompleted: permissionsOnboardingCompleted,
     );
   }
 
@@ -62,6 +68,19 @@ void main() {
     expect(resolveAuthenticatedRoute(appState), '/home');
   });
 
+  test('existing completed consent skips Terms gate', () {
+    final appState = AppState()
+      ..setSession(employee(consentsCompleted: true), mustChange: false)
+      ..setConsentStatus(
+        legalSatisfied: true,
+        biometricSatisfied: true,
+        consentsCompleted: true,
+      )
+      ..setPermissionsIntroSeen(true)
+      ..setFaceEnrolled(true);
+    expect(resolveAuthenticatedRoute(appState), '/home');
+  });
+
   test('pendingRequiredConsents keeps required unaccepted docs by position', () {
     final pending = pendingRequiredConsents([
       const ConsentDocumentItem(
@@ -92,7 +111,201 @@ void main() {
     expect(pending.map((item) => item.id).toList(), ['b']);
   });
 
-  testWidgets('WebView accept flow calls per-document accept API', (tester) async {
+  test('ConsentDocumentItem parses accepted_at and accepted_version', () {
+    final item = ConsentDocumentItem.fromJson({
+      'id': 'doc-1',
+      'title': 'Terms',
+      'position': 1,
+      'url': '/page',
+      'required': true,
+      'accepted': true,
+      'version': 'v2',
+      'accepted_version': 'v2',
+      'accepted_at': '2026-09-18T10:15:00Z',
+    });
+    expect(item.acceptedVersion, 'v2');
+    expect(item.acceptedAt, isNotNull);
+    expect(item.acceptedAt!.toUtc().year, 2026);
+  });
+
+  test('consent sync soft-fails without wiping known-good completed state', () async {
+    final appState = AppState()
+      ..setSession(employee(consentsCompleted: true), mustChange: false)
+      ..setConsentStatus(
+        legalSatisfied: true,
+        biometricSatisfied: true,
+        consentsCompleted: true,
+      );
+    final repo = _FailingConsentRepository();
+    await syncEmployeeConsentGate(appState, repo);
+    expect(appState.consentsCompleted, isTrue);
+    expect(
+      resolveAuthenticatedRoute(
+        appState
+          ..setPermissionsIntroSeen(true)
+          ..setFaceEnrolled(true),
+      ),
+      '/home',
+    );
+  });
+
+  test('consent sync marks incomplete when GET fails and no known-good state',
+      () async {
+    final appState = AppState()
+      ..setSession(employee(consentsCompleted: false), mustChange: false);
+    final repo = _FailingConsentRepository();
+    await syncEmployeeConsentGate(appState, repo);
+    expect(appState.consentsCompleted, isFalse);
+    expect(resolveAuthenticatedRoute(appState), '/consents');
+  });
+
+  test('permission onboarding is account-scoped across account switch', () async {
+    final prefs = _MemoryPrivacyPreferences();
+    final accountA = employee(
+      userId: 'user-a',
+      permissionsOnboardingCompleted: false,
+    );
+    final accountB = employee(
+      userId: 'user-b',
+      permissionsOnboardingCompleted: false,
+    );
+
+    expect(
+      await shouldShowPermissionsOnboarding(
+        session: accountA,
+        preferences: prefs,
+        accountCompletedFromServer: false,
+      ),
+      isTrue,
+    );
+
+    await prefs.markAccountOnboardingCompleted('user-a');
+
+    expect(
+      await shouldShowPermissionsOnboarding(
+        session: accountA,
+        preferences: prefs,
+        accountCompletedFromServer: true,
+      ),
+      isFalse,
+    );
+
+    // Same device, different account — must not inherit A's state.
+    expect(
+      await shouldShowPermissionsOnboarding(
+        session: accountB,
+        preferences: prefs,
+        accountCompletedFromServer: false,
+      ),
+      isTrue,
+    );
+  });
+
+  test('completed account skips intro even when OS permissions missing',
+      () async {
+    final prefs = _MemoryPrivacyPreferences();
+    final accountA = employee(
+      userId: 'user-a',
+      permissionsOnboardingCompleted: true,
+    );
+
+    // Server says completed on a new device with missing OS grants —
+    // do not replay the introductory onboarding.
+    expect(
+      await shouldShowPermissionsOnboarding(
+        session: accountA,
+        preferences: prefs,
+        accountCompletedFromServer: true,
+      ),
+      isFalse,
+    );
+
+    // Local cache alone is enough when server flag is present in session.
+    expect(
+      await shouldShowPermissionsOnboarding(
+        session: accountA,
+        preferences: prefs,
+        accountCompletedFromServer: true,
+      ),
+      isFalse,
+    );
+  });
+
+  test('incomplete account still shows intro when only another account completed',
+      () async {
+    final prefs = _MemoryPrivacyPreferences();
+    await prefs.markAccountOnboardingCompleted('user-a');
+
+    // Account B has not completed App Permission onboarding — must show intro
+    // even if another account completed it on the same device.
+    expect(
+      await shouldShowPermissionsOnboarding(
+        session: employee(
+          userId: 'user-b',
+          permissionsOnboardingCompleted: false,
+        ),
+        preferences: prefs,
+        accountCompletedFromServer: false,
+      ),
+      isTrue,
+    );
+  });
+
+  test('incomplete account shows intro regardless of unrelated completion flags',
+      () async {
+    final prefs = _MemoryPrivacyPreferences();
+    // Consent/face/account existence are irrelevant; only App Permission
+    // completion (server/local) controls this gate.
+    expect(
+      await shouldShowPermissionsOnboarding(
+        session: employee(
+          userId: 'brand-new',
+          permissionsOnboardingCompleted: false,
+          consentsCompleted: true,
+        ),
+        preferences: prefs,
+        accountCompletedFromServer: false,
+      ),
+      isTrue,
+    );
+  });
+
+  test('setSession honors server permissions completion before notify', () {
+    final appState = AppState()
+      ..setSession(
+        employee(permissionsOnboardingCompleted: true),
+        mustChange: false,
+      );
+    expect(appState.permissionsIntroSeen, isTrue);
+
+    final pending = AppState()
+      ..setSession(
+        employee(permissionsOnboardingCompleted: false),
+        mustChange: false,
+      );
+    expect(pending.permissionsIntroSeen, isFalse);
+  });
+
+  test('local account cache skips intro when server flag not yet synced',
+      () async {
+    final prefs = _MemoryPrivacyPreferences();
+    await prefs.markAccountOnboardingCompleted('user-a');
+
+    expect(
+      await shouldShowPermissionsOnboarding(
+        session: employee(
+          userId: 'user-a',
+          permissionsOnboardingCompleted: false,
+        ),
+        preferences: prefs,
+        accountCompletedFromServer: false,
+      ),
+      isFalse,
+    );
+  });
+
+  testWidgets('checkbox required before agree; accept API called after check',
+      (tester) async {
     await sl.reset();
     final appState = AppState()
       ..setSession(employee(consentsCompleted: false), mustChange: false);
@@ -107,21 +320,96 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Accept'), findsOneWidget);
+    expect(find.text('Step 1 of 1'), findsOneWidget);
+    expect(find.text('I have read and agree to these Terms.'), findsOneWidget);
+    expect(find.text('I Agree & Continue'), findsOneWidget);
+    expect(find.text("I Don't Agree"), findsOneWidget);
     expect(find.byKey(const Key('consent-preview-url')), findsOneWidget);
+    expect(
+      find.textContaining('embed=1'),
+      findsOneWidget,
+    );
 
-    await tester.tap(find.text('Accept'));
+    final continueButton = find.widgetWithText(FilledButton, 'I Agree & Continue');
+    expect(tester.widget<FilledButton>(continueButton).onPressed, isNull);
+
+    await tester.tap(find.byType(Checkbox));
+    await tester.pumpAndSettle();
+    expect(tester.widget<FilledButton>(continueButton).onPressed, isNotNull);
+
+    await tester.tap(continueButton);
     await tester.pumpAndSettle();
 
     expect(repo.acceptedIds, ['doc-1']);
+    expect(appState.consentsCompleted, isTrue);
   });
+
+  testWidgets('view consent shows minimal status metadata', (tester) async {
+    await sl.reset();
+    final appState = AppState()
+      ..setSession(employee(consentsCompleted: true), mustChange: false)
+      ..setConsentStatus(
+        legalSatisfied: true,
+        biometricSatisfied: true,
+        consentsCompleted: true,
+      );
+    sl.registerSingleton(appState);
+    final repo = _FakeConsentRepository()..seedAccepted();
+    sl.registerSingleton<EmployeeRepository>(repo);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: EmployeeConsentFlowScreen(
+          repository: repo,
+          viewOnly: true,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('Agreed'), findsOneWidget);
+    expect(find.textContaining('Required'), findsOneWidget);
+    expect(find.textContaining('Version'), findsOneWidget);
+  });
+}
+
+class _MemoryPrivacyPreferences implements PermissionsOnboardingStore {
+  final Map<String, String> _data = {};
+
+  @override
+  Future<bool> hasAccountOnboardingCompleted(String userId) async =>
+      _data['aroll_permissions_onboarding_completed_$userId'] == '1';
+
+  @override
+  Future<void> markAccountOnboardingCompleted(String userId) async {
+    _data['aroll_permissions_onboarding_completed_$userId'] = '1';
+  }
+
+  @override
+  Future<bool> hasDeviceReviewedForAccount(String userId) async =>
+      _data['aroll_permissions_device_reviewed_$userId'] == '1';
+
+  @override
+  Future<void> markDeviceReviewedForAccount(String userId) async {
+    _data['aroll_permissions_device_reviewed_$userId'] = '1';
+  }
+
+  @override
+  Future<void> clearLegacyDeviceFlag() async {}
+}
+
+class _FailingConsentRepository extends Fake implements EmployeeRepository {
+  @override
+  Future<EmployeeConsents> getConsents() async {
+    throw Exception('network');
+  }
 }
 
 class _FakeConsentRepository extends Fake implements EmployeeRepository {
   final acceptedIds = <String>[];
-  EmployeeConsents _payload = EmployeeConsents(
+  EmployeeConsents _payload = const EmployeeConsents(
     consentsCompleted: false,
-    items: const [
+    items: [
       ConsentDocumentItem(
         id: 'doc-1',
         title: 'Terms',
@@ -129,9 +417,29 @@ class _FakeConsentRepository extends Fake implements EmployeeRepository {
         url: '/api/v1/public/consents/doc-1/page',
         required: true,
         accepted: false,
+        version: 'v1',
       ),
     ],
   );
+
+  void seedAccepted() {
+    _payload = EmployeeConsents(
+      consentsCompleted: true,
+      items: [
+        ConsentDocumentItem(
+          id: 'doc-1',
+          title: 'Terms',
+          position: 1,
+          url: '/api/v1/public/consents/doc-1/page',
+          required: true,
+          accepted: true,
+          version: 'v1',
+          acceptedVersion: 'v1',
+          acceptedAt: DateTime.utc(2026, 9, 18, 10, 15),
+        ),
+      ],
+    );
+  }
 
   @override
   Future<EmployeeConsents> getConsents() async => _payload;
@@ -142,7 +450,7 @@ class _FakeConsentRepository extends Fake implements EmployeeRepository {
     String client = 'mobile',
   }) async {
     acceptedIds.add(documentId);
-    _payload = const EmployeeConsents(
+    _payload = EmployeeConsents(
       consentsCompleted: true,
       items: [
         ConsentDocumentItem(
@@ -152,9 +460,18 @@ class _FakeConsentRepository extends Fake implements EmployeeRepository {
           url: '/api/v1/public/consents/doc-1/page',
           required: true,
           accepted: true,
+          version: 'v1',
+          acceptedVersion: 'v1',
+          acceptedAt: DateTime.utc(2026, 9, 18, 10, 15),
         ),
       ],
     );
     return _payload;
   }
+
+  @override
+  Future<void> withdrawBiometricConsent({String client = 'mobile'}) async {}
+
+  @override
+  Future<void> completePermissionsOnboarding() async {}
 }

@@ -115,6 +115,14 @@ class AttendanceCorrectionStatus(str, enum.Enum):
     rejected = "rejected"
 
 
+class OvertimeApprovalStatus(str, enum.Enum):
+    """Payable OT gate when BusinessPayrollConfig.overtime_approval_required."""
+
+    pending = "pending"
+    approved = "approved"
+    rejected = "rejected"
+
+
 class ShiftType(str, enum.Enum):
     morning = "morning"
     afternoon = "afternoon"

@@ -32,6 +32,7 @@ class BrandColors extends ThemeExtension<BrandColors> {
     required this.button,
     required this.accent,
     required this.sidebar,
+    required this.saved,
   });
 
   final Color primary;
@@ -39,6 +40,23 @@ class BrandColors extends ThemeExtension<BrandColors> {
   final Color button;
   final Color accent;
   final Color sidebar;
+
+  /// True when a business theme object is present on the session.
+  /// Logged-out screens have no theme object and keep AppColors.
+  final bool saved;
+
+  /// Brand primary. Application navy when no custom palette is saved.
+  Color get tonePrimary => saved ? primary : BrandDefaults.primary;
+
+  /// Brand button / emphasis. Application navy-dark when no custom palette.
+  Color get toneButton => saved ? button : BrandDefaults.primaryDark;
+
+  /// Soft brand fill. Exact default well when no custom palette is saved.
+  Color get toneWell => saved ? iconWell : BrandDefaults.iconWell;
+
+  Color get toneSecondary => saved ? secondary : BrandDefaults.secondary;
+
+  Color get toneSidebar => saved ? sidebar : BrandDefaults.primary;
 
   static BrandColors of(BuildContext context) {
     return Theme.of(context).extension<BrandColors>() ??
@@ -48,6 +66,7 @@ class BrandColors extends ThemeExtension<BrandColors> {
           button: BrandDefaults.button,
           accent: BrandDefaults.accent,
           sidebar: BrandDefaults.primaryDark,
+          saved: false,
         );
   }
 
@@ -70,6 +89,7 @@ class BrandColors extends ThemeExtension<BrandColors> {
     Color? button,
     Color? accent,
     Color? sidebar,
+    bool? saved,
   }) {
     return BrandColors(
       primary: primary ?? this.primary,
@@ -77,6 +97,7 @@ class BrandColors extends ThemeExtension<BrandColors> {
       button: button ?? this.button,
       accent: accent ?? this.accent,
       sidebar: sidebar ?? this.sidebar,
+      saved: saved ?? this.saved,
     );
   }
 
@@ -89,9 +110,16 @@ class BrandColors extends ThemeExtension<BrandColors> {
       button: Color.lerp(button, other.button, t) ?? button,
       accent: Color.lerp(accent, other.accent, t) ?? accent,
       sidebar: Color.lerp(sidebar, other.sidebar, t) ?? sidebar,
+      saved: t < 0.5 ? saved : other.saved,
     );
   }
 }
+
+/// True when the session already carries a business theme.
+/// Color values are not compared with AppColors. A saved palette that
+/// happens to match an application default is still branding.
+bool savedBusinessPalette(BusinessBrandingSettings? branding) =>
+    branding != null;
 
 BrandColors brandColorsFromSettings(BusinessBrandingSettings? branding) {
   final theme = branding?.theme;
@@ -107,6 +135,7 @@ BrandColors brandColorsFromSettings(BusinessBrandingSettings? branding) {
     sidebar: parseBrandHex(theme?.sidebarColor) ??
         parseBrandHex(theme?.primaryColor) ??
         BrandDefaults.primaryDark,
+    saved: savedBusinessPalette(branding),
   );
 }
 
@@ -157,12 +186,66 @@ ThemeData buildBusinessThemeData(BusinessBrandingSettings? branding) {
       color: brand.primary,
     ),
     navigationBarTheme: NavigationBarThemeData(
-      indicatorColor: brand.iconWell,
+      indicatorColor: brand.toneWell,
       iconTheme: WidgetStateProperty.resolveWith((states) {
         if (states.contains(WidgetState.selected)) {
-          return IconThemeData(color: brand.primary);
+          return IconThemeData(color: brand.tonePrimary);
         }
         return const IconThemeData(color: BrandDefaults.textBody);
+      }),
+    ),
+    textButtonTheme: TextButtonThemeData(
+      style: TextButton.styleFrom(foregroundColor: brand.toneButton),
+    ),
+    dialogTheme: const DialogThemeData(
+      backgroundColor: Colors.white,
+      surfaceTintColor: Colors.transparent,
+    ),
+    datePickerTheme: DatePickerThemeData(
+      backgroundColor: Colors.white,
+      headerBackgroundColor: brand.tonePrimary,
+      headerForegroundColor: Colors.white,
+      dayForegroundColor: WidgetStateProperty.resolveWith((states) {
+        if (states.contains(WidgetState.selected)) return Colors.white;
+        return BrandDefaults.textPrimary;
+      }),
+      todayForegroundColor: WidgetStateProperty.all(brand.tonePrimary),
+      rangeSelectionBackgroundColor: brand.toneWell,
+    ),
+    timePickerTheme: TimePickerThemeData(
+      backgroundColor: Colors.white,
+      hourMinuteColor: brand.toneWell,
+      hourMinuteTextColor: brand.tonePrimary,
+      dayPeriodColor: brand.toneWell,
+      dayPeriodTextColor: brand.toneButton,
+      dialHandColor: brand.tonePrimary,
+      dialBackgroundColor: brand.toneWell,
+      entryModeIconColor: brand.toneButton,
+      helpTextStyle: TextStyle(color: brand.toneButton),
+    ),
+    checkboxTheme: CheckboxThemeData(
+      fillColor: WidgetStateProperty.resolveWith((states) {
+        if (states.contains(WidgetState.selected)) return brand.tonePrimary;
+        return null;
+      }),
+      checkColor: WidgetStateProperty.all(Colors.white),
+    ),
+    radioTheme: RadioThemeData(
+      fillColor: WidgetStateProperty.resolveWith((states) {
+        if (states.contains(WidgetState.selected)) return brand.tonePrimary;
+        return null;
+      }),
+    ),
+    switchTheme: SwitchThemeData(
+      thumbColor: WidgetStateProperty.resolveWith((states) {
+        if (states.contains(WidgetState.selected)) return brand.tonePrimary;
+        return null;
+      }),
+      trackColor: WidgetStateProperty.resolveWith((states) {
+        if (states.contains(WidgetState.selected)) {
+          return brand.tonePrimary.withValues(alpha: 0.45);
+        }
+        return null;
       }),
     ),
     extensions: <ThemeExtension<dynamic>>[brand],

@@ -40,14 +40,21 @@ def adjustments_editable(period_end: date, *, today: date | None = None) -> bool
     return (today or date.today()) <= period_end
 
 
+_DEFAULT_FINALIZED_MESSAGE = (
+    "This payroll period is already finalized. "
+    "Adjustments cannot be created, changed, or deleted."
+)
+
+
 def raise_if_period_finalized(
     db: Session,
     *,
     business_id: uuid.UUID,
     period_start: date,
     period_end: date,
+    message: str | None = None,
 ) -> None:
-    """Reject adjustment writes once a PayrollRun exists for this period."""
+    """Reject writes once a PayrollRun exists for this period."""
     from app.services.payroll_snapshot import find_finalized_run_for_period
 
     run = find_finalized_run_for_period(
@@ -62,11 +69,36 @@ def raise_if_period_finalized(
         status_code=409,
         detail={
             "code": "payroll_finalized",
-            "message": (
-                "This payroll period is already finalized. "
-                "Adjustments cannot be created, changed, or deleted."
-            ),
+            "message": message or _DEFAULT_FINALIZED_MESSAGE,
         },
+    )
+
+
+def raise_if_work_date_period_finalized(
+    db: Session,
+    *,
+    business_id: uuid.UUID,
+    work_date: date | None,
+    message: str,
+) -> None:
+    """Resolve the pay period for ``work_date`` and reject if that period is finalized.
+
+    Uses the same ``resolve_pay_period`` + ``find_finalized_run_for_period``
+    path as OT approval and adjustment locks. Prefer assignment ``work_date``.
+    """
+    if work_date is None:
+        return
+    from app.models.payroll import BusinessPayrollConfig
+    from app.services.pay_period import resolve_pay_period
+
+    config = db.get(BusinessPayrollConfig, business_id)
+    period_start, period_end = resolve_pay_period(config, today=work_date)
+    raise_if_period_finalized(
+        db,
+        business_id=business_id,
+        period_start=period_start,
+        period_end=period_end,
+        message=message,
     )
 
 

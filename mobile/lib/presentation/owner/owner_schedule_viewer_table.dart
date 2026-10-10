@@ -1,3 +1,4 @@
+import 'package:aroll_mobile/core/theme/business_brand_theme.dart';
 import 'package:aroll_mobile/presentation/owner/owner_schedule_table_style.dart';
 import 'package:aroll_mobile/presentation/owner/owner_schedule_utils.dart';
 import 'package:aroll_mobile/presentation/shared/app_ui.dart';
@@ -295,7 +296,7 @@ class _CustomizeSheetState extends State<_CustomizeSheet> {
                       borderRadius: BorderRadius.circular(8),
                       border: Border.all(
                         color: color == current
-                            ? AppColors.primaryDark
+                            ? BrandColors.of(context).toneButton
                             : const Color(0xFFD1D5DB),
                         width: color == current ? 2 : 1,
                       ),
@@ -491,7 +492,7 @@ class _CustomizeSheetState extends State<_CustomizeSheet> {
                                 borderRadius: BorderRadius.circular(8),
                                 border: Border.all(
                                   color: selected
-                                      ? AppColors.primaryDark
+                                      ? BrandColors.of(context).toneButton
                                       : const Color(0xFFD1D5DB),
                                   width: selected ? 2 : 1,
                                 ),
@@ -537,7 +538,7 @@ class _CustomizeSheetState extends State<_CustomizeSheet> {
                         Expanded(
                           child: FilledButton(
                             style: FilledButton.styleFrom(
-                              backgroundColor: AppColors.primaryDark,
+                              backgroundColor: BrandColors.of(context).toneButton,
                             ),
                             onPressed: () {
                               widget.onApply(

@@ -52,6 +52,12 @@ abstract class EmployeeRepository {
     String client = 'mobile',
   });
 
+  /// Append-only biometric consent withdrawal (existing backend endpoint).
+  Future<void> withdrawBiometricConsent({String client = 'mobile'});
+
+  /// Mark account-level permissions onboarding complete (auth identity only).
+  Future<void> completePermissionsOnboarding();
+
   Future<PublicLegalPage> getPublicLegalPage(String businessCode);
 
   Future<FaceStatus> enrollFaceSamples(List<File> images);
@@ -86,6 +92,7 @@ abstract class EmployeeRepository {
     required DateTime startDate,
     required DateTime endDate,
     required String reason,
+    String? otherLeaveSpecification,
     String? supportingDocument,
   });
 
@@ -95,10 +102,19 @@ abstract class EmployeeRepository {
     required DateTime startDate,
     required DateTime endDate,
     required String reason,
+    String? otherLeaveSpecification,
     String? supportingDocument,
   });
 
   Future<LeaveRequestItem> cancelLeaveRequest(String requestId);
+
+  Future<LeaveBalance> getLeaveBalances({int? year});
+
+  Future<LeaveRequestPreview> previewLeaveRequest({
+    required String leaveType,
+    required DateTime startDate,
+    required DateTime endDate,
+  });
 
   Future<List<Map<String, dynamic>>> notifications({
     bool unreadOnly = false,

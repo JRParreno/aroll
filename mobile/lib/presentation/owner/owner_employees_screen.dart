@@ -1,4 +1,5 @@
 import 'package:aroll_mobile/core/app_state.dart';
+import 'package:aroll_mobile/core/theme/business_brand_theme.dart';
 import 'package:aroll_mobile/core/di/injection.dart';
 import 'package:aroll_mobile/presentation/shared/tenant_mode_banner.dart';
 import 'package:aroll_mobile/data/repositories/owner_repository.dart';
@@ -6,6 +7,7 @@ import 'package:aroll_mobile/presentation/employee/employee_ui.dart';
 import 'package:aroll_mobile/presentation/owner/owner_shell.dart';
 import 'package:aroll_mobile/presentation/owner/owner_schedule_utils.dart';
 import 'package:aroll_mobile/presentation/shared/app_ui.dart';
+import 'package:aroll_mobile/presentation/shared/confirm_action_dialog.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -27,6 +29,7 @@ class _OwnerEmployeesScreenState extends State<OwnerEmployeesScreen> {
   String _query = '';
   String _employmentFilter = 'all';
   String _statusFilter = 'all';
+  bool _mutating = false;
   String _positionFilter = 'all';
 
   List<Map<String, dynamic>> _employees = const [];
@@ -123,14 +126,7 @@ class _OwnerEmployeesScreenState extends State<OwnerEmployeesScreen> {
       }
     } catch (_) {}
     if (!mounted) return;
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-      ),
+    await _showCenteredEmployeeDialog<void>(
       builder: (context) => _EmployeeFormSheet(
         positions: positions,
         onSubmit: (form) async {
@@ -157,14 +153,7 @@ class _OwnerEmployeesScreenState extends State<OwnerEmployeesScreen> {
   }
 
   void _openEditEmployee(Map<String, dynamic> employee) {
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-      ),
+    _showCenteredEmployeeDialog<void>(
       builder: (context) => _EmployeeFormSheet(
         positions: _positions,
         editing: true,
@@ -193,8 +182,38 @@ class _OwnerEmployeesScreenState extends State<OwnerEmployeesScreen> {
     );
   }
 
+  Future<T?> _showCenteredEmployeeDialog<T>({
+    required WidgetBuilder builder,
+  }) {
+    return showDialog<T>(
+      context: context,
+      barrierColor: Colors.black.withValues(alpha: 0.45),
+      builder: (dialogContext) {
+        final size = MediaQuery.sizeOf(dialogContext);
+        final viewInsets = MediaQuery.viewInsetsOf(dialogContext);
+        return Dialog(
+          backgroundColor: Colors.white,
+          insetPadding:
+              const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
+          ),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: 440,
+              maxHeight: (size.height * 0.88) - viewInsets.bottom,
+            ),
+            child: builder(dialogContext),
+          ),
+        );
+      },
+    );
+  }
+
   Future<void> _restoreEmployee(Map<String, dynamic> employee) async {
+    if (_mutating) return;
     final navigator = Navigator.of(context);
+    _mutating = true;
     try {
       await _repo.reactivateEmployee('${employee['id']}');
       if (!mounted) return;
@@ -204,18 +223,44 @@ class _OwnerEmployeesScreenState extends State<OwnerEmployeesScreen> {
     } on DioException catch (_) {
       if (!mounted) return;
       _showMessage('Failed to restore employee');
+    } finally {
+      _mutating = false;
+    }
+  }
+
+  Future<void> _confirmDeactivate(Map<String, dynamic> employee) async {
+    if (_mutating) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => ConfirmActionDialog(
+        icon: Icons.person_off_outlined,
+        title: 'Deactivate Employee?',
+        message:
+            "This will disable the employee's account and employee access. "
+            'Their existing attendance and payroll history will be preserved. '
+            'You can reactivate the employee later.',
+        confirmLabel: 'Deactivate',
+        iconColor: BrandColors.of(context).toneButton,
+        iconBackground: BrandColors.of(context).toneWell,
+        confirmColor: BrandColors.of(context).toneButton,
+      ),
+    );
+    if (confirmed != true) return;
+    if (_mutating) return;
+    _mutating = true;
+    try {
+      await _repo.deactivateEmployee('${employee['id']}');
+      await _loadData();
+      _showMessage('Employee deactivated');
+    } on DioException catch (error) {
+      _showMessage(_dioMessage(error) ?? 'Failed to deactivate employee');
+    } finally {
+      _mutating = false;
     }
   }
 
   void _openDetails(Map<String, dynamic> employee) {
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-      ),
+    _showCenteredEmployeeDialog<void>(
       builder: (context) => _EmployeeDetailsSheet(
         employee: employee,
         workdays: _assignedWorkdays['${employee['id']}']?.join(', ') ??
@@ -223,6 +268,10 @@ class _OwnerEmployeesScreenState extends State<OwnerEmployeesScreen> {
         onEdit: () {
           Navigator.pop(context);
           _openEditEmployee(employee);
+        },
+        onDeactivate: () async {
+          Navigator.pop(context);
+          await _confirmDeactivate(employee);
         },
         onDelete: () async {
           Navigator.pop(context);
@@ -234,34 +283,43 @@ class _OwnerEmployeesScreenState extends State<OwnerEmployeesScreen> {
   }
 
   Future<void> _confirmDelete(Map<String, dynamic> employee) async {
+    if (_mutating) return;
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Delete Employee'),
-        content: const Text(
-          'Are you sure you want to delete this employee? '
-          'This action cannot be undone.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Colors.red),
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Delete'),
-          ),
-        ],
+      builder: (context) => const ConfirmActionDialog(
+        icon: Icons.delete_outline_rounded,
+        title: 'Permanently Delete Employee?',
+        message:
+            'This action permanently removes this employee from the business.\n\n'
+            'The following will be deleted:\n'
+            '• Employee profile and account access\n'
+            '• Face and attendance access data\n'
+            '• Attendance and schedule assignment records\n'
+            '• Payroll adjustments\n'
+            '• Employee schedule-template entries\n\n'
+            'Finalized payslips will be preserved for record-keeping, but they '
+            'will no longer be linked to this employee account.',
+        messageSecondary:
+            'This action cannot be undone. If you only want to prevent the '
+            'employee from accessing the system while keeping their records, '
+            'use Deactivate instead.',
+        confirmLabel: 'Delete Permanently',
+        iconColor: AppColors.danger,
+        iconBackground: Color(0xFFFEE2E2),
+        confirmColor: Color(0xFFB91C1C),
       ),
     );
     if (confirmed != true) return;
+    if (_mutating) return;
+    _mutating = true;
     try {
       await _repo.deleteEmployee('${employee['id']}');
       await _loadData();
       _showMessage('Employee deleted successfully.');
     } on DioException catch (error) {
       _showMessage(_dioMessage(error) ?? 'Failed to delete employee.');
+    } finally {
+      _mutating = false;
     }
   }
 
@@ -290,10 +348,13 @@ class _OwnerEmployeesScreenState extends State<OwnerEmployeesScreen> {
               Container(
                 padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
-                  gradient: const LinearGradient(
+                  gradient: LinearGradient(
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
-                    colors: [Color(0xFF1F456B), Color(0xFF2A5A84)],
+                    colors: [
+                      BrandColors.of(context).tonePrimary,
+                      BrandColors.of(context).toneSecondary,
+                    ],
                   ),
                   borderRadius: BorderRadius.circular(18),
                 ),
@@ -381,7 +442,7 @@ class _OwnerEmployeesScreenState extends State<OwnerEmployeesScreen> {
               const SizedBox(height: 16),
               FilledButton(
                 style: FilledButton.styleFrom(
-                  backgroundColor: const Color(0xFF1F456B),
+                  backgroundColor: BrandColors.of(context).toneButton,
                   foregroundColor: Colors.white,
                   minimumSize: const Size.fromHeight(48),
                   shape: RoundedRectangleBorder(
@@ -758,7 +819,6 @@ class _EmployeeFormSheet extends StatefulWidget {
 }
 
 class _EmployeeFormSheetState extends State<_EmployeeFormSheet> {
-  static const _navy = Color(0xFF1F456B);
   static const _softBlue = Color(0xFFB9D8EE);
 
   late final TextEditingController _fullName;
@@ -793,7 +853,7 @@ class _EmployeeFormSheetState extends State<_EmployeeFormSheet> {
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
-        borderSide: const BorderSide(color: _navy, width: 1.4),
+        borderSide: BorderSide(color: BrandColors.of(context).toneButton, width: 1.4),
       ),
     );
   }
@@ -839,7 +899,20 @@ class _EmployeeFormSheetState extends State<_EmployeeFormSheet> {
     if (!widget.editing) {
       final selected = _positionById(_positionId);
       if (selected != null) {
-        _applyPositionRates(selected, overwritePositionDefault: true);
+        final bases = _availableBases(selected);
+        if (bases.isNotEmpty) {
+          final preferred = bases.length == 1
+              ? bases.first
+              : (bases.contains('daily') ? 'daily' : bases.first);
+          _applyConfiguredRates(selected, preferred);
+        }
+      }
+    } else if (_positionId.isNotEmpty) {
+      final selected = _positionById(_positionId);
+      if (selected != null &&
+          (_payBasis == 'daily' || _payBasis == 'hourly') &&
+          _availableBases(selected).contains(_payBasis)) {
+        _applyConfiguredRates(selected, _payBasis);
       }
     }
     _fullName.addListener(() => setState(() {}));
@@ -866,73 +939,119 @@ class _EmployeeFormSheetState extends State<_EmployeeFormSheet> {
   }
 
   String _positionMenuLabel(Map<String, dynamic> position) {
-    final title = '${position['title']}';
-    final daily = _peso(position['daily_rate']);
-    final hourly =
-        position['hourly_rate'] == null ? '' : _peso(position['hourly_rate']);
-    if (hourly.isNotEmpty && daily.isNotEmpty) {
-      return '$title · ₱$daily/day · ₱$hourly/hr';
-    }
-    if (daily.isNotEmpty) {
-      return '$title · ₱$daily/day';
-    }
-    return title;
+    return '${position['title']}';
   }
 
-  bool _matchesPreviousPositionDefault({
-    required String field,
-    required String currentText,
-    required String selectedId,
-  }) {
-    for (final position in widget.positions) {
-      if ('${position['id']}' == selectedId) continue;
-      final value = field == 'hourly'
-          ? position['hourly_rate']
-          : position['daily_rate'];
-      if (value == null && currentText.trim().isEmpty) return true;
-      if (value != null && currentText.trim() == _peso(value)) return true;
+  List<Map<String, dynamic>> _payConfigsFor(Map<String, dynamic>? position) {
+    if (position == null) return const [];
+    final configs = (position['pay_configs'] as List?) ?? const [];
+    final parsed = <Map<String, dynamic>>[];
+    for (final raw in configs) {
+      if (raw is Map<String, dynamic>) {
+        parsed.add(raw);
+      } else if (raw is Map) {
+        parsed.add(Map<String, dynamic>.from(raw));
+      }
     }
-    return false;
+    if (parsed.isNotEmpty) return parsed;
+    final legacy = <Map<String, dynamic>>[];
+    if (position['daily_rate'] != null) {
+      legacy.add({'pay_basis': 'daily', 'rate': position['daily_rate']});
+    }
+    if (position['hourly_rate'] != null) {
+      legacy.add({'pay_basis': 'hourly', 'rate': position['hourly_rate']});
+    }
+    return legacy;
   }
 
-  void _applyPositionRates(
-    Map<String, dynamic> selected, {
-    required bool overwritePositionDefault,
-  }) {
-    if (_payBasis == 'daily') {
-      final next = _peso(selected['daily_rate']);
-      final shouldFill = !widget.editing ||
-          overwritePositionDefault ||
-          _dailyRate.text.trim().isEmpty ||
-          _matchesPreviousPositionDefault(
-            field: 'daily',
-            currentText: _dailyRate.text,
-            selectedId: '${selected['id']}',
-          );
-      if (shouldFill && next.isNotEmpty) {
-        _dailyRate.text = next;
+  List<String> _availableBases(Map<String, dynamic>? position) {
+    return _payConfigsFor(position)
+        .map((c) => '${c['pay_basis']}')
+        .where((b) => b == 'daily' || b == 'hourly')
+        .toList(growable: false);
+  }
+
+  double? _configRate(Map<String, dynamic>? position, String basis) {
+    for (final cfg in _payConfigsFor(position)) {
+      if ('${cfg['pay_basis']}' == basis) {
+        final rate = cfg['rate'];
+        if (rate is num) return rate.toDouble();
+        return double.tryParse('$rate');
       }
     }
-    if (_payBasis == 'hourly') {
-      final next = selected['hourly_rate'] == null
-          ? ''
-          : _peso(selected['hourly_rate']);
-      final matchesPrevious = _matchesPreviousPositionDefault(
-        field: 'hourly',
-        currentText: _hourlyRate.text,
-        selectedId: '${selected['id']}',
-      );
-      final shouldFill = !widget.editing ||
-          overwritePositionDefault ||
-          _hourlyRate.text.trim().isEmpty ||
-          matchesPrevious;
-      if (!shouldFill) return;
-      if (next.isNotEmpty) {
-        _hourlyRate.text = next;
-      } else if (matchesPrevious) {
-        _hourlyRate.text = '';
-      }
+    return null;
+  }
+
+  List<Map<String, dynamic>> get _roleOptions {
+    final configured = widget.positions
+        .where((p) => p['employment_type'] == _employmentType)
+        .toList(growable: false);
+    if (!widget.editing) return configured;
+    final selected = _positionById(_positionId);
+    if (selected == null) return configured;
+    if (configured.any((p) => '${p['id']}' == '${selected['id']}')) {
+      return configured;
     }
+    return [selected, ...configured];
+  }
+
+  bool get _basisConfigured {
+    if (_payBasis != 'daily' && _payBasis != 'hourly') return false;
+    return _availableBases(_positionById(_positionId)).contains(_payBasis);
+  }
+
+  bool get _configuredRateLocked =>
+      _positionId.isNotEmpty && (_basisConfigured || _payBasis == 'monthly');
+
+  void _changeEmploymentType(String nextType) {
+    setState(() {
+      _employmentType = nextType;
+      _positionId = '';
+      _positionTitle.clear();
+      _payBasis = 'daily';
+      _dailyRate.clear();
+      _hourlyRate.clear();
+      if (!widget.editing) {
+        _monthlySalary.clear();
+      }
+    });
+  }
+
+  void _applyConfiguredRates(Map<String, dynamic> selected, String basis) {
+    final rate = _configRate(selected, basis);
+    _payBasis = basis;
+    if (basis == 'daily') {
+      _dailyRate.text = rate == null ? '' : _peso(rate);
+      _hourlyRate.clear();
+      _monthlySalary.clear();
+    } else if (basis == 'hourly') {
+      _hourlyRate.text = rate == null ? '' : _peso(rate);
+      _dailyRate.clear();
+      _monthlySalary.clear();
+    }
+  }
+
+  void _selectPosition(String nextId) {
+    setState(() {
+      _positionId = nextId;
+      final selected = _positionById(_positionId);
+      if (selected == null) {
+        _positionTitle.clear();
+        _payBasis = 'daily';
+        _dailyRate.clear();
+        _hourlyRate.clear();
+        return;
+      }
+      _positionTitle.text = '${selected['title']}';
+      final bases = _availableBases(selected);
+      if (bases.isEmpty) {
+        return;
+      }
+      final preferred = bases.length == 1
+          ? bases.first
+          : (bases.contains('daily') ? 'daily' : bases.first);
+      _applyConfiguredRates(selected, preferred);
+    });
   }
 
   @override
@@ -956,12 +1075,22 @@ class _EmployeeFormSheetState extends State<_EmployeeFormSheet> {
     return (double.tryParse(_monthlySalary.text.trim()) ?? 0) > 0;
   }
 
+  bool get _compensationReady {
+    if (_positionId.isEmpty) return false;
+    final selected = _positionById(_positionId);
+    if (selected == null) return false;
+    if (_payBasis == 'monthly') {
+      return widget.editing && _payReady;
+    }
+    final bases = _availableBases(selected);
+    if (!bases.contains(_payBasis)) return false;
+    return _payReady;
+  }
+
   bool get _ready =>
       _fullName.text.trim().isNotEmpty &&
-      (widget.positions.isNotEmpty
-          ? _positionId.isNotEmpty
-          : _positionTitle.text.trim().isNotEmpty) &&
-      _payReady;
+      _positionId.isNotEmpty &&
+      _compensationReady;
 
   Future<void> _submit() async {
     if (!_ready || _submitting) return;
@@ -1002,6 +1131,19 @@ class _EmployeeFormSheetState extends State<_EmployeeFormSheet> {
   }
 
   Widget _buildFields() {
+    final roleOptions = _roleOptions;
+    final selected = _positionById(_positionId);
+    final bases = _availableBases(selected);
+    final isLegacyMonthly = _payBasis == 'monthly';
+    final missingConfig = _positionId.isNotEmpty &&
+        !isLegacyMonthly &&
+        (bases.isEmpty || !_basisConfigured);
+    final rateSummary = _payBasis == 'hourly'
+        ? 'Hourly · ₱${_hourlyRate.text.isEmpty ? '—' : _hourlyRate.text}/hr'
+        : _payBasis == 'monthly'
+            ? 'Monthly · ₱${_monthlySalary.text.isEmpty ? '—' : _monthlySalary.text} (legacy)'
+            : 'Daily · ₱${_dailyRate.text.isEmpty ? '—' : _dailyRate.text}/day';
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -1013,51 +1155,18 @@ class _EmployeeFormSheetState extends State<_EmployeeFormSheet> {
               borderRadius: BorderRadius.circular(14),
               border: Border.all(color: const Color(0xFFD7E6F5)),
             ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  width: 32,
-                  height: 32,
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(10),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.04),
-                        blurRadius: 6,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: const Icon(
-                    Icons.key_rounded,
-                    size: 16,
-                    color: _navy,
-                  ),
-                ),
-                const SizedBox(width: 10),
-                const Expanded(
-                  child: Text(
-                    'Username and temporary password are generated automatically '
-                    'after enrollment. You’ll get them to share once the employee '
-                    'is added.',
-                    style: TextStyle(
-                      color: Color(0xFF334155),
-                      fontSize: 13,
-                      height: 1.35,
-                    ),
-                  ),
-                ),
-              ],
+            child: const Text(
+              'Choose employment type, role, then pay basis. The configured '
+              'salary rate comes from Setup Wizard and cannot be typed here.',
+              style: TextStyle(fontSize: 13, color: Color(0xFF334155), height: 1.35),
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 14),
         ],
         if (widget.editing) ...[
           const Text(
             'Update the employee’s profile details below. Login credentials '
-            'stay the same.',
+            'stay the same. Configured rates are read-only from Setup Wizard.',
             style: TextStyle(fontSize: 13, color: Color(0xFF6B7280), height: 1.35),
           ),
           const SizedBox(height: 14),
@@ -1074,127 +1183,123 @@ class _EmployeeFormSheetState extends State<_EmployeeFormSheet> {
           decoration: _fieldDecoration('Contact Number'),
         ),
         const SizedBox(height: 12),
-        if (widget.positions.isNotEmpty)
-          DropdownButtonFormField<String>(
-            initialValue: _positionById(_positionId) == null ? null : _positionId,
-            isExpanded: true,
-            decoration: _fieldDecoration('Position'),
-            hint: const Text('Select position'),
-            items: [
-              for (final position in widget.positions)
-                DropdownMenuItem(
-                  value: '${position['id']}',
-                  child: Text(
-                    _positionMenuLabel(position),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-            ],
-            onChanged: (value) {
-              setState(() {
-                _positionId = value ?? '';
-                final selected = _positionById(_positionId);
-                if (selected != null) {
-                  _positionTitle.text = '${selected['title']}';
-                  _applyPositionRates(
-                    selected,
-                    overwritePositionDefault: !widget.editing,
-                  );
-                }
-              });
-            },
-          )
-        else
-          TextField(
-            controller: _positionTitle,
-            decoration: _fieldDecoration('Position'),
-          ),
-        if (widget.positions.isNotEmpty)
-          const Padding(
-            padding: EdgeInsets.only(top: 6, left: 2),
-            child: Text(
-              'Rates prefill from this job role. You can still change them '
-              'for this employee.',
-              style: TextStyle(fontSize: 12, color: Color(0xFF6B7280), height: 1.35),
-            ),
-          )
-        else
-          const Padding(
-            padding: EdgeInsets.only(top: 6, left: 2),
-            child: Text(
-              'No job roles yet. Add them in Business Setup, or type a '
-              'position name here.',
-              style: TextStyle(fontSize: 12, color: Color(0xFF6B7280), height: 1.35),
-            ),
-          ),
-        const SizedBox(height: 12),
         DropdownButtonFormField<String>(
           initialValue: _employmentType,
-          decoration: _fieldDecoration('Employment Type'),
+          decoration: _fieldDecoration('1. Employment Type'),
           items: const [
             DropdownMenuItem(value: 'full_time', child: Text('Full-Time')),
             DropdownMenuItem(value: 'part_time', child: Text('Part-Time')),
           ],
-          onChanged: (value) =>
-              setState(() => _employmentType = value ?? 'full_time'),
+          onChanged: (value) => _changeEmploymentType(value ?? 'full_time'),
         ),
         const SizedBox(height: 12),
-        DropdownButtonFormField<String>(
-          initialValue: _payBasis,
-          decoration: _fieldDecoration('Pay Basis'),
-          items: const [
-            DropdownMenuItem(value: 'daily', child: Text('Daily')),
-            DropdownMenuItem(value: 'hourly', child: Text('Hourly')),
-            DropdownMenuItem(value: 'monthly', child: Text('Monthly')),
-          ],
-          onChanged: (value) {
-            setState(() {
-              _payBasis = value ?? 'daily';
-              final selected = _positionById(_positionId);
-              if (selected == null) return;
-              if (_payBasis == 'daily' && _dailyRate.text.trim().isEmpty) {
-                _applyPositionRates(
-                  selected,
-                  overwritePositionDefault: true,
-                );
-              }
-              if (_payBasis == 'hourly' && _hourlyRate.text.trim().isEmpty) {
-                _applyPositionRates(
-                  selected,
-                  overwritePositionDefault: true,
-                );
-              }
-            });
-          },
-        ),
-        const SizedBox(height: 12),
-        if (_payBasis == 'daily')
-          TextField(
-            controller: _dailyRate,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            decoration: _fieldDecoration('Daily Rate (₱)'),
-          ),
-        if (_payBasis == 'hourly')
-          TextField(
-            controller: _hourlyRate,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            decoration: _fieldDecoration('Hourly Rate (₱)'),
-          ),
-        if (_payBasis == 'monthly')
-          TextField(
-            controller: _monthlySalary,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            decoration: _fieldDecoration('Monthly Salary (₱)'),
-          ),
-        if (_payBasis == 'hourly' &&
-            _positionById(_positionId)?['hourly_rate'] == null)
-          const Padding(
-            padding: EdgeInsets.only(top: 6, left: 2),
+        if (roleOptions.isNotEmpty)
+          DropdownButtonFormField<String>(
+            key: ValueKey('role-$_employmentType-$_positionId'),
+            initialValue: _positionById(_positionId) == null ? null : _positionId,
+            isExpanded: true,
+            decoration: _fieldDecoration('2. Role / Position'),
+            hint: const Text('Select role'),
+            items: [
+              for (final position in roleOptions)
+                DropdownMenuItem(
+                  value: '${position['id']}',
+                  child: Text(
+                    _positionMenuLabel(position) +
+                        (position['employment_type'] == null
+                            ? ' (unclassified)'
+                            : ''),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+            ],
+            onChanged: (value) => _selectPosition(value ?? ''),
+          )
+        else
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: const Color(0xFFD1D5DB)),
+            ),
             child: Text(
-              'This position has no hourly rate configured. Enter it manually.',
-              style: TextStyle(fontSize: 12, color: Color(0xFF6B7280), height: 1.35),
+              'No roles configured for '
+              '${_employmentType == "part_time" ? "Part-time" : "Full-time"}. '
+              'Add them in Business Setup → Positions & Salary Rates.',
+              style: const TextStyle(fontSize: 13, color: Color(0xFF6B7280), height: 1.35),
             ),
           ),
+        if (_positionId.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          DropdownButtonFormField<String>(
+            key: ValueKey('basis-$_positionId-$_payBasis'),
+            initialValue: isLegacyMonthly && !_basisConfigured
+                ? 'monthly'
+                : (_basisConfigured ? _payBasis : null),
+            decoration: _fieldDecoration('3. Pay Basis'),
+            hint: const Text('Select pay basis'),
+            items: [
+              for (final basis in bases)
+                DropdownMenuItem(
+                  value: basis,
+                  child: Text(basis == 'hourly' ? 'Hourly' : 'Daily'),
+                ),
+              if (isLegacyMonthly)
+                const DropdownMenuItem(
+                  value: 'monthly',
+                  child: Text('Monthly (legacy)'),
+                ),
+            ],
+            onChanged: (value) {
+              if (value == null || value == 'monthly') return;
+              final selectedPos = _positionById(_positionId);
+              if (selectedPos == null) return;
+              setState(() => _applyConfiguredRates(selectedPos, value));
+            },
+          ),
+          if (missingConfig)
+            const Padding(
+              padding: EdgeInsets.only(top: 6, left: 2),
+              child: Text(
+                'This employee’s previous pay basis is no longer configured. '
+                'Select a valid Daily or Hourly option before saving.',
+                style: TextStyle(fontSize: 12, color: Color(0xFF92400E), height: 1.35),
+              ),
+            ),
+          if (isLegacyMonthly)
+            const Padding(
+              padding: EdgeInsets.only(top: 6, left: 2),
+              child: Text(
+                'Monthly pay is a legacy employee setting. Select a configured '
+                'Daily or Hourly option to change compensation.',
+                style: TextStyle(fontSize: 12, color: Color(0xFF92400E), height: 1.35),
+              ),
+            ),
+        ],
+        if (_configuredRateLocked || missingConfig) ...[
+          const SizedBox(height: 12),
+          InputDecorator(
+            decoration: _fieldDecoration('4. Configured Rate'),
+            child: Text(
+              missingConfig ? '$rateSummary · not in Setup Wizard' : rateSummary,
+              style: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF1F2937),
+              ),
+            ),
+          ),
+          if (_configuredRateLocked && !missingConfig)
+            const Padding(
+              padding: EdgeInsets.only(top: 6, left: 2),
+              child: Text(
+                'Rate is configured in Setup Wizard. To change this rate, update '
+                'the Setup Wizard configuration.',
+                style: TextStyle(fontSize: 12, color: Color(0xFF6B7280), height: 1.35),
+              ),
+            ),
+        ],
       ],
     );
   }
@@ -1205,7 +1310,7 @@ class _EmployeeFormSheetState extends State<_EmployeeFormSheet> {
         Expanded(
           child: OutlinedButton(
             style: OutlinedButton.styleFrom(
-              foregroundColor: _navy,
+              foregroundColor: BrandColors.of(context).toneButton,
               side: const BorderSide(color: Color(0xFFD1D5DB)),
               minimumSize: const Size.fromHeight(48),
               shape: RoundedRectangleBorder(
@@ -1223,9 +1328,9 @@ class _EmployeeFormSheetState extends State<_EmployeeFormSheet> {
         Expanded(
           child: FilledButton(
             style: FilledButton.styleFrom(
-              backgroundColor: _navy,
+              backgroundColor: BrandColors.of(context).toneButton,
               foregroundColor: Colors.white,
-              disabledBackgroundColor: _navy.withValues(alpha: 0.4),
+              disabledBackgroundColor: BrandColors.of(context).toneButton.withValues(alpha: 0.4),
               minimumSize: const Size.fromHeight(48),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(14),
@@ -1261,152 +1366,157 @@ class _EmployeeFormSheetState extends State<_EmployeeFormSheet> {
             : 'Choose a role to continue')
         : _positionTitle.text.trim();
     final fullTime = _employmentType == 'full_time';
-    final maxHeight = MediaQuery.sizeOf(context).height * 0.88;
 
     return Padding(
       padding: EdgeInsets.only(bottom: bottomInset),
-      child: ConstrainedBox(
-        constraints: BoxConstraints(maxHeight: maxHeight),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const SizedBox(height: 10),
-            Container(
-              width: 42,
-              height: 4,
-              decoration: BoxDecoration(
-                color: const Color(0xFFD1D5DB),
-                borderRadius: BorderRadius.circular(999),
-              ),
-            ),
-            Flexible(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Text(
-                      widget.editing ? 'Edit Employee' : 'Add Employee',
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF111827),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: [_navy, Color(0xFF2A5A84)],
-                        ),
-                        borderRadius: BorderRadius.circular(20),
-                        boxShadow: [
-                          BoxShadow(
-                            color: _navy.withValues(alpha: 0.18),
-                            blurRadius: 18,
-                            offset: const Offset(0, 8),
-                          ),
-                        ],
-                      ),
-                      child: Row(
-                        children: [
-                          Container(
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              border: Border.all(color: _softBlue, width: 2),
-                            ),
-                            child: EmployeeAvatar(
-                              imageUrl: widget.editing
-                                  ? employee['profile_image_url'] as String?
-                                  : null,
-                              name: displayName,
-                              size: 72,
-                            ),
-                          ),
-                          const SizedBox(width: 14),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  displayName,
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 18,
-                                    color: Colors.white,
-                                  ),
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  displayRole,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    color: Colors.white.withValues(alpha: 0.82),
-                                  ),
-                                ),
-                                const SizedBox(height: 10),
-                                Wrap(
-                                  spacing: 8,
-                                  runSpacing: 8,
-                                  children: [
-                                    _Chip(
-                                      label: fullTime
-                                          ? 'Full Timer'
-                                          : 'Part Timer',
-                                      background: fullTime
-                                          ? const Color(0xFFB7FA84)
-                                          : const Color(0xFFFFE27C),
-                                      foreground: const Color(0xFF111827),
-                                    ),
-                                    _Chip(
-                                      label: widget.editing
-                                          ? 'Editing profile'
-                                          : 'Enrolling',
-                                      background: const Color(0x33FFFFFF),
-                                      foreground: Colors.white,
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-                    Container(
-                      padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFFAFBFC),
-                        borderRadius: BorderRadius.circular(18),
-                        border: Border.all(color: const Color(0xFFE5E7EB)),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.03),
-                            blurRadius: 10,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
-                      ),
-                      child: _buildFields(),
-                    ),
-                  ],
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(4, 4, 4, 0),
+            child: Row(
+              children: [
+                IconButton(
+                  tooltip: 'Close',
+                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(Icons.close_rounded),
                 ),
+                Expanded(
+                  child: Text(
+                    widget.editing ? 'Edit Employee' : 'Add Employee',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF111827),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 48),
+              ],
+            ),
+          ),
+          Flexible(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [
+                          BrandColors.of(context).tonePrimary,
+                          BrandColors.of(context).toneSecondary,
+                        ],
+                      ),
+                      borderRadius: BorderRadius.circular(20),
+                      boxShadow: [
+                        BoxShadow(
+                          color: BrandColors.of(context).toneButton.withValues(alpha: 0.18),
+                          blurRadius: 18,
+                          offset: const Offset(0, 8),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            border: Border.all(color: _softBlue, width: 2),
+                          ),
+                          child: EmployeeAvatar(
+                            imageUrl: widget.editing
+                                ? employee['profile_image_url'] as String?
+                                : null,
+                            name: displayName,
+                            size: 72,
+                          ),
+                        ),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                displayName,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 18,
+                                  color: Colors.white,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                displayRole,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: Colors.white.withValues(alpha: 0.82),
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 8,
+                                children: [
+                                  _Chip(
+                                    label: fullTime
+                                        ? 'Full Timer'
+                                        : 'Part Timer',
+                                    background: fullTime
+                                        ? const Color(0xFFB7FA84)
+                                        : const Color(0xFFFFE27C),
+                                    foreground: const Color(0xFF111827),
+                                  ),
+                                  _Chip(
+                                    label: widget.editing
+                                        ? 'Editing profile'
+                                        : 'Enrolling',
+                                    background: const Color(0x33FFFFFF),
+                                    foreground: Colors.white,
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFAFBFC),
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(color: const Color(0xFFE5E7EB)),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.03),
+                          blurRadius: 10,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: _buildFields(),
+                  ),
+                ],
               ),
             ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
-              child: _buildActions(),
-            ),
-          ],
-        ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
+            child: _buildActions(),
+          ),
+        ],
       ),
     );
   }
@@ -1417,6 +1527,7 @@ class _EmployeeDetailsSheet extends StatefulWidget {
     required this.employee,
     required this.workdays,
     required this.onEdit,
+    required this.onDeactivate,
     required this.onDelete,
     required this.onRestore,
   });
@@ -1424,6 +1535,7 @@ class _EmployeeDetailsSheet extends StatefulWidget {
   final Map<String, dynamic> employee;
   final String workdays;
   final VoidCallback onEdit;
+  final VoidCallback onDeactivate;
   final VoidCallback onDelete;
   final Future<void> Function() onRestore;
 
@@ -1432,10 +1544,10 @@ class _EmployeeDetailsSheet extends StatefulWidget {
 }
 
 class _EmployeeDetailsSheetState extends State<_EmployeeDetailsSheet> {
-  static const _navy = Color(0xFF1F456B);
   static const _softBlue = Color(0xFFB9D8EE);
 
   bool _showPassword = false;
+  bool _actionBusy = false;
 
   Future<void> _copy(String value, String message) async {
     await Clipboard.setData(ClipboardData(text: value));
@@ -1480,44 +1592,50 @@ class _EmployeeDetailsSheetState extends State<_EmployeeDetailsSheet> {
     final fullTime = employee['employment_type'] == 'full_time';
     final tempPassword = employee['temporary_password'] as String?;
     final statusLabel = _accountStatus;
-    final maxHeight = MediaQuery.sizeOf(context).height * 0.88;
 
-    return ConstrainedBox(
-      constraints: BoxConstraints(maxHeight: maxHeight),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const SizedBox(height: 10),
-          Container(
-            width: 42,
-            height: 4,
-            decoration: BoxDecoration(
-              color: const Color(0xFFD1D5DB),
-              borderRadius: BorderRadius.circular(999),
-            ),
-          ),
-          Flexible(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const Text(
-                    'Employee Details',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w700,
-                      color: Color(0xFF111827),
-                    ),
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(4, 4, 4, 0),
+          child: Row(
+            children: [
+              IconButton(
+                tooltip: 'Close',
+                onPressed: () => Navigator.pop(context),
+                icon: const Icon(Icons.close_rounded),
+              ),
+              const Expanded(
+                child: Text(
+                  'Employee Details',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF111827),
                   ),
-                  const SizedBox(height: 16),
+                ),
+              ),
+              const SizedBox(width: 48),
+            ],
+          ),
+        ),
+        Flexible(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
                   Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      gradient: const LinearGradient(
+                      gradient: LinearGradient(
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
-                        colors: [_navy, Color(0xFF2A5A84)],
+                        colors: [
+                          BrandColors.of(context).tonePrimary,
+                          BrandColors.of(context).toneSecondary,
+                        ],
                       ),
                       borderRadius: BorderRadius.circular(20),
                     ),
@@ -1735,44 +1853,73 @@ class _EmployeeDetailsSheetState extends State<_EmployeeDetailsSheet> {
           ),
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
-            child: Row(
+            child: Column(
               children: [
-                Expanded(
-                  child: OutlinedButton(
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: _navy,
-                      side: const BorderSide(color: Color(0xFFD1D5DB)),
-                      minimumSize: const Size.fromHeight(48),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: BrandColors.of(context).toneButton,
+                          side: const BorderSide(color: Color(0xFFD1D5DB)),
+                          minimumSize: const Size.fromHeight(48),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        ),
+                        onPressed: _actionBusy ? null : widget.onEdit,
+                        child: const Text(
+                          'Edit',
+                          style: TextStyle(fontWeight: FontWeight.w700),
+                        ),
                       ),
                     ),
-                    onPressed: widget.onEdit,
-                    child: const Text(
-                      'Edit',
-                      style: TextStyle(fontWeight: FontWeight.w700),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: FilledButton(
+                        style: FilledButton.styleFrom(
+                          backgroundColor: BrandColors.of(context).toneButton,
+                          foregroundColor: Colors.white,
+                          disabledBackgroundColor:
+                              BrandColors.of(context).toneButton.withValues(alpha: 0.4),
+                          minimumSize: const Size.fromHeight(48),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        ),
+                        onPressed: _actionBusy
+                            ? null
+                            : employee['status'] == 'inactive'
+                                ? () => _runRestore()
+                                : widget.onDeactivate,
+                        child: Text(
+                          employee['status'] == 'inactive'
+                              ? 'Restore'
+                              : 'Deactivate',
+                          style: const TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                      ),
                     ),
-                  ),
+                  ],
                 ),
-                const SizedBox(width: 12),
-                Expanded(
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
                   child: FilledButton(
                     style: FilledButton.styleFrom(
-                      backgroundColor: employee['status'] == 'inactive'
-                          ? _navy
-                          : const Color(0xFFDC2626),
+                      backgroundColor: const Color(0xFFDC2626),
                       foregroundColor: Colors.white,
+                      disabledBackgroundColor:
+                          const Color(0xFFDC2626).withValues(alpha: 0.4),
                       minimumSize: const Size.fromHeight(48),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(14),
                       ),
                     ),
-                    onPressed: employee['status'] == 'inactive'
-                        ? () => widget.onRestore()
-                        : widget.onDelete,
-                    child: Text(
-                      employee['status'] == 'inactive' ? 'Restore' : 'Delete',
-                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    onPressed: _actionBusy ? null : widget.onDelete,
+                    child: const Text(
+                      'Delete',
+                      style: TextStyle(fontWeight: FontWeight.w700),
                     ),
                   ),
                 ),
@@ -1780,8 +1927,17 @@ class _EmployeeDetailsSheetState extends State<_EmployeeDetailsSheet> {
             ),
           ),
         ],
-      ),
     );
+  }
+
+  Future<void> _runRestore() async {
+    if (_actionBusy) return;
+    setState(() => _actionBusy = true);
+    try {
+      await widget.onRestore();
+    } finally {
+      if (mounted) setState(() => _actionBusy = false);
+    }
   }
 }
 
@@ -1841,7 +1997,7 @@ class _DetailInfoRow extends StatelessWidget {
               color: const Color(0xFFEEF3F8),
               borderRadius: BorderRadius.circular(12),
             ),
-            child: Icon(icon, size: 18, color: const Color(0xFF1F456B)),
+            child: Icon(icon, size: 18, color: BrandColors.of(context).tonePrimary),
           ),
           const SizedBox(width: 12),
           Expanded(

@@ -48,9 +48,12 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
   final _shiftCapacity = TextEditingController(text: '1');
 
   final _positionTitle = TextEditingController();
-  final _positionRate = TextEditingController();
-  final _positionHourly = TextEditingController();
+  final _positionDailyRate = TextEditingController();
+  final _positionHourlyRate = TextEditingController();
   final _positionDescription = TextEditingController();
+  String _positionEmploymentType = 'full_time';
+  bool _positionEnableDaily = true;
+  bool _positionEnableHourly = false;
 
   String _payPeriodType = 'monthly';
   DateTime? _nextPaydayDate;
@@ -61,6 +64,7 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
   bool _payrollOvertimeEnabled = true;
   final _payrollOvertimeRate = TextEditingController(text: '1');
   bool _payrollLateOtBalancing = false;
+  bool _payrollOtApprovalRequired = false;
 
   final _attEarlyClockIn = TextEditingController(text: '15');
   final _attOnTimeGrace = TextEditingController(text: '10');
@@ -102,8 +106,8 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
     _shiftBreak.dispose();
     _shiftCapacity.dispose();
     _positionTitle.dispose();
-    _positionRate.dispose();
-    _positionHourly.dispose();
+    _positionDailyRate.dispose();
+    _positionHourlyRate.dispose();
     _positionDescription.dispose();
     _payrollLateDeductionRate.dispose();
     _payrollOvertimeRate.dispose();
@@ -184,6 +188,8 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
     _payrollOvertimeRate.text = '${payroll['overtime_per_minute'] ?? 1}';
     _payrollLateOtBalancing =
         payroll['enable_late_overtime_balancing'] == true;
+    _payrollOtApprovalRequired =
+        payroll['overtime_approval_required'] == true;
   }
 
   void _applyAttendance(Map<String, dynamic> attendance) {
@@ -238,10 +244,38 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
 
   bool get _positionDraftValid {
     if (_positionTitle.text.trim().isEmpty) return false;
-    if ((double.tryParse(_positionRate.text) ?? 0) <= 0) return false;
-    final hourlyText = _positionHourly.text.trim();
-    if (hourlyText.isEmpty) return true;
-    return (double.tryParse(hourlyText) ?? 0) > 0;
+    if (!_positionEnableDaily && !_positionEnableHourly) return false;
+    if (_positionEnableDaily &&
+        (double.tryParse(_positionDailyRate.text) ?? 0) <= 0) {
+      return false;
+    }
+    if (_positionEnableHourly &&
+        (double.tryParse(_positionHourlyRate.text) ?? 0) <= 0) {
+      return false;
+    }
+    return true;
+  }
+
+  List<Map<String, dynamic>> _buildPayConfigs({
+    required bool enableDaily,
+    required String dailyRate,
+    required bool enableHourly,
+    required String hourlyRate,
+  }) {
+    final configs = <Map<String, dynamic>>[];
+    if (enableDaily) {
+      configs.add({
+        'pay_basis': 'daily',
+        'rate': double.parse(dailyRate.trim()),
+      });
+    }
+    if (enableHourly) {
+      configs.add({
+        'pay_basis': 'hourly',
+        'rate': double.parse(hourlyRate.trim()),
+      });
+    }
+    return configs;
   }
 
   bool get _payrollFormValid =>
@@ -327,82 +361,53 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
   }
 
   Future<void> _editShiftTimes(Map<String, dynamic> shift) async {
-    var start = parseApiTime('${shift['start_time']}') ??
+    final initialStart = parseApiTime('${shift['start_time']}') ??
         const TimeOfDay(hour: 8, minute: 30);
-    var end = parseApiTime('${shift['end_time']}') ??
+    final initialEnd = parseApiTime('${shift['end_time']}') ??
         const TimeOfDay(hour: 12, minute: 30);
-    final saved = await showDialog<bool>(
+    final timesLocked = shift['has_in_progress_today'] == true;
+    final result = await showDialog<_EditShiftTimesDialogResult>(
       context: context,
       builder: (dialogContext) {
-        return StatefulBuilder(
-          builder: (dialogContext, setDialogState) {
-            return AlertDialog(
-              title: Text(
-                'Edit ${shift['name']} times',
-                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
-              ),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  OutlinedButton(
-                    style: SetupUi.secondaryButton,
-                    onPressed: () async {
-                      final picked = await showTimePicker(
-                        context: dialogContext,
-                        initialTime: start,
-                      );
-                      if (picked != null) {
-                        setDialogState(() => start = picked);
-                      }
-                    },
-                    child: Text('Start ${start.format(dialogContext)}'),
-                  ),
-                  const SizedBox(height: 10),
-                  OutlinedButton(
-                    style: SetupUi.secondaryButton,
-                    onPressed: () async {
-                      final picked = await showTimePicker(
-                        context: dialogContext,
-                        initialTime: end,
-                      );
-                      if (picked != null) {
-                        setDialogState(() => end = picked);
-                      }
-                    },
-                    child: Text('End ${end.format(dialogContext)}'),
-                  ),
-                ],
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(dialogContext, false),
-                  child: const Text('Cancel'),
-                ),
-                FilledButton(
-                  style: SetupUi.primaryButton,
-                  onPressed: () => Navigator.pop(dialogContext, true),
-                  child: const Text('Save times'),
-                ),
-              ],
-            );
-          },
+        return _EditShiftTimesDialog(
+          shiftName: '${shift['name']}',
+          initialStart: initialStart,
+          initialEnd: initialEnd,
+          initialCapacityText: '${shift['employee_capacity'] ?? 1}',
+          capacityDecoration: _compactInput('Employee Capacity'),
+          timesLocked: timesLocked,
         );
       },
     );
-    if (saved != true) return;
+    if (result == null) return;
+    if (result.capacity < 1) {
+      _showSnack('Employee capacity must be a whole number of at least 1');
+      return;
+    }
 
     setState(() => _busy = true);
     try {
-      await _repo.updateShift(
-        shiftId: '${shift['id']}',
-        startTime: formatApiTime(start),
-        endTime: formatApiTime(end),
-      );
+      if (timesLocked) {
+        await _repo.updateShift(
+          shiftId: '${shift['id']}',
+          employeeCapacity: result.capacity,
+        );
+      } else {
+        await _repo.updateShift(
+          shiftId: '${shift['id']}',
+          startTime: formatApiTime(result.start),
+          endTime: formatApiTime(result.end),
+          employeeCapacity: result.capacity,
+        );
+      }
       _shifts = await _repo.shifts();
-      _showSnack('Shift times updated');
+      _showSnack('Shift updated');
+    } on DioException catch (error) {
+      _showSnack(
+        _errorMessageFromDio(error, fallback: 'Could not update shift'),
+      );
     } catch (_) {
-      _showSnack('Could not update shift times');
+      _showSnack('Could not update shift');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -414,16 +419,23 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
     try {
       await _repo.createPosition(
         title: _positionTitle.text.trim(),
-        dailyRate: double.parse(_positionRate.text.trim()),
-        hourlyRate: _positionHourly.text.trim().isEmpty
-            ? null
-            : double.parse(_positionHourly.text.trim()),
+        employmentType: _positionEmploymentType,
+        payConfigs: _buildPayConfigs(
+          enableDaily: _positionEnableDaily,
+          dailyRate: _positionDailyRate.text,
+          enableHourly: _positionEnableHourly,
+          hourlyRate: _positionHourlyRate.text,
+        ),
         description: _positionDescription.text.trim(),
       );
       _positionTitle.clear();
-      _positionRate.clear();
-      _positionHourly.clear();
+      _positionDailyRate.clear();
+      _positionHourlyRate.clear();
       _positionDescription.clear();
+      setState(() {
+        _positionEnableDaily = true;
+        _positionEnableHourly = false;
+      });
       _showSnack('Job role added');
       final positions = await _repo.positions();
       await _refreshSetupStatus();
@@ -436,6 +448,151 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
     } catch (_) {
       _showSnack('Could not add job role');
       return false;
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _editPositionPayConfigs(Map<String, dynamic> position) async {
+    final configs = (position['pay_configs'] as List?) ?? const [];
+    var enableDaily = false;
+    var enableHourly = false;
+    final dailyCtrl = TextEditingController();
+    final hourlyCtrl = TextEditingController();
+    for (final raw in configs) {
+      if (raw is! Map) continue;
+      final basis = '${raw['pay_basis']}';
+      if (basis == 'daily') {
+        enableDaily = true;
+        dailyCtrl.text = '${raw['rate'] ?? ''}';
+      }
+      if (basis == 'hourly') {
+        enableHourly = true;
+        hourlyCtrl.text = '${raw['rate'] ?? ''}';
+      }
+    }
+    if (!enableDaily && !enableHourly) {
+      if (position['daily_rate'] != null) {
+        enableDaily = true;
+        dailyCtrl.text = '${position['daily_rate']}';
+      }
+      if (position['hourly_rate'] != null) {
+        enableHourly = true;
+        hourlyCtrl.text = '${position['hourly_rate']}';
+      }
+    }
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setLocal) {
+            final valid = (enableDaily || enableHourly) &&
+                (!enableDaily ||
+                    (double.tryParse(dailyCtrl.text) ?? 0) > 0) &&
+                (!enableHourly ||
+                    (double.tryParse(hourlyCtrl.text) ?? 0) > 0);
+            return AlertDialog(
+              title: Text('Edit rates · ${position['title']}'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    CheckboxListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Daily'),
+                      value: enableDaily,
+                      onChanged: (v) =>
+                          setLocal(() => enableDaily = v ?? false),
+                    ),
+                    if (enableDaily)
+                      TextField(
+                        controller: dailyCtrl,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                        decoration: const InputDecoration(
+                          labelText: 'Daily amount (₱)',
+                        ),
+                        onChanged: (_) => setLocal(() {}),
+                      ),
+                    CheckboxListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Hourly'),
+                      value: enableHourly,
+                      onChanged: (v) =>
+                          setLocal(() => enableHourly = v ?? false),
+                    ),
+                    if (enableHourly)
+                      TextField(
+                        controller: hourlyCtrl,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                        decoration: const InputDecoration(
+                          labelText: 'Hourly amount (₱)',
+                        ),
+                        onChanged: (_) => setLocal(() {}),
+                      ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: !valid
+                      ? null
+                      : () => Navigator.pop(context, true),
+                  child: const Text('Save'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+    final dailyText = dailyCtrl.text;
+    final hourlyText = hourlyCtrl.text;
+    final keepDaily = enableDaily;
+    final keepHourly = enableHourly;
+    dailyCtrl.dispose();
+    hourlyCtrl.dispose();
+    if (saved != true) return;
+    setState(() => _busy = true);
+    try {
+      await _repo.updatePosition(
+        positionId: '${position['id']}',
+        payConfigs: _buildPayConfigs(
+          enableDaily: keepDaily,
+          dailyRate: dailyText,
+          enableHourly: keepHourly,
+          hourlyRate: hourlyText,
+        ),
+      );
+      _positions = await _repo.positions();
+      _showSnack('Pay configurations updated');
+      await _refreshSetupStatus();
+    } catch (_) {
+      _showSnack('Could not update pay configurations');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _classifyPosition(String id, String employmentType) async {
+    setState(() => _busy = true);
+    try {
+      await _repo.updatePosition(
+        positionId: id,
+        employmentType: employmentType,
+      );
+      _positions = await _repo.positions();
+      _showSnack('Job role classified');
+      await _refreshSetupStatus();
+    } catch (_) {
+      _showSnack('Could not update job role');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -470,6 +627,7 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
         'overtime_enabled': _payrollOvertimeEnabled,
         'overtime_per_minute': double.parse(_payrollOvertimeRate.text),
         'enable_late_overtime_balancing': _payrollLateOtBalancing,
+        'overtime_approval_required': _payrollOtApprovalRequired,
       });
       await _repo.updateRestDayPolicy({
         'rest_day_premium_percent': double.parse(_restPremiumPercent.text),
@@ -495,9 +653,7 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
         'absent_threshold_minutes': int.parse(_attAbsent.text),
         'absent_threshold_percent': int.parse(_attAbsentPercent.text),
         'half_day_threshold_percent': int.parse(_attHalfDayPercent.text),
-        'early_out_deduction_enabled': _attEarlyOutDeductionEnabled,
-        'early_out_deduction_per_minute':
-            double.parse(_attEarlyOutDeductionRate.text),
+        // early_out_deduction_* is compatibility-only; undertime uses wage minute rate.
         'overtime_enabled': _attOvertimeEnabled,
         'overtime_minimum_minutes': int.parse(_attOvertimeMinimum.text),
         'maximum_overtime_minutes': int.parse(_attMaximumOvertime.text),
@@ -619,6 +775,12 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
       if (detail is String && detail.trim().isNotEmpty) {
         return detail;
       }
+      if (detail is Map) {
+        final title = detail['title']?.toString();
+        final message = detail['message']?.toString();
+        if (title != null && message != null) return '$title: $message';
+        if (message != null && message.trim().isNotEmpty) return message;
+      }
       if (detail is List && detail.isNotEmpty) {
         final first = detail.first;
         if (first is Map && first['msg'] is String) {
@@ -688,6 +850,15 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
 
   void _handleBack() {
     if (_step >= 0) {
+      // Deep-linked onto this step (e.g. Schedule → New Shift → Work Shifts)
+      // and still on that same step: pop back to the previous route instead of
+      // switching to the in-wizard "Set Up Your Business" menu.
+      if (widget.initialStep >= 0 &&
+          _step == widget.initialStep &&
+          context.canPop()) {
+        context.pop();
+        return;
+      }
       _goToMenu();
       return;
     }
@@ -722,7 +893,7 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
       backgroundColor: SetupUi.scaffold,
       footer: _showsWizardFooter ? _buildFooter() : null,
       child: _loading
-          ? const Center(child: CircularProgressIndicator(color: SetupUi.navy))
+          ? Center(child: CircularProgressIndicator(color: SetupUi.navyOf(context)))
           : _loadError != null
               ? Center(
                   child: Padding(
@@ -734,7 +905,7 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
                         const SizedBox(height: 14),
                         FilledButton(
                           onPressed: _loadAll,
-                          style: SetupUi.primaryButton,
+                          style: SetupUi.primaryButtonOf(context),
                           child: const Text('Retry'),
                         ),
                       ],
@@ -757,7 +928,7 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
   InputDecoration _compactInput(String label, {String? hint}) =>
       SetupUi.input(label, hint: hint);
 
-  ButtonStyle get _primaryButtonStyle => SetupUi.primaryButton;
+  ButtonStyle get _primaryButtonStyle => SetupUi.primaryButtonOf(context);
 
   Widget _compactSwitch({
     required String title,
@@ -901,7 +1072,7 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
               children: [
                 Expanded(
                   child: OutlinedButton(
-                    style: SetupUi.secondaryButton,
+                    style: SetupUi.secondaryButtonOf(context),
                     onPressed: () => _pickTime(
                       initial: _shiftStart,
                       onPicked: (value) => setState(() => _shiftStart = value),
@@ -912,7 +1083,7 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: OutlinedButton(
-                    style: SetupUi.secondaryButton,
+                    style: SetupUi.secondaryButtonOf(context),
                     onPressed: () => _pickTime(
                       initial: _shiftEnd,
                       onPicked: (value) => setState(() => _shiftEnd = value),
@@ -993,13 +1164,13 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
                         width: 36,
                         height: 36,
                         decoration: BoxDecoration(
-                          color: AppColors.iconWell,
+                          color: SetupUi.wellOf(context),
                           borderRadius: BorderRadius.circular(10),
                         ),
-                        child: const Icon(
+                        child: Icon(
                           Icons.schedule_rounded,
                           size: 18,
-                          color: SetupUi.navy,
+                          color: SetupUi.navyOf(context),
                         ),
                       ),
                       const SizedBox(width: 10),
@@ -1017,7 +1188,7 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
                             ),
                             const SizedBox(height: 4),
                             Text(
-                              _shiftTimeRangeLabel(shift),
+                              '${_shiftTimeRangeLabel(shift)} · Capacity ${shift['employee_capacity'] ?? '—'}',
                               style: const TextStyle(
                                 fontSize: 13,
                                 height: 1.35,
@@ -1035,13 +1206,13 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
                     runSpacing: 4,
                     children: [
                       TextButton(
-                        style: SetupUi.ghostButton,
+                        style: SetupUi.ghostButtonOf(context),
                         onPressed:
                             _busy ? null : () => _editShiftTimes(shift),
-                        child: const Text('Edit times'),
+                        child: const Text('Edit shift'),
                       ),
                       TextButton(
-                        style: SetupUi.ghostButton.copyWith(
+                        style: SetupUi.ghostButtonOf(context).copyWith(
                           foregroundColor: const WidgetStatePropertyAll(
                             AppColors.danger,
                           ),
@@ -1063,56 +1234,92 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
   }
 
   Widget _buildPositionsStep() {
+    final unclassified = _positions
+        .where((p) => p['employment_type'] == null)
+        .toList(growable: false);
+    final fullTime = _positions
+        .where((p) => p['employment_type'] == 'full_time')
+        .toList(growable: false);
+    final partTime = _positions
+        .where((p) => p['employment_type'] == 'part_time')
+        .toList(growable: false);
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         SetupPanel(
           title: 'Add a job role',
           icon: Icons.badge_outlined,
-          subtitle: 'Set the role name, daily pay, and optional hourly pay.',
+          subtitle:
+              'Employment type → role → Daily and/or Hourly amounts. Configure once, reuse when adding employees.',
           children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  flex: 3,
-                  child: TextField(
-                    controller: _positionTitle,
-                    style: const TextStyle(fontSize: 14),
-                    decoration: _compactInput('Job role name'),
-                    onChanged: (_) => setState(() {}),
-                  ),
-                ),
-                const SizedBox(width: 6),
-                Expanded(
-                  flex: 2,
-                  child: TextField(
-                    controller: _positionRate,
-                    style: const TextStyle(fontSize: 14),
-                    decoration: _compactInput('Daily pay (₱)'),
-                    keyboardType:
-                        const TextInputType.numberWithOptions(decimal: true),
-                    onChanged: (_) => setState(() {}),
-                  ),
-                ),
+            DropdownButtonFormField<String>(
+              initialValue: _positionEmploymentType,
+              isDense: true,
+              decoration: _compactInput('1. Employment type'),
+              items: const [
+                DropdownMenuItem(value: 'full_time', child: Text('Full-time')),
+                DropdownMenuItem(value: 'part_time', child: Text('Part-time')),
               ],
+              onChanged: (value) => setState(
+                () => _positionEmploymentType = value ?? 'full_time',
+              ),
             ),
             const SizedBox(height: _fieldGap),
             TextField(
-              controller: _positionHourly,
+              controller: _positionTitle,
               style: const TextStyle(fontSize: 14),
-              decoration: _compactInput(
-                'Hourly pay (₱, optional)',
-              ),
-              keyboardType:
-                  const TextInputType.numberWithOptions(decimal: true),
+              decoration: _compactInput('2. Role / position name'),
               onChanged: (_) => setState(() {}),
             ),
+            const SizedBox(height: _fieldGap),
+            const Text(
+              '3. Pay configurations',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: Color(0xFF6B7280),
+              ),
+            ),
+            CheckboxListTile(
+              contentPadding: EdgeInsets.zero,
+              dense: true,
+              title: const Text('Daily'),
+              value: _positionEnableDaily,
+              onChanged: (v) =>
+                  setState(() => _positionEnableDaily = v ?? false),
+            ),
+            if (_positionEnableDaily)
+              TextField(
+                controller: _positionDailyRate,
+                style: const TextStyle(fontSize: 14),
+                decoration: _compactInput('Daily amount (₱)'),
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                onChanged: (_) => setState(() {}),
+              ),
+            CheckboxListTile(
+              contentPadding: EdgeInsets.zero,
+              dense: true,
+              title: const Text('Hourly'),
+              value: _positionEnableHourly,
+              onChanged: (v) =>
+                  setState(() => _positionEnableHourly = v ?? false),
+            ),
+            if (_positionEnableHourly)
+              TextField(
+                controller: _positionHourlyRate,
+                style: const TextStyle(fontSize: 14),
+                decoration: _compactInput('Hourly amount (₱)'),
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                onChanged: (_) => setState(() {}),
+              ),
             const SizedBox(height: _fieldGap),
             TextField(
               controller: _positionDescription,
               style: const TextStyle(fontSize: 14),
-              decoration: _compactInput('Description'),
+              decoration: _compactInput('Description (optional)'),
               onChanged: (_) => setState(() {}),
             ),
             const SizedBox(height: 10),
@@ -1130,25 +1337,110 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
             ),
           ],
         ),
-        if (_positions.isNotEmpty) ...[
+        if (unclassified.isNotEmpty) ...[
           const SizedBox(height: 14),
-          const SetupListLabel('Added roles'),
-          ..._positions.map(
-            (position) => SetupListTileCard(
-              leadingIcon: Icons.badge_outlined,
-              title: '${position['title']}',
-              subtitle: _positionRateSubtitle(position),
-              trailing: TextButton(
-                style: SetupUi.ghostButton.copyWith(
-                  foregroundColor:
-                      const WidgetStatePropertyAll(AppColors.danger),
+          SetupPanel(
+            title: 'Unclassified existing roles',
+            icon: Icons.warning_amber_rounded,
+            subtitle:
+                'Still usable for current employees. Assign Full-time or Part-time before using them in Add Employee.',
+            children: [
+              for (final position in unclassified)
+                SetupListTileCard(
+                  leadingIcon: Icons.badge_outlined,
+                  title: '${position['title']}',
+                  subtitle: _positionRateSubtitle(position),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      TextButton(
+                        onPressed: _busy
+                            ? null
+                            : () => _classifyPosition(
+                                  '${position['id']}',
+                                  'full_time',
+                                ),
+                        child: const Text('Full-time'),
+                      ),
+                      TextButton(
+                        onPressed: _busy
+                            ? null
+                            : () => _classifyPosition(
+                                  '${position['id']}',
+                                  'part_time',
+                                ),
+                        child: const Text('Part-time'),
+                      ),
+                    ],
+                  ),
                 ),
-                onPressed:
-                    _busy ? null : () => _removePosition('${position['id']}'),
-                child: const Text('Remove'),
+            ],
+          ),
+        ],
+        if (fullTime.isNotEmpty || partTime.isNotEmpty) ...[
+          const SizedBox(height: 14),
+          if (fullTime.isNotEmpty) ...[
+            const SetupListLabel('Full-time roles'),
+            ...fullTime.map(
+              (position) => SetupListTileCard(
+                leadingIcon: Icons.badge_outlined,
+                title: '${position['title']}',
+                subtitle: _positionRateSubtitle(position),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextButton(
+                      onPressed: _busy
+                          ? null
+                          : () => _editPositionPayConfigs(position),
+                      child: const Text('Edit rates'),
+                    ),
+                    TextButton(
+                      style: SetupUi.ghostButtonOf(context).copyWith(
+                        foregroundColor:
+                            const WidgetStatePropertyAll(AppColors.danger),
+                      ),
+                      onPressed: _busy
+                          ? null
+                          : () => _removePosition('${position['id']}'),
+                      child: const Text('Remove'),
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
+          ],
+          if (partTime.isNotEmpty) ...[
+            const SetupListLabel('Part-time roles'),
+            ...partTime.map(
+              (position) => SetupListTileCard(
+                leadingIcon: Icons.badge_outlined,
+                title: '${position['title']}',
+                subtitle: _positionRateSubtitle(position),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextButton(
+                      onPressed: _busy
+                          ? null
+                          : () => _editPositionPayConfigs(position),
+                      child: const Text('Edit rates'),
+                    ),
+                    TextButton(
+                      style: SetupUi.ghostButtonOf(context).copyWith(
+                        foregroundColor:
+                            const WidgetStatePropertyAll(AppColors.danger),
+                      ),
+                      onPressed: _busy
+                          ? null
+                          : () => _removePosition('${position['id']}'),
+                      child: const Text('Remove'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
         ],
       ],
     );
@@ -1183,7 +1475,7 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
             SizedBox(
               width: double.infinity,
               child: OutlinedButton(
-                style: SetupUi.secondaryButton,
+                style: SetupUi.secondaryButtonOf(context),
                 onPressed: _pickPayday,
                 child: Text(
                   _nextPaydayDate == null
@@ -1203,14 +1495,15 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
         ),
         const SizedBox(height: 10),
         SetupPanel(
-          title: 'Holiday pay rules',
+          title: 'Holiday Rules',
           icon: Icons.celebration_outlined,
-          subtitle: 'Philippine labor rules or custom company policy.',
+          subtitle:
+              'How Aroll+ interprets holiday types for worked and unworked days.',
           children: [
             DropdownButtonFormField<String>(
               initialValue: _holidayRulesMode,
               isDense: true,
-              decoration: _compactInput('Holiday rules'),
+              decoration: _compactInput('Holiday Rules'),
               items: const [
                 DropdownMenuItem(
                   value: 'philippine_labor',
@@ -1260,7 +1553,7 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
               controller: _payrollOvertimeRate,
               enabled: _payrollOvertimeEnabled,
               style: const TextStyle(fontSize: 14),
-              decoration: _compactInput('Extra pay per overtime minute (₱)'),
+              decoration: _compactInput('Extra Pay per Overtime Minute (₱)'),
               keyboardType:
                   const TextInputType.numberWithOptions(decimal: true),
             ),
@@ -1274,8 +1567,24 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
               },
             ),
             Text(
-              'When enabled, overtime minutes are first used to recover late '
-              'arrival. Only the remaining overtime minutes are paid.',
+              'Employees who arrive late may offset the late time by working '
+              'beyond their scheduled end time.',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: const Color(0xFF6B7280),
+                  ),
+            ),
+            const SizedBox(height: 4),
+            _compactSwitch(
+              title: 'OT Approval Required',
+              value: _payrollOtApprovalRequired && _payrollOvertimeEnabled,
+              onChanged: (value) {
+                if (!_payrollOvertimeEnabled) return;
+                setState(() => _payrollOtApprovalRequired = value);
+              },
+            ),
+            Text(
+              'When enabled, overtime must be approved before it is included '
+              'as payable additional pay.',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: const Color(0xFF6B7280),
                   ),
@@ -1322,9 +1631,9 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
               inputHint: 'Minutes',
             ),
             SetupLabeledSetting(
-              title: 'Absent if under (% of shift)',
+              title: 'Minimum Worked Shift (%)',
               description:
-                  'Status cutoff as percent of scheduled shift length.',
+                  'Employees must work at least the configured percentage of their scheduled shift to avoid being marked Absent.',
               controller: _attAbsentPercent,
               inputHint: 'Percent',
             ),
@@ -1368,7 +1677,8 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
         ),
         const SizedBox(height: _fieldGap),
         _infoBox(
-          'Absent/half-day status use percent of each scheduled shift. '
+          'Minimum Worked Shift (%) and half-day cutoffs use percent of each '
+          'scheduled shift. '
           'Maximum overtime duration is an attendance cutoff only. '
           'Overtime pay uses ₱${_payrollOvertimeRate.text} per minute '
           '(${_payrollOvertimeEnabled ? 'turned on' : 'turned off'} in pay settings).',
@@ -1423,17 +1733,17 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
             SizedBox(
               width: double.infinity,
               child: OutlinedButton.icon(
-                style: SetupUi.secondaryButton,
+                style: SetupUi.secondaryButtonOf(context),
                 onPressed: _locationLocating || _busy
                     ? null
                     : _useWizardCurrentLocation,
                 icon: _locationLocating
-                    ? const SizedBox(
+                    ? SizedBox(
                         width: 16,
                         height: 16,
                         child: CircularProgressIndicator(
                           strokeWidth: 2,
-                          color: SetupUi.navy,
+                          color: SetupUi.navyOf(context),
                         ),
                       )
                     : const Icon(Icons.my_location_rounded, size: 18),
@@ -1472,11 +1782,11 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
             ),
             SliderTheme(
               data: SliderTheme.of(context).copyWith(
-                activeTrackColor: SetupUi.navy,
+                activeTrackColor: SetupUi.navyOf(context),
                 inactiveTrackColor: const Color(0xFFE8EEF4),
-                thumbColor: SetupUi.navy,
-                overlayColor: SetupUi.navy.withValues(alpha: 0.12),
-                valueIndicatorColor: SetupUi.navy,
+                thumbColor: SetupUi.navyOf(context),
+                overlayColor: SetupUi.navyOf(context).withValues(alpha: 0.12),
+                valueIndicatorColor: SetupUi.navyOf(context),
               ),
               child: Slider(
                 value: _locationGeofence,
@@ -1599,7 +1909,7 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
         SizedBox(
           width: double.infinity,
           child: OutlinedButton(
-            style: SetupUi.secondaryButton,
+            style: SetupUi.secondaryButtonOf(context),
             onPressed: () => context.go('/owner/home'),
             child: const Text('Go to Dashboard'),
           ),
@@ -1626,7 +1936,7 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
         children: [
           const Spacer(),
           TextButton(
-            style: SetupUi.ghostButton,
+            style: SetupUi.ghostButtonOf(context),
             onPressed: _busy
                 ? null
                 : () => setState(
@@ -1638,7 +1948,7 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
             const SizedBox(width: 8),
             FilledButton(
               onPressed: _busy ? null : _handleContinue,
-              style: SetupUi.primaryButton.copyWith(
+              style: SetupUi.primaryButtonOf(context).copyWith(
                 minimumSize: const WidgetStatePropertyAll(Size(0, 40)),
               ),
               child: const Text('Continue'),
@@ -1652,11 +1962,187 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
   Widget _infoBox(String text) => SetupInfoBanner(text);
 }
 
+class _EditShiftTimesDialogResult {
+  const _EditShiftTimesDialogResult({
+    required this.start,
+    required this.end,
+    required this.capacity,
+  });
+
+  final TimeOfDay start;
+  final TimeOfDay end;
+  final int capacity;
+}
+
+/// Owns the Employee Capacity [TextEditingController] for the setup-wizard
+/// edit-shift dialog so dispose runs only after this [State] leaves the tree.
+class _EditShiftTimesDialog extends StatefulWidget {
+  const _EditShiftTimesDialog({
+    required this.shiftName,
+    required this.initialStart,
+    required this.initialEnd,
+    required this.initialCapacityText,
+    required this.capacityDecoration,
+    this.timesLocked = false,
+  });
+
+  final String shiftName;
+  final TimeOfDay initialStart;
+  final TimeOfDay initialEnd;
+  final String initialCapacityText;
+  final InputDecoration capacityDecoration;
+  final bool timesLocked;
+
+  @override
+  State<_EditShiftTimesDialog> createState() => _EditShiftTimesDialogState();
+}
+
+class _EditShiftTimesDialogState extends State<_EditShiftTimesDialog> {
+  late TimeOfDay _start;
+  late TimeOfDay _end;
+  late final TextEditingController _capacityController;
+
+  @override
+  void initState() {
+    super.initState();
+    _start = widget.initialStart;
+    _end = widget.initialEnd;
+    _capacityController = TextEditingController(text: widget.initialCapacityText);
+  }
+
+  @override
+  void dispose() {
+    _capacityController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(
+        widget.timesLocked ? 'Shift In Progress' : 'Edit ${widget.shiftName}',
+        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+      ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (widget.timesLocked) ...[
+            const Text(
+              'This shift has already started and cannot be changed. '
+              'Changes to an active shift could affect attendance and '
+              'payroll records.',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+                color: Color(0xFF6B7280),
+                height: 1.45,
+              ),
+            ),
+            const SizedBox(height: 14),
+          ],
+          OutlinedButton(
+            style: SetupUi.secondaryButtonOf(context),
+            onPressed: widget.timesLocked
+                ? null
+                : () async {
+                    final picked = await showTimePicker(
+                      context: context,
+                      initialTime: _start,
+                    );
+                    if (picked != null) {
+                      setState(() => _start = picked);
+                    }
+                  },
+            child: Text('Start ${_start.format(context)}'),
+          ),
+          const SizedBox(height: 10),
+          OutlinedButton(
+            style: SetupUi.secondaryButtonOf(context),
+            onPressed: widget.timesLocked
+                ? null
+                : () async {
+                    final picked = await showTimePicker(
+                      context: context,
+                      initialTime: _end,
+                    );
+                    if (picked != null) {
+                      setState(() => _end = picked);
+                    }
+                  },
+            child: Text('End ${_end.format(context)}'),
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            controller: _capacityController,
+            style: const TextStyle(fontSize: 14),
+            decoration: widget.capacityDecoration,
+            keyboardType: TextInputType.number,
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          style: SetupUi.primaryButtonOf(context),
+          onPressed: () {
+            final capacity = int.tryParse(_capacityController.text.trim());
+            if (capacity == null || capacity < 1) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text(
+                    'Employee capacity must be a whole number of at least 1',
+                  ),
+                ),
+              );
+              return;
+            }
+            Navigator.pop(
+              context,
+              _EditShiftTimesDialogResult(
+                start: _start,
+                end: _end,
+                capacity: capacity,
+              ),
+            );
+          },
+          child: const Text('Save'),
+        ),
+      ],
+    );
+  }
+}
+
 String _positionRateSubtitle(Map<String, dynamic> position) {
+  final configs = (position['pay_configs'] as List?) ?? const [];
+  if (configs.isNotEmpty) {
+    final parts = <String>[];
+    for (final raw in configs) {
+      if (raw is! Map) continue;
+      final basis = '${raw['pay_basis']}';
+      final rate = raw['rate'];
+      if (basis == 'hourly') {
+        parts.add('Hourly · ₱$rate/hr');
+      } else if (basis == 'daily') {
+        parts.add('Daily · ₱$rate/day');
+      }
+    }
+    if (parts.isNotEmpty) return parts.join(' · ');
+  }
+  final basis = '${position['pay_basis'] ?? 'daily'}';
   final daily = position['daily_rate'];
   final hourly = position['hourly_rate'];
-  final parts = <String>[];
-  if (daily != null) parts.add('₱$daily/day');
-  if (hourly != null) parts.add('₱$hourly/hr');
-  return parts.join(' · ');
+  if (basis == 'hourly' && hourly != null) {
+    return 'Hourly · ₱$hourly/hr';
+  }
+  if (daily != null) {
+    return 'Daily · ₱$daily/day';
+  }
+  if (hourly != null) {
+    return 'Hourly · ₱$hourly/hr';
+  }
+  return 'Rate not set';
 }

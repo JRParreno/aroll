@@ -21,6 +21,7 @@ import { OwnerDashboardPage } from "@/pages/owner/OwnerDashboardPage";
 import { OwnerChangePasswordPage } from "@/pages/owner/OwnerChangePasswordPage";
 import { OwnerSchedulePage } from "@/pages/owner/OwnerSchedulePage";
 import { OwnerAttendancePage } from "@/pages/owner/OwnerAttendancePage";
+import { OwnerShiftHistoryPage } from "@/pages/owner/OwnerShiftHistoryPage";
 import { OwnerLeaveManagementPage } from "@/pages/owner/OwnerLeaveManagementPage";
 import { OwnerNotificationsPage } from "@/pages/owner/OwnerNotificationsPage";
 import { OwnerPayrollPage } from "@/pages/owner/OwnerPayrollPage";
@@ -30,7 +31,9 @@ import { OwnerPositionsSalaryRatesPage } from "@/pages/owner/OwnerPositionsSalar
 import { OwnerPayrollSchedulePage } from "@/pages/owner/OwnerPayrollSchedulePage";
 import { OwnerPersonalSettingsPage } from "@/pages/owner/OwnerPersonalSettingsPage";
 import { OwnerAccountSettingsPage } from "@/pages/owner/OwnerAccountSettingsPage";
+import { OwnerAuditHistoryPage } from "@/pages/owner/OwnerAuditHistoryPage";
 import { OwnerBusinessSettingsPage } from "@/pages/owner/OwnerBusinessSettingsPage";
+import { OwnerConsentConfigurationPage } from "@/pages/owner/OwnerConsentConfigurationPage";
 import { OwnerBusinessSetupsPage } from "@/pages/owner/OwnerBusinessSetupsPage";
 import { OwnerLeavePolicyPage } from "@/pages/owner/OwnerLeavePolicyPage";
 import { OwnerHelpPage } from "@/pages/owner/OwnerHelpPage";
@@ -81,6 +84,7 @@ export default function App() {
         <Route path="employees" element={<OwnerEmployeesPage />} />
         <Route path="schedule" element={<OwnerSchedulePage />} />
         <Route path="attendance" element={<OwnerAttendancePage />} />
+        <Route path="attendance/shift-history" element={<OwnerShiftHistoryPage />} />
         <Route path="leave" element={<OwnerLeaveManagementPage />} />
         <Route path="leave/:requestId" element={<OwnerLeaveManagementPage />} />
         <Route path="notifications" element={<OwnerNotificationsPage />} />
@@ -97,7 +101,9 @@ export default function App() {
         <Route path="payroll-schedule" element={<OwnerPayrollSchedulePage />} />
         <Route path="settings/personal" element={<OwnerPersonalSettingsPage />} />
         <Route path="settings/account" element={<OwnerAccountSettingsPage />} />
+        <Route path="settings/audit-history" element={<OwnerAuditHistoryPage />} />
         <Route path="settings/business" element={<OwnerBusinessSettingsPage />} />
+        <Route path="settings/consents" element={<OwnerConsentConfigurationPage />} />
         <Route path="settings/setup" element={<OwnerBusinessSetupsPage />} />
         <Route path="settings/leave-policy" element={<OwnerLeavePolicyPage />} />
         <Route path="profile" element={<OwnerProfilePage />} />

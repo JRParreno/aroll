@@ -145,3 +145,63 @@ def test_holiday_ot_premium_create_get_null_vs_zero():
         assert cleared.json()["ot_premium_percent"] is None
     finally:
         db.close()
+
+
+def test_holiday_active_toggle_keeps_holiday_listed_without_changing_pay():
+    db, owner = _create_owner()
+    client = TestClient(app)
+    headers = _auth_headers(owner)
+    try:
+        created = client.post(
+            "/api/v1/holidays",
+            json={
+                "name": "Toggle Holiday",
+                "holiday_date": date(2026, 9, 23).isoformat(),
+                "is_paid": True,
+                "pay_multiplier": 2.0,
+                "ot_premium_percent": 30,
+                "holiday_type": "company",
+            },
+            headers=headers,
+        )
+        assert created.status_code == 201
+        holiday_id = created.json()["id"]
+        assert created.json()["is_active"] is True
+
+        turned_off = client.put(
+            f"/api/v1/holidays/{holiday_id}",
+            json={"is_active": False},
+            headers=headers,
+        )
+        assert turned_off.status_code == 200
+        body = turned_off.json()
+        assert body["is_active"] is False
+        assert body["pay_multiplier"] == 2.0
+        assert body["is_paid"] is True
+        assert body["ot_premium_percent"] == 30.0
+
+        active_only = client.get("/api/v1/holidays", headers=headers)
+        assert active_only.status_code == 200
+        assert all(row["name"] != "Toggle Holiday" for row in active_only.json())
+
+        listed = client.get(
+            "/api/v1/holidays",
+            params={"include_inactive": True},
+            headers=headers,
+        )
+        assert listed.status_code == 200
+        match = next(row for row in listed.json() if row["name"] == "Toggle Holiday")
+        assert match["is_active"] is False
+        assert match["pay_multiplier"] == 2.0
+
+        turned_on = client.put(
+            f"/api/v1/holidays/{holiday_id}",
+            json={"is_active": True},
+            headers=headers,
+        )
+        assert turned_on.status_code == 200
+        assert turned_on.json()["is_active"] is True
+        assert turned_on.json()["pay_multiplier"] == 2.0
+        assert turned_on.json()["ot_premium_percent"] == 30.0
+    finally:
+        db.close()

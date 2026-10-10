@@ -265,6 +265,14 @@ def employee_consent_items(
 ) -> list[dict]:
     items = []
     for doc in published_effective_documents(db, business):
+        satisfied = document_satisfied(db, employee, business, doc)
+        record = latest_document_record(db, employee.id, doc)
+        accepted_at = None
+        accepted_version = None
+        # Only expose agreement metadata when the current required version is met.
+        if satisfied and record is not None and record.action == ACTION_ACCEPTED:
+            accepted_at = record.created_at
+            accepted_version = record.policy_version
         items.append(
             {
                 "id": str(doc.id),
@@ -276,10 +284,12 @@ def employee_consent_items(
                 else None,
                 "web_path": document_page_path(doc.id),
                 "required": doc.is_required,
-                "accepted": document_satisfied(db, employee, business, doc),
+                "accepted": satisfied,
                 "consent_type": doc.consent_type,
                 "version": doc.version,
                 "content_source": document_source(doc),
+                "accepted_at": accepted_at.isoformat() if accepted_at else None,
+                "accepted_version": accepted_version,
             }
         )
     return items
@@ -477,13 +487,68 @@ def save_document_file(
     return document
 
 
-def render_document_html(document: ConsentDocument) -> HTMLResponse:
+def _format_plain_body_html(text: str) -> str:
+    """Present plain-text legal body with paragraphs/lists. Does not alter wording."""
+    escaped = html.escape(text)
+    blocks: list[str] = []
+    paragraph: list[str] = []
+
+    def flush_paragraph() -> None:
+        nonlocal paragraph
+        if not paragraph:
+            return
+        blocks.append("<p>" + "<br>\n".join(paragraph) + "</p>")
+        paragraph = []
+
+    for raw_line in escaped.split("\n"):
+        line = raw_line.rstrip()
+        stripped = line.strip()
+        if not stripped:
+            flush_paragraph()
+            continue
+        bullet = False
+        ordered = False
+        content = stripped
+        if stripped.startswith(("• ", "- ", "* ")):
+            bullet = True
+            content = stripped[2:].strip()
+        else:
+            # Numbered clauses: "1. ", "1) ", "12. "
+            idx = 0
+            while idx < len(stripped) and stripped[idx].isdigit():
+                idx += 1
+            if idx > 0 and idx < len(stripped) and stripped[idx] in ".)":
+                rest = stripped[idx + 1 :]
+                if rest.startswith(" "):
+                    ordered = True
+                    content = rest.strip()
+        if bullet or ordered:
+            flush_paragraph()
+            tag = "ol" if ordered else "ul"
+            # Keep consecutive list items in one list when possible.
+            if blocks and blocks[-1].startswith(f"<{tag}>") and blocks[-1].endswith(
+                f"</{tag}>"
+            ):
+                blocks[-1] = blocks[-1][: -len(f"</{tag}>")] + f"<li>{content}</li></{tag}>"
+            else:
+                blocks.append(f"<{tag}><li>{content}</li></{tag}>")
+        else:
+            paragraph.append(stripped)
+    flush_paragraph()
+    return "\n".join(blocks) if blocks else f"<p>{escaped}</p>"
+
+
+def render_document_html(
+    document: ConsentDocument,
+    *,
+    embed: bool = False,
+) -> HTMLResponse:
     title = html.escape(document.title)
     version = html.escape(document.version)
     if not document_published(document):
         body = html.escape("This consent document is not published.")
     elif _trimmed(document.body_text):
-        body = html.escape(document.body_text or "").replace("\n", "<br>\n")
+        body = _format_plain_body_html(document.body_text or "")
     elif document.file_stored_name:
         file_url = html.escape(document_api_file_path(document.id))
         content_type = (document.file_content_type or "").lower()
@@ -499,7 +564,44 @@ def render_document_html(document: ConsentDocument) -> HTMLResponse:
             body = f'<p><a href="{file_url}">Open attached file</a></p>'
     else:
         body = html.escape("No content.")
-    markup = f"""<!DOCTYPE html>
+
+    # Embed mode (mobile onboarding / view consent): no duplicate title — the
+    # native UI already shows the document title. Public page keeps title+meta.
+    if embed:
+        markup = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{title}</title>
+  <style>
+    html, body {{ margin: 0; padding: 0; background: #ffffff; color: #1f2937; }}
+    body {{
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      font-size: 15px;
+      line-height: 1.65;
+      -webkit-text-size-adjust: 100%;
+    }}
+    main {{ padding: 0.25rem 0 2rem; }}
+    .body p {{ margin: 0 0 0.95rem; }}
+    .body p:last-child {{ margin-bottom: 0; }}
+    .body ul, .body ol {{
+      margin: 0 0 0.95rem;
+      padding-left: 1.35rem;
+    }}
+    .body li {{ margin: 0.35rem 0; padding-left: 0.15rem; }}
+    .body li::marker {{ color: #6b7280; }}
+  </style>
+</head>
+<body>
+  <main>
+    <div class="body">{body}</div>
+  </main>
+</body>
+</html>
+"""
+    else:
+        markup = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
@@ -512,6 +614,9 @@ def render_document_html(document: ConsentDocument) -> HTMLResponse:
     h1 {{ margin: 0 0 0.5rem; font-size: 1.35rem; }}
     .meta {{ margin: 0 0 1rem; color: #6B7280; font-size: 0.875rem; }}
     .body {{ font-size: 0.95rem; line-height: 1.7; }}
+    .body p {{ margin: 0 0 0.9rem; }}
+    .body ul, .body ol {{ margin: 0 0 0.9rem; padding-left: 1.35rem; }}
+    .body li {{ margin: 0.3rem 0; }}
   </style>
 </head>
 <body>

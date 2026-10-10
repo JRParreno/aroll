@@ -62,7 +62,7 @@ function InsightCard({
           <Icon className="h-4 w-4" />
         </div>
         <Link
-          className="rounded-lg px-2 py-1 text-xs font-medium text-[#1E3A5F] transition hover:bg-[#EEF3F8]"
+          className="rounded-lg px-2 py-1 text-xs font-medium text-[var(--owner-navy)] transition hover:bg-[var(--owner-well)]"
           to={to}
         >
           {linkLabel}

@@ -7,6 +7,8 @@ import 'package:aroll_mobile/core/utils/profile_image_errors.dart';
 import 'package:aroll_mobile/domain/entities/employee_portal.dart';
 import 'package:aroll_mobile/domain/repositories/employee_repository.dart';
 import 'package:aroll_mobile/presentation/employee/employee_ui.dart';
+import 'package:aroll_mobile/presentation/shared/app_ui.dart';
+import 'package:aroll_mobile/presentation/shared/confirm_action_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
@@ -103,21 +105,14 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
   Future<void> _confirmRemoveProfileImage() async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Remove profile picture?'),
-        content: const Text(
-          'Your profile picture will be removed from all devices.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Remove'),
-          ),
-        ],
+      builder: (context) => const ConfirmActionDialog(
+        icon: Icons.person_remove_rounded,
+        title: 'Remove profile picture?',
+        message: 'Your profile picture will be removed from all devices.',
+        confirmLabel: 'Remove',
+        iconColor: AppColors.danger,
+        iconBackground: Color(0xFFFEE2E2),
+        confirmColor: Color(0xFFB91C1C),
       ),
     );
     if (confirmed != true) return;
@@ -334,6 +329,25 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
                         value: titleCase(profile.status),
                       ),
                     ],
+                  ),
+                  const SizedBox(height: 14),
+                  OutlinedButton(
+                    onPressed: () =>
+                        context.push('/profile/change-password'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: brand.primary,
+                      side: BorderSide(
+                        color: brand.primary.withValues(alpha: 0.45),
+                      ),
+                      minimumSize: const Size.fromHeight(48),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                    child: const Text(
+                      'Change Password',
+                      style: TextStyle(fontWeight: FontWeight.w700),
+                    ),
                   ),
                   const SizedBox(height: 14),
                   OutlinedButton(

@@ -18,6 +18,7 @@ class UserSession extends Equatable {
     this.isDemo = false,
     this.isInternalTest = false,
     this.consentsCompleted,
+    this.permissionsOnboardingCompleted,
     this.timezone,
   });
 
@@ -37,6 +38,8 @@ class UserSession extends Equatable {
   final bool isDemo;
   final bool isInternalTest;
   final bool? consentsCompleted;
+  /// Server account-level permissions onboarding completion (not OS grants).
+  final bool? permissionsOnboardingCompleted;
   final String? timezone;
 
   bool get isOwner => role == 'owner' || role == 'manager';
@@ -50,6 +53,7 @@ class UserSession extends Equatable {
     bool? isDemo,
     bool? isInternalTest,
     bool? consentsCompleted,
+    bool? permissionsOnboardingCompleted,
     String? timezone,
   }) {
     return UserSession(
@@ -69,6 +73,8 @@ class UserSession extends Equatable {
       isDemo: isDemo ?? this.isDemo,
       isInternalTest: isInternalTest ?? this.isInternalTest,
       consentsCompleted: consentsCompleted ?? this.consentsCompleted,
+      permissionsOnboardingCompleted: permissionsOnboardingCompleted ??
+          this.permissionsOnboardingCompleted,
       timezone: timezone ?? this.timezone,
     );
   }
@@ -91,6 +97,7 @@ class UserSession extends Equatable {
         isDemo,
         isInternalTest,
         consentsCompleted,
+        permissionsOnboardingCompleted,
         timezone,
       ];
 }

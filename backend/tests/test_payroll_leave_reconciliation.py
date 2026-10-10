@@ -14,6 +14,7 @@ from app.models.enums import (
     EmploymentType,
     HolidayRulesMode,
     HolidayType,
+    PayBasis,
 )
 from app.models.holiday import Holiday
 from app.models.payroll import BusinessPayrollConfig, Position
@@ -161,6 +162,7 @@ def test_paid_leave_with_on_leave_attendance():
     shift = _shift()
     assignment = _assignment(shift, work_date)
     record = SimpleNamespace(
+        id=uuid4(),
         shift_assignment_id=assignment.id,
         status=AttendanceStatus.on_leave,
         time_in=None,
@@ -211,6 +213,7 @@ def test_unpaid_leave_with_on_leave_attendance():
     shift = _shift()
     assignment = _assignment(shift, work_date)
     record = SimpleNamespace(
+        id=uuid4(),
         shift_assignment_id=assignment.id,
         status=AttendanceStatus.on_leave,
         time_in=None,
@@ -300,6 +303,7 @@ def test_attendance_backed_leave_unchanged_with_recon_empty():
     shift = _shift()
     assignment = _assignment(shift, work_date)
     record = SimpleNamespace(
+        id=uuid4(),
         shift_assignment_id=assignment.id,
         status=AttendanceStatus.on_leave,
         time_in=None,
@@ -322,11 +326,15 @@ def test_ordinary_workday_unchanged():
     shift = _shift()
     assignment = _assignment(shift, work_date)
     record = SimpleNamespace(
+        id=uuid4(),
         shift_assignment_id=assignment.id,
         status=AttendanceStatus.complete,
         time_in=datetime(2026, 7, 28, 8, 0),
         time_out=datetime(2026, 7, 28, 16, 0),
         created_at=datetime(2026, 7, 28, 8, 0),
+        pay_basis_at_completion=PayBasis.daily,
+        daily_rate_at_completion=800.0,
+        hourly_rate_at_completion=None,
     )
     slip = _run(
         attendance_rows=[(record, assignment, shift)],
@@ -354,11 +362,15 @@ def test_holiday_payroll_unchanged_without_leave():
         is_active=True,
     )
     record = SimpleNamespace(
+        id=uuid4(),
         shift_assignment_id=assignment.id,
         status=AttendanceStatus.complete,
         time_in=datetime(2026, 7, 28, 8, 0),
         time_out=datetime(2026, 7, 28, 16, 0),
         created_at=datetime(2026, 7, 28, 8, 0),
+        pay_basis_at_completion=PayBasis.daily,
+        daily_rate_at_completion=800.0,
+        hourly_rate_at_completion=None,
     )
     slip = _run(
         attendance_rows=[(record, assignment, shift)],
@@ -376,11 +388,15 @@ def test_overtime_unchanged_without_leave():
     shift = _shift()
     assignment = _assignment(shift, work_date)
     record = SimpleNamespace(
+        id=uuid4(),
         shift_assignment_id=assignment.id,
         status=AttendanceStatus.complete,
         time_in=datetime(2026, 7, 28, 8, 0),
         time_out=datetime(2026, 7, 28, 17, 0),
         created_at=datetime(2026, 7, 28, 8, 0),
+        pay_basis_at_completion=PayBasis.daily,
+        daily_rate_at_completion=800.0,
+        hourly_rate_at_completion=None,
     )
     slip = _run(
         attendance_rows=[(record, assignment, shift)],

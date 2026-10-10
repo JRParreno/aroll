@@ -17,6 +17,7 @@ class EmployeeProfile extends Equatable {
     required this.businessCode,
     required this.businessType,
     required this.ownerName,
+    this.ownerEmail,
     required this.faceRegistrationStatus,
     required this.branding,
     this.timezone,
@@ -36,6 +37,8 @@ class EmployeeProfile extends Equatable {
   final String businessCode;
   final String? businessType;
   final String? ownerName;
+  /// Registered owner email from business registration (not Business.email).
+  final String? ownerEmail;
   final String faceRegistrationStatus;
   final BusinessBrandingSettings? branding;
   final String? timezone;
@@ -58,6 +61,7 @@ class EmployeeProfile extends Equatable {
         businessCode,
         businessType,
         ownerName,
+        ownerEmail,
         faceRegistrationStatus,
         branding,
         timezone,
@@ -421,16 +425,37 @@ class EmployeePayrollRow extends Equatable {
     required this.dailyRate,
     required this.earned,
     required this.holidayName,
+    this.historicalRateRequired = false,
+    this.payBasisUsed,
+    this.rateUsed,
+    this.shiftNet,
   });
 
   final DateTime date;
   final String status;
-  final double dailyRate;
-  final double earned;
+  final double? dailyRate;
+  final double? earned;
   final String? holidayName;
+  final bool historicalRateRequired;
+  /// Completion-stamp basis for this shift. Null on older payloads.
+  final String? payBasisUsed;
+  /// Completion-stamp rate for this shift. Null on older payloads.
+  final double? rateUsed;
+  /// Engine shift result. Null on older payloads; UI may fall back to earned.
+  final double? shiftNet;
 
   @override
-  List<Object?> get props => [date, status, dailyRate, earned, holidayName];
+  List<Object?> get props => [
+        date,
+        status,
+        dailyRate,
+        earned,
+        holidayName,
+        historicalRateRequired,
+        payBasisUsed,
+        rateUsed,
+        shiftNet,
+      ];
 }
 
 class EmployeePayroll extends Equatable {
@@ -558,6 +583,29 @@ class EmployeeShiftHistoryItem extends Equatable {
     this.correctionStatus,
     this.correctionId,
     this.correctionReviewNote,
+    this.payBasisUsed,
+    this.rateUsed,
+    this.earned,
+    this.expectedSalaryPay,
+    this.lateMinutes,
+    this.lateDeduction,
+    this.undertimeMinutes,
+    this.undertimeDeduction,
+    this.overtimePay,
+    this.restDayPremiumPay,
+    this.shiftDeductions,
+    this.shiftNet,
+    this.workedMinutes,
+    this.historicalRateRequired = false,
+    this.dailyRateConflict = false,
+    this.holidayPay,
+    this.holidayIncludedInShiftNet = false,
+    this.dayHolidayPay,
+    this.dayRestDayPay,
+    this.dayEntitlement,
+    this.reconciledShiftTotal,
+    this.reconciledDayTotal,
+    this.hasReconciledDayTotal = false,
   });
 
   final String id;
@@ -576,6 +624,32 @@ class EmployeeShiftHistoryItem extends Equatable {
   final String? correctionStatus;
   final String? correctionId;
   final String? correctionReviewNote;
+  final String? payBasisUsed;
+  final double? rateUsed;
+  final double? earned;
+  final double? expectedSalaryPay;
+  final double? lateMinutes;
+  final double? lateDeduction;
+  final double? undertimeMinutes;
+  final double? undertimeDeduction;
+  final double? overtimePay;
+  final double? restDayPremiumPay;
+  final double? shiftDeductions;
+  final double? shiftNet;
+  final double? workedMinutes;
+  final bool historicalRateRequired;
+  final bool dailyRateConflict;
+  final double? holidayPay;
+  final bool holidayIncludedInShiftNet;
+  final double? dayHolidayPay;
+  final double? dayRestDayPay;
+  final double? dayEntitlement;
+  final double? reconciledShiftTotal;
+  final double? reconciledDayTotal;
+  final bool hasReconciledDayTotal;
+
+  /// Shift Net shown in history. Uses the reconciled total when payroll sent one.
+  double? get displayedShiftNet => reconciledShiftTotal ?? shiftNet;
 
   bool get needsClockIn => timeIn == null;
   bool get needsClockOut => timeOut == null;
@@ -599,6 +673,29 @@ class EmployeeShiftHistoryItem extends Equatable {
         correctionStatus,
         correctionId,
         correctionReviewNote,
+        payBasisUsed,
+        rateUsed,
+        earned,
+        expectedSalaryPay,
+        lateMinutes,
+        lateDeduction,
+        undertimeMinutes,
+        undertimeDeduction,
+        overtimePay,
+        restDayPremiumPay,
+        shiftDeductions,
+        shiftNet,
+        workedMinutes,
+        historicalRateRequired,
+        dailyRateConflict,
+        holidayPay,
+        holidayIncludedInShiftNet,
+        dayHolidayPay,
+        dayRestDayPay,
+        dayEntitlement,
+        reconciledShiftTotal,
+        reconciledDayTotal,
+        hasReconciledDayTotal,
       ];
 }
 

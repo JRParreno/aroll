@@ -16,6 +16,14 @@
     --input: 214.3 31.8% 91.4%;
     --ring: 142 76% 36%;
     --radius: 0.5rem;
+    --owner-navy: #1e3a5f;
+    --owner-button: #1e3a5f;
+    --owner-navy-soft: #284b73;
+    --owner-accent: #3b82f6;
+    --owner-sidebar: #1e3a5f;
+    --owner-primary-hsl: 213 52% 25%;
+    --owner-ring-hsl: 213 45% 32%;
+    --owner-well: #e7eef5;
   }
   body {
     @apply bg-background text-foreground antialiased;
@@ -24,11 +32,9 @@
 
 /* Owner portal brand tokens (scoped so login/employee primary stays green). */
 .owner-shell {
-  --primary: 213 52% 25%;
+  --primary: var(--owner-primary-hsl, 213 52% 25%);
   --primary-foreground: 0 0% 100%;
-  --ring: 213 45% 32%;
-  --owner-navy: #1e3a5f;
-  --owner-navy-soft: #284b73;
+  --ring: var(--owner-ring-hsl, 213 45% 32%);
   --owner-page: #f4f6f9;
   --owner-soft: #eef3f8;
   --owner-ink: #1f2937;
@@ -40,8 +46,8 @@
   line-height: 1.55;
   letter-spacing: -0.011em;
   background:
-    radial-gradient(1200px 480px at 100% -10%, rgba(30, 58, 95, 0.06), transparent 55%),
-    radial-gradient(900px 420px at 0% 0%, rgba(40, 75, 115, 0.04), transparent 50%),
+    radial-gradient(1200px 480px at 100% -10%, color-mix(in srgb, var(--owner-navy, #1e3a5f) 6%, transparent), transparent 55%),
+    radial-gradient(900px 420px at 0% 0%, color-mix(in srgb, var(--owner-navy-soft, #284b73) 4%, transparent), transparent 50%),
     var(--owner-page);
   height: 100dvh;
   max-height: 100dvh;
@@ -64,7 +70,9 @@
   }
 
   .owner-icon-well {
-    @apply inline-flex items-center justify-center rounded-xl bg-[#EEF3F8] text-[#1E3A5F];
+    @apply inline-flex items-center justify-center rounded-xl;
+    background-color: var(--owner-well, #e7eef5);
+    color: var(--owner-navy, #1e3a5f);
   }
 
   .owner-page-title {
@@ -118,10 +126,26 @@
     display: flex;
     max-width: 72rem;
     margin-inline: auto;
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+  }
+
+  .owner-page-header-back {
+    display: flex;
+    min-height: 2rem;
+    align-items: center;
+    margin-bottom: 0.5rem;
+  }
+
+  .owner-page-header-row {
+    display: flex;
     min-height: var(--owner-page-header-copy-height);
     align-items: center;
     justify-content: space-between;
     gap: 1rem;
+    width: 100%;
   }
 
   .owner-page-header-copy {
@@ -165,6 +189,172 @@
     justify-content: flex-end;
     gap: 0.5rem;
   }
+
+  @media (max-width: 900px) {
+    .owner-page-header {
+      --owner-page-header-copy-height: auto;
+      --owner-page-header-pad-y: 1rem;
+    }
+
+    .owner-page-header-row {
+      flex-wrap: wrap;
+      align-items: flex-start;
+      min-height: 0;
+    }
+
+    .owner-page-header-copy,
+    .owner-page-header-tools {
+      min-height: 0;
+    }
+
+    .owner-page-header-copy {
+      flex: 1 1 16rem;
+    }
+
+    .owner-page-header-tools {
+      flex: 1 1 auto;
+      justify-content: flex-start;
+    }
+
+    .owner-page-header .owner-page-title,
+    .owner-page-header-description {
+      min-height: 0;
+      overflow: visible;
+      text-overflow: unset;
+      white-space: normal;
+    }
+  }
+
+  /* Shared Owner page surfaces — presentation only */
+  .owner-panel {
+    @apply rounded-2xl border border-slate-200/90 bg-white p-5 shadow-[0_1px_2px_rgba(15,23,42,0.04),0_8px_24px_rgba(15,23,42,0.04)];
+  }
+
+  .owner-panel-muted {
+    @apply rounded-2xl border border-slate-200/90 bg-[#FAFBFC] p-5 shadow-sm;
+  }
+
+  .owner-toolbar {
+    @apply rounded-2xl border border-slate-200/90 bg-white p-4 shadow-[0_1px_2px_rgba(15,23,42,0.04),0_8px_24px_rgba(15,23,42,0.04)] sm:p-5;
+  }
+
+  .owner-empty {
+    @apply rounded-2xl border border-dashed border-slate-200 bg-white px-6 py-12 text-center text-sm text-[#6B7280];
+  }
+
+  .owner-section-kicker {
+    @apply mb-4 text-[11px] font-medium uppercase tracking-[0.14em] text-[#6B7280];
+  }
+
+  .owner-filter-grid {
+    @apply grid gap-3 sm:grid-cols-2 lg:grid-cols-4;
+  }
+
+  .owner-tabs {
+    @apply flex flex-wrap gap-2;
+  }
+
+  .owner-tab {
+    @apply rounded-xl px-3.5 py-2 text-sm font-medium transition;
+  }
+
+  .owner-tab-active {
+    @apply text-white shadow-sm;
+    background-color: var(--owner-button, #1e3a5f);
+  }
+
+  .owner-tab-idle {
+    @apply bg-white text-[#4B5563] ring-1 ring-slate-200/90 hover:bg-[#F8FAFC] hover:text-[#1F2937];
+  }
+
+  .owner-list-row {
+    @apply w-full rounded-2xl border border-slate-200/90 bg-white p-4 text-left shadow-[0_1px_2px_rgba(15,23,42,0.03)] transition hover:border-[#C5D4E3] hover:shadow-[0_8px_24px_rgba(15,23,42,0.06)];
+  }
+
+  .owner-list-row-active {
+    @apply ring-1;
+    border-color: var(--owner-navy, #1e3a5f);
+    --tw-ring-color: color-mix(in srgb, var(--owner-navy, #1e3a5f) 20%, transparent);
+  }
+
+  .owner-status-chip {
+    @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-medium tracking-wide;
+  }
+}
+
+/* Owner control / table polish — scoped to owner portal only */
+.owner-shell button.rounded-md,
+.owner-shell a.rounded-md {
+  border-radius: 0.75rem;
+}
+
+.owner-shell input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+.owner-shell select,
+.owner-shell textarea {
+  border-radius: 0.75rem;
+}
+
+.owner-shell input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):focus-visible,
+.owner-shell select:focus-visible,
+.owner-shell textarea:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--owner-navy, #1e3a5f) 12%, transparent);
+  border-color: color-mix(in srgb, var(--owner-navy, #1e3a5f) 35%, transparent);
+}
+
+.owner-shell table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.owner-shell thead th {
+  background: #f8fafc;
+  border-bottom: 1px solid rgb(226 232 240 / 0.95);
+  padding: 0.75rem 1rem;
+  text-align: left;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #6b7280;
+  white-space: nowrap;
+}
+
+.owner-shell tbody td {
+  border-bottom: 1px solid rgb(241 245 249);
+  padding: 0.875rem 1rem;
+  vertical-align: middle;
+  font-size: 0.875rem;
+  color: #1f2937;
+}
+
+.owner-shell tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.owner-shell tbody tr {
+  transition: background-color 0.15s ease;
+}
+
+.owner-shell tbody tr:hover td {
+  background: #f8fafc;
+}
+
+.owner-shell .owner-card,
+.owner-shell .owner-panel,
+.owner-shell .owner-toolbar {
+  transition: box-shadow 0.15s ease, border-color 0.15s ease;
+  min-width: 0;
+  max-width: 100%;
+}
+
+@media (max-width: 1024px) {
+  .owner-shell .owner-card:has(table),
+  .owner-shell .owner-panel:has(table),
+  .owner-shell .owner-toolbar:has(table) {
+    overflow-x: auto;
+  }
 }
 
 html:has(.owner-shell),
@@ -185,19 +375,9 @@ body:has(.owner-shell),
   overscroll-behavior-x: none;
 }
 
-.owner-dashboard-scroll {
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
 .owner-dashboard-page {
   display: flex;
-  height: 100%;
-  min-height: 0;
-  flex: 1 1 auto;
   flex-direction: column;
-  overflow: hidden;
 }
 
 .owner-dashboard-page .owner-page-header {
@@ -208,11 +388,8 @@ body:has(.owner-shell),
 
 .owner-dashboard-content {
   display: flex;
-  min-height: 0;
-  flex: 1 1 auto;
   flex-direction: column;
   gap: 0.9rem;
-  overflow: hidden;
   padding-top: 1rem;
   padding-bottom: 1rem;
 }
@@ -223,10 +400,7 @@ body:has(.owner-shell),
 
 .owner-dashboard-main {
   display: grid;
-  min-height: 0;
-  flex: 1 1 auto;
-  height: 100%;
-  grid-template-rows: minmax(0, 1fr);
+  align-items: start;
 }
 
 @media (min-width: 640px) {

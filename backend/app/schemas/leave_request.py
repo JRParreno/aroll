@@ -11,6 +11,7 @@ class LeaveRequestCreate(BaseModel):
     start_date: date
     end_date: date
     reason: str = Field(min_length=3, max_length=2000)
+    other_leave_specification: str | None = Field(default=None, max_length=200)
     supporting_document: str | None = None
 
 
@@ -19,6 +20,7 @@ class LeaveRequestUpdate(BaseModel):
     start_date: date
     end_date: date
     reason: str = Field(min_length=3, max_length=2000)
+    other_leave_specification: str | None = Field(default=None, max_length=200)
     supporting_document: str | None = None
 
 
@@ -36,6 +38,7 @@ class LeaveRequestPreviousVersion(BaseModel):
     end_date: date | None = None
     leave_days: int
     reason: str
+    other_leave_specification: str | None = None
     has_supporting_document: bool = False
     supporting_document: str | None = None
     is_paid: bool
@@ -54,6 +57,7 @@ class LeaveRequestResponse(BaseModel):
     end_date: date
     leave_days: int
     reason: str
+    other_leave_specification: str | None = None
     supporting_document: str | None = None
     has_supporting_document: bool = False
     status: LeaveRequestStatus
@@ -69,3 +73,55 @@ class LeaveRequestResponse(BaseModel):
     updated_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class LeaveBalanceItem(BaseModel):
+    leave_type: LeaveType
+    leave_type_label: str
+    year: int
+    allocated_days: int | None = None
+    used_days: int
+    remaining_days: int | None = None
+    configured: bool
+    enabled: bool = False
+    disabled: bool = False
+
+
+class LeaveBalanceResponse(BaseModel):
+    employee_id: UUID
+    year: int
+    items: list[LeaveBalanceItem]
+
+
+class LeaveEntitlementWriteItem(BaseModel):
+    leave_type: LeaveType
+    allocated_days: int | None = Field(default=None, ge=0, le=366)
+
+
+class LeaveEntitlementUpdate(BaseModel):
+    year: int = Field(ge=2000, le=2100)
+    items: list[LeaveEntitlementWriteItem]
+
+
+class LeaveBalanceYearPreview(LeaveBalanceItem):
+    # scheduled_days is the calendar leave-day count for this year.
+    scheduled_days: int
+    leave_days: int
+    sufficient: bool
+
+
+class LeaveRequestPreviewResponse(BaseModel):
+    leave_type: LeaveType
+    leave_type_label: str
+    start_date: date
+    end_date: date
+    calendar_days: int
+    # scheduled_days matches calendar_days so existing clients keep a count.
+    scheduled_days: int
+    leave_days: int
+    sufficient: bool
+    balance_sufficient: bool
+    years: list[LeaveBalanceYearPreview]
+    minimum_advance_notice_days: int
+    earliest_start_date: date | None = None
+    advance_notice_met: bool

@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Building2, FileText, Palette } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { BusinessRegistrationDocumentsSection } from "@/components/business/BusinessRegistrationDocumentsSection";
@@ -10,33 +10,25 @@ import {
   businessBrandingForSave,
   defaultBusinessBranding,
 } from "@/components/owner/settings/brandingDefaults";
+import { StatusBadge } from "@/components/detail/DetailLayout";
 import {
-  DetailField,
-  DetailSection,
-  StatusBadge,
-} from "@/components/detail/DetailLayout";
-import {
+  OwnerCard,
   OwnerPage,
   OwnerPageBackLink,
   OwnerPageContent,
   OwnerPageHeader,
 } from "@/components/owner/layout/OwnerPageLayout";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   fetchOwnerRegistrationDocumentFile,
-  getBusinessLegalSettings,
   getBusinessSettings,
-  listConsentDocuments,
-  updateBusinessLegalSettings,
   updateBusinessSettings,
   type BusinessBrandingSettings,
 } from "@/lib/api";
-import { ConsentDocumentManager } from "@/components/consents/ConsentDocumentManager";
 import { ME_QUERY_KEY } from "@/lib/authSession";
-import { formatBusinessType, formatVerificationStatus } from "@/lib/registrationDocuments";
+import { formatVerificationStatus } from "@/lib/registrationDocuments";
 
 async function fetchOwnerDocument(
   _registrationId: string,
@@ -55,26 +47,12 @@ export function OwnerBusinessSettingsPage() {
   });
   const [branding, setBranding] =
     useState<BusinessBrandingSettings>(defaultBusinessBranding);
-  const [useCustomConsents, setUseCustomConsents] = useState(false);
+  const [documentsOpen, setDocumentsOpen] = useState(false);
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ["business-settings"],
     queryFn: getBusinessSettings,
   });
-
-  const { data: legalData } = useQuery({
-    queryKey: ["business-legal"],
-    queryFn: getBusinessLegalSettings,
-  });
-  const { data: consentCatalog, isLoading: consentsLoading } = useQuery({
-    queryKey: ["owner-consents"],
-    queryFn: () => listConsentDocuments("owner"),
-  });
-
-  useEffect(() => {
-    if (!legalData) return;
-    setUseCustomConsents(legalData.use_custom_consents);
-  }, [legalData]);
 
   useEffect(() => {
     if (!data) return;
@@ -101,19 +79,6 @@ export function OwnerBusinessSettingsPage() {
       qc.invalidateQueries({ queryKey: ME_QUERY_KEY });
     },
     onError: () => toast.error("Failed to save business settings"),
-  });
-
-  const saveLegal = useMutation({
-    mutationFn: () =>
-      updateBusinessLegalSettings({
-        use_custom_consents: useCustomConsents,
-      }),
-    onSuccess: () => {
-      toast.success("Consent settings saved");
-      qc.invalidateQueries({ queryKey: ["business-legal"] });
-      qc.invalidateQueries({ queryKey: ["owner-consents"] });
-    },
-    onError: () => toast.error("Failed to save consent settings"),
   });
 
   if (isLoading) {
@@ -159,164 +124,137 @@ export function OwnerBusinessSettingsPage() {
         title="Business Settings"
         description="Business profile, branding, and registration documents."
       />
-      <OwnerPageContent className="max-w-4xl">
+      <OwnerPageContent className="max-w-4xl space-y-4">
         <OwnerPageBackLink to="/owner/settings/setup" label="Back to Business Setup" />
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-[1.0625rem] font-semibold leading-snug tracking-[-0.015em]">
-              Business Information
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-2 md:col-span-2">
-              <Label htmlFor="business-name">Business Name</Label>
-              <Input
-                id="business-name"
-                value={form.business_name}
-                onChange={(event) =>
-                  setForm({ ...form, business_name: event.target.value })
-                }
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="business-type">Business Type</Label>
-              <Input
-                id="business-type"
-                value={form.business_type}
-                onChange={(event) =>
-                  setForm({ ...form, business_type: event.target.value })
-                }
-                placeholder="e.g. Cafe, Restaurant, Retail"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="business-code">Business Code</Label>
-              <Input id="business-code" value={form.business_code} disabled />
-            </div>
-            <div className="space-y-2 md:col-span-2">
-              <Label htmlFor="business-address">Business Address</Label>
-              <Input
-                id="business-address"
-                value={form.address}
-                onChange={(event) =>
-                  setForm({ ...form, address: event.target.value })
-                }
-              />
-            </div>
-            {verificationStatus ? (
-              <div className="md:col-span-2">
-                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  Registration Status
-                </p>
-                <div className="mt-1">
-                  <StatusBadge status={verificationStatus} />
-                </div>
-              </div>
-            ) : null}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-[1.0625rem] font-semibold leading-snug tracking-[-0.015em]">
-              <Palette className="h-4 w-4" />
-              Business Branding & Theme
-            </CardTitle>
-            <p className="owner-section-subtitle mt-1">
-              Logo and brand colors appear in the owner portal and employee
-              mobile app. The separate display image field was removed in favor
-              of the business logo.
-            </p>
-          </CardHeader>
-          <CardContent>
-            <BusinessLogoAndThemeFields
-              branding={branding}
-              onChange={setBranding}
-            />
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-[1.0625rem] font-semibold leading-snug tracking-[-0.015em]">
-              Workplace consents
-            </CardTitle>
-            <p className="owner-section-subtitle mt-1">
-              Employees always load consents from the API. This workplace uses
-              Aroll+ Admin defaults unless you enable custom workplace consents.
-            </p>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <label className="flex items-start gap-3 rounded-lg border border-slate-200 px-3 py-3 text-sm">
-              <input
-                type="checkbox"
-                className="mt-1"
-                checked={useCustomConsents}
-                onChange={(event) => setUseCustomConsents(event.target.checked)}
-              />
-              <span>
-                <span className="font-medium">Use custom workplace consents</span>
-                <span className="mt-1 block text-muted-foreground">
-                  Off by default. When on, employees see only this workplace’s
-                  documents. Incomplete or unpublished custom catalogs fail
-                  closed and do not fall back to Admin defaults.
-                </span>
-              </span>
-            </label>
-            <Button
-              type="button"
-              onClick={() => saveLegal.mutate()}
-              disabled={saveLegal.isPending}
-            >
-              {saveLegal.isPending ? "Saving…" : "Save consent toggle"}
-            </Button>
-            {consentsLoading ? (
-              <p className="text-sm text-muted-foreground">Loading consents…</p>
-            ) : useCustomConsents ? (
-              <ConsentDocumentManager
-                scope="owner"
-                documents={consentCatalog?.documents ?? []}
-                canEdit={consentCatalog?.can_edit === true}
-                onChanged={() => {
-                  qc.invalidateQueries({ queryKey: ["owner-consents"] });
-                }}
+        <OwnerCard className="overflow-hidden">
+          <div className="flex flex-col items-start gap-3 border-b border-slate-200/80 bg-[#F7F8FA] px-4 py-4 sm:flex-row sm:items-center sm:gap-4 sm:px-5">
+            {branding.logo_url ? (
+              <img
+                src={branding.logo_url}
+                alt=""
+                className="h-14 w-14 shrink-0 rounded-full object-cover ring-1 ring-slate-200"
               />
             ) : (
-              <ConsentDocumentManager
-                scope="owner"
-                documents={consentCatalog?.documents ?? []}
-                canEdit={false}
-                readOnlyHint="Admin defaults apply. Turn on custom workplace consents to upload or edit documents for this workplace only."
-                onChanged={() => {
-                  qc.invalidateQueries({ queryKey: ["owner-consents"] });
-                }}
-              />
+              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-[var(--owner-well)] text-base font-semibold text-[var(--owner-navy)] ring-1 ring-slate-200">
+                {(form.business_name || "B").slice(0, 1).toUpperCase()}
+              </div>
             )}
-          </CardContent>
-        </Card>
+            <div className="min-w-0">
+              <h2 className="truncate text-lg font-semibold tracking-tight text-[#111827]">
+                {form.business_name.trim() || "Business"}
+              </h2>
+              <p className="truncate text-sm text-[#6B7280]">
+                {form.business_type.trim() || "Business type not set"}
+              </p>
+              <p className="mt-0.5 truncate text-xs text-[#6B7280]">
+                Business code: {form.business_code || "—"}
+              </p>
+              {verificationStatus ? (
+                <div className="mt-2">
+                  <StatusBadge status={verificationStatus} />
+                </div>
+              ) : null}
+            </div>
+          </div>
+          <div className="px-4 py-4 sm:px-5">
+            <h3 className="text-sm font-semibold text-[#111827]">Business details</h3>
+            <p className="mt-1 text-sm text-[#6B7280]">
+              Update the profile shown for this business.
+            </p>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label htmlFor="business-name">Business name</Label>
+                <Input
+                  id="business-name"
+                  value={form.business_name}
+                  onChange={(event) =>
+                    setForm({ ...form, business_name: event.target.value })
+                  }
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="business-type">Business type</Label>
+                <Input
+                  id="business-type"
+                  value={form.business_type}
+                  onChange={(event) =>
+                    setForm({ ...form, business_type: event.target.value })
+                  }
+                  placeholder="e.g. Cafe, Restaurant, Retail"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="business-code">Business code</Label>
+                <Input id="business-code" value={form.business_code} disabled />
+              </div>
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label htmlFor="business-address">Address</Label>
+                <Input
+                  id="business-address"
+                  value={form.address}
+                  onChange={(event) =>
+                    setForm({ ...form, address: event.target.value })
+                  }
+                />
+              </div>
+            </div>
+          </div>
+        </OwnerCard>
 
-        <DetailSection
-          title="Owner Information"
-          description="Read-only owner contact details from registration."
-          icon={<Building2 className="h-4 w-4" />}
-        >
-          <DetailField label="Owner Name" value={data.owner_name ?? "—"} />
-          <DetailField label="Email" value={data.owner_email} />
-          <DetailField label="Phone" value={data.owner_phone ?? "Not provided"} />
-        </DetailSection>
+        <OwnerCard className="px-4 py-4 sm:px-5">
+          <h2 className="text-[1.0625rem] font-semibold tracking-tight text-[#111827]">
+            Branding and appearance
+          </h2>
+          <p className="mt-1 text-sm text-[#6B7280]">
+            Logo and brand style appear in the owner portal and employee app.
+          </p>
+          <div className="mt-4">
+            <BusinessLogoAndThemeFields
+              branding={branding}
+              savedTheme={(data.branding ?? defaultBusinessBranding).theme}
+              businessName={form.business_name}
+              onChange={setBranding}
+            />
+          </div>
+        </OwnerCard>
 
-        <DetailSection
-          title="Uploaded Registration Documents"
-          description="Official compliance documents submitted during registration."
-          icon={<FileText className="h-4 w-4" />}
-        >
-          <BusinessRegistrationDocumentsSection
-            registrationId={data.registration_id}
-            documents={data.registration_documents}
-            fetchDocumentFile={fetchOwnerDocument}
-          />
-        </DetailSection>
+        <OwnerCard className="overflow-hidden">
+          <button
+            type="button"
+            className="flex w-full flex-wrap items-center gap-3 px-4 py-3.5 text-left transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--owner-navy)] sm:px-5"
+            aria-expanded={documentsOpen}
+            onClick={() => setDocumentsOpen((open) => !open)}
+          >
+            <span className="min-w-0 flex-1">
+              <span className="block text-[1.0625rem] font-semibold tracking-tight text-[#111827]">
+                Registration documents
+              </span>
+              <span className="mt-0.5 block text-sm text-[#6B7280]">
+                Supporting business registration documents
+              </span>
+            </span>
+            <span className="shrink-0 text-xs font-medium text-[#6B7280]">
+              {data.registration_documents.length}{" "}
+              {data.registration_documents.length === 1 ? "document" : "documents"}
+            </span>
+            <ChevronDown
+              className={`h-4 w-4 shrink-0 text-[#6B7280] transition-transform duration-150 ${
+                documentsOpen ? "rotate-180" : ""
+              }`}
+              aria-hidden="true"
+            />
+          </button>
+          {documentsOpen ? (
+            <div className="border-t border-slate-200 px-4 py-4 sm:px-5">
+              <BusinessRegistrationDocumentsSection
+                registrationId={data.registration_id}
+                documents={data.registration_documents}
+                fetchDocumentFile={fetchOwnerDocument}
+              />
+            </div>
+          ) : null}
+        </OwnerCard>
 
         <Button onClick={() => save.mutate()} disabled={!canSave || save.isPending}>
           Save Business Settings

@@ -5,7 +5,7 @@ const setupWizardStepLabels = [
   'Employee Job Roles',
   'Set Up Employee Pay',
   'How Employees Time In & Out',
-  'Holidays Employees Will Be Paid For',
+  'Holiday Management',
   'Work Location',
   'Review Your Setup',
 ];
@@ -41,8 +41,8 @@ const setupStepHelp = {
       'Choose how often employees get paid and how pay is calculated.',
   'How Employees Time In & Out':
       'Set the time rules for being on time, late, absent, and overtime.',
-  'Holidays Employees Will Be Paid For':
-      'Add holidays your business follows so schedules and pay stay accurate.',
+  'Holiday Management':
+      'Holiday calendar, holiday rules, and how holiday pay works in Aroll+.',
   'Work Location':
       'Set your workplace so employees can only time in when they are nearby.',
   'Review Your Setup':
@@ -96,9 +96,9 @@ const setupMenuEntries = [
     icon: Icons.fact_check_outlined,
   ),
   SetupMenuEntry(
-    label: 'Holidays Employees Will Be Paid For',
+    label: 'Holiday Management',
     subtitle:
-        'Add holidays your business follows so schedules and pay stay accurate.',
+        'Holiday calendar, holiday rules, and how holiday pay works in Aroll+.',
     stepIndex: 4,
     statusKey: 'holidays',
     icon: Icons.event_outlined,

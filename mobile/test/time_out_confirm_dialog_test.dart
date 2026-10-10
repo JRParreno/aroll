@@ -23,6 +23,7 @@ void main() {
     await tester.tap(find.text('Start'));
     await tester.pumpAndSettle();
 
+    expect(find.text('Time Out?'), findsOneWidget);
     expect(find.text('Are you sure you want to Time Out?'), findsOneWidget);
     expect(
       find.text('Your attendance for this shift will be completed.'),

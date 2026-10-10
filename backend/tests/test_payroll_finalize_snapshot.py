@@ -179,6 +179,10 @@ def _run_finalize(db, user, *, slips_by_employee, adjustments=None):
             return_value=0,
         ),
         patch(
+            "app.api.owner_reports.count_unresolved_historical_rate_in_period",
+            return_value=0,
+        ),
+        patch(
             "app.api.owner_reports._calculate_employee_payslip",
             side_effect=calculate,
         ),
@@ -365,6 +369,10 @@ def test_snapshot_failure_rolls_back_payroll_run():
             return_value=0,
         ),
         patch(
+            "app.api.owner_reports.count_unresolved_historical_rate_in_period",
+            return_value=0,
+        ),
+        patch(
             "app.api.owner_reports._calculate_employee_payslip",
             return_value=live,
         ),
@@ -394,7 +402,9 @@ def test_delete_employee_does_not_delete_payslip_snapshots():
         user_id=uuid4(),
         is_active=True,
     )
-    linked_user = SimpleNamespace(id=employee.user_id, is_active=True)
+    linked_user = SimpleNamespace(
+        id=employee.user_id, is_active=True, business_id=business_id
+    )
     owner = User(
         id=uuid4(),
         business_id=business_id,

@@ -123,6 +123,13 @@ def _run_payslip(
         )
         rows = [(record, assignment, shift)]
 
+    from app.services.employee_pay import stamp_attendance_completion_pay
+
+    # Completed fixture rows need completion stamps (same as production clock-out).
+    for record, _assignment, _shift in rows:
+        if getattr(record, "time_out", None) is not None:
+            stamp_attendance_completion_pay(record, employee, position=position)
+
     holiday = None
     if with_holiday_premium or unworked_holiday_noshow:
         holiday = Holiday(
@@ -510,6 +517,11 @@ def test_hourly_two_shifts_same_day_are_paid_independently():
         return MagicMock()
 
     db.query.side_effect = real_query
+
+    from app.services.employee_pay import stamp_attendance_completion_pay
+
+    stamp_attendance_completion_pay(morning_record, employee, position=position)
+    stamp_attendance_completion_pay(evening_record, employee, position=position)
 
     with ExitStack() as stack:
         stack.enter_context(patch("app.api.owner_reports.ensure_incomplete_for_employee"))

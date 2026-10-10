@@ -55,7 +55,7 @@ class OwnerSetupScreen extends StatelessWidget {
               child: FilledButton(
                 onPressed: () =>
                     context.push('/owner/setup-wizard?step=menu'),
-                style: SetupUi.primaryButton,
+                style: SetupUi.primaryButtonOf(context),
                 child: const Text('Open Setup Wizard'),
               ),
             ),
@@ -86,7 +86,7 @@ class OwnerSetupScreen extends StatelessWidget {
               SizedBox(
                 width: double.infinity,
                 child: FilledButton(
-                  style: SetupUi.primaryButton,
+                  style: SetupUi.primaryButtonOf(context),
                   onPressed: () => context.go('/owner/home'),
                   child: const Text('Continue to Dashboard'),
                 ),

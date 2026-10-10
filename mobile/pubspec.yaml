@@ -46,3 +46,5 @@ flutter:
   assets:
     - .env
     - assets/branding/logo.png
+    - assets/fonts/NotoSans-Regular.ttf
+    - assets/fonts/NotoSans-Bold.ttf

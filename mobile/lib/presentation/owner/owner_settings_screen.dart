@@ -36,6 +36,24 @@ class OwnerSettingsScreen extends StatelessWidget {
           ),
           const SizedBox(height: 10),
           SetupMenuCard(
+            label: 'Consent Configuration',
+            subtitle:
+                'Manage workplace consent documents employees review and accept.',
+            icon: Icons.gavel_outlined,
+            showStatus: false,
+            onTap: () => context.push('/owner/settings/consents'),
+          ),
+          const SizedBox(height: 10),
+          SetupMenuCard(
+            label: 'Audit History',
+            subtitle:
+                'Review read-only account and workplace activity for your business.',
+            icon: Icons.history_rounded,
+            showStatus: false,
+            onTap: () => context.push('/owner/settings/audit-history'),
+          ),
+          const SizedBox(height: 10),
+          SetupMenuCard(
             label: 'Account Information',
             subtitle: 'View your owner and business account details.',
             icon: Icons.badge_outlined,

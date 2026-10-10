@@ -1,4 +1,5 @@
 import 'package:aroll_mobile/core/app_state.dart';
+import 'package:aroll_mobile/core/theme/business_brand_theme.dart';
 import 'package:aroll_mobile/core/di/injection.dart';
 import 'package:aroll_mobile/data/repositories/owner_repository.dart';
 import 'package:aroll_mobile/presentation/employee/employee_ui.dart';
@@ -6,6 +7,7 @@ import 'package:aroll_mobile/presentation/owner/owner_shell.dart';
 import 'package:aroll_mobile/presentation/owner/payroll/owner_payroll_format.dart';
 import 'package:aroll_mobile/presentation/owner/payroll/owner_payslip_pdf.dart';
 import 'package:aroll_mobile/presentation/shared/app_ui.dart';
+import 'package:aroll_mobile/presentation/shared/confirm_action_dialog.dart';
 import 'package:aroll_mobile/presentation/shared/tenant_mode_banner.dart';
 import 'package:flutter/material.dart';
 import 'package:share_plus/share_plus.dart';
@@ -71,6 +73,110 @@ class _OwnerPayrollDetailScreenState extends State<OwnerPayrollDetailScreen> {
         _loading = false;
         _error = 'Unable to load payroll details.';
       });
+    }
+  }
+
+  Future<void> _resolveHistoricalRate(Map<String, dynamic> record) async {
+    final recordId = '${record['attendance_record_id'] ?? ''}';
+    if (recordId.isEmpty) return;
+    final basisController = TextEditingController(text: 'daily');
+    final rateController = TextEditingController();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        String payBasis = 'daily';
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: const Text('Set historical pay rate'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'Date: ${record['date'] ?? ''}. Enter the rate that applied '
+                    'when this attendance was completed. The employee\'s current '
+                    'rate is not used.',
+                    style: const TextStyle(fontSize: 13, height: 1.4),
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    value: payBasis,
+                    decoration: const InputDecoration(labelText: 'Pay basis'),
+                    items: const [
+                      DropdownMenuItem(value: 'daily', child: Text('Daily')),
+                      DropdownMenuItem(value: 'hourly', child: Text('Hourly')),
+                      DropdownMenuItem(
+                        value: 'monthly',
+                        child: Text('Monthly'),
+                      ),
+                    ],
+                    onChanged: (value) {
+                      if (value == null) return;
+                      setDialogState(() {
+                        payBasis = value;
+                        basisController.text = value;
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: rateController,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: InputDecoration(
+                      labelText: payBasis == 'hourly'
+                          ? 'Hourly rate'
+                          : payBasis == 'monthly'
+                              ? 'Monthly salary'
+                              : 'Daily rate',
+                    ),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.pop(context, true),
+                  child: const Text('Confirm'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+    if (confirmed != true || !mounted) return;
+    final amount = double.tryParse(rateController.text.trim());
+    if (amount == null || amount <= 0) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Enter a positive rate.')),
+      );
+      return;
+    }
+    final payBasis = basisController.text;
+    try {
+      await _repo.resolveHistoricalRate(
+        recordId: recordId,
+        payBasis: payBasis,
+        dailyRate: payBasis == 'daily' ? amount : null,
+        hourlyRate: payBasis == 'hourly' ? amount : null,
+        monthlySalary: payBasis == 'monthly' ? amount : null,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Historical pay rate saved.')),
+      );
+      await _load();
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not save historical rate.')),
+      );
     }
   }
 
@@ -147,7 +253,7 @@ class _OwnerPayrollDetailScreenState extends State<OwnerPayrollDetailScreen> {
                                       name:
                                           '${payslip['employee_name'] ?? 'Employee'}',
                                       size: 60,
-                                      backgroundColor: AppColors.iconWell,
+                                      backgroundColor: BrandColors.of(context).toneWell,
                                     ),
                                     const SizedBox(width: 14),
                                     Expanded(
@@ -180,7 +286,7 @@ class _OwnerPayrollDetailScreenState extends State<OwnerPayrollDetailScreen> {
                                             style: appMutedStyle().copyWith(
                                               fontSize: 12,
                                               fontWeight: FontWeight.w600,
-                                              color: AppColors.primaryDark,
+                                              color: BrandColors.of(context).toneButton,
                                             ),
                                           ),
                                         ],
@@ -278,11 +384,37 @@ class _OwnerPayrollDetailScreenState extends State<OwnerPayrollDetailScreen> {
                               ),
                             ),
                             _DetailRow(
-                              'Overtime Pay',
+                              () {
+                                final mins = parsePayrollAmount(
+                                  payslip['payable_overtime_minutes'] ??
+                                      payslip['overtime_minutes'],
+                                );
+                                final rate = parsePayrollAmount(
+                                  payslip['overtime_per_minute'],
+                                );
+                                if (mins <= 0) return 'Overtime Pay';
+                                return 'Overtime Pay (${mins.toStringAsFixed(0)} min × ₱${rate.toStringAsFixed(2)})';
+                              }(),
                               ownerPayrollMoney(
                                 parsePayrollAmount(payslip['overtime_pay']),
                               ),
                             ),
+                            if (parsePayrollAmount(
+                                  payslip['pending_overtime_minutes'],
+                                ) >
+                                0)
+                              _DetailRow(
+                                'OT pending approval',
+                                '${parsePayrollAmount(payslip['pending_overtime_minutes']).toStringAsFixed(0)} min (worked, not paid yet)',
+                              ),
+                            if (parsePayrollAmount(
+                                  payslip['rejected_overtime_minutes'],
+                                ) >
+                                0)
+                              _DetailRow(
+                                'OT rejected',
+                                '${parsePayrollAmount(payslip['rejected_overtime_minutes']).toStringAsFixed(0)} min (worked, not paid)',
+                              ),
                             _DetailRow(
                               'Holiday Pay',
                               ownerPayrollMoney(
@@ -308,13 +440,32 @@ class _OwnerPayrollDetailScreenState extends State<OwnerPayrollDetailScreen> {
                               ),
                             ),
                             _DetailRow(
-                              'Late Deduction',
+                              () {
+                                final mins = parsePayrollAmount(
+                                  payslip['late_minutes'],
+                                );
+                                final rate = parsePayrollAmount(
+                                  payslip['late_deduction_per_minute'],
+                                );
+                                if (mins <= 0) return 'Late Deduction';
+                                return 'Late (${mins.toStringAsFixed(0)} min × ₱${rate.toStringAsFixed(2)})';
+                              }(),
                               ownerPayrollMoney(
                                 parsePayrollAmount(payslip['late_deductions']),
                               ),
                             ),
                             _DetailRow(
-                              'Undertime Deduction',
+                              () {
+                                final mins = parsePayrollAmount(
+                                  payslip['undertime_minutes'],
+                                );
+                                final amt = parsePayrollAmount(
+                                  payslip['undertime_deductions'],
+                                );
+                                if (mins <= 0) return 'Undertime Deduction';
+                                final rate = amt / mins;
+                                return 'Undertime (${mins.toStringAsFixed(0)} min × ₱${rate.toStringAsFixed(2)})';
+                              }(),
                               ownerPayrollMoney(
                                 parsePayrollAmount(
                                   payslip['undertime_deductions'],
@@ -475,21 +626,15 @@ class _OwnerPayrollDetailScreenState extends State<OwnerPayrollDetailScreen> {
   Future<void> _deleteAdjustment(String id) async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Remove adjustment?'),
-        content: const Text(
-          'This deduction/allowance will be removed from the payroll slip.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Remove'),
-          ),
-        ],
+      builder: (context) => const ConfirmActionDialog(
+        icon: Icons.remove_circle_outline_rounded,
+        title: 'Remove adjustment?',
+        message:
+            'This deduction/allowance will be removed from the payroll slip.',
+        confirmLabel: 'Remove',
+        iconColor: AppColors.danger,
+        iconBackground: Color(0xFFFEE2E2),
+        confirmColor: Color(0xFFB91C1C),
       ),
     );
     if (confirmed != true) return;
@@ -651,7 +796,22 @@ class _OwnerPayrollDetailScreenState extends State<OwnerPayrollDetailScreen> {
       final status = '${record['status'] ?? ''}';
       final absent = status == 'absent';
       final remarks = _attendanceRemarks(record);
-      final earned = absent ? 0.0 : dailyRate;
+      // Use backend day earned (completion-rate aware). Never recompute from
+      // the slip-level current daily_rate — that reprices historical days.
+      final historicalRequired =
+          record['historical_rate_required'] == true ||
+              '${record['payroll_status'] ?? ''}' == 'historical_rate_required';
+      final earnedLabel = historicalRequired
+          ? 'Unresolved'
+          : ownerPayrollMoney(
+              absent
+                  ? 0.0
+                  : parsePayrollAmount(
+                      record['earned'] ??
+                          record['expected_salary_pay'] ??
+                          dailyRate,
+                    ),
+            );
       return Container(
         margin: const EdgeInsets.only(bottom: 8),
         padding: const EdgeInsets.all(12),
@@ -671,8 +831,20 @@ class _OwnerPayrollDetailScreenState extends State<OwnerPayrollDetailScreen> {
             _DetailRow('Remarks', remarks),
             _DetailRow(
               'Salary Earned',
-              ownerPayrollMoney(earned),
+              earnedLabel,
             ),
+            if (historicalRequired &&
+                record['attendance_record_id'] != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton(
+                    onPressed: () => _resolveHistoricalRate(record),
+                    child: const Text('Resolve historical rate'),
+                  ),
+                ),
+              ),
           ],
         ),
       );
@@ -729,20 +901,20 @@ class _SectionCard extends StatelessWidget {
                   width: 32,
                   height: 32,
                   decoration: BoxDecoration(
-                    color: AppColors.iconWell,
+                    color: BrandColors.of(context).toneWell,
                     borderRadius: BorderRadius.circular(9),
                   ),
-                  child: Icon(icon, size: 16, color: AppColors.primary),
+                  child: Icon(icon, size: 16, color: BrandColors.of(context).tonePrimary),
                 ),
                 const SizedBox(width: 10),
               ],
               Expanded(
                 child: Text(
                   title,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w700,
-                    color: AppColors.primary,
+                    color: BrandColors.of(context).tonePrimary,
                   ),
                 ),
               ),

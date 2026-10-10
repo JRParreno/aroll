@@ -14,6 +14,7 @@ import 'package:aroll_mobile/presentation/employee/payroll_history_screen.dart';
 import 'package:aroll_mobile/presentation/employee/payroll_screen.dart';
 import 'package:aroll_mobile/presentation/employee/payslip_screen.dart';
 import 'package:aroll_mobile/presentation/employee/profile_screen.dart';
+import 'package:aroll_mobile/presentation/employee/employee_business_details_screen.dart';
 import 'package:aroll_mobile/presentation/employee/request_leave_screen.dart';
 import 'package:aroll_mobile/presentation/employee/schedule_screen.dart';
 import 'package:aroll_mobile/presentation/employee/shift_detail_screen.dart';
@@ -23,16 +24,19 @@ import 'package:aroll_mobile/presentation/permissions/permissions_onboarding_scr
 import 'package:aroll_mobile/presentation/home/home_screen.dart';
 import 'package:aroll_mobile/presentation/home/scan_attendance_screen.dart';
 import 'package:aroll_mobile/presentation/owner/owner_attendance_screen.dart';
+import 'package:aroll_mobile/presentation/owner/owner_shift_history_screen.dart';
 import 'package:aroll_mobile/presentation/owner/owner_employees_screen.dart';
 import 'package:aroll_mobile/presentation/owner/owner_dashboard_screen.dart';
 import 'package:aroll_mobile/presentation/owner/owner_leave_management_screen.dart';
 import 'package:aroll_mobile/presentation/owner/owner_location_screen.dart';
 import 'package:aroll_mobile/presentation/owner/owner_notifications_screen.dart';
 import 'package:aroll_mobile/presentation/owner/owner_account_information_screen.dart';
+import 'package:aroll_mobile/presentation/owner/owner_audit_history_screen.dart';
 import 'package:aroll_mobile/presentation/owner/owner_business_information_screen.dart';
 import 'package:aroll_mobile/presentation/owner/owner_business_setup_summary_screen.dart';
 import 'package:aroll_mobile/presentation/owner/owner_profile_screen.dart';
 import 'package:aroll_mobile/presentation/owner/owner_leave_policy_screen.dart';
+import 'package:aroll_mobile/presentation/owner/owner_consent_configuration_screen.dart';
 import 'package:aroll_mobile/presentation/owner/owner_settings_screen.dart';
 import 'package:aroll_mobile/presentation/owner/owner_setup_screen.dart';
 import 'package:aroll_mobile/presentation/owner/owner_registration.dart';
@@ -266,6 +270,27 @@ GoRouter createAppRouter(AppState appState) {
         path: '/profile',
         pageBuilder: (context, state) =>
             _fadePage(state, const EmployeeProfileScreen()),
+        routes: [
+          GoRoute(
+            path: 'change-password',
+            pageBuilder: (context, state) => _fadePage(
+              state,
+              const ChangePasswordScreen(voluntary: true),
+            ),
+          ),
+        ],
+      ),
+      GoRoute(
+        path: '/business-details',
+        pageBuilder: (context, state) {
+          final profile = state.extra is EmployeeProfile
+              ? state.extra as EmployeeProfile
+              : null;
+          return _fadePage(
+            state,
+            EmployeeBusinessDetailsScreen(profile: profile),
+          );
+        },
       ),
       GoRoute(
         path: '/shift-history',
@@ -370,6 +395,13 @@ GoRouter createAppRouter(AppState appState) {
         path: '/owner/attendance',
         pageBuilder: (context, state) =>
             _fadePage(state, const OwnerAttendanceScreen()),
+        routes: [
+          GoRoute(
+            path: 'shift-history',
+            pageBuilder: (context, state) =>
+                _fadePage(state, const OwnerShiftHistoryScreen()),
+          ),
+        ],
       ),
       GoRoute(
         path: '/owner/employees',
@@ -430,6 +462,15 @@ GoRouter createAppRouter(AppState appState) {
           state,
           OwnerProfileScreen(session: appState.session!),
         ),
+        routes: [
+          GoRoute(
+            path: 'change-password',
+            pageBuilder: (context, state) => _fadePage(
+              state,
+              const ChangePasswordScreen(voluntary: true),
+            ),
+          ),
+        ],
       ),
       GoRoute(
         path: '/owner/location',
@@ -460,6 +501,16 @@ GoRouter createAppRouter(AppState appState) {
             path: 'leave-policy',
             pageBuilder: (context, state) =>
                 _fadePage(state, const OwnerLeavePolicyScreen()),
+          ),
+          GoRoute(
+            path: 'consents',
+            pageBuilder: (context, state) =>
+                _fadePage(state, const OwnerConsentConfigurationScreen()),
+          ),
+          GoRoute(
+            path: 'audit-history',
+            pageBuilder: (context, state) =>
+                _fadePage(state, const OwnerAuditHistoryScreen()),
           ),
         ],
       ),

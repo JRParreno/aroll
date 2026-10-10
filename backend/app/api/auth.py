@@ -92,6 +92,16 @@ def _consents_completed_for_user(user: User, db: Session) -> bool:
     return consents_completed(db, employee, business)
 
 
+def _permissions_onboarding_completed_for_user(user: User, db: Session) -> bool:
+    """Account-level onboarding flag. Owners/non-employees are treated complete."""
+    if user.role != UserRole.employee:
+        return True
+    employee = db.query(Employee).filter(Employee.user_id == user.id).first()
+    if employee is None:
+        return False
+    return employee.permissions_onboarding_completed_at is not None
+
+
 def _token_response(user: User, db: Session) -> TokenResponse:
     token = create_access_token(
         str(user.id),
@@ -108,6 +118,9 @@ def _token_response(user: User, db: Session) -> TokenResponse:
         is_demo=is_demo,
         is_internal_test=is_internal_test,
         consents_completed=_consents_completed_for_user(user, db),
+        permissions_onboarding_completed=_permissions_onboarding_completed_for_user(
+            user, db
+        ),
         timezone=business.timezone if business is not None else None,
         **_employee_auth_context(user, db),
     )
@@ -313,5 +326,8 @@ def me(
         is_demo=is_demo,
         is_internal_test=is_internal_test,
         consents_completed=_consents_completed_for_user(user, db),
+        permissions_onboarding_completed=_permissions_onboarding_completed_for_user(
+            user, db
+        ),
         timezone=business.timezone if business is not None else None,
     )

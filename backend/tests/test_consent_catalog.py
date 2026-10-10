@@ -131,6 +131,16 @@ def test_per_document_accept_gates_face_clock_in():
         assert me.status_code == 200
         assert me.json()["consents_completed"] is True
 
+        listed_after = client.get("/api/v1/consents", headers=_auth(employee_user))
+        assert listed_after.status_code == 200
+        after_items = listed_after.json()["items"]
+        required_after = [item for item in after_items if item["required"]]
+        assert required_after
+        for item in required_after:
+            assert item["accepted"] is True
+            assert item.get("accepted_version")
+            assert item.get("accepted_at")
+
         clock_after = _clock_face(
             client, employee_user, "/api/v1/employee/attendance/clock-in-face"
         )

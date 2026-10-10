@@ -50,18 +50,14 @@ def _holiday_response(h: Holiday) -> HolidayResponse:
 def list_holidays(
     db: Annotated[Session, Depends(get_db)],
     user: Annotated[User, Depends(require_roles(UserRole.owner, UserRole.manager))],
+    include_inactive: bool = False,
 ):
     if user.business_id is None:
         raise HTTPException(400, "No business context")
-    rows = (
-        db.query(Holiday)
-        .filter(
-            Holiday.business_id == user.business_id,
-            Holiday.is_active.is_(True),
-        )
-        .order_by(Holiday.holiday_date)
-        .all()
-    )
+    query = db.query(Holiday).filter(Holiday.business_id == user.business_id)
+    if not include_inactive:
+        query = query.filter(Holiday.is_active.is_(True))
+    rows = query.order_by(Holiday.holiday_date).all()
     return [_holiday_response(h) for h in rows]
 
 

@@ -155,6 +155,8 @@ class ConsentDocumentItem {
     this.webPath,
     this.consentType,
     this.version,
+    this.acceptedAt,
+    this.acceptedVersion,
   });
 
   final String id;
@@ -167,6 +169,11 @@ class ConsentDocumentItem {
   final String? webPath;
   final String? consentType;
   final String? version;
+  final DateTime? acceptedAt;
+  final String? acceptedVersion;
+
+  bool get isBiometric =>
+      (consentType ?? '').toLowerCase() == 'biometric';
 
   factory ConsentDocumentItem.fromJson(Map<String, dynamic> json) {
     return ConsentDocumentItem(
@@ -180,6 +187,10 @@ class ConsentDocumentItem {
       webPath: json['web_path'] as String?,
       consentType: json['consent_type'] as String?,
       version: json['version'] as String?,
+      acceptedAt: json['accepted_at'] == null
+          ? null
+          : DateTime.tryParse(json['accepted_at'].toString()),
+      acceptedVersion: json['accepted_version'] as String?,
     );
   }
 }

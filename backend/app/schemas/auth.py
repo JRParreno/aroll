@@ -50,6 +50,7 @@ class TokenResponse(BaseModel):
     is_demo: bool = False
     is_internal_test: bool = False
     consents_completed: bool = True
+    permissions_onboarding_completed: bool = False
     timezone: str | None = None
 
 
@@ -70,4 +71,5 @@ class UserMeResponse(BaseModel):
     is_demo: bool = False
     is_internal_test: bool = False
     consents_completed: bool = True
+    permissions_onboarding_completed: bool = False
     timezone: str | None = None

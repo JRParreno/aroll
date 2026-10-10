@@ -1,4 +1,5 @@
 import 'package:aroll_mobile/core/app_state.dart';
+import 'package:aroll_mobile/core/theme/business_brand_theme.dart';
 import 'package:aroll_mobile/core/di/injection.dart';
 import 'package:aroll_mobile/data/repositories/owner_repository.dart';
 import 'package:aroll_mobile/presentation/employee/employee_ui.dart';
@@ -8,6 +9,7 @@ import 'package:aroll_mobile/presentation/owner/owner_schedule_table_style.dart'
 import 'package:aroll_mobile/presentation/owner/owner_schedule_utils.dart';
 import 'package:aroll_mobile/presentation/owner/owner_schedule_viewer_table.dart';
 import 'package:aroll_mobile/presentation/owner/owner_shell.dart';
+import 'package:aroll_mobile/presentation/owner/setup/setup_wizard_constants.dart';
 import 'package:aroll_mobile/presentation/shared/app_ui.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
@@ -168,8 +170,7 @@ class _OwnerScheduleScreenState extends State<OwnerScheduleScreen> {
 
   bool _canSelect(OwnerEmployeeAvailability availability) {
     return availability == OwnerEmployeeAvailability.available ||
-        availability == OwnerEmployeeAvailability.leavePending ||
-        availability == OwnerEmployeeAvailability.onLeave;
+        availability == OwnerEmployeeAvailability.leavePending;
   }
 
   void _selectDate(DateTime date) {
@@ -249,54 +250,10 @@ class _OwnerScheduleScreenState extends State<OwnerScheduleScreen> {
     });
   }
 
-  Future<void> _toggleEmployee(String employeeId) async {
+  void _toggleEmployee(String employeeId) {
     final employee = _employees.firstWhere((item) => '${item['id']}' == employeeId);
     final availability = _availabilityFor(employee);
     if (!_canSelect(availability)) return;
-
-    if (availability == OwnerEmployeeAvailability.onLeave &&
-        !_selectedEmployeeIds.contains(employeeId)) {
-      final action = await showDialog<String>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('Employee on approved leave'),
-          content: const Text(
-            'This employee is currently on approved leave for the selected date(s).',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, 'cancel'),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(context, 'override'),
-              child: const Text('Override Assignment'),
-            ),
-          ],
-        ),
-      );
-      if (action != 'override' || !mounted) return;
-      final confirmed = await showDialog<bool>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('Confirm override'),
-          content: const Text(
-            'Assign this employee during approved leave? The leave request will be kept and marked as assigned during leave.',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('Confirm'),
-            ),
-          ],
-        ),
-      );
-      if (confirmed != true || !mounted) return;
-    }
 
     _refreshAssignUi(() {
       if (_selectedEmployeeIds.contains(employeeId)) {
@@ -313,10 +270,6 @@ class _OwnerScheduleScreenState extends State<OwnerScheduleScreen> {
       return;
     }
 
-    final needsOverride = _selectedEmployeeIds.any((id) {
-      return _leaveByEmployee[id]?['on_leave'] == true;
-    });
-
     _refreshAssignUi(() {
       _saving = true;
     });
@@ -327,7 +280,6 @@ class _OwnerScheduleScreenState extends State<OwnerScheduleScreen> {
           shiftId: _expandedShiftId!,
           workDate: _workDate,
           isRestDayWork: _isRestDayWork,
-          overrideLeave: needsOverride,
         );
         _showMessage('Schedule updated');
       } else {
@@ -336,7 +288,6 @@ class _OwnerScheduleScreenState extends State<OwnerScheduleScreen> {
           workDate: _workDate,
           employeeIds: _selectedEmployeeIds.toList(growable: false),
           isRestDayWork: _isRestDayWork,
-          overrideLeave: needsOverride,
         );
         final created = result['created'] as int? ?? 0;
         _showMessage(
@@ -416,8 +367,15 @@ class _OwnerScheduleScreenState extends State<OwnerScheduleScreen> {
 
   String? _dioMessage(DioException error) {
     final data = error.response?.data;
-    if (data is Map && data['detail'] is String) {
-      return data['detail'] as String;
+    if (data is Map) {
+      final detail = data['detail'];
+      if (detail is String) return detail;
+      if (detail is Map) {
+        final title = detail['title']?.toString();
+        final message = detail['message']?.toString();
+        if (title != null && message != null) return '$title: $message';
+        if (message != null) return message;
+      }
     }
     return null;
   }
@@ -434,7 +392,7 @@ class _OwnerScheduleScreenState extends State<OwnerScheduleScreen> {
           icon: const Icon(Icons.add_rounded, size: 18),
           label: const Text('New Shift'),
           style: TextButton.styleFrom(
-            foregroundColor: AppColors.primaryDark,
+            foregroundColor: BrandColors.of(context).toneButton,
             textStyle: const TextStyle(fontWeight: FontWeight.w600),
           ),
         ),
@@ -447,7 +405,7 @@ class _OwnerScheduleScreenState extends State<OwnerScheduleScreen> {
                 : _error != null
                     ? _ScheduleError(message: _error!, onRetry: _loadData)
                     : RefreshIndicator(
-                        color: AppColors.primaryDark,
+                        color: BrandColors.of(context).toneButton,
                         onRefresh: _loadData,
                         child: _mode == _ScheduleMode.assign
                             ? _buildAssignView()
@@ -550,11 +508,66 @@ class _OwnerScheduleScreenState extends State<OwnerScheduleScreen> {
     );
   }
 
+  Future<void> _editShift(Map<String, dynamic> shift) async {
+    final initialStart = parseApiTime('${shift['start_time']}') ??
+        const TimeOfDay(hour: 8, minute: 30);
+    final initialEnd = parseApiTime('${shift['end_time']}') ??
+        const TimeOfDay(hour: 12, minute: 30);
+    final timesLocked = shift['has_in_progress_today'] == true;
+    final result = await showDialog<_EditShiftDialogResult>(
+      context: context,
+      builder: (dialogContext) {
+        return _EditShiftDialog(
+          shiftName: '${shift['name']}',
+          initialStart: initialStart,
+          initialEnd: initialEnd,
+          initialCapacityText: '${shift['employee_capacity'] ?? 1}',
+          timesLocked: timesLocked,
+        );
+      },
+    );
+    if (result == null) return;
+    if (result.capacity < 1) {
+      _showMessage(
+        'Employee capacity must be a whole number of at least 1',
+      );
+      return;
+    }
+
+    setState(() => _saving = true);
+    try {
+      if (timesLocked) {
+        await _repo.updateShift(
+          shiftId: '${shift['id']}',
+          employeeCapacity: result.capacity,
+        );
+      } else {
+        await _repo.updateShift(
+          shiftId: '${shift['id']}',
+          startTime: formatApiTime(result.start),
+          endTime: formatApiTime(result.end),
+          employeeCapacity: result.capacity,
+        );
+      }
+      final shifts = await _repo.shifts();
+      if (!mounted) return;
+      setState(() => _shifts = shifts);
+      _showMessage('Shift updated');
+    } on DioException catch (error) {
+      _showMessage(_dioMessage(error) ?? 'Could not update shift');
+    } catch (_) {
+      _showMessage('Could not update shift');
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
   Widget _buildShiftCard(Map<String, dynamic> shift) {
     final shiftId = '${shift['id']}';
     final assignments = _assignmentsByShift[shiftId] ?? const [];
     final start = formatOwnerShiftTime('${shift['start_time']}');
     final end = formatOwnerShiftTime('${shift['end_time']}');
+    final capacity = shift['employee_capacity'] ?? '—';
 
     return Container(
       margin: const EdgeInsets.only(bottom: 14),
@@ -588,12 +601,12 @@ class _OwnerScheduleScreenState extends State<OwnerScheduleScreen> {
                   width: 42,
                   height: 42,
                   decoration: BoxDecoration(
-                    color: AppColors.iconWell,
+                    color: BrandColors.of(context).toneWell,
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: const Icon(
+                  child: Icon(
                     Icons.schedule_rounded,
-                    color: AppColors.primary,
+                    color: BrandColors.of(context).tonePrimary,
                     size: 22,
                   ),
                 ),
@@ -612,11 +625,17 @@ class _OwnerScheduleScreenState extends State<OwnerScheduleScreen> {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        '$start – $end',
+                        '$start – $end · Capacity $capacity',
                         style: appMutedStyle().copyWith(fontSize: 12),
                       ),
                     ],
                   ),
+                ),
+                IconButton(
+                  tooltip: 'Edit shift',
+                  onPressed: _saving ? null : () => _editShift(shift),
+                  icon: const Icon(Icons.edit_outlined, size: 20),
+                  color: BrandColors.of(context).tonePrimary,
                 ),
                 Container(
                   padding: const EdgeInsets.symmetric(
@@ -629,10 +648,10 @@ class _OwnerScheduleScreenState extends State<OwnerScheduleScreen> {
                   ),
                   child: Text(
                     '${assignments.length}',
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w700,
-                      color: AppColors.primaryDark,
+                      color: BrandColors.of(context).toneButton,
                     ),
                   ),
                 ),
@@ -680,12 +699,12 @@ class _OwnerScheduleScreenState extends State<OwnerScheduleScreen> {
                   width: 40,
                   height: 40,
                   decoration: BoxDecoration(
-                    color: AppColors.primary.withValues(alpha: 0.12),
+                    color: BrandColors.of(context).tonePrimary.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: const Icon(
+                  child: Icon(
                     Icons.schedule_rounded,
-                    color: AppColors.primary,
+                    color: BrandColors.of(context).tonePrimary,
                     size: 20,
                   ),
                 ),
@@ -784,7 +803,7 @@ class _OwnerScheduleScreenState extends State<OwnerScheduleScreen> {
                           child: SwitchListTile.adaptive(
                             contentPadding: EdgeInsets.zero,
                             dense: true,
-                            activeThumbColor: AppColors.primary,
+                            activeThumbColor: BrandColors.of(context).tonePrimary,
                             title: const Text(
                               'Approved rest day work',
                               style: TextStyle(
@@ -813,7 +832,7 @@ class _OwnerScheduleScreenState extends State<OwnerScheduleScreen> {
                                         _editingAssignmentId == null)
                                 ? null
                                 : _saveSchedule,
-                            style: appPrimaryButtonStyle().copyWith(
+                            style: appBrandedPrimaryButtonStyle(context).copyWith(
                               minimumSize: const WidgetStatePropertyAll(
                                 Size(0, 44),
                               ),
@@ -932,7 +951,7 @@ class _OwnerScheduleScreenState extends State<OwnerScheduleScreen> {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
                   : const Icon(Icons.download_rounded),
-              color: AppColors.primaryDark,
+              color: BrandColors.of(context).toneButton,
             ),
           ],
         ),
@@ -1080,12 +1099,12 @@ class _OwnerScheduleScreenState extends State<OwnerScheduleScreen> {
                 margin: const EdgeInsets.fromLTRB(10, 0, 10, 8),
                 decoration: BoxDecoration(
                   color: selected
-                      ? AppColors.primary.withValues(alpha: 0.06)
+                      ? BrandColors.of(context).tonePrimary.withValues(alpha: 0.06)
                       : AppColors.fieldFill,
                   borderRadius: BorderRadius.circular(14),
                   border: Border.all(
                     color: selected
-                        ? AppColors.primary.withValues(alpha: 0.35)
+                        ? BrandColors.of(context).tonePrimary.withValues(alpha: 0.35)
                         : AppColors.border,
                   ),
                 ),
@@ -1126,7 +1145,7 @@ class _OwnerScheduleScreenState extends State<OwnerScheduleScreen> {
                               ? Icons.check_circle_rounded
                               : Icons.radio_button_unchecked_rounded,
                           color: selected
-                              ? AppColors.primary
+                              ? BrandColors.of(context).tonePrimary
                               : const Color(0xFF9CA3AF),
                         )
                       : _AvailabilityChip(availability: availability),
@@ -1287,10 +1306,10 @@ class _CalendarDay extends StatelessWidget {
           height: 26,
           alignment: Alignment.center,
           decoration: BoxDecoration(
-            color: selected ? AppColors.primary : null,
+            color: selected ? BrandColors.of(context).tonePrimary : null,
             shape: BoxShape.circle,
             border: !selected && isToday
-                ? Border.all(color: AppColors.primary.withValues(alpha: 0.45))
+                ? Border.all(color: BrandColors.of(context).tonePrimary.withValues(alpha: 0.45))
                 : null,
           ),
           child: Text(
@@ -1302,7 +1321,7 @@ class _CalendarDay extends StatelessWidget {
               color: selected
                   ? Colors.white
                   : isToday
-                      ? AppColors.primaryDark
+                      ? BrandColors.of(context).toneButton
                       : AppColors.textPrimary,
             ),
           ),
@@ -1402,7 +1421,7 @@ class _ViewScheduleBar extends StatelessWidget {
           child: OutlinedButton(
             onPressed: saving ? null : onPressed,
             style: OutlinedButton.styleFrom(
-              foregroundColor: AppColors.primaryDark,
+              foregroundColor: BrandColors.of(context).toneButton,
               backgroundColor: const Color(0xFFF3F6FA),
               side: const BorderSide(color: Color(0xFFD7E0EA)),
               elevation: 0,
@@ -1637,12 +1656,12 @@ class _ScheduleError extends StatelessWidget {
               width: 56,
               height: 56,
               decoration: BoxDecoration(
-                color: AppColors.iconWell,
+                color: BrandColors.of(context).toneWell,
                 borderRadius: BorderRadius.circular(16),
               ),
-              child: const Icon(
+              child: Icon(
                 Icons.event_busy_outlined,
-                color: AppColors.primary,
+                color: BrandColors.of(context).tonePrimary,
                 size: 28,
               ),
             ),
@@ -1660,6 +1679,158 @@ class _ScheduleError extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _EditShiftDialogResult {
+  const _EditShiftDialogResult({
+    required this.start,
+    required this.end,
+    required this.capacity,
+  });
+
+  final TimeOfDay start;
+  final TimeOfDay end;
+  final int capacity;
+}
+
+/// Owns the Employee Capacity [TextEditingController] for the Edit Shift dialog
+/// so dispose runs only after the dialog [State] is removed from the tree.
+class _EditShiftDialog extends StatefulWidget {
+  const _EditShiftDialog({
+    required this.shiftName,
+    required this.initialStart,
+    required this.initialEnd,
+    required this.initialCapacityText,
+    this.timesLocked = false,
+  });
+
+  final String shiftName;
+  final TimeOfDay initialStart;
+  final TimeOfDay initialEnd;
+  final String initialCapacityText;
+  final bool timesLocked;
+
+  @override
+  State<_EditShiftDialog> createState() => _EditShiftDialogState();
+}
+
+class _EditShiftDialogState extends State<_EditShiftDialog> {
+  late TimeOfDay _start;
+  late TimeOfDay _end;
+  late final TextEditingController _capacityController;
+
+  @override
+  void initState() {
+    super.initState();
+    _start = widget.initialStart;
+    _end = widget.initialEnd;
+    _capacityController = TextEditingController(text: widget.initialCapacityText);
+  }
+
+  @override
+  void dispose() {
+    _capacityController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(
+        widget.timesLocked ? 'Shift In Progress' : 'Edit ${widget.shiftName}',
+        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+      ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (widget.timesLocked) ...[
+            const Text(
+              'This shift has already started and cannot be changed. '
+              'Changes to an active shift could affect attendance and '
+              'payroll records.',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+                color: Color(0xFF6B7280),
+                height: 1.45,
+              ),
+            ),
+            const SizedBox(height: 14),
+          ],
+          OutlinedButton(
+            onPressed: widget.timesLocked
+                ? null
+                : () async {
+                    final picked = await showTimePicker(
+                      context: context,
+                      initialTime: _start,
+                    );
+                    if (picked != null) {
+                      setState(() => _start = picked);
+                    }
+                  },
+            child: Text('Start ${_start.format(context)}'),
+          ),
+          const SizedBox(height: 10),
+          OutlinedButton(
+            onPressed: widget.timesLocked
+                ? null
+                : () async {
+                    final picked = await showTimePicker(
+                      context: context,
+                      initialTime: _end,
+                    );
+                    if (picked != null) {
+                      setState(() => _end = picked);
+                    }
+                  },
+            child: Text('End ${_end.format(context)}'),
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            controller: _capacityController,
+            decoration: const InputDecoration(
+              labelText: 'Employee Capacity',
+              border: OutlineInputBorder(),
+              isDense: true,
+            ),
+            keyboardType: TextInputType.number,
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () {
+            final capacity = int.tryParse(_capacityController.text.trim());
+            if (capacity == null || capacity < 1) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text(
+                    'Employee capacity must be a whole number of at least 1',
+                  ),
+                ),
+              );
+              return;
+            }
+            Navigator.pop(
+              context,
+              _EditShiftDialogResult(
+                start: _start,
+                end: _end,
+                capacity: capacity,
+              ),
+            );
+          },
+          child: const Text('Save'),
+        ),
+      ],
     );
   }
 }

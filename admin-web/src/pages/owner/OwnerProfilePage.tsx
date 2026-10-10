@@ -9,16 +9,22 @@ import {
   OwnerPageContent,
   OwnerPageHeader,
 } from "@/components/owner/layout/OwnerPageLayout";
+import {
+  PasswordInput,
+  PasswordRequirements,
+} from "@/components/ui/password-input";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
+  changePassword,
   getAccountSettings,
   removeOwnerProfileImage,
   updateAccountSettings,
   updateOwnerProfileImage,
 } from "@/lib/api";
-import { ME_QUERY_KEY } from "@/lib/authSession";
+import { ME_QUERY_KEY, setAuthSession } from "@/lib/authSession";
+import { canSubmitPasswordChange } from "@/lib/passwordValidation";
 
 const OWNER_DOB_KEY = "aroll_owner_date_of_birth";
 
@@ -37,6 +43,17 @@ function profileImageErrorMessage(error: unknown, action: "update" | "remove") {
   return `Failed to ${action} profile picture.`;
 }
 
+function passwordChangeErrorMessage(error: unknown) {
+  if (error && typeof error === "object" && "response" in error) {
+    const detail = (error as { response?: { data?: { detail?: unknown } } }).response
+      ?.data?.detail;
+    if (typeof detail === "string" && detail.trim()) {
+      return detail;
+    }
+  }
+  return "Failed to update password. Check your current password.";
+}
+
 export function OwnerProfilePage() {
   const qc = useQueryClient();
   const [photo, setPhoto] = useState<string | null>(null);
@@ -50,6 +67,9 @@ export function OwnerProfilePage() {
     address: "",
     business_type: "",
   });
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
 
   const { data, isLoading } = useQuery({
     queryKey: ["account-settings"],
@@ -157,6 +177,18 @@ export function OwnerProfilePage() {
     onError: () => toast.error("Failed to update profile"),
   });
 
+  const changePasswordMutation = useMutation({
+    mutationFn: () => changePassword(currentPassword, newPassword),
+    onSuccess: (res) => {
+      setAuthSession(res.access_token);
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+      toast.success("Password changed successfully.");
+    },
+    onError: (error) => toast.error(passwordChangeErrorMessage(error)),
+  });
+
   function handlePhoto(file: File | null) {
     if (!file) return;
     const reader = new FileReader();
@@ -167,6 +199,11 @@ export function OwnerProfilePage() {
   }
 
   const photoBusy = uploadPhoto.isPending || removePhoto.isPending;
+  const canChangePassword = canSubmitPasswordChange({
+    currentPassword,
+    newPassword,
+    confirmPassword,
+  });
 
   return (
     <OwnerPage>
@@ -243,8 +280,48 @@ export function OwnerProfilePage() {
           </div>
         </section>
 
+        <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          <h2 className="owner-section-title mb-1">Change Password</h2>
+          <p className="mb-4 text-sm text-[#6B7280]">
+            Update your owner account password. You will stay signed in after a successful change.
+          </p>
+          <div className="mx-auto max-w-md space-y-4">
+            <PasswordInput
+              id="profile-current-password"
+              label="Current Password"
+              value={currentPassword}
+              onChange={setCurrentPassword}
+            />
+            <PasswordInput
+              id="profile-new-password"
+              label="New Password"
+              value={newPassword}
+              onChange={setNewPassword}
+            />
+            <PasswordInput
+              id="profile-confirm-password"
+              label="Confirm New Password"
+              value={confirmPassword}
+              onChange={setConfirmPassword}
+            />
+            <PasswordRequirements
+              password={newPassword}
+              confirmPassword={confirmPassword}
+            />
+            <Button
+              className="bg-[var(--owner-button)] hover:bg-[var(--owner-navy-soft)]"
+              onClick={() => changePasswordMutation.mutate()}
+              disabled={!canChangePassword || changePasswordMutation.isPending}
+            >
+              {changePasswordMutation.isPending
+                ? "Updating..."
+                : "Change Password"}
+            </Button>
+          </div>
+        </section>
+
         <div className="flex justify-end">
-          <Button className="bg-[#1E3A5F] hover:bg-[#284B73]" disabled={isLoading || save.isPending} onClick={() => save.mutate()}>
+          <Button className="bg-[var(--owner-button)] hover:bg-[var(--owner-navy-soft)]" disabled={isLoading || save.isPending} onClick={() => save.mutate()}>
             Save Profile
           </Button>
         </div>

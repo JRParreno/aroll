@@ -227,10 +227,20 @@ export type EmployeePerformanceItem = {
   punctuality_rate: number;
 };
 
+export type OwnerPerformanceEventItem = {
+  category: "on_time" | "late" | "undertime" | "overtime" | "absent" | string;
+  employee_id: string;
+  full_name: string;
+  work_date: string;
+  time_in: string | null;
+  time_out: string | null;
+};
+
 export type OwnerPerformance = {
   summary: OwnerPerformanceSummary;
   trend: OwnerPerformanceTrendItem[];
   employees: EmployeePerformanceItem[];
+  events?: OwnerPerformanceEventItem[];
 };
 
 export type OwnerAttendanceReport = {
@@ -299,6 +309,8 @@ export type OwnerPayrollReport = {
     hours_worked?: number;
     pending_attendance_count?: number;
     pending_work_dates?: string[];
+    unresolved_historical_rate_count?: number;
+    has_unresolved_historical_rate?: boolean;
     late_deductions?: number;
     undertime_deductions?: number;
     overtime_pay: number;
@@ -319,6 +331,7 @@ export type OwnerPayrollReport = {
   as_of?: string;
   incomplete_attendance_count?: number;
   pending_attendance_count?: number;
+  unresolved_historical_rate_count?: number;
   can_finalize?: boolean;
   is_finalized?: boolean;
   finalized_at?: string | null;
@@ -365,6 +378,15 @@ export type EmployeePayslip = {
   overtime_minutes: number;
   overtime_hours: number;
   overtime_pay: number;
+  worked_overtime_minutes?: number;
+  payable_overtime_minutes?: number;
+  pending_overtime_minutes?: number;
+  rejected_overtime_minutes?: number;
+  overtime_approval_required?: boolean;
+  overtime_per_minute?: number;
+  late_minutes?: number;
+  late_deduction_per_minute?: number;
+  undertime_minutes?: number;
   /** Engine base earnings — source for UI Basic Salary. */
   regular_pay?: number;
   /** Approved paid leave with a scheduled shift. Not included in regular_pay. */
@@ -393,6 +415,8 @@ export type EmployeePayslip = {
   unpaid_leave_days?: number;
   pending_attendance_count?: number;
   pending_work_dates?: string[];
+  unresolved_historical_rate_count?: number;
+  has_unresolved_historical_rate?: boolean;
   gross_pay: number;
   net_pay: number;
   base_net_pay?: number;
@@ -411,6 +435,31 @@ export type EmployeePayslip = {
     is_rest_day?: boolean;
     rest_day_premium_pay?: number | null;
     payroll_status?: string;
+    historical_rate_required?: boolean;
+    attendance_record_id?: string | null;
+    earned?: number | null;
+    expected_salary_pay?: number | null;
+    late_minutes?: number;
+    late_deduction?: number;
+    late_deduction_per_minute?: number;
+    undertime_minutes?: number;
+    undertime_deduction?: number;
+    undertime_minute_rate?: number;
+    shortfall_deduction?: number;
+    ot?: {
+      scheduled_start?: string | null;
+      scheduled_end?: string | null;
+      time_in?: string | null;
+      time_out?: string | null;
+      worked_ot_minutes?: number;
+      time_recovered_minutes?: number;
+      payable_ot_minutes?: number;
+      ot_rate_per_minute?: number;
+      holiday_ot_premium_percent?: number;
+      overtime_pay?: number;
+      ot_approval_status?: string | null;
+      ot_approval_required?: boolean;
+    };
   }[];
 };
 
@@ -632,6 +681,28 @@ export async function listActivityLogs() {
   return data;
 }
 
+export type OwnerActivityLog = {
+  id: string;
+  action: string;
+  description: string;
+  created_at: string;
+  actor: string;
+  actor_deleted: boolean;
+};
+
+export async function listOwnerActivityLogs(params?: {
+  limit?: number;
+  offset?: number;
+}) {
+  const { data } = await api.get<OwnerActivityLog[]>("/owner/activity-logs", {
+    params: {
+      limit: params?.limit ?? 50,
+      offset: params?.offset ?? 0,
+    },
+  });
+  return data;
+}
+
 export async function createEmployee(payload: {
   email?: string;
   full_name: string;
@@ -848,16 +919,24 @@ export async function getOwnerPerformance(params?: {
   days?: number;
   year?: number;
   month?: number;
+  period?: "week" | "month" | "year";
 }) {
+  const usePeriod =
+    params?.period === "week" ||
+    params?.period === "month" ||
+    params?.period === "year";
   const useMonth =
+    !usePeriod &&
     params?.year != null &&
     params?.month != null &&
     Number.isFinite(params.year) &&
     Number.isFinite(params.month);
   const { data } = await api.get<OwnerPerformance>("/owner/performance", {
-    params: useMonth
-      ? { year: params!.year, month: params!.month }
-      : { days: params?.days ?? 30 },
+    params: usePeriod
+      ? { period: params!.period }
+      : useMonth
+        ? { year: params!.year, month: params!.month }
+        : { days: params?.days ?? 30 },
   });
   return data;
 }
@@ -942,10 +1021,122 @@ export async function completeOwnerAttendance(
   return data;
 }
 
+export async function resolveOwnerHistoricalRate(
+  recordId: string,
+  payload: {
+    pay_basis: PayBasis;
+    daily_rate?: number | null;
+    hourly_rate?: number | null;
+    monthly_salary?: number | null;
+  }
+) {
+  const { data } = await api.post<{
+    id: string;
+    employee_id: string;
+    status: string;
+    pay_basis_at_completion: string | null;
+    daily_rate_at_completion: number | null;
+    hourly_rate_at_completion: number | null;
+    monthly_salary_at_completion: number | null;
+    historical_rate_required: boolean;
+  }>(`/owner/attendance-records/${recordId}/historical-rate`, payload);
+  return data;
+}
+
+export async function resolveOwnerDailyWorkdayRate(payload: {
+  employee_id: string;
+  work_date: string;
+  daily_rate: number;
+}) {
+  const { data } = await api.post<{
+    employee_id: string;
+    work_date: string;
+    daily_rate: number;
+    updated_count: number;
+    historical_rate_required: boolean;
+  }>("/owner/daily-workday-historical-rate", payload);
+  return data;
+}
+
 export async function getOwnerPayrollReport(asOf?: string) {
   const { data } = await api.get<OwnerPayrollReport>("/owner/reports/payroll", {
     params: asOf ? { as_of: asOf } : undefined,
   });
+  return data;
+}
+
+export type OwnerShiftHistoryItem = {
+  employee_id: string;
+  employee_name: string;
+  position_title: string | null;
+  profile_image_url?: string | null;
+  date: string;
+  status: string;
+  shift_name?: string | null;
+  time_in?: string | null;
+  time_out?: string | null;
+  hours_worked: number;
+  worked_minutes?: number;
+  pay_basis?: PayBasis | string;
+  daily_rate?: number | null;
+  hourly_rate?: number | null;
+  monthly_salary?: number | null;
+  /** Day earnings from the payroll engine attendance row. */
+  net_pay?: number | null;
+  earned?: number | null;
+  /** Scheduled-day / leave entitlement from the same payslip attendance row. */
+  expected_salary_pay?: number | null;
+  deductions: number;
+  late_deduction?: number;
+  undertime_deduction?: number;
+  additional_pay: number;
+  rest_day_premium_pay?: number | null;
+  holiday_name?: string | null;
+  is_rest_day?: boolean;
+  payroll_status?: string | null;
+  historical_rate_required?: boolean;
+  daily_rate_conflict?: boolean;
+  attendance_record_id?: string | null;
+  scheduled_start?: string | null;
+  scheduled_end?: string | null;
+  pay_basis_used?: PayBasis | string | null;
+  rate_used?: number | null;
+  late_minutes?: number | null;
+  undertime_minutes?: number | null;
+  overtime_minutes?: number | null;
+  overtime_pay?: number | null;
+  shift_deductions?: number | null;
+  shift_net?: number | null;
+  /** Per-row delta already added to payslip holiday_pay. Omitted on old snapshots. */
+  holiday_pay?: number | null;
+  /** True when shift_net already equals the holiday credit (do not add it again). */
+  holiday_included_in_shift_net?: boolean;
+  /** Daily-bucket holiday premium for the date. Same value on each row; do not sum. */
+  day_holiday_pay?: number | null;
+  /** Single daily entitlement when the day total must not sum shift nets. */
+  day_entitlement?: number | null;
+  day_rest_day_pay?: number | null;
+  /** shift_net plus a per-row holiday premium that is not already inside shift_net. */
+  reconciled_shift_total?: number | null;
+  /** Day total that reconciles to payroll. Null means unavailable. */
+  reconciled_day_total?: number | null;
+  period_start: string;
+  period_end: string;
+};
+
+export type OwnerShiftHistoryReport = {
+  period_start: string;
+  period_end: string;
+  as_of: string;
+  timezone?: string | null;
+  items: OwnerShiftHistoryItem[];
+};
+
+export async function getOwnerShiftHistory(asOf?: string) {
+  const { data } = await api.get<OwnerShiftHistoryReport>(
+    "/owner/reports/shift-history",
+    { params: asOf ? { as_of: asOf } : undefined }
+  );
   return data;
 }
 
@@ -1067,6 +1258,7 @@ export type Shift = {
   employee_capacity: number;
   color: string | null;
   is_active: boolean;
+  has_in_progress_today?: boolean;
 };
 
 export type ScheduleAssignment = {
@@ -1092,6 +1284,7 @@ export type LeaveRequestPreviousVersion = {
   end_date: string | null;
   leave_days: number;
   reason: string;
+  other_leave_specification: string | null;
   has_supporting_document: boolean;
   supporting_document: string | null;
   is_paid: boolean;
@@ -1110,6 +1303,7 @@ export type LeaveRequest = {
   end_date: string;
   leave_days: number;
   reason: string;
+  other_leave_specification: string | null;
   supporting_document: string | null;
   has_supporting_document: boolean;
   status:
@@ -1267,11 +1461,20 @@ export type WeeklySchedule = {
   assignments: ScheduleAssignment[];
 };
 
+export type PositionPayConfig = {
+  id: string;
+  pay_basis: "daily" | "hourly";
+  rate: number;
+};
+
 export type Position = {
   id: string;
   title: string;
-  daily_rate: number;
+  employment_type?: "full_time" | "part_time" | null;
+  pay_basis?: PayBasis;
+  daily_rate: number | null;
   hourly_rate?: number | null;
+  pay_configs?: PositionPayConfig[];
   description: string | null;
   is_active: boolean;
 };
@@ -1287,6 +1490,7 @@ export type PayrollConfig = {
   overtime_enabled: boolean;
   overtime_per_minute: number;
   enable_late_overtime_balancing: boolean;
+  overtime_approval_required: boolean;
   ordinary_ot_premium_percent: number;
   rest_day_ot_premium_percent: number;
   weekly_payday_weekday: string | null;
@@ -1325,6 +1529,7 @@ export type LeavePolicy = {
   business_id: string;
   items: LeavePolicyItem[];
   treatments: Record<string, boolean>;
+  minimum_advance_notice_days: number;
   updated_at?: string | null;
 };
 
@@ -1335,10 +1540,74 @@ export async function getLeavePolicy() {
 
 export async function updateLeavePolicy(payload: {
   treatments: Record<string, boolean>;
+  minimum_advance_notice_days?: number;
 }) {
   const { data } = await api.put<LeavePolicy>(
     "/businesses/me/leave-policy",
     payload
+  );
+  return data;
+}
+
+export type LeaveAllowanceItem = {
+  leave_type: string;
+  leave_type_label: string;
+  enabled: boolean;
+  disabled: boolean;
+  configured: boolean;
+  allowance_days: number | null;
+};
+
+export type LeaveAllowancePolicy = {
+  year: number;
+  items: LeaveAllowanceItem[];
+};
+
+export async function getLeaveAllowances(year: number) {
+  const { data } = await api.get<LeaveAllowancePolicy>(
+    "/businesses/me/leave-policy/allowances",
+    { params: { year } }
+  );
+  return data;
+}
+
+export async function updateLeaveAllowances(payload: {
+  year: number;
+  items: Array<{
+    leave_type: string;
+    enabled: boolean;
+    allowance_days: number | null;
+  }>;
+}) {
+  const { data } = await api.put<LeaveAllowancePolicy>(
+    "/businesses/me/leave-policy/allowances",
+    payload
+  );
+  return data;
+}
+
+export type LeaveBalanceItem = {
+  leave_type: string;
+  leave_type_label: string;
+  year: number;
+  allocated_days: number | null;
+  used_days: number;
+  remaining_days: number | null;
+  configured: boolean;
+  enabled: boolean;
+  disabled: boolean;
+};
+
+export type LeaveBalance = {
+  employee_id: string;
+  year: number;
+  items: LeaveBalanceItem[];
+};
+
+export async function getEmployeeLeaveBalances(employeeId: string, year: number) {
+  const { data } = await api.get<LeaveBalance>(
+    `/owner/employees/${employeeId}/leave-balances`,
+    { params: { year } }
   );
   return data;
 }
@@ -1465,18 +1734,40 @@ export async function deleteShift(id: string) {
   return data;
 }
 
-export async function listPositions() {
-  const { data } = await api.get<Position[]>("/positions");
+export async function listPositions(employmentType?: "full_time" | "part_time") {
+  const { data } = await api.get<Position[]>("/positions", {
+    params: employmentType ? { employment_type: employmentType } : undefined,
+  });
   return data;
 }
 
 export async function createPosition(payload: {
   title: string;
-  daily_rate: number;
+  employment_type: "full_time" | "part_time";
+  pay_configs?: { pay_basis: "daily" | "hourly"; rate: number }[];
+  pay_basis?: "daily" | "hourly";
+  daily_rate?: number | null;
   hourly_rate?: number | null;
   description?: string;
 }) {
   const { data } = await api.post<Position>("/positions", payload);
+  return data;
+}
+
+export async function updatePosition(
+  id: string,
+  payload: {
+    title?: string;
+    employment_type?: "full_time" | "part_time";
+    pay_configs?: { pay_basis: "daily" | "hourly"; rate: number }[];
+    pay_basis?: "daily" | "hourly";
+    daily_rate?: number | null;
+    hourly_rate?: number | null;
+    description?: string | null;
+    is_active?: boolean;
+  }
+) {
+  const { data } = await api.put<Position>(`/positions/${id}`, payload);
   return data;
 }
 
@@ -1492,6 +1783,38 @@ export async function getPayrollConfig() {
 
 export async function updatePayrollConfig(payload: Partial<PayrollConfig>) {
   const { data } = await api.put("/businesses/me/payroll-config", payload);
+  return data;
+}
+
+export async function listOvertimeApprovals(status: string = "pending") {
+  const { data } = await api.get<{
+    items: {
+      attendance_record_id: string;
+      employee_id: string;
+      employee_name: string;
+      work_date: string | null;
+      shift_name: string | null;
+      time_in: string | null;
+      time_out: string | null;
+      worked_ot_minutes?: number;
+      ot_approval_status: string | null;
+      ot_reviewed_at: string | null;
+    }[];
+  }>("/owner/overtime-approvals", { params: { status } });
+  return data;
+}
+
+export async function approveOvertime(recordId: string) {
+  const { data } = await api.post(
+    `/owner/attendance-records/${recordId}/overtime/approve`
+  );
+  return data;
+}
+
+export async function rejectOvertime(recordId: string) {
+  const { data } = await api.post(
+    `/owner/attendance-records/${recordId}/overtime/reject`
+  );
   return data;
 }
 
@@ -1517,8 +1840,10 @@ export async function updateRestDayPolicy(payload: Partial<RestDayPolicy>) {
   return data;
 }
 
-export async function listHolidays() {
-  const { data } = await api.get<Holiday[]>("/holidays");
+export async function listHolidays(includeInactive = false) {
+  const { data } = await api.get<Holiday[]>("/holidays", {
+    params: includeInactive ? { include_inactive: true } : undefined,
+  });
   return data;
 }
 
@@ -1548,6 +1873,7 @@ export async function updateHoliday(
     pay_multiplier?: number;
     ot_premium_percent?: number | null;
     holiday_type?: string;
+    is_active?: boolean;
   }
 ) {
   const { data } = await api.put<Holiday>(`/holidays/${id}`, payload);
@@ -1839,7 +2165,6 @@ export async function assignSchedule(payload: {
   work_date: string;
   employee_ids: string[];
   is_rest_day_work?: boolean;
-  override_leave?: boolean;
 }) {
   const { data } = await api.post<{
     created: number;
@@ -1854,7 +2179,6 @@ export async function updateScheduleAssignment(
     shift_id: string;
     work_date: string;
     is_rest_day_work?: boolean;
-    override_leave?: boolean;
   }
 ) {
   const { data } = await api.put<ScheduleAssignment>(

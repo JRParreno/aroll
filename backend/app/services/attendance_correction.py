@@ -352,6 +352,12 @@ def _get_business_request(
     return request
 
 
+_ATTENDANCE_FINALIZED_MESSAGE = (
+    "This payroll period is already finalized. "
+    "Attendance cannot be changed until payroll is unfinalized."
+)
+
+
 def approve_correction(
     db: Session,
     *,
@@ -371,6 +377,17 @@ def approve_correction(
         employee_id=request.employee_id,
         business_id=request.business_id,
     )
+
+    from app.services.payroll_adjustments import raise_if_work_date_period_finalized
+
+    # Block before any AttendanceRecord / OT mutation when the period is finalized.
+    raise_if_work_date_period_finalized(
+        db,
+        business_id=business.id,
+        work_date=assignment.work_date,
+        message=_ATTENDANCE_FINALIZED_MESSAGE,
+    )
+
     policy = _attendance_policy(db, business.id)
 
     final_in = request.requested_time_in or (record.time_in if record else None)
@@ -417,13 +434,38 @@ def approve_correction(
         record.status = status
         request.attendance_record_id = record.id
 
+    from app.services.ot_approval import sync_ot_approval_after_close
+
+    sync_ot_approval_after_close(
+        db,
+        record,
+        assignment=assignment,
+        shift=shift,
+        business_timezone=business.timezone or "Asia/Manila",
+        force_rereview=True,
+    )
+
+    from app.models.payroll import Position
+    from app.services.employee_pay import stamp_attendance_completion_pay
+
+    employee = db.get(Employee, request.employee_id)
+    position = (
+        db.get(Position, employee.position_id)
+        if employee is not None and employee.position_id
+        else None
+    )
+    if employee is not None:
+        stamp_attendance_completion_pay(record, employee, position=position)
+        db.flush()
+
     request.status = AttendanceCorrectionStatus.approved
     request.reviewed_by = reviewer.id
     request.reviewed_at = datetime.now(timezone.utc)
     request.review_note = None
     db.commit()
     db.refresh(request)
-    employee = db.get(Employee, request.employee_id)
+    if employee is None:
+        employee = db.get(Employee, request.employee_id)
     if employee and employee.user_id:
         try:
             from app.services.notifications import notify_user_once

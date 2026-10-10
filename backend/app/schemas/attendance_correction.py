@@ -1,9 +1,11 @@
 """Schemas for missed clock-in/out correction requests."""
 
-from datetime import datetime
+from datetime import date, datetime
 from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator, model_validator
+
+from app.models.enums import PayBasis
 
 
 class AttendanceCorrectionCreateRequest(BaseModel):
@@ -57,6 +59,38 @@ class OwnerCompleteAttendanceRequest(BaseModel):
             return None
         cleaned = value.strip()
         return cleaned or None
+
+
+class OwnerResolveHistoricalRateRequest(BaseModel):
+    """Owner-supplied historical completion rate for a legacy NULL-stamp close."""
+
+    pay_basis: PayBasis
+    daily_rate: float | None = Field(default=None, gt=0)
+    hourly_rate: float | None = Field(default=None, gt=0)
+    monthly_salary: float | None = Field(default=None, gt=0)
+
+    @model_validator(mode="after")
+    def _pay_required(self):
+        from app.schemas.employee import _validate_pay_fields
+
+        _validate_pay_fields(
+            pay_basis=self.pay_basis,
+            daily_rate=self.daily_rate,
+            hourly_rate=self.hourly_rate,
+            monthly_salary=self.monthly_salary,
+        )
+        return self
+
+
+class OwnerResolveDailyWorkdayRequest(BaseModel):
+    """Owner chooses one Daily workday entitlement when Daily stamps conflict.
+
+    Persists separately from AttendanceRecord completion stamps.
+    """
+
+    employee_id: UUID
+    work_date: date
+    daily_rate: float = Field(..., gt=0)
 
 
 class AttendanceCorrectionResponse(BaseModel):

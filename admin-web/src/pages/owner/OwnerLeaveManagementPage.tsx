@@ -1,6 +1,7 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMutation, useQuery, useQueryClient, useQueries } from "@tanstack/react-query";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useParams } from "react-router-dom";
+import { ChevronDown, X } from "lucide-react";
 import { toast } from "sonner";
 import {
   OwnerPage,
@@ -8,11 +9,20 @@ import {
   OwnerPageHeader,
 } from "@/components/owner/layout/OwnerPageLayout";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import {
   approveOwnerLeaveCancellation,
   approveOwnerLeaveRequest,
   getOwnerLeaveRequest,
+  getEmployeeLeaveBalances,
   listEmployees,
   listOwnerLeaveRequests,
   rejectOwnerLeaveCancellation,
@@ -69,50 +79,48 @@ function SupportingDocumentBlock({
   document?: string | null;
 }) {
   if (!hasDocument) {
-    return <Detail label="Supporting document" value="None" />;
+    return <InfoRow label="Supporting document">None</InfoRow>;
   }
   const isImage = !!document?.startsWith("data:image/");
   const isPdf = !!document?.toLowerCase().startsWith("data:application/pdf");
 
   return (
     <div className="space-y-2">
-      <Detail label="Supporting document" value="Attached" />
-      {document ? (
-        <div className="rounded-xl border border-slate-200 bg-[#FAFBFC] p-3">
-          {isImage ? (
-            <a href={document} target="_blank" rel="noreferrer" className="block">
-              <img
-                src={document}
-                alt="Supporting document"
-                className="max-h-56 w-full rounded-lg object-contain"
-              />
-              <p className="mt-2 text-xs font-semibold text-[#1F456B]">
-                Tap to view full size
-              </p>
-            </a>
-          ) : isPdf ? (
-            <a
-              href={document}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center rounded-lg bg-[#1F456B] px-3 py-2 text-sm font-semibold text-white"
-            >
-              View PDF
-            </a>
+      <InfoRow label="Supporting document">
+        {document ? (
+          isImage ? (
+            "Attached"
           ) : (
             <a
               href={document}
               target="_blank"
               rel="noreferrer"
-              className="text-sm font-semibold text-[#1F456B] underline"
+              className="font-semibold text-[var(--owner-navy)] underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--owner-navy)]"
             >
-              View document
+              {isPdf ? "View PDF" : "View document"}
             </a>
-          )}
-        </div>
-      ) : (
-        <p className="text-xs text-[#6B7280]">Loading document…</p>
-      )}
+          )
+        ) : (
+          <span className="font-medium text-[#6B7280]">Loading document…</span>
+        )}
+      </InfoRow>
+      {document && isImage ? (
+        <a
+          href={document}
+          target="_blank"
+          rel="noreferrer"
+          className="block rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--owner-navy)]"
+        >
+          <img
+            src={document}
+            alt="Supporting document"
+            className="max-h-40 w-full rounded-lg border border-slate-200 object-contain"
+          />
+          <p className="mt-1.5 text-xs font-medium text-[var(--owner-navy)]">
+            View full size
+          </p>
+        </a>
+      ) : null}
     </div>
   );
 }
@@ -152,6 +160,202 @@ function statusBadge(status: LeaveRequest["status"]) {
   return "bg-amber-100 text-amber-900";
 }
 
+function leaveActionError(error: unknown, fallback: string) {
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "response" in error &&
+    typeof error.response === "object" &&
+    error.response !== null &&
+    "data" in error.response &&
+    typeof error.response.data === "object" &&
+    error.response.data !== null &&
+    "detail" in error.response.data &&
+    typeof error.response.data.detail === "string"
+  ) {
+    return error.response.data.detail;
+  }
+  return fallback;
+}
+
+function LeaveBalanceNote({
+  employeeId,
+  leaveType,
+  startDate,
+  endDate,
+}: {
+  employeeId: string;
+  leaveType: string;
+  startDate: string;
+  endDate: string;
+}) {
+  const startYear = Number(startDate.slice(0, 4));
+  const endYear = Number(endDate.slice(0, 4));
+  const years: number[] = [];
+  if (Number.isInteger(startYear) && Number.isInteger(endYear)) {
+    for (let year = startYear; year <= endYear; year += 1) years.push(year);
+  }
+  const results = useQueries({
+    queries: years.map((year) => ({
+      queryKey: ["employee-leave-balances", employeeId, year],
+      queryFn: () => getEmployeeLeaveBalances(employeeId, year),
+    })),
+  });
+  return (
+    <InfoRow label="Entitlement">
+      <div className="space-y-1">
+        {results.map((result, index) => {
+          const year = years[index];
+          const item = result.data?.items.find(
+            (row) => row.leave_type === leaveType
+          );
+          if (result.isLoading) {
+            return (
+              <p key={year} className="text-sm text-[#6B7280]">
+                Loading {year} balance…
+              </p>
+            );
+          }
+          if (item?.disabled) {
+            return (
+              <p key={year} className="text-sm text-amber-800">
+                {year} {item.leave_type_label} is not available.
+              </p>
+            );
+          }
+          if (!item || !item.configured) {
+            return (
+              <p key={year} className="text-sm text-amber-800">
+                No {year} allowance is set in Leave Policy.
+              </p>
+            );
+          }
+          return (
+            <p key={year} className="text-sm text-[#111827]">
+              {year}: {item.remaining_days} remaining of {item.allocated_days}{" "}
+              allocated ({item.used_days} used)
+            </p>
+          );
+        })}
+      </div>
+    </InfoRow>
+  );
+}
+
+function formatLeaveDate(iso: string) {
+  const [year, month, day] = iso.split("-").map(Number);
+  if (!year || !month || !day) {
+    return { short: iso, display: iso, weekday: "", full: iso };
+  }
+  const value = new Date(year, month - 1, day);
+  return {
+    short: value.toLocaleDateString(undefined, { month: "short", day: "numeric" }),
+    display: value.toLocaleDateString(undefined, {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    }),
+    weekday: value.toLocaleDateString(undefined, { weekday: "long" }),
+    full: value.toLocaleDateString(undefined, {
+      month: "long",
+      day: "numeric",
+      year: "numeric",
+    }),
+  };
+}
+
+function LeaveDateRange({
+  startDate,
+  endDate,
+  leaveDays,
+}: {
+  startDate: string;
+  endDate: string;
+  leaveDays: number;
+}) {
+  const start = formatLeaveDate(startDate);
+  const end = formatLeaveDate(endDate);
+  return (
+    <div>
+      <div className="grid grid-cols-2 gap-4">
+        <div className="min-w-0">
+          <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-[#6B7280]">
+            Start date
+          </p>
+          <p className="mt-1 truncate text-sm font-semibold text-[#111827]">
+            {start.display}
+          </p>
+          <p className="truncate text-xs text-[#6B7280]">{start.weekday}</p>
+        </div>
+        <div className="min-w-0">
+          <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-[#6B7280]">
+            End date
+          </p>
+          <p className="mt-1 truncate text-sm font-semibold text-[#111827]">
+            {end.display}
+          </p>
+          <p className="truncate text-xs text-[#6B7280]">{end.weekday}</p>
+        </div>
+      </div>
+      <p className="mt-3 text-sm font-medium text-[#374151]">
+        {leaveDays} day{leaveDays === 1 ? "" : "s"}
+      </p>
+    </div>
+  );
+}
+
+function InfoRow({
+  label,
+  children,
+}: {
+  label: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="grid grid-cols-[8.75rem_minmax(0,1fr)] items-baseline gap-3 border-b border-slate-100 py-2.5 last:border-b-0 max-[380px]:grid-cols-1 max-[380px]:gap-0.5">
+      <p className="text-xs text-[#6B7280]">{label}</p>
+      <div className="min-w-0 text-sm font-medium text-[#111827] [overflow-wrap:anywhere]">
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function DrawerDisclosure({
+  title,
+  open,
+  onToggle,
+  children,
+}: {
+  title: string;
+  open: boolean;
+  onToggle: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <section className="border-t border-slate-200">
+      <button
+        type="button"
+        className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--owner-navy)] sm:px-5"
+        aria-expanded={open}
+        onClick={onToggle}
+      >
+        <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-[#6B7280]">
+          {title}
+        </span>
+        <ChevronDown
+          className={cn(
+            "h-4 w-4 shrink-0 text-[#6B7280] transition-transform duration-150",
+            open && "rotate-180"
+          )}
+          aria-hidden="true"
+        />
+      </button>
+      {open ? <div className="px-4 pb-4 sm:px-5">{children}</div> : null}
+    </section>
+  );
+}
+
 function statusLabel(status: LeaveRequest["status"]) {
   if (status === "approved") return "Approved";
   if (status === "rejected") return "Rejected";
@@ -187,6 +391,8 @@ export function OwnerLeaveManagementPage() {
   const [payrollIsPaid, setPayrollIsPaid] = useState(true);
   const [overrideReason, setOverrideReason] = useState("");
   const [detailLoading, setDetailLoading] = useState(false);
+  const [requestInfoOpen, setRequestInfoOpen] = useState(true);
+  const [reviewDetailsOpen, setReviewDetailsOpen] = useState(true);
   const openedDeepLinkId = useRef<string | null>(null);
 
   const selectRequest = async (request: LeaveRequest) => {
@@ -271,6 +477,11 @@ export function OwnerLeaveManagementPage() {
     toast.error("Could not load leave request details");
   }, [deepLinkError, listMatch]);
 
+  useEffect(() => {
+    setRequestInfoOpen(true);
+    setReviewDetailsOpen(true);
+  }, [selected?.id]);
+
   const invalidateLeaveQueries = () => {
     void qc.invalidateQueries({ queryKey: ["owner-leave-requests"] });
     void qc.invalidateQueries({ queryKey: ["weekly-schedule"] });
@@ -294,7 +505,8 @@ export function OwnerLeaveManagementPage() {
       setOverrideReason("");
       invalidateLeaveQueries();
     },
-    onError: () => toast.error("Failed to approve leave request"),
+    onError: (error) =>
+      toast.error(leaveActionError(error, "Failed to approve leave request")),
   });
 
   const reject = useMutation({
@@ -350,15 +562,13 @@ export function OwnerLeaveManagementPage() {
         description="Review employee leave requests and keep schedules, attendance, and payroll in sync."
       />
       <OwnerPageContent>
-        <div className="mb-4 flex flex-wrap gap-2">
+        <div className="owner-tabs mb-4">
           {TABS.map((item) => (
             <button
               key={item.key}
               className={cn(
-                "rounded-full px-3.5 py-1.5 text-sm font-semibold transition",
-                tab === item.key
-                  ? "bg-[#1F456B] text-white"
-                  : "bg-white text-[#4B5563] ring-1 ring-slate-200 hover:bg-slate-50"
+                "owner-tab",
+                tab === item.key ? "owner-tab-active" : "owner-tab-idle"
               )}
               onClick={() => setTab(item.key)}
               type="button"
@@ -368,9 +578,10 @@ export function OwnerLeaveManagementPage() {
           ))}
         </div>
 
-        <div className="mb-5 grid gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:grid-cols-2 lg:grid-cols-4">
+        <div className="owner-toolbar mb-5">
+          <div className="owner-filter-grid">
           <select
-            className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm"
+            className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm shadow-sm"
             value={employeeId}
             onChange={(event) => setEmployeeId(event.target.value)}
           >
@@ -382,7 +593,7 @@ export function OwnerLeaveManagementPage() {
             ))}
           </select>
           <select
-            className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm"
+            className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm shadow-sm"
             value={leaveType}
             onChange={(event) => setLeaveType(event.target.value)}
           >
@@ -393,203 +604,305 @@ export function OwnerLeaveManagementPage() {
             ))}
           </select>
           <Input
-            className="h-10 rounded-xl"
+            className="h-10 rounded-xl shadow-sm"
             type="date"
             value={startDate}
             onChange={(event) => setStartDate(event.target.value)}
           />
           <Input
-            className="h-10 rounded-xl"
+            className="h-10 rounded-xl shadow-sm"
             type="date"
             value={endDate}
             onChange={(event) => setEndDate(event.target.value)}
           />
+          </div>
         </div>
 
-        <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
-          <div className="space-y-3">
-            {isLoading ? (
-              <p className="text-sm text-muted-foreground">Loading…</p>
-            ) : visible.length === 0 ? (
-              <div className="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-muted-foreground shadow-sm">
-                No leave requests in this view.
+        <div className="space-y-3">
+          {isLoading ? (
+            <div className="owner-panel px-6 py-10 text-center text-sm text-muted-foreground">
+              Loading leave requests…
+            </div>
+          ) : visible.length === 0 ? (
+            <div className="owner-empty">
+              No leave requests in this view.
+            </div>
+          ) : (
+            visible.map((request) => (
+              <button
+                key={request.id}
+                className={cn(
+                  "owner-list-row",
+                  selected?.id === request.id && "owner-list-row-active"
+                )}
+                onClick={() => {
+                  void selectRequest(request);
+                }}
+                type="button"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex min-w-0 items-start gap-3">
+                    <LeaveEmployeeAvatar
+                      name={request.employee_name}
+                      imageUrl={request.employee_profile_image_url}
+                    />
+                    <div className="min-w-0">
+                      <p className="truncate font-semibold text-[#111827]">
+                        {request.employee_name ?? "Employee"}
+                      </p>
+                      <p className="text-sm text-[#6B7280]">
+                        {request.leave_type_label} · {request.leave_days} day
+                        {request.leave_days === 1 ? "" : "s"}
+                      </p>
+                      {request.other_leave_specification ? (
+                        <p className="text-sm text-[#374151]">
+                          Other Leave Type: {request.other_leave_specification}
+                        </p>
+                      ) : null}
+                      <p className="mt-1 text-xs font-medium text-[#4B5563]">
+                        {request.start_date} – {request.end_date}
+                      </p>
+                      {request.has_pending_changes ? (
+                        <p className="mt-1 text-xs font-semibold text-orange-700">
+                          Updated request pending review
+                        </p>
+                      ) : null}
+                    </div>
+                  </div>
+                  <span
+                    className={cn(
+                      "rounded-full px-2.5 py-1 text-[11px] font-bold",
+                      statusBadge(request.status)
+                    )}
+                  >
+                    {statusLabel(request.status)}
+                  </span>
+                </div>
+              </button>
+            ))
+          )}
+        </div>
+
+        <Dialog
+          open={Boolean(selected)}
+          onOpenChange={(open) => {
+            if (!open) {
+              setSelected(null);
+              setRemarks("");
+              setOverrideReason("");
+            }
+          }}
+        >
+          <DialogContent
+            hideClose
+            overlayClassName="bg-slate-900/20"
+            className="flex max-h-[min(85vh,42rem)] w-[min(30rem,calc(100vw-2rem))] max-w-[30rem] flex-col gap-0 overflow-hidden rounded-2xl border-slate-200/90 bg-white p-0 shadow-[0_1px_2px_rgba(15,23,42,0.05),0_16px_40px_rgba(15,23,42,0.12)] sm:rounded-2xl"
+          >
+            <DialogHeader className="shrink-0 space-y-0 border-b border-slate-200 px-4 py-4 text-left sm:px-5">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-[#6B7280]">
+                    Leave request
+                  </p>
+                  <DialogTitle className="mt-1.5 text-[1.15rem] font-semibold tracking-tight text-[#111827]">
+                    Leave Details
+                  </DialogTitle>
+                  <DialogDescription className="mt-1 text-sm text-[#6B7280]">
+                    Review leave request information
+                  </DialogDescription>
+                </div>
+                <DialogClose className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-[#4B5563] transition-colors hover:bg-slate-100 hover:text-[#111827] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--owner-navy)]">
+                  <X className="h-4 w-4" aria-hidden="true" />
+                  <span className="sr-only">Close</span>
+                </DialogClose>
               </div>
-            ) : (
-              visible.map((request) => (
-                <button
-                  key={request.id}
-                  className={cn(
-                    "w-full rounded-2xl border bg-white p-4 text-left shadow-sm transition hover:shadow-md",
-                    selected?.id === request.id
-                      ? "border-[#1F456B]"
-                      : "border-slate-200"
-                  )}
-                  onClick={() => {
-                    void selectRequest(request);
-                  }}
-                  type="button"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex min-w-0 items-start gap-3">
+            </DialogHeader>
+            {selected ? (
+              <>
+                <div className="min-h-0 flex-1 overflow-y-auto">
+                  <div className="border-b border-slate-200/80 bg-[var(--owner-well)] px-4 py-3.5 sm:px-5">
+                    <div className="flex items-center gap-3">
                       <LeaveEmployeeAvatar
-                        name={request.employee_name}
-                        imageUrl={request.employee_profile_image_url}
+                        name={selected.employee_name}
+                        imageUrl={selected.employee_profile_image_url}
+                        className="h-11 w-11 text-sm"
                       />
-                      <div className="min-w-0">
-                        <p className="truncate font-semibold text-[#111827]">
-                          {request.employee_name ?? "Employee"}
+                      <div className="min-w-0 flex-1">
+                        <p
+                          className="truncate text-[15px] font-semibold tracking-tight text-[#111827]"
+                          title={selected.employee_name ?? "Employee"}
+                        >
+                          {selected.employee_name ?? "Employee"}
                         </p>
-                        <p className="text-sm text-[#6B7280]">
-                          {request.leave_type_label} · {request.leave_days} day
-                          {request.leave_days === 1 ? "" : "s"}
+                        <p className="truncate text-sm text-[#6B7280]">
+                          {selected.employee_position ?? "No role"}
                         </p>
-                        <p className="mt-1 text-xs font-medium text-[#4B5563]">
-                          {request.start_date} – {request.end_date}
-                        </p>
-                        {request.has_pending_changes ? (
-                          <p className="mt-1 text-xs font-semibold text-orange-700">
-                            Updated request pending review
+                        {detailLoading ? (
+                          <p className="mt-0.5 text-xs text-[#9CA3AF]">
+                            Loading details…
                           </p>
                         ) : null}
                       </div>
+                      <span
+                        className={cn(
+                          "shrink-0 rounded-full px-2.5 py-1 text-[11px] font-bold",
+                          statusBadge(selected.status)
+                        )}
+                      >
+                        {statusLabel(selected.status)}
+                      </span>
                     </div>
-                    <span
-                      className={cn(
-                        "rounded-full px-2.5 py-1 text-[11px] font-bold",
-                        statusBadge(request.status)
-                      )}
-                    >
-                      {statusLabel(request.status)}
-                    </span>
                   </div>
-                </button>
-              ))
-            )}
-          </div>
 
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            {!selected ? (
-              <p className="text-sm text-muted-foreground">
-                Select a leave request to review details.
-              </p>
-            ) : (
-              <div className="space-y-4">
-                <div className="flex items-start gap-3">
-                  <LeaveEmployeeAvatar
-                    name={selected.employee_name}
-                    imageUrl={selected.employee_profile_image_url}
-                    className="h-14 w-14 text-base"
-                  />
-                  <div>
-                    <h2 className="text-lg font-semibold text-[#111827]">
-                      {selected.employee_name}
-                    </h2>
-                    <p className="text-sm text-[#6B7280]">
-                      {selected.employee_position ?? "No role"}
-                    </p>
-                    {detailLoading ? (
-                      <p className="mt-1 text-xs text-[#9CA3AF]">
-                        Loading details…
+                  <div className="space-y-4 px-4 py-4 sm:px-5">
+                    <div>
+                      <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-[#6B7280]">
+                        Leave type
                       </p>
-                    ) : null}
-                  </div>
-                </div>
-
-                {selected.has_pending_changes && selected.previous_request ? (
-                  <LeaveComparison
-                    previous={selected.previous_request}
-                    updated={selected}
-                  />
-                ) : (
-                  <>
-                    <Detail label="Leave type" value={selected.leave_type_label} />
-                    <Detail
-                      label="Requested dates"
-                      value={`${selected.start_date} – ${selected.end_date}`}
-                    />
-                    <Detail
-                      label="Leave days"
-                      value={`${selected.leave_days} day${
-                        selected.leave_days === 1 ? "" : "s"
-                      }`}
-                    />
-                    <Detail
-                      label="Company Policy"
-                      value={
-                        (selected.policy_is_paid ?? selected.is_paid)
-                          ? "Paid Leave"
-                          : "Unpaid Leave"
-                      }
-                    />
-                    {selected.status !== "pending" ? (
-                      <Detail
-                        label="Payroll Treatment"
-                        value={
-                          selected.is_paid ? "Paid Leave" : "Unpaid Leave"
-                        }
-                      />
-                    ) : null}
-                    <Detail label="Reason" value={selected.reason} />
-                  </>
-                )}
-
-                <SupportingDocumentBlock
-                  hasDocument={selected.has_supporting_document}
-                  document={selected.supporting_document}
-                />
-
-                {selected.status === "pending" ? (
-                  <>
-                    <div className="space-y-2 rounded-xl border border-slate-200 bg-[#FAFBFC] p-3">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-[#6B7280]">
-                        Payroll Treatment
+                      <p className="mt-1 text-lg font-semibold tracking-tight text-[#111827]">
+                        {selected.leave_type_label}
                       </p>
-                      <p className="text-xs text-[#6B7280]">
-                        Defaults to company policy. Change only if needed.
-                      </p>
-                      <label className="flex items-center gap-2 text-sm text-[#111827]">
-                        <input
-                          type="radio"
-                          name="payroll-treatment"
-                          checked={payrollIsPaid}
-                          onChange={() => setPayrollIsPaid(true)}
-                        />
-                        Paid Leave
-                      </label>
-                      <label className="flex items-center gap-2 text-sm text-[#111827]">
-                        <input
-                          type="radio"
-                          name="payroll-treatment"
-                          checked={!payrollIsPaid}
-                          onChange={() => setPayrollIsPaid(false)}
-                        />
-                        Unpaid Leave
-                      </label>
-                      {payrollIsPaid !==
-                      (selected.policy_is_paid ?? selected.is_paid) ? (
-                        <Input
-                          className="mt-1 h-10 rounded-xl"
-                          placeholder="Reason for override (optional)"
-                          value={overrideReason}
-                          onChange={(event) =>
-                            setOverrideReason(event.target.value)
-                          }
-                        />
+                      {selected.other_leave_specification ? (
+                        <p className="mt-1 text-sm text-[#374151]">
+                          Other Leave Type: {selected.other_leave_specification}
+                        </p>
                       ) : null}
                     </div>
-                    <RemarksField remarks={remarks} onChange={setRemarks} />
+                    <LeaveDateRange
+                      startDate={selected.start_date}
+                      endDate={selected.end_date}
+                      leaveDays={selected.leave_days}
+                    />
+                    <div>
+                      <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-[#6B7280]">
+                        Reason
+                      </p>
+                      <p className="mt-2 whitespace-pre-wrap border-y border-slate-200 py-3 text-sm leading-6 text-[#111827]">
+                        {selected.reason}
+                      </p>
+                    </div>
+                  </div>
+
+                  {selected.has_pending_changes && selected.previous_request ? (
+                    <div className="border-t border-slate-200 px-4 py-4 sm:px-5">
+                      <LeaveComparison
+                        previous={selected.previous_request}
+                        updated={selected}
+                      />
+                    </div>
+                  ) : null}
+
+                  <DrawerDisclosure
+                    title="Request Information"
+                    open={requestInfoOpen}
+                    onToggle={() => setRequestInfoOpen((open) => !open)}
+                  >
+                    <InfoRow label="Submitted">
+                      {selected.created_at
+                        ? new Date(selected.created_at).toLocaleString()
+                        : "—"}
+                    </InfoRow>
+                    <InfoRow label="Status">{statusLabel(selected.status)}</InfoRow>
+                    <InfoRow label="Company policy">
+                      {(selected.policy_is_paid ?? selected.is_paid)
+                        ? "Paid Leave"
+                        : "Unpaid Leave"}
+                    </InfoRow>
+                    {selected.status !== "pending" ? (
+                      <InfoRow label="Payroll treatment">
+                        {selected.is_paid ? "Paid Leave" : "Unpaid Leave"}
+                      </InfoRow>
+                    ) : null}
+                    <LeaveBalanceNote
+                      employeeId={selected.employee_id}
+                      leaveType={selected.leave_type}
+                      startDate={selected.start_date}
+                      endDate={selected.end_date}
+                    />
+                    <SupportingDocumentBlock
+                      hasDocument={selected.has_supporting_document}
+                      document={selected.supporting_document}
+                    />
+                  </DrawerDisclosure>
+
+                  {selected.status === "pending" ||
+                  selected.status === "cancellation_pending" ? (
+                    <div className="space-y-3 border-t border-slate-200 px-4 py-4 sm:px-5">
+                      <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-[#6B7280]">
+                        Review
+                      </p>
+                      {selected.status === "cancellation_pending" ? (
+                        <p className="text-sm text-orange-900">
+                          This employee requested to cancel an approved leave.
+                        </p>
+                      ) : null}
+                      {selected.status === "pending" ? (
+                        <div className="space-y-2">
+                          <p className="text-xs text-[#6B7280]">
+                            Payroll treatment
+                          </p>
+                          <p className="text-xs text-[#6B7280]">
+                            Defaults to company policy. Change only if needed.
+                          </p>
+                          <label className="flex items-center gap-2 text-sm text-[#111827]">
+                            <input
+                              type="radio"
+                              name="payroll-treatment"
+                              checked={payrollIsPaid}
+                              onChange={() => setPayrollIsPaid(true)}
+                            />
+                            Paid Leave
+                          </label>
+                          <label className="flex items-center gap-2 text-sm text-[#111827]">
+                            <input
+                              type="radio"
+                              name="payroll-treatment"
+                              checked={!payrollIsPaid}
+                              onChange={() => setPayrollIsPaid(false)}
+                            />
+                            Unpaid Leave
+                          </label>
+                          {payrollIsPaid !==
+                          (selected.policy_is_paid ?? selected.is_paid) ? (
+                            <Input
+                              className="mt-1 h-10 rounded-lg"
+                              placeholder="Reason for override (optional)"
+                              value={overrideReason}
+                              onChange={(event) =>
+                                setOverrideReason(event.target.value)
+                              }
+                            />
+                          ) : null}
+                        </div>
+                      ) : null}
+                      <RemarksField remarks={remarks} onChange={setRemarks} />
+                    </div>
+                  ) : (
+                    <DrawerDisclosure
+                      title="Additional review details"
+                      open={reviewDetailsOpen}
+                      onToggle={() => setReviewDetailsOpen((open) => !open)}
+                    >
+                      <InfoRow label="Owner remarks">
+                        {selected.owner_remarks || "None"}
+                      </InfoRow>
+                    </DrawerDisclosure>
+                  )}
+                </div>
+                <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-slate-200 bg-white px-4 py-3 sm:px-5">
+                  <DialogClose asChild>
+                    <Button type="button" variant="ghost" size="sm">
+                      Close
+                    </Button>
+                  </DialogClose>
+                  {selected.status === "pending" ? (
                     <ReviewActions
                       disabled={reviewPending}
                       onApprove={() => approve.mutate()}
                       onReject={() => reject.mutate()}
                     />
-                  </>
-                ) : selected.status === "cancellation_pending" ? (
-                  <>
-                    <p className="rounded-xl border border-orange-200 bg-orange-50 px-3 py-2 text-sm text-orange-900">
-                      This employee requested to cancel an approved leave.
-                    </p>
-                    <RemarksField remarks={remarks} onChange={setRemarks} />
+                  ) : null}
+                  {selected.status === "cancellation_pending" ? (
                     <ReviewActions
                       disabled={reviewPending}
                       approveLabel="Approve Cancellation"
@@ -597,21 +910,17 @@ export function OwnerLeaveManagementPage() {
                       onApprove={() => approveCancellation.mutate()}
                       onReject={() => rejectCancellation.mutate()}
                     />
-                  </>
-                ) : (
-                  <Detail
-                    label="Owner remarks"
-                    value={selected.owner_remarks || "None"}
-                  />
-                )}
-              </div>
-            )}
-          </div>
-        </div>
+                  ) : null}
+                </div>
+              </>
+            ) : null}
+          </DialogContent>
+        </Dialog>
       </OwnerPageContent>
     </OwnerPage>
   );
 }
+
 
 function LeaveComparison({
   previous,
@@ -622,16 +931,17 @@ function LeaveComparison({
 }) {
   return (
     <div className="space-y-3">
-      <p className="text-xs font-semibold uppercase tracking-wide text-[#9CA3AF]">
-        Previous vs Updated
+      <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-[#6B7280]">
+        Previous vs updated
       </p>
-      <div className="grid gap-3 sm:grid-cols-2">
-        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-          <p className="mb-2 text-xs font-bold uppercase tracking-wide text-[#6B7280]">
+      <div className="grid gap-3">
+        <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+          <p className="mb-2 text-xs font-semibold text-[#6B7280]">
             Previous
           </p>
           <ComparisonDetails
             leaveTypeLabel={previous.leave_type_label}
+            otherLeaveSpecification={previous.other_leave_specification}
             startDate={previous.start_date}
             endDate={previous.end_date ?? previous.start_date}
             leaveDays={previous.leave_days}
@@ -639,12 +949,13 @@ function LeaveComparison({
             reason={previous.reason}
           />
         </div>
-        <div className="rounded-xl border border-[#1F456B]/20 bg-[#F8FAFC] p-3">
-          <p className="mb-2 text-xs font-bold uppercase tracking-wide text-[#1F456B]">
+        <div className="rounded-lg border border-slate-200 bg-white p-3">
+          <p className="mb-2 text-xs font-semibold text-[var(--owner-navy)]">
             Updated
           </p>
           <ComparisonDetails
             leaveTypeLabel={updated.leave_type_label}
+            otherLeaveSpecification={updated.other_leave_specification}
             startDate={updated.start_date}
             endDate={updated.end_date}
             leaveDays={updated.leave_days}
@@ -659,6 +970,7 @@ function LeaveComparison({
 
 function ComparisonDetails({
   leaveTypeLabel,
+  otherLeaveSpecification,
   startDate,
   endDate,
   leaveDays,
@@ -666,6 +978,7 @@ function ComparisonDetails({
   reason,
 }: {
   leaveTypeLabel: string;
+  otherLeaveSpecification: string | null;
   startDate: string;
   endDate: string;
   leaveDays: number;
@@ -675,6 +988,11 @@ function ComparisonDetails({
   return (
     <div className="space-y-2 text-sm">
       <p className="font-medium text-[#111827]">{leaveTypeLabel}</p>
+      {otherLeaveSpecification ? (
+        <p className="text-[#374151]">
+          Other Leave Type: {otherLeaveSpecification}
+        </p>
+      ) : null}
       <p className="text-[#6B7280]">
         {startDate} – {endDate}
       </p>
@@ -696,11 +1014,12 @@ function RemarksField({
 }) {
   return (
     <div className="space-y-2">
-      <label className="text-xs font-semibold uppercase tracking-wide text-[#9CA3AF]">
+      <label className="text-xs text-[#6B7280]" htmlFor="leave-owner-remarks">
         Remarks (optional)
       </label>
       <textarea
-        className="min-h-[90px] w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#1F456B]"
+        id="leave-owner-remarks"
+        className="min-h-[88px] w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none transition-colors focus:border-[var(--owner-navy)] focus-visible:ring-2 focus-visible:ring-[var(--owner-navy)]"
         value={remarks}
         onChange={(event) => onChange(event.target.value)}
         placeholder="Add a short note for the employee"
@@ -723,33 +1042,27 @@ function ReviewActions({
   onReject: () => void;
 }) {
   return (
-    <div className="flex gap-2">
+    <>
       <Button
-        className="flex-1 rounded-xl bg-[#1F456B] text-white hover:bg-[#17395D]"
-        disabled={disabled}
-        onClick={onApprove}
-      >
-        {approveLabel}
-      </Button>
-      <Button
-        className="flex-1 rounded-xl"
-        variant="destructive"
+        className="rounded-md border-red-200 text-red-700 hover:bg-red-50 focus-visible:ring-red-700"
         disabled={disabled}
         onClick={onReject}
+        type="button"
+        size="sm"
+        variant="outline"
       >
         {rejectLabel}
       </Button>
-    </div>
+      <Button
+        className="rounded-md bg-[var(--owner-button)] text-white hover:bg-[var(--owner-navy-soft)]"
+        disabled={disabled}
+        onClick={onApprove}
+        size="sm"
+        type="button"
+      >
+        {approveLabel}
+      </Button>
+    </>
   );
 }
 
-function Detail({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <p className="text-[11px] font-semibold uppercase tracking-wide text-[#9CA3AF]">
-        {label}
-      </p>
-      <p className="mt-1 text-sm font-medium text-[#111827]">{value}</p>
-    </div>
-  );
-}

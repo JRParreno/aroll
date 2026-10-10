@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:aroll_mobile/core/app_state.dart';
+import 'package:aroll_mobile/core/theme/business_brand_theme.dart';
 import 'package:aroll_mobile/core/di/injection.dart';
 import 'package:aroll_mobile/core/utils/data_uri_image.dart';
 import 'package:aroll_mobile/core/utils/profile_image_errors.dart';
@@ -13,13 +14,11 @@ import 'package:aroll_mobile/presentation/auth/sign_out_dialog.dart';
 import 'package:aroll_mobile/presentation/owner/owner_info_display.dart';
 import 'package:aroll_mobile/presentation/owner/owner_shell.dart';
 import 'package:aroll_mobile/presentation/shared/app_ui.dart';
+import 'package:aroll_mobile/presentation/shared/confirm_action_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 
-/// Matches the Role landing / auth navy background.
-const _headerBg = kAuthNavyBackground;
-const _headerControl = Color(0xFF1E3A5F);
 const _sheetRadius = 28.0;
 const _menuCardBg = Color(0xFFF3F4F6);
 const _logoutColor = Color(0xFFE57373);
@@ -78,12 +77,18 @@ class _OwnerProfileScreenState extends State<OwnerProfileScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
-              leading: const Icon(Icons.photo_library_outlined),
+              leading: Icon(
+                Icons.photo_library_outlined,
+                color: BrandColors.of(context).tonePrimary,
+              ),
               title: const Text('Choose from gallery'),
               onTap: () => Navigator.pop(context, 'gallery'),
             ),
             ListTile(
-              leading: const Icon(Icons.photo_camera_outlined),
+              leading: Icon(
+                Icons.photo_camera_outlined,
+                color: BrandColors.of(context).tonePrimary,
+              ),
               title: const Text('Take photo'),
               onTap: () => Navigator.pop(context, 'camera'),
             ),
@@ -145,21 +150,14 @@ class _OwnerProfileScreenState extends State<OwnerProfileScreen> {
   Future<void> _confirmRemoveProfileImage() async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Remove profile picture?'),
-        content: const Text(
-          'Your profile picture will be removed from all devices.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Remove'),
-          ),
-        ],
+      builder: (context) => const ConfirmActionDialog(
+        icon: Icons.person_remove_rounded,
+        title: 'Remove profile picture?',
+        message: 'Your profile picture will be removed from all devices.',
+        confirmLabel: 'Remove',
+        iconColor: AppColors.danger,
+        iconBackground: Color(0xFFFEE2E2),
+        confirmColor: Color(0xFFB91C1C),
       ),
     );
     if (confirmed != true) return;
@@ -198,6 +196,12 @@ class _OwnerProfileScreenState extends State<OwnerProfileScreen> {
       listenable: appState,
       builder: (context, _) {
         final session = appState.session ?? widget.session;
+        final brand = BrandColors.of(context);
+        final headerBg = brand.saved ? brand.toneSidebar : kAuthNavyBackground;
+        final headerControl =
+            brand.saved ? brand.toneButton : const Color(0xFF1E3A5F);
+        final avatarBg =
+            brand.saved ? brand.toneSecondary : const Color(0xFF284B73);
         final profileImageUrl = session.branding?.ownerProfileImageUrl;
         final imageBytes = dataUriBytes(profileImageUrl);
 
@@ -205,9 +209,9 @@ class _OwnerProfileScreenState extends State<OwnerProfileScreen> {
           selectedIndex: 2,
           showAppBar: false,
           title: 'Profile',
-          backgroundColor: _headerBg,
+          backgroundColor: headerBg,
           child: ColoredBox(
-            color: _headerBg,
+            color: headerBg,
             child: SafeArea(
               bottom: false,
               child: FutureBuilder<_ProfileDetails>(
@@ -240,120 +244,149 @@ class _OwnerProfileScreenState extends State<OwnerProfileScreen> {
                           ? null
                           : ownerStatusLabel(business['application_status']);
 
-                  return CustomScrollView(
-                    physics: const BouncingScrollPhysics(),
-                    slivers: [
-                      SliverToBoxAdapter(
-                        child: _DarkHeader(
-                          imageBytes: imageBytes,
-                          ownerName: ownerName,
-                          email: email,
-                          uploading: _uploading,
-                          onBack: () => appNavigateBack(
-                            context,
-                            fallbackRoute: '/owner/home',
-                          ),
-                          onEditPhoto: _uploading ? null : _openPhotoActions,
+                  return Column(
+                    children: [
+                      _DarkHeader(
+                        headerControl: headerControl,
+                        avatarColor: avatarBg,
+                        imageBytes: imageBytes,
+                        ownerName: ownerName,
+                        email: email,
+                        uploading: _uploading,
+                        onBack: () => appNavigateBack(
+                          context,
+                          fallbackRoute: '/owner/home',
                         ),
+                        onEditPhoto:
+                            _uploading ? null : _openPhotoActions,
                       ),
-                      SliverToBoxAdapter(
+                      Expanded(
                         child: Container(
                           width: double.infinity,
-                          constraints: BoxConstraints(
-                            minHeight: MediaQuery.sizeOf(context).height * 0.55,
-                          ),
                           decoration: const BoxDecoration(
                             color: AppColors.white,
                             borderRadius: BorderRadius.vertical(
                               top: Radius.circular(_sheetRadius),
                             ),
                           ),
-                          padding: const EdgeInsets.fromLTRB(20, 24, 20, 28),
                           child: snapshot.connectionState ==
                                   ConnectionState.waiting
-                              ? const Padding(
-                                  padding: EdgeInsets.symmetric(vertical: 40),
-                                  child: Center(
-                                    child: CircularProgressIndicator(),
-                                  ),
+                              ? const Center(
+                                  child: CircularProgressIndicator(),
                                 )
                               : snapshot.hasError
-                                  ? Column(
-                                      children: [
-                                        Text(
-                                          'Unable to load profile details.',
-                                          style: appMutedStyle(),
-                                        ),
-                                        TextButton(
-                                          onPressed: () {
-                                            setState(() {
-                                              _detailsFuture = _loadDetails();
-                                            });
-                                          },
-                                          child: const Text('Retry'),
-                                        ),
-                                      ],
+                                  ? Center(
+                                      child: Column(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Text(
+                                            'Unable to load profile details.',
+                                            style: appMutedStyle(),
+                                          ),
+                                          TextButton(
+                                            onPressed: () {
+                                              setState(() {
+                                                _detailsFuture =
+                                                    _loadDetails();
+                                              });
+                                            },
+                                            child: const Text('Retry'),
+                                          ),
+                                        ],
+                                      ),
                                     )
-                                  : Column(
-                                      children: [
-                                        _DisplayedInfoCard(
-                                          title: 'Business Information',
-                                          rows: [
-                                            ('Business Name', businessName),
-                                            if (businessType != null)
-                                              ('Business Type', businessType),
-                                            if (businessCode != null)
-                                              ('Business Code', businessCode),
-                                            if (address != null)
-                                              ('Address', address),
-                                            (
-                                              'Payroll Frequency',
-                                              payrollFrequency,
-                                            ),
-                                            if (businessStatus != null)
+                                  : SingleChildScrollView(
+                                      physics:
+                                          const ClampingScrollPhysics(),
+                                      padding: const EdgeInsets.fromLTRB(
+                                        16,
+                                        14,
+                                        16,
+                                        16,
+                                      ),
+                                      child: Column(
+                                        children: [
+                                          _DisplayedInfoCard(
+                                            title: 'Business Information',
+                                            rows: [
                                               (
-                                                'Business Status',
-                                                businessStatus,
+                                                'Business Name',
+                                                businessName
                                               ),
-                                          ],
-                                        ),
-                                        const SizedBox(height: 14),
-                                        _MenuCard(
-                                          items: [
-                                            _MenuItemData(
-                                              icon: Icons.badge_outlined,
-                                              label: 'Account Information',
-                                              onTap: () => context.push(
-                                                '/owner/settings/account',
+                                              if (businessType != null)
+                                                (
+                                                  'Business Type',
+                                                  businessType
+                                                ),
+                                              if (businessCode != null)
+                                                (
+                                                  'Business Code',
+                                                  businessCode
+                                                ),
+                                              if (address != null)
+                                                ('Address', address),
+                                              (
+                                                'Payroll Frequency',
+                                                payrollFrequency,
                                               ),
-                                            ),
-                                          ],
-                                        ),
-                                        const SizedBox(height: 14),
-                                        _MenuCard(
-                                          items: [
-                                            _MenuItemData(
-                                              icon: Icons.settings_outlined,
-                                              label: 'Settings',
-                                              onTap: () => context.push(
-                                                '/owner/settings',
+                                              if (businessStatus != null)
+                                                (
+                                                  'Business Status',
+                                                  businessStatus,
+                                                ),
+                                            ],
+                                          ),
+                                          const SizedBox(height: 10),
+                                          _MenuCard(
+                                            items: [
+                                              _MenuItemData(
+                                                icon:
+                                                    Icons.badge_outlined,
+                                                label:
+                                                    'Account Information',
+                                                onTap: () => context.push(
+                                                  '/owner/settings/account',
+                                                ),
                                               ),
-                                            ),
-                                          ],
-                                        ),
-                                        const SizedBox(height: 14),
-                                        _MenuCard(
-                                          items: [
-                                            _MenuItemData(
-                                              icon: Icons.logout_rounded,
-                                              label: 'Log Out',
-                                              destructive: true,
-                                              onTap: () =>
-                                                  _confirmLogout(context),
-                                            ),
-                                          ],
-                                        ),
-                                      ],
+                                              _MenuItemData(
+                                                icon: Icons.lock_outline_rounded,
+                                                label: 'Change Password',
+                                                onTap: () => context.push(
+                                                  '/owner/profile/change-password',
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                          const SizedBox(height: 10),
+                                          _MenuCard(
+                                            items: [
+                                              _MenuItemData(
+                                                icon: Icons
+                                                    .settings_outlined,
+                                                label: 'Settings',
+                                                onTap: () => context.push(
+                                                  '/owner/settings',
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                          const SizedBox(height: 10),
+                                          _MenuCard(
+                                            items: [
+                                              _MenuItemData(
+                                                icon: Icons
+                                                    .logout_rounded,
+                                                label: 'Log Out',
+                                                destructive: true,
+                                                onTap: () =>
+                                                    _confirmLogout(
+                                                  context,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ],
+                                      ),
                                     ),
                         ),
                       ),
@@ -390,6 +423,8 @@ String? _text(Object? value) {
 
 class _DarkHeader extends StatelessWidget {
   const _DarkHeader({
+    required this.headerControl,
+    required this.avatarColor,
     required this.imageBytes,
     required this.ownerName,
     required this.email,
@@ -398,6 +433,8 @@ class _DarkHeader extends StatelessWidget {
     required this.onEditPhoto,
   });
 
+  final Color headerControl;
+  final Color avatarColor;
   final Uint8List? imageBytes;
   final String ownerName;
   final String email;
@@ -408,14 +445,15 @@ class _DarkHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 4, 16, 28),
+      padding: const EdgeInsets.fromLTRB(16, 2, 16, 16),
       child: Column(
         children: [
           SizedBox(
-            height: 48,
+            height: 40,
             child: Row(
               children: [
                 _CircleIconButton(
+                  color: headerControl,
                   icon: Icons.chevron_left_rounded,
                   onTap: onBack,
                 ),
@@ -425,28 +463,28 @@ class _DarkHeader extends StatelessWidget {
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       color: Colors.white,
-                      fontSize: 18,
+                      fontSize: 17,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
                 ),
-                const SizedBox(width: 44),
+                const SizedBox(width: 40),
               ],
             ),
           ),
-          const SizedBox(height: 18),
+          const SizedBox(height: 10),
           Stack(
             alignment: Alignment.bottomRight,
             children: [
               CircleAvatar(
-                radius: 48,
-                backgroundColor: const Color(0xFF284B73),
+                radius: 40,
+                backgroundColor: avatarColor,
                 backgroundImage:
                     imageBytes != null ? MemoryImage(imageBytes!) : null,
                 child: imageBytes == null
                     ? const Icon(
                         Icons.person_rounded,
-                        size: 48,
+                        size: 40,
                         color: Colors.white70,
                       )
                     : null,
@@ -458,16 +496,16 @@ class _DarkHeader extends StatelessWidget {
                   customBorder: const CircleBorder(),
                   onTap: onEditPhoto,
                   child: Padding(
-                    padding: const EdgeInsets.all(7),
+                    padding: const EdgeInsets.all(6),
                     child: uploading
                         ? const SizedBox(
-                            height: 16,
-                            width: 16,
+                            height: 14,
+                            width: 14,
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
                         : const Icon(
                             Icons.photo_camera_outlined,
-                            size: 16,
+                            size: 14,
                             color: Color(0xFF333333),
                           ),
                   ),
@@ -475,25 +513,25 @@ class _DarkHeader extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 10),
           Text(
             ownerName,
             textAlign: TextAlign.center,
             style: const TextStyle(
               color: Colors.white,
-              fontSize: 22,
+              fontSize: 20,
               fontWeight: FontWeight.w700,
-              height: 1.2,
+              height: 1.15,
             ),
           ),
           if (email.isNotEmpty) ...[
-            const SizedBox(height: 6),
+            const SizedBox(height: 4),
             Text(
               email,
               textAlign: TextAlign.center,
               style: TextStyle(
                 color: Colors.white.withValues(alpha: 0.72),
-                fontSize: 14,
+                fontSize: 13,
                 fontWeight: FontWeight.w400,
               ),
             ),
@@ -506,25 +544,27 @@ class _DarkHeader extends StatelessWidget {
 
 class _CircleIconButton extends StatelessWidget {
   const _CircleIconButton({
+    required this.color,
     required this.icon,
     required this.onTap,
   });
 
+  final Color color;
   final IconData icon;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: _headerControl,
+      color: color,
       shape: const CircleBorder(),
       child: InkWell(
         customBorder: const CircleBorder(),
         onTap: onTap,
         child: SizedBox(
-          width: 44,
-          height: 44,
-          child: Icon(icon, color: Colors.white, size: 26),
+          width: 40,
+          height: 40,
+          child: Icon(icon, color: Colors.white, size: 24),
         ),
       ),
     );
@@ -544,10 +584,10 @@ class _DisplayedInfoCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
+      padding: const EdgeInsets.fromLTRB(14, 10, 14, 6),
       decoration: BoxDecoration(
         color: _menuCardBg,
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(16),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -555,24 +595,24 @@ class _DisplayedInfoCard extends StatelessWidget {
           Text(
             title,
             style: const TextStyle(
-              fontSize: 15,
+              fontSize: 14,
               fontWeight: FontWeight.w700,
               color: AppColors.textPrimary,
             ),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 6),
           for (var i = 0; i < rows.length; i++) ...[
             if (i > 0)
               const Divider(height: 1, color: Color(0xFFE5E7EB)),
             Padding(
-              padding: const EdgeInsets.symmetric(vertical: 10),
+              padding: const EdgeInsets.symmetric(vertical: 7),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Expanded(
                     child: Text(
                       rows[i].$1,
-                      style: appMutedStyle().copyWith(fontSize: 13),
+                      style: appMutedStyle().copyWith(fontSize: 12),
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -581,7 +621,7 @@ class _DisplayedInfoCard extends StatelessWidget {
                       rows[i].$2,
                       textAlign: TextAlign.end,
                       style: const TextStyle(
-                        fontSize: 13,
+                        fontSize: 12,
                         fontWeight: FontWeight.w600,
                         color: AppColors.textPrimary,
                       ),
@@ -623,7 +663,7 @@ class _MenuCard extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         color: _menuCardBg,
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(16),
       ),
       clipBehavior: Clip.antiAlias,
       child: Column(
@@ -632,7 +672,7 @@ class _MenuCard extends StatelessWidget {
             _MenuRow(item: items[i]),
             if (i < items.length - 1)
               const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 16),
+                padding: EdgeInsets.symmetric(horizontal: 14),
                 child: Divider(height: 1, color: Color(0xFFE5E7EB)),
               ),
           ],
@@ -657,21 +697,21 @@ class _MenuRow extends StatelessWidget {
       child: InkWell(
         onTap: item.onTap,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           child: Row(
             children: [
               Container(
-                width: 40,
-                height: 40,
+                width: 34,
+                height: 34,
                 decoration: BoxDecoration(
                   color: item.destructive
                       ? _logoutColor.withValues(alpha: 0.12)
                       : Colors.white,
                   shape: BoxShape.circle,
                 ),
-                child: Icon(item.icon, size: 20, color: iconColor),
+                child: Icon(item.icon, size: 18, color: iconColor),
               ),
-              const SizedBox(width: 14),
+              const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -679,7 +719,7 @@ class _MenuRow extends StatelessWidget {
                     Text(
                       item.label,
                       style: TextStyle(
-                        fontSize: 15,
+                        fontSize: 14,
                         fontWeight: FontWeight.w600,
                         color: color,
                       ),
@@ -696,6 +736,7 @@ class _MenuRow extends StatelessWidget {
               ),
               Icon(
                 Icons.chevron_right_rounded,
+                size: 20,
                 color: item.destructive
                     ? _logoutColor.withValues(alpha: 0.8)
                     : AppColors.textMuted,

@@ -67,6 +67,7 @@ def _run(
     now: datetime | None = None,
     clock_out_deadline_passed: bool | None = True,
     breaktime_is_paid: bool = False,
+    leave_paid: bool = True,
 ):
     business_id = uuid4()
     employee_id = uuid4()
@@ -147,6 +148,14 @@ def _run(
 
     db.query.side_effect = real_query
 
+    from app.services.employee_pay import stamp_attendance_completion_pay
+
+    # Completed rows in these fixtures predate completion stamps; stamp from the
+    # test employee so same-day Daily/Hourly math matches production close.
+    for record, _assignment, _shift in rows or []:
+        if getattr(record, "time_out", None) is not None:
+            stamp_attendance_completion_pay(record, employee, position=position)
+
     with ExitStack() as stack:
         stack.enter_context(patch("app.api.owner_reports.ensure_incomplete_for_employee"))
         stack.enter_context(
@@ -184,7 +193,7 @@ def _run(
         stack.enter_context(
             patch(
                 "app.api.owner_reports.leave_is_paid_for_attendance_day",
-                return_value=True,
+                return_value=leave_paid,
             )
         )
         return _calculate_employee_payslip(

@@ -15,10 +15,17 @@ from sqlalchemy import (
     func,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
-from app.models.enums import HolidayRulesMode, PayPeriodType, PayrollRunStatus, Weekday
+from app.models.enums import (
+    EmploymentType,
+    HolidayRulesMode,
+    PayBasis,
+    PayPeriodType,
+    PayrollRunStatus,
+    Weekday,
+)
 
 
 class Position(Base):
@@ -31,12 +38,61 @@ class Position(Base):
         UUID(as_uuid=True), ForeignKey("business.id"), nullable=False
     )
     title: Mapped[str] = mapped_column(String(100), nullable=False)
-    daily_rate: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
+    # NULL = legacy / unclassified. Assign via Business Setup before using
+    # the position in the filtered Add Employee role dropdown.
+    employment_type: Mapped[EmploymentType | None] = mapped_column(
+        Enum(EmploymentType), nullable=True, default=None
+    )
+    # Legacy single-basis columns — kept for compatibility / payroll fallback.
+    # Authoritative rates live on PositionPayConfig (Design B).
+    pay_basis: Mapped[PayBasis] = mapped_column(
+        Enum(PayBasis), default=PayBasis.daily, nullable=False
+    )
+    # Nullable so hourly-only templates need no fake daily amount.
+    daily_rate: Mapped[float | None] = mapped_column(
+        Numeric(10, 2), nullable=True, default=None
+    )
     hourly_rate: Mapped[float | None] = mapped_column(
         Numeric(10, 2), nullable=True, default=None
     )
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+    pay_configs: Mapped[list["PositionPayConfig"]] = relationship(
+        "PositionPayConfig",
+        back_populates="position",
+        cascade="all, delete-orphan",
+        order_by="PositionPayConfig.pay_basis",
+    )
+
+
+class PositionPayConfig(Base):
+    """Authoritative pay basis + rate for a Role (Design B)."""
+
+    __tablename__ = "position_pay_config"
+    __table_args__ = (
+        UniqueConstraint(
+            "position_id",
+            "pay_basis",
+            name="uq_position_pay_config_basis",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    position_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("position.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    pay_basis: Mapped[PayBasis] = mapped_column(Enum(PayBasis), nullable=False)
+    rate: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
+
+    position: Mapped["Position"] = relationship(
+        "Position", back_populates="pay_configs"
+    )
 
 
 class BusinessPayrollConfig(Base):
@@ -60,6 +116,9 @@ class BusinessPayrollConfig(Base):
     enable_late_overtime_balancing: Mapped[bool] = mapped_column(
         Boolean, default=False
     )
+    # When True, qualifying OT is worked but not payable until Owner/manager
+    # approves the attendance punch. Default False keeps automatic OT pay.
+    overtime_approval_required: Mapped[bool] = mapped_column(Boolean, default=False)
     # Deprecated legacy columns. Kept for backward-compatible schema only.
     # Active OT premium is 0% on ordinary/rest days and holiday.ot_premium_percent
     # on holidays. Payroll OT premium selection does not read these fields.

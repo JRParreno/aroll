@@ -98,7 +98,7 @@ export function OwnerNotificationsPage() {
                   "w-full rounded-2xl border bg-white p-4 text-left shadow-sm transition hover:shadow-md",
                   notification.is_read
                     ? "border-slate-200"
-                    : "border-[#1F456B]/30 bg-[#F8FAFC]"
+                    : "border-[color-mix(in_srgb,var(--owner-navy)_30%,transparent)] bg-[#F8FAFC]"
                 )}
                 onClick={() => void handleNotificationClick(notification)}
                 type="button"
@@ -113,7 +113,7 @@ export function OwnerNotificationsPage() {
                     </p>
                   </div>
                   {!notification.is_read ? (
-                    <span className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-[#1F456B]" />
+                    <span className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-[var(--owner-button)]" />
                   ) : null}
                 </div>
                 <p className="mt-2 text-xs text-[#9CA3AF]">

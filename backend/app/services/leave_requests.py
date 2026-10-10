@@ -33,6 +33,7 @@ LEAVE_TYPE_LABELS: dict[LeaveType, str] = {
 }
 
 MAX_SUPPORTING_DOCUMENT_CHARS = 3_500_000
+OTHER_LEAVE_SPECIFICATION_MAX = 200
 
 ACTIVE_LEAVE_STATUSES = (
     LeaveRequestStatus.pending,
@@ -108,8 +109,45 @@ def _snapshot(request: LeaveRequest) -> dict:
         "start_date": request.start_date.isoformat(),
         "end_date": request.end_date.isoformat(),
         "reason": request.reason,
+        "other_leave_specification": request.other_leave_specification,
         "leave_days": request.leave_days,
     }
+
+
+def _assert_unpaid_not_newly_selected(
+    leave_type: LeaveType,
+    *,
+    existing: LeaveRequest | None = None,
+) -> None:
+    if leave_type != LeaveType.unpaid:
+        return
+    if existing is not None and existing.leave_type == LeaveType.unpaid:
+        return
+    raise HTTPException(
+        400,
+        "Unpaid Leave is not available for new leave requests.",
+    )
+
+
+def normalize_other_leave_specification(
+    leave_type: LeaveType,
+    raw: str | None,
+) -> str | None:
+    """Store a specification only for Other. Other requires a non-blank value."""
+    if leave_type != LeaveType.other:
+        return None
+    text = (raw or "").strip()
+    if not text:
+        raise HTTPException(
+            400,
+            "Please specify the type of leave you want to file.",
+        )
+    if len(text) > OTHER_LEAVE_SPECIFICATION_MAX:
+        raise HTTPException(
+            400,
+            "Other leave type must be 200 characters or fewer.",
+        )
+    return text
 
 
 def serialize_leave_request(
@@ -131,6 +169,7 @@ def serialize_leave_request(
                 request.previous_end_date or request.previous_start_date,
             ),
             "reason": request.previous_reason or "",
+            "other_leave_specification": request.previous_other_leave_specification,
             "has_supporting_document": bool(request.previous_supporting_document),
             "supporting_document": (
                 request.previous_supporting_document if include_document else None
@@ -159,6 +198,7 @@ def serialize_leave_request(
         "end_date": request.end_date,
         "leave_days": request.leave_days,
         "reason": request.reason,
+        "other_leave_specification": request.other_leave_specification,
         "supporting_document": (
             request.supporting_document if include_document else None
         ),
@@ -188,6 +228,33 @@ def approved_leave_covering_date(
         .filter(
             LeaveRequest.employee_id == employee_id,
             LeaveRequest.status == LeaveRequestStatus.approved,
+            LeaveRequest.start_date <= work_date,
+            LeaveRequest.end_date >= work_date,
+        )
+        .order_by(LeaveRequest.created_at.desc())
+        .first()
+    )
+
+
+# Payroll still honors the original request until the owner approves cancellation.
+# Clock-in keeps using approved_leave_covering_date only.
+PAYROLL_ACTIVE_LEAVE_STATUSES = (
+    LeaveRequestStatus.approved,
+    LeaveRequestStatus.cancellation_pending,
+)
+
+
+def payroll_active_leave_covering_date(
+    db: Session,
+    *,
+    employee_id: uuid.UUID,
+    work_date: date,
+) -> LeaveRequest | None:
+    return (
+        db.query(LeaveRequest)
+        .filter(
+            LeaveRequest.employee_id == employee_id,
+            LeaveRequest.status.in_(list(PAYROLL_ACTIVE_LEAVE_STATUSES)),
             LeaveRequest.start_date <= work_date,
             LeaveRequest.end_date >= work_date,
         )
@@ -231,6 +298,24 @@ def employee_on_approved_leave(
     ) is not None
 
 
+def employee_on_payroll_active_leave(
+    db: Session,
+    *,
+    employee_id: uuid.UUID,
+    work_date: date,
+) -> bool:
+    """True when approved or cancellation-pending leave covers the date.
+
+    Used by payslip no-show handling. Clock-in stays on employee_on_approved_leave.
+    """
+    return (
+        payroll_active_leave_covering_date(
+            db, employee_id=employee_id, work_date=work_date
+        )
+        is not None
+    )
+
+
 def approved_leave_dates_for_employee(
     db: Session,
     *,
@@ -238,12 +323,16 @@ def approved_leave_dates_for_employee(
     period_start: date,
     period_end: date,
 ) -> list[date]:
-    """Calendar dates with approved leave overlapping a pay period (sorted)."""
+    """Calendar dates with payroll-active leave overlapping a pay period.
+
+    Approved and cancellation-pending requests both count. Cancelling is not
+    final until the owner approves it, so the original dates stay covered.
+    """
     rows = (
         db.query(LeaveRequest)
         .filter(
             LeaveRequest.employee_id == employee_id,
-            LeaveRequest.status == LeaveRequestStatus.approved,
+            LeaveRequest.status.in_(list(PAYROLL_ACTIVE_LEAVE_STATUSES)),
             LeaveRequest.start_date <= period_end,
             LeaveRequest.end_date >= period_start,
         )
@@ -265,7 +354,7 @@ def leave_type_for_attendance_day(
     employee_id: uuid.UUID,
     work_date: date,
 ) -> LeaveType | None:
-    leave = approved_leave_covering_date(
+    leave = payroll_active_leave_covering_date(
         db, employee_id=employee_id, work_date=work_date
     )
     return leave.leave_type if leave else None
@@ -277,8 +366,12 @@ def leave_is_paid_for_attendance_day(
     employee_id: uuid.UUID,
     work_date: date,
 ) -> bool | None:
-    """Return stored leave_request.is_paid for payroll (never live policy)."""
-    leave = approved_leave_covering_date(
+    """Return stored leave_request.is_paid for payroll (never live policy).
+
+    Cancellation-pending leave keeps the stored flag. An orphan on_leave row
+    with no matching request still returns None so the payslip fallback applies.
+    """
+    leave = payroll_active_leave_covering_date(
         db, employee_id=employee_id, work_date=work_date
     )
     if leave is None:
@@ -324,9 +417,32 @@ def create_leave_request(
     platform: str | None = None,
     device: str | None = None,
     ip_address: str | None = None,
+    other_leave_specification: str | None = None,
 ) -> LeaveRequest:
     if end_date < start_date:
         raise HTTPException(400, "End date must be on or after the start date.")
+    _assert_unpaid_not_newly_selected(leave_type)
+    specification = normalize_other_leave_specification(
+        leave_type, other_leave_specification
+    )
+    from app.services.leave_entitlements import (
+        assert_advance_notice,
+        assert_leave_type_available,
+    )
+
+    assert_advance_notice(
+        db,
+        business_id=business_id,
+        start_date=start_date,
+        leave_type=leave_type,
+    )
+    assert_leave_type_available(
+        db,
+        business_id=business_id,
+        leave_type=leave_type,
+        start_date=start_date,
+        end_date=end_date,
+    )
     reason_clean = reason.strip()
     if len(reason_clean) < 3:
         raise HTTPException(400, "Please provide a short reason for the leave.")
@@ -351,6 +467,7 @@ def create_leave_request(
         end_date=end_date,
         leave_days=days,
         reason=reason_clean,
+        other_leave_specification=specification,
         supporting_document=document,
         status=LeaveRequestStatus.pending,
         has_pending_changes=False,
@@ -500,6 +617,7 @@ def edit_leave_request(
     platform: str | None = None,
     device: str | None = None,
     ip_address: str | None = None,
+    other_leave_specification: str | None = None,
 ) -> LeaveRequest:
     if request.status not in (
         LeaveRequestStatus.pending,
@@ -511,6 +629,28 @@ def edit_leave_request(
         )
     if end_date < start_date:
         raise HTTPException(400, "End date must be on or after the start date.")
+    _assert_unpaid_not_newly_selected(leave_type, existing=request)
+    specification = normalize_other_leave_specification(
+        leave_type, other_leave_specification
+    )
+    from app.services.leave_entitlements import (
+        assert_advance_notice,
+        assert_leave_type_available,
+    )
+
+    assert_advance_notice(
+        db,
+        business_id=request.business_id,
+        start_date=start_date,
+        leave_type=leave_type,
+    )
+    assert_leave_type_available(
+        db,
+        business_id=request.business_id,
+        leave_type=leave_type,
+        start_date=start_date,
+        end_date=end_date,
+    )
     reason_clean = reason.strip()
     if len(reason_clean) < 3:
         raise HTTPException(400, "Please provide a short reason for the leave.")
@@ -536,6 +676,7 @@ def edit_leave_request(
     request.previous_start_date = request.start_date
     request.previous_end_date = request.end_date
     request.previous_reason = request.reason
+    request.previous_other_leave_specification = request.other_leave_specification
     request.previous_supporting_document = request.supporting_document
     request.has_pending_changes = True
 
@@ -544,6 +685,7 @@ def edit_leave_request(
     request.end_date = end_date
     request.leave_days = days
     request.reason = reason_clean
+    request.other_leave_specification = specification
     if supporting_document is not None:
         request.supporting_document = validate_supporting_document(supporting_document)
     request.status = LeaveRequestStatus.pending
@@ -717,6 +859,9 @@ def approve_leave_request(
 ) -> LeaveRequest:
     if request.status != LeaveRequestStatus.pending:
         raise HTTPException(400, "Only pending leave requests can be approved.")
+    from app.services.leave_entitlements import assert_entitlement_for_approval
+
+    assert_entitlement_for_approval(db, request)
 
     previous = {
         **_snapshot(request),
@@ -1064,6 +1209,47 @@ def raise_if_on_approved_leave(
     )
 
 
+def blocking_leave_dates_for_employees(
+    db: Session,
+    *,
+    business_id: uuid.UUID,
+    employee_ids: list[uuid.UUID],
+    start_date: date,
+    end_date: date,
+) -> dict[uuid.UUID, set[date]]:
+    """Dates reserved by approved or cancellation-pending leave.
+
+    Cancellation-pending still holds the allowance, so those dates stay
+    unavailable for a new shift until the cancellation is approved.
+    """
+    if not employee_ids:
+        return {}
+    rows = (
+        db.query(LeaveRequest)
+        .filter(
+            LeaveRequest.business_id == business_id,
+            LeaveRequest.employee_id.in_(employee_ids),
+            LeaveRequest.status.in_(
+                [
+                    LeaveRequestStatus.approved,
+                    LeaveRequestStatus.cancellation_pending,
+                ]
+            ),
+            LeaveRequest.start_date <= end_date,
+            LeaveRequest.end_date >= start_date,
+        )
+        .all()
+    )
+    result: dict[uuid.UUID, set[date]] = {eid: set() for eid in employee_ids}
+    for request in rows:
+        for day in iter_dates(
+            max(request.start_date, start_date),
+            min(request.end_date, end_date),
+        ):
+            result.setdefault(request.employee_id, set()).add(day)
+    return result
+
+
 def approved_leave_dates_for_employees(
     db: Session,
     *,
@@ -1133,7 +1319,7 @@ def leave_availability_for_date(
     employee_ids: list[uuid.UUID],
     work_date: date,
 ) -> dict[uuid.UUID, dict[str, bool]]:
-    approved = approved_leave_dates_for_employees(
+    approved = blocking_leave_dates_for_employees(
         db,
         business_id=business_id,
         employee_ids=employee_ids,

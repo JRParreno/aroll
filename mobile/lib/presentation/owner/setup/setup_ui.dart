@@ -1,3 +1,4 @@
+import 'package:aroll_mobile/core/theme/business_brand_theme.dart';
 import 'package:aroll_mobile/presentation/shared/app_ui.dart';
 import 'package:flutter/material.dart';
 
@@ -5,6 +6,16 @@ import 'package:flutter/material.dart';
 abstract final class SetupUi {
   static const navy = AppColors.primaryDark;
   static const navySoft = AppColors.primary;
+
+  static Color navyOf(BuildContext context) {
+    final brand = BrandColors.of(context);
+    return brand.saved ? brand.toneButton : navy;
+  }
+
+  static Color wellOf(BuildContext context) {
+    final brand = BrandColors.of(context);
+    return brand.saved ? brand.toneWell : AppColors.iconWell;
+  }
   static const scaffold = AppColors.scaffold;
   static const cardRadius = 18.0;
   static const panelRadius = 14.0;
@@ -53,45 +64,53 @@ abstract final class SetupUi {
     );
   }
 
-  static ButtonStyle get primaryButton => FilledButton.styleFrom(
-        backgroundColor: navy,
-        foregroundColor: Colors.white,
-        disabledBackgroundColor: navy.withValues(alpha: 0.45),
-        minimumSize: const Size(0, 44),
-        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(14),
-        ),
-        textStyle: const TextStyle(
-          fontSize: 14,
-          fontWeight: FontWeight.w700,
-        ),
-      );
+  static ButtonStyle primaryButtonOf(BuildContext context) {
+    final color = navyOf(context);
+    return FilledButton.styleFrom(
+      backgroundColor: color,
+      foregroundColor: Colors.white,
+      disabledBackgroundColor: color.withValues(alpha: 0.45),
+      minimumSize: const Size(0, 44),
+      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+      ),
+      textStyle: const TextStyle(
+        fontSize: 14,
+        fontWeight: FontWeight.w700,
+      ),
+    );
+  }
 
-  static ButtonStyle get secondaryButton => OutlinedButton.styleFrom(
-        foregroundColor: navy,
-        backgroundColor: Colors.white,
-        side: const BorderSide(color: Color(0xFFD7E0EA)),
-        minimumSize: const Size(0, 44),
-        padding: const EdgeInsets.symmetric(vertical: 11, horizontal: 14),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(14),
-        ),
-        textStyle: const TextStyle(
-          fontSize: 13.5,
-          fontWeight: FontWeight.w600,
-        ),
-      );
+  static ButtonStyle secondaryButtonOf(BuildContext context) {
+    return OutlinedButton.styleFrom(
+      foregroundColor: navyOf(context),
+      backgroundColor: Colors.white,
+      side: const BorderSide(color: Color(0xFFD7E0EA)),
+      minimumSize: const Size(0, 44),
+      padding: const EdgeInsets.symmetric(vertical: 11, horizontal: 14),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+      ),
+      textStyle: const TextStyle(
+        fontSize: 13.5,
+        fontWeight: FontWeight.w600,
+      ),
+    );
+  }
 
-  static ButtonStyle get ghostButton => TextButton.styleFrom(
-        foregroundColor: navySoft,
-        visualDensity: VisualDensity.compact,
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-        textStyle: const TextStyle(
-          fontSize: 13,
-          fontWeight: FontWeight.w600,
-        ),
-      );
+  static ButtonStyle ghostButtonOf(BuildContext context) {
+    final brand = BrandColors.of(context);
+    return TextButton.styleFrom(
+      foregroundColor: brand.saved ? brand.tonePrimary : navySoft,
+      visualDensity: VisualDensity.compact,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      textStyle: const TextStyle(
+        fontSize: 13,
+        fontWeight: FontWeight.w600,
+      ),
+    );
+  }
 }
 
 class SetupSurfaceCard extends StatelessWidget {
@@ -157,10 +176,10 @@ class SetupPanel extends StatelessWidget {
                   width: 32,
                   height: 32,
                   decoration: BoxDecoration(
-                    color: AppColors.iconWell,
+                    color: SetupUi.wellOf(context),
                     borderRadius: BorderRadius.circular(10),
                   ),
-                  child: Icon(icon, size: 17, color: SetupUi.navy),
+                  child: Icon(icon, size: 17, color: SetupUi.navyOf(context)),
                 ),
                 const SizedBox(width: 10),
               ],
@@ -346,7 +365,7 @@ class SetupListTileCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final resolvedIconColor = iconColor ?? SetupUi.navy;
+    final resolvedIconColor = iconColor ?? SetupUi.navyOf(context);
     return SetupSurfaceCard(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
@@ -358,7 +377,7 @@ class SetupListTileCard extends StatelessWidget {
           width: 36,
           height: 36,
           decoration: BoxDecoration(
-            color: iconBackground ?? AppColors.iconWell,
+            color: iconBackground ?? SetupUi.wellOf(context),
             borderRadius: BorderRadius.circular(10),
           ),
           child: Icon(leadingIcon, size: 18, color: resolvedIconColor),
@@ -450,13 +469,13 @@ class SetupMenuCard extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: complete
                       ? const Color(0xFFECFDF5)
-                      : AppColors.iconWell,
+                      : SetupUi.wellOf(context),
                   borderRadius: BorderRadius.circular(14),
                 ),
                 child: Icon(
                   icon,
                   size: 22,
-                  color: complete ? const Color(0xFF059669) : SetupUi.navy,
+                  color: complete ? const Color(0xFF059669) : SetupUi.navyOf(context),
                 ),
               ),
               const SizedBox(width: 12),
@@ -550,10 +569,10 @@ class SetupSectionHeader extends StatelessWidget {
             width: 40,
             height: 40,
             decoration: BoxDecoration(
-              color: AppColors.iconWell,
+              color: SetupUi.wellOf(context),
               borderRadius: BorderRadius.circular(12),
             ),
-            child: Icon(icon, size: 20, color: SetupUi.navy),
+            child: Icon(icon, size: 20, color: SetupUi.navyOf(context)),
           ),
           const SizedBox(width: 12),
         ],
@@ -604,7 +623,7 @@ class SetupCompactSwitch extends StatelessWidget {
       contentPadding: EdgeInsets.zero,
       dense: true,
       visualDensity: VisualDensity.compact,
-      activeThumbColor: SetupUi.navy,
+      activeThumbColor: SetupUi.navyOf(context),
       title: Text(
         title,
         style: const TextStyle(

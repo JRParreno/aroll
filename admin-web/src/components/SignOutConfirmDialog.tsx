@@ -1,12 +1,5 @@
-import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { LogOut } from "lucide-react";
+import { ConfirmActionDialog } from "@/components/ConfirmActionDialog";
 
 type SignOutConfirmDialogProps = {
   open: boolean;
@@ -20,30 +13,18 @@ export function SignOutConfirmDialog({
   onConfirm,
 }: SignOutConfirmDialogProps) {
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Sign Out</DialogTitle>
-          <DialogDescription>
-            Are you sure you want to sign out?
-          </DialogDescription>
-        </DialogHeader>
-        <DialogFooter>
-          <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-            Cancel
-          </Button>
-          <Button
-            type="button"
-            variant="destructive"
-            onClick={() => {
-              onOpenChange(false);
-              onConfirm();
-            }}
-          >
-            Sign Out
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <ConfirmActionDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      icon={<LogOut className="h-5 w-5" strokeWidth={2.25} aria-hidden />}
+      title="Sign Out"
+      description="Are you sure you want to sign out?"
+      confirmLabel="Sign Out"
+      tone="primary"
+      onConfirm={() => {
+        onOpenChange(false);
+        onConfirm();
+      }}
+    />
   );
 }

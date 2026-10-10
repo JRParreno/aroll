@@ -1,7 +1,8 @@
 """Schedule reuse helpers — copy/preview/apply assignment patterns only.
 
-Does not touch attendance, payroll, or leave records.
+Does not modify attendance, payroll, or leave records.
 Conflict rules mirror existing assign overlap + capacity checks.
+Approved and cancellation-pending leave dates are not copied.
 """
 
 from __future__ import annotations
@@ -30,11 +31,16 @@ from app.schemas.schedule_reuse import (
     ScheduleTemplateSummary,
 )
 from app.services.employee_activation import is_employee_fully_activated
+from app.services.leave_requests import blocking_leave_dates_for_employees
+from app.services.schedule_overlap import shifts_times_overlap
+
+_LEAVE_CONFLICT = (
+    "This employee is currently on approved leave for the selected date(s)."
+)
 
 
 def _times_overlap(first: Shift, second: Shift) -> bool:
-    return first.start_time < second.end_time and second.start_time < first.end_time
-
+    return shifts_times_overlap(first, second)
 
 def _assignment_rows_for_week(
     db: Session,
@@ -209,6 +215,14 @@ def build_preview(
     for assignment, _emp, shift in existing_rows:
         capacity_counts[(assignment.shift_id, assignment.work_date)] += 1
 
+    protected_leave = blocking_leave_dates_for_employees(
+        db,
+        business_id=business_id,
+        employee_ids=list(employees.keys()),
+        start_date=target_week_start,
+        end_date=target_end,
+    )
+
     for shift_id, employee_id, work_date, is_rest in planned:
         employee = employees.get(employee_id)
         shift = shifts.get(shift_id)
@@ -252,6 +266,13 @@ def build_preview(
 
         employee_ids.add(str(employee_id))
         working_dates.add(work_date)
+
+        if work_date in protected_leave.get(employee_id, set()):
+            base.status = "conflict"
+            base.conflict_reason = _LEAVE_CONFLICT
+            conflict_count += 1
+            items.append(base)
+            continue
 
         if (employee_id, shift_id, work_date) in existing_same_shift:
             base.status = "duplicate"
@@ -337,6 +358,16 @@ def apply_reuse(
     )
     target_end = target_week_start + timedelta(days=6)
     removed = 0
+    protected_leave = blocking_leave_dates_for_employees(
+        db,
+        business_id=business_id,
+        employee_ids=[uuid.UUID(item.employee_id) for item in preview.items],
+        start_date=target_week_start,
+        end_date=target_end,
+    )
+
+    def _blocked_by_leave(item: ScheduleReusePreviewItem) -> bool:
+        return item.work_date in protected_leave.get(uuid.UUID(item.employee_id), set())
 
     if conflict_mode == ScheduleConflictMode.replace:
         existing = _assignment_rows_for_week(db, business_id, target_week_start)
@@ -350,10 +381,15 @@ def apply_reuse(
             for item in preview.items
             if item.status
             not in ("skipped_inactive", "skipped_missing_shift")
+            and not _blocked_by_leave(item)
         ]
     else:
         # merge: only create items marked new in preview
-        creatable_items = [item for item in preview.items if item.status == "new"]
+        creatable_items = [
+            item
+            for item in preview.items
+            if item.status == "new" and not _blocked_by_leave(item)
+        ]
 
     created = 0
     skipped = len(preview.items) - len(creatable_items)

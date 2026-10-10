@@ -1,4 +1,5 @@
 import 'package:aroll_mobile/core/app_state.dart';
+import 'package:aroll_mobile/core/utils/format.dart';
 import 'package:aroll_mobile/core/tenant_mode.dart';
 import 'package:aroll_mobile/core/di/injection.dart';
 import 'package:aroll_mobile/core/theme/business_brand_theme.dart';
@@ -371,8 +372,9 @@ class _DailyWageCard extends StatelessWidget {
                   child: Text('Rate', style: _TableHeaderStyle()),
                 ),
                 Expanded(
+                  flex: 2,
                   child: Text(
-                    'Earned',
+                    'Shift Earnings',
                     textAlign: TextAlign.right,
                     style: _TableHeaderStyle(),
                   ),
@@ -396,7 +398,7 @@ class _DailyWageCard extends StatelessWidget {
             ...payroll.rows.map(
               (row) => _PayrollRow(
                 row: row,
-                rateLabel: salaryRateDisplayFromPayslip(payroll.summary),
+                rateLabel: _shiftRateLabel(row, payroll.summary),
               ),
             ),
         ],
@@ -526,8 +528,9 @@ class _PayrollRow extends StatelessWidget {
             ),
           ),
           Expanded(
+            flex: 2,
             child: Text(
-              money(row.earned),
+              _shiftEarningsLabel(row),
               textAlign: TextAlign.right,
               style: const TextStyle(
                 fontSize: 12,
@@ -551,8 +554,36 @@ class _TableHeaderStyle extends TextStyle {
         );
 }
 
+String _shiftRateLabel(EmployeePayrollRow row, EmployeePayslip summary) {
+  if (row.historicalRateRequired) return 'Unresolved';
+  final basis = (row.payBasisUsed ?? '').toLowerCase();
+  final rate = row.rateUsed;
+  if (rate != null && basis.isNotEmpty) {
+    return formatSalaryRate(
+      payBasis: basis,
+      dailyRate: basis == 'daily' ? rate : null,
+      hourlyRate: basis == 'hourly' ? rate : null,
+      monthlySalary: basis == 'monthly' ? rate : null,
+    );
+  }
+  return salaryRateDisplayFromPayslip(summary);
+}
+
+String _shiftEarningsLabel(EmployeePayrollRow row) {
+  if (row.historicalRateRequired) return 'Unresolved';
+  final amount = row.shiftNet ?? row.earned;
+  if (amount == null) return 'Unresolved';
+  return money(amount);
+}
+
 String _rowStatus(EmployeePayrollRow row) {
-  if (row.holidayName != null) return 'Holiday';
+  if (row.historicalRateRequired) return 'Rate required';
+  if (row.status == 'on_leave') {
+    final amount = row.shiftNet ?? row.earned ?? 0;
+    return amount > 0 ? 'Paid Leave' : 'Unpaid Leave';
+  }
+  if (row.status == 'holiday_paid') return 'Holiday';
+  if (row.holidayName != null && row.holidayName!.isNotEmpty) return 'Holiday';
   if (row.status == 'complete') return 'On Time';
   if (row.status == 'incomplete') {
     return 'Incomplete Attendance · Pending Correction';

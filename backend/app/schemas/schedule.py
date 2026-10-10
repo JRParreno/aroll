@@ -31,7 +31,6 @@ class ScheduleAssignRequest(BaseModel):
     work_date: date
     employee_ids: list[str] = Field(min_length=1)
     is_rest_day_work: bool = False
-    override_leave: bool = False
 
 
 class ScheduleAssignResponse(BaseModel):
@@ -43,7 +42,6 @@ class ScheduleAssignmentUpdateRequest(BaseModel):
     shift_id: str
     work_date: date
     is_rest_day_work: bool | None = None
-    override_leave: bool = False
 
 
 class EmployeeLeaveAvailabilityItem(BaseModel):

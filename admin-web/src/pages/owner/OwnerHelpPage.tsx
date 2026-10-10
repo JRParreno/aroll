@@ -83,7 +83,7 @@ export function OwnerHelpPage() {
         </OwnerCard>
 
         <section>
-          <h2 className="mb-4 text-sm font-medium uppercase tracking-wide text-[#6B7280]">
+          <h2 className="owner-section-kicker">
             Common Concerns
           </h2>
           <div className="grid gap-4 md:grid-cols-2">
@@ -92,7 +92,7 @@ export function OwnerHelpPage() {
               return (
                 <OwnerCard
                   className={cn(
-                    "h-full p-5",
+                    "h-full p-5 transition hover:border-[#C5D4E3] hover:shadow-[0_8px_24px_rgba(15,23,42,0.06)]",
                     index === concernTopics.length - 1 && "md:col-span-2"
                   )}
                   key={topic.title}
@@ -134,7 +134,7 @@ export function OwnerHelpPage() {
                 <p className="mt-3 text-sm text-[#374151]">
                   <span className="font-medium text-[#6B7280]">Email:</span>{" "}
                   <a
-                    className="font-semibold text-[#1E3A5F] hover:underline"
+                    className="font-semibold text-[var(--owner-navy)] hover:underline"
                     href={SUPPORT_MAILTO}
                   >
                     {SUPPORT_EMAIL}
@@ -144,7 +144,7 @@ export function OwnerHelpPage() {
             </div>
             <Button
               asChild
-              className="h-10 shrink-0 rounded-xl bg-[#1E3A5F] px-4 hover:bg-[#284B73]"
+              className="h-10 shrink-0 rounded-xl bg-[var(--owner-button)] px-4 hover:bg-[var(--owner-navy-soft)]"
             >
               <a href={SUPPORT_MAILTO}>
                 <Mail className="mr-2 h-4 w-4" />
@@ -170,7 +170,7 @@ export function OwnerHelpPage() {
               <ul className="mt-4 space-y-2 text-sm text-[#374151]">
                 {reportDetails.map((item) => (
                   <li className="flex gap-2" key={item}>
-                    <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[#1E3A5F]" />
+                    <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--owner-button)]" />
                     <span>{item}</span>
                   </li>
                 ))}

@@ -1,13 +1,11 @@
-import json
 import uuid
 from datetime import date, timedelta
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.core.deps import require_roles
-from app.core.request_meta import audit_meta_from_request
 from app.db.session import get_db
 from app.models.employee import Employee
 from app.models.enums import UserRole
@@ -21,13 +19,13 @@ from app.schemas.schedule import (
     ScheduleAssignmentResponse,
     WeeklyScheduleResponse,
 )
-from app.services.activity_logger import create_log
 from app.services.employee_activation import raise_if_not_activated_for_schedule
 from app.services.leave_requests import (
-    approved_leave_dates_for_employees,
+    blocking_leave_dates_for_employees,
     leave_availability_for_date,
     pending_leave_dates_for_employees,
 )
+from app.services.schedule_overlap import shifts_times_overlap
 
 router = APIRouter(prefix="/schedules", tags=["schedules"])
 
@@ -63,12 +61,7 @@ def _week_bounds(week_start: date) -> tuple[date, date]:
 
 
 def _times_overlap(first: Shift, second: Shift) -> bool:
-    first_start = first.start_time
-    first_end = first.end_time
-    second_start = second.start_time
-    second_end = second.end_time
-    return first_start < second_end and second_start < first_end
-
+    return shifts_times_overlap(first, second)
 
 def _validate_employee_schedule_conflicts(
     db: Session,
@@ -116,6 +109,7 @@ def get_weekly_schedule(
         .filter(
             Shift.business_id == user.business_id,
             Employee.business_id == user.business_id,
+            Employee.is_active.is_(True),
             ShiftAssignment.work_date >= week_start_date,
             ShiftAssignment.work_date <= week_end_date,
         )
@@ -124,7 +118,7 @@ def get_weekly_schedule(
     )
 
     employee_ids = [employee.id for _assignment, employee, _shift in rows]
-    leave_dates = approved_leave_dates_for_employees(
+    leave_dates = blocking_leave_dates_for_employees(
         db,
         business_id=user.business_id,
         employee_ids=employee_ids,
@@ -201,7 +195,6 @@ def get_leave_availability(
 @router.post("/assign", response_model=ScheduleAssignResponse, status_code=201)
 def assign_schedule(
     body: ScheduleAssignRequest,
-    request: Request,
     db: Annotated[Session, Depends(get_db)],
     user: Annotated[User, Depends(require_roles(UserRole.owner, UserRole.manager))],
 ):
@@ -241,7 +234,7 @@ def assign_schedule(
     blocked = [
         emp
         for emp in employees
-        if leave_map.get(emp.id, {}).get("on_leave") and not body.override_leave
+        if leave_map.get(emp.id, {}).get("on_leave")
     ]
     if blocked:
         names = ", ".join(emp.full_name for emp in blocked)
@@ -299,31 +292,6 @@ def assign_schedule(
     for assignment in created_assignments:
         db.refresh(assignment)
 
-    overridden = [
-        eid
-        for eid in new_employee_ids
-        if leave_map.get(eid, {}).get("on_leave") and body.override_leave
-    ]
-    if overridden:
-        meta = audit_meta_from_request(request)
-        create_log(
-            db,
-            user_id=user.id,
-            action="schedule_override_during_leave",
-            description=(
-                f"Assigned shift '{shift.name}' on {body.work_date} during approved leave "
-                f"for {len(overridden)} employee(s)."
-            ),
-            new_value=json.dumps(
-                {
-                    "shift_id": str(shift.id),
-                    "work_date": body.work_date.isoformat(),
-                    "employee_ids": [str(eid) for eid in overridden],
-                }
-            ),
-            **meta,
-        )
-
     return ScheduleAssignResponse(
         created=len(created_assignments),
         assignments=[
@@ -350,7 +318,6 @@ def assign_schedule(
 def update_schedule_assignment(
     assignment_id: uuid.UUID,
     body: ScheduleAssignmentUpdateRequest,
-    request: Request,
     db: Annotated[Session, Depends(get_db)],
     user: Annotated[User, Depends(require_roles(UserRole.owner, UserRole.manager))],
 ):
@@ -364,6 +331,8 @@ def update_schedule_assignment(
     employee = db.get(Employee, assignment.employee_id)
     if employee is None or employee.business_id != user.business_id:
         raise HTTPException(404, "Schedule assignment not found")
+    if not employee.is_active:
+        raise HTTPException(400, "Employee is inactive")
 
     shift = db.get(Shift, uuid.UUID(body.shift_id))
     if shift is None or shift.business_id != user.business_id or not shift.is_active:
@@ -376,7 +345,7 @@ def update_schedule_assignment(
         work_date=body.work_date,
     )
     on_leave = leave_map.get(employee.id, {}).get("on_leave", False)
-    if on_leave and not body.override_leave:
+    if on_leave:
         raise HTTPException(
             status_code=409,
             detail={
@@ -418,26 +387,6 @@ def update_schedule_assignment(
         assignment.is_rest_day_work = body.is_rest_day_work
     db.commit()
     db.refresh(assignment)
-
-    if on_leave and body.override_leave:
-        meta = audit_meta_from_request(request)
-        create_log(
-            db,
-            user_id=user.id,
-            action="schedule_override_during_leave",
-            description=(
-                f"Updated assignment for {employee.full_name} on {body.work_date} "
-                "during approved leave."
-            ),
-            new_value=json.dumps(
-                {
-                    "assignment_id": str(assignment.id),
-                    "shift_id": str(shift.id),
-                    "work_date": body.work_date.isoformat(),
-                }
-            ),
-            **meta,
-        )
 
     return _assignment_response(
         assignment,

@@ -10,10 +10,11 @@ import {
   Circle,
   ClipboardCheck,
   Clock3,
+  Home,
   MapPin,
   ShieldCheck,
 } from "lucide-react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -60,8 +61,10 @@ import {
   listShifts,
   updateAttendancePolicy,
   updatePayrollConfig,
+  updatePosition,
   updateRestDayPolicy,
   updateShift,
+  type Position,
   type Shift,
 } from "@/lib/api";
 import { ME_QUERY_KEY } from "@/lib/authSession";
@@ -71,7 +74,7 @@ const STEPS = [
   "Employee Job Roles",
   "Set Up Employee Pay",
   "How Employees Time In & Out",
-  "Holidays Employees Will Be Paid For",
+  "Holiday Management",
   "Work Location",
   "Review Your Setup",
 ];
@@ -91,10 +94,40 @@ function toTimeInputValue(value: string) {
   return `${String(Number(hour) || 0).padStart(2, "0")}:${String(Number(minute) || 0).padStart(2, "0")}`;
 }
 
+function positionRateLabel(p: Position) {
+  const configs = p.pay_configs ?? [];
+  if (configs.length > 0) {
+    return configs
+      .map((c) =>
+        c.pay_basis === "hourly"
+          ? `Hourly · ₱${c.rate}/hr`
+          : `Daily · ₱${c.rate}/day`
+      )
+      .join(" · ");
+  }
+  const basis = p.pay_basis ?? "daily";
+  if (basis === "hourly" && p.hourly_rate != null) {
+    return `Hourly · ₱${p.hourly_rate}/hr`;
+  }
+  if (p.daily_rate != null) {
+    return `Daily · ₱${p.daily_rate}/day`;
+  }
+  if (p.hourly_rate != null) {
+    return `Hourly · ₱${p.hourly_rate}/hr`;
+  }
+  return "Rate not set";
+}
+
+function employmentTypeLabel(value: string | null | undefined) {
+  if (value === "part_time") return "Part-time";
+  if (value === "full_time") return "Full-time";
+  return "Unclassified";
+}
+
 const STEP_HELP: Record<string, string> = {
   "Work Shifts": "Add the times your team usually works.",
   "Employee Job Roles":
-    "Add the different job roles in your business, their daily pay, and optional hourly pay.",
+    "Choose an employment type, then add a role with one or both pay configurations (Daily and/or Hourly). Configure once here, then reuse when adding employees.",
   "Set Up Employee Pay":
     "Choose how often employees get paid and how pay is calculated.",
   "How Employees Time In & Out":
@@ -258,12 +291,28 @@ export function OwnerSetupWizardPage() {
     employee_capacity: "1",
   });
   const [editingShift, setEditingShift] = useState<Shift | null>(null);
-  const [editTimes, setEditTimes] = useState({ start_time: "", end_time: "" });
+  const [editTimes, setEditTimes] = useState({
+    start_time: "",
+    end_time: "",
+    employee_capacity: "1",
+  });
   const [posForm, setPosForm] = useState({
+    employment_type: "full_time" as "full_time" | "part_time",
     title: "",
+    enable_daily: true,
     daily_rate: "",
+    enable_hourly: false,
     hourly_rate: "",
     description: "",
+  });
+  const [editingPayPosition, setEditingPayPosition] = useState<Position | null>(
+    null
+  );
+  const [editPayForm, setEditPayForm] = useState({
+    enable_daily: true,
+    daily_rate: "",
+    enable_hourly: false,
+    hourly_rate: "",
   });
   const [payrollForm, setPayrollForm] = useState({
     pay_period_type: "monthly",
@@ -273,6 +322,7 @@ export function OwnerSetupWizardPage() {
     overtime_enabled: true,
     overtime_per_minute: "1",
     enable_late_overtime_balancing: false,
+    overtime_approval_required: false,
     weekly_payday_weekday: "friday",
     semi_monthly_preset: "15_30",
     semi_monthly_payday_1: "15",
@@ -313,6 +363,8 @@ export function OwnerSetupWizardPage() {
       overtime_per_minute: String(payroll.overtime_per_minute),
       enable_late_overtime_balancing:
         payroll.enable_late_overtime_balancing === true,
+      overtime_approval_required:
+        payroll.overtime_approval_required === true,
       holiday_rules_mode:
         payroll.holiday_rules_mode === "custom_company"
           ? "custom_company"
@@ -389,8 +441,49 @@ export function OwnerSetupWizardPage() {
 
   const positionDraftValid =
     posForm.title.trim().length > 0 &&
-    Number(posForm.daily_rate) > 0 &&
-    (!posForm.hourly_rate.trim() || Number(posForm.hourly_rate) > 0);
+    ((posForm.enable_daily && Number(posForm.daily_rate) > 0) ||
+      (posForm.enable_hourly && Number(posForm.hourly_rate) > 0)) &&
+    (!posForm.enable_daily || Number(posForm.daily_rate) > 0) &&
+    (!posForm.enable_hourly || Number(posForm.hourly_rate) > 0);
+
+  const editPayDraftValid =
+    ((editPayForm.enable_daily && Number(editPayForm.daily_rate) > 0) ||
+      (editPayForm.enable_hourly && Number(editPayForm.hourly_rate) > 0)) &&
+    (!editPayForm.enable_daily || Number(editPayForm.daily_rate) > 0) &&
+    (!editPayForm.enable_hourly || Number(editPayForm.hourly_rate) > 0);
+
+  function buildPayConfigs(form: {
+    enable_daily: boolean;
+    daily_rate: string;
+    enable_hourly: boolean;
+    hourly_rate: string;
+  }) {
+    const configs: { pay_basis: "daily" | "hourly"; rate: number }[] = [];
+    if (form.enable_daily) {
+      configs.push({ pay_basis: "daily", rate: Number(form.daily_rate) });
+    }
+    if (form.enable_hourly) {
+      configs.push({ pay_basis: "hourly", rate: Number(form.hourly_rate) });
+    }
+    return configs;
+  }
+
+  function openEditPayConfigs(position: Position) {
+    const configs = position.pay_configs ?? [];
+    const daily = configs.find((c) => c.pay_basis === "daily");
+    const hourly = configs.find((c) => c.pay_basis === "hourly");
+    setEditingPayPosition(position);
+    setEditPayForm({
+      enable_daily: Boolean(daily) || (daily == null && hourly == null && position.daily_rate != null),
+      daily_rate: String(
+        daily?.rate ?? position.daily_rate ?? ""
+      ),
+      enable_hourly: Boolean(hourly) || (hourly == null && daily == null && position.pay_basis === "hourly"),
+      hourly_rate: String(
+        hourly?.rate ?? position.hourly_rate ?? ""
+      ),
+    });
+  }
 
   const nextPaydayDate = useMemo(
     () => computeNextPayday(payrollForm),
@@ -470,19 +563,64 @@ export function OwnerSetupWizardPage() {
   const saveShiftTimes = useMutation({
     mutationFn: () => {
       if (!editingShift) throw new Error("No shift selected");
+      const capacity = Number(editTimes.employee_capacity);
+      if (!Number.isInteger(capacity) || capacity < 1) {
+        throw new Error("Invalid employee capacity");
+      }
+      if (editingShift.has_in_progress_today) {
+        return updateShift(editingShift.id, {
+          employee_capacity: capacity,
+        });
+      }
       return updateShift(editingShift.id, {
         start_time: editTimes.start_time,
         end_time: editTimes.end_time,
+        employee_capacity: capacity,
       });
     },
     onSuccess: () => {
-      toast.success("Shift times updated");
+      toast.success("Shift updated");
       setEditingShift(null);
       refetchShifts();
       qc.invalidateQueries({ queryKey: ["shifts"] });
       qc.invalidateQueries({ queryKey: ["weekly-schedule"] });
     },
-    onError: () => toast.error("Could not update shift times"),
+    onError: (error) => {
+      const detail =
+        typeof error === "object" &&
+        error !== null &&
+        "response" in error &&
+        typeof error.response === "object" &&
+        error.response !== null &&
+        "data" in error.response &&
+        typeof error.response.data === "object" &&
+        error.response.data !== null &&
+        "detail" in error.response.data
+          ? error.response.data.detail
+          : null;
+      if (
+        typeof detail === "object" &&
+        detail !== null &&
+        "code" in detail &&
+        detail.code === "shift_in_progress"
+      ) {
+        const title =
+          "title" in detail && typeof detail.title === "string"
+            ? detail.title
+            : "Shift In Progress";
+        const message =
+          "message" in detail && typeof detail.message === "string"
+            ? detail.message
+            : "This shift has already started and cannot be changed.";
+        toast.error(`${title}: ${message}`);
+        return;
+      }
+      toast.error(
+        error instanceof Error && error.message === "Invalid employee capacity"
+          ? "Employee capacity must be a whole number of at least 1"
+          : "Could not update shift"
+      );
+    },
   });
 
   function openEditShiftTimes(shift: Shift) {
@@ -490,6 +628,7 @@ export function OwnerSetupWizardPage() {
     setEditTimes({
       start_time: toTimeInputValue(shift.start_time),
       end_time: toTimeInputValue(shift.end_time),
+      employee_capacity: String(shift.employee_capacity ?? 1),
     });
   }
 
@@ -497,18 +636,57 @@ export function OwnerSetupWizardPage() {
     mutationFn: () =>
       createPosition({
         title: posForm.title,
-        daily_rate: Number(posForm.daily_rate),
-        hourly_rate: posForm.hourly_rate.trim()
-          ? Number(posForm.hourly_rate)
-          : undefined,
+        employment_type: posForm.employment_type,
+        pay_configs: buildPayConfigs(posForm),
         description: posForm.description || undefined,
       }),
     onSuccess: () => {
       toast.success("Job role added");
-      setPosForm({ title: "", daily_rate: "", hourly_rate: "", description: "" });
+      setPosForm((current) => ({
+        ...current,
+        title: "",
+        enable_daily: true,
+        daily_rate: "",
+        enable_hourly: false,
+        hourly_rate: "",
+        description: "",
+      }));
       refetchPositions();
       qc.invalidateQueries({ queryKey: ["setup-status"] });
     },
+  });
+
+  const savePayConfigs = useMutation({
+    mutationFn: () => {
+      if (!editingPayPosition) throw new Error("No role selected");
+      return updatePosition(editingPayPosition.id, {
+        pay_configs: buildPayConfigs(editPayForm),
+      });
+    },
+    onSuccess: () => {
+      toast.success("Pay configurations updated");
+      setEditingPayPosition(null);
+      refetchPositions();
+      qc.invalidateQueries({ queryKey: ["setup-status"] });
+      qc.invalidateQueries({ queryKey: ["positions"] });
+    },
+    onError: () => toast.error("Could not update pay configurations"),
+  });
+
+  const classifyPosition = useMutation({
+    mutationFn: ({
+      id,
+      employment_type,
+    }: {
+      id: string;
+      employment_type: "full_time" | "part_time";
+    }) => updatePosition(id, { employment_type }),
+    onSuccess: () => {
+      toast.success("Job role classified");
+      refetchPositions();
+      qc.invalidateQueries({ queryKey: ["positions"] });
+    },
+    onError: () => toast.error("Could not update job role"),
   });
 
   const savePayroll = useMutation({
@@ -526,6 +704,8 @@ export function OwnerSetupWizardPage() {
           overtime_per_minute: Number(payrollForm.overtime_per_minute),
           enable_late_overtime_balancing:
             payrollForm.enable_late_overtime_balancing,
+          overtime_approval_required:
+            payrollForm.overtime_approval_required,
           holiday_rules_mode: payrollForm.holiday_rules_mode,
           weekly_payday_weekday:
             payrollForm.pay_period_type === "weekly"
@@ -580,10 +760,9 @@ export function OwnerSetupWizardPage() {
         absent_threshold_minutes: Number(attForm.absent_threshold_minutes),
         absent_threshold_percent: Number(attForm.absent_threshold_percent),
         half_day_threshold_percent: Number(attForm.half_day_threshold_percent),
-        early_out_deduction_enabled: attForm.early_out_deduction_enabled,
-        early_out_deduction_per_minute: Number(
-          attForm.early_out_deduction_per_minute
-        ),
+        // early_out_deduction_* is stored for compatibility only; undertime
+        // pay uses the employee's wage minute rate. Do not present or rewrite
+        // those fields from Owner Setup.
         overtime_minimum_minutes: Number(attForm.overtime_minimum_minutes),
         maximum_overtime_minutes: Number(attForm.maximum_overtime_minutes),
         missing_clock_out_policy: attForm.missing_clock_out_policy,
@@ -667,78 +846,100 @@ export function OwnerSetupWizardPage() {
   const stepCompleteFlags = STEP_STATUS_KEYS.map((key) => isStepComplete(key));
 
   return (
-    <OwnerPage className="flex min-h-full flex-col">
-      <header className="sticky top-0 z-10 border-b border-slate-200/80 bg-white/95 backdrop-blur-sm">
-        <div className="mx-auto w-full min-w-0 max-w-6xl px-5 py-3 sm:px-8">
-          {step < 0 ? (
-            <OwnerPageBackLink
-              to="/owner/settings/setup"
-              label="Back to Business Setup"
-            />
-          ) : (
-            <button
-              className="inline-flex items-center gap-2 rounded-lg px-1 py-0.5 text-sm font-medium text-[#6B7280] transition-colors hover:bg-[#F8FAFC] hover:text-[#1E3A5F]"
-              onClick={() => goToStep(-1)}
-              type="button"
-            >
-              <ArrowLeft className="h-4 w-4" />
-              Back to setup menu
-            </button>
-          )}
-
-          <div className="mt-2 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-            <div className="min-w-0">
-              <h1 className="owner-page-title">
-                Set Up Your Business
-              </h1>
-              <p className="owner-section-subtitle mt-1.5 max-w-2xl">
-                {step < 0
-                  ? "Choose a section below to set up. You can return anytime from Business Setup."
-                  : STEP_HELP[STEPS[step]]}
-              </p>
-            </div>
-            <div className="flex shrink-0 items-start gap-3">
-              <div className="w-full sm:w-[14.5rem]">
-                <div className="flex items-center justify-between gap-3 text-xs">
-                  <p className="font-medium text-[#1F2937]">
-                    {step < 0
-                      ? `${completedCount} of ${countableSteps.length} complete`
-                      : `Step ${step + 1} of ${STEPS.length}`}
-                  </p>
-                  <p className="tabular-nums text-[#6B7280]">{wizardProgress}%</p>
-                </div>
-                <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-[#E5E7EB]">
-                  <div
-                    className="h-full rounded-full bg-[#1E3A5F] transition-[width] duration-300"
-                    style={{ width: `${Math.min(Math.max(wizardProgress, 0), 100)}%` }}
-                  />
-                </div>
-                {step >= 0 ? (
-                  <p className="mt-1 truncate text-[11px] font-medium text-[#1E3A5F]">
-                    {STEPS[step]}
-                  </p>
-                ) : (
-                  <p className="mt-1 text-[11px] text-[#6B7280]">
-                    {setupStatus?.completion_percent ?? 0}% of required setup
-                  </p>
-                )}
-              </div>
+    <OwnerPage className="flex h-full max-h-full min-h-0 flex-col overflow-hidden">
+      {/* Setup Guide–only navbar: scoped styles, not shared OwnerPageHeader */}
+      <header className="setup-wizard-navbar shrink-0 z-10 border-b border-slate-200/80 bg-white/95 backdrop-blur-sm">
+        <div className="mx-auto w-full min-w-0 max-w-6xl px-5 sm:px-8">
+          {/* Row 1 — fixed chrome: title + Home + Notifications */}
+          <div className="flex h-14 items-center justify-between gap-4">
+            <h1 className="min-w-0 flex-1 truncate text-lg font-bold tracking-tight text-[#111827] sm:text-xl">
+              Set Up Your Business
+            </h1>
+            <div className="flex shrink-0 items-center gap-2.5">
+              <Link
+                to="/owner/dashboard"
+                className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200/90 bg-white px-3 text-sm font-medium text-[#374151] shadow-sm transition hover:border-[color-mix(in_srgb,var(--owner-navy)_20%,transparent)] hover:bg-[#F8FAFC] hover:text-[var(--owner-navy)]"
+                aria-label="Home"
+              >
+                <Home className="h-[18px] w-[18px]" strokeWidth={2} />
+                <span className="hidden sm:inline">Home</span>
+              </Link>
               <OwnerNotificationBell />
             </div>
           </div>
 
-          {step >= 0 ? (
-            <WizardStepTrack
-              current={step}
-              labels={STEPS}
-              complete={stepCompleteFlags}
-              onSelect={goToStep}
-            />
-          ) : null}
+          {/* Row 2 — fixed back slot + progress (stable widths) */}
+          <div className="flex h-12 items-center justify-between gap-4 border-t border-slate-100">
+            <div className="flex h-9 w-[13.75rem] shrink-0 items-center">
+              {step < 0 ? (
+                <OwnerPageBackLink
+                  to="/owner/settings/setup"
+                  label="Back to Business Setup"
+                  className="max-w-full truncate hover:bg-[#F8FAFC]"
+                />
+              ) : (
+                <button
+                  className="inline-flex items-center gap-2 rounded-lg px-1 py-0.5 text-sm font-medium text-[#6B7280] transition-colors hover:bg-[#F8FAFC] hover:text-[var(--owner-navy)]"
+                  onClick={() => goToStep(step === 0 ? -1 : step - 1)}
+                  type="button"
+                >
+                  <ArrowLeft className="h-4 w-4 shrink-0" />
+                  Back
+                </button>
+              )}
+            </div>
+            <div className="w-full max-w-[14.5rem] shrink-0 sm:w-[14.5rem]">
+              <div className="flex items-center justify-between gap-3 text-xs">
+                <p className="min-w-0 truncate font-medium text-[#1F2937]">
+                  {step < 0
+                    ? `${completedCount} of ${countableSteps.length} complete`
+                    : `Step ${step + 1} of ${STEPS.length}`}
+                </p>
+                <p className="shrink-0 tabular-nums text-[#6B7280]">
+                  {wizardProgress}%
+                </p>
+              </div>
+              <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-[#E5E7EB]">
+                <div
+                  className="h-full rounded-full bg-[var(--owner-button)] transition-[width] duration-300"
+                  style={{
+                    width: `${Math.min(Math.max(wizardProgress, 0), 100)}%`,
+                  }}
+                />
+              </div>
+              <p className="mt-1 h-4 truncate text-[11px] font-medium text-[var(--owner-navy)]">
+                {step >= 0
+                  ? STEPS[step]
+                  : `${setupStatus?.completion_percent ?? 0}% of required setup`}
+              </p>
+            </div>
+          </div>
+
+          {/* Row 3 — context copy with reserved height so step text length does not resize the bar */}
+          <div className="pb-3 pt-1">
+            <p className="owner-section-subtitle min-h-[2.5rem] max-w-3xl line-clamp-2">
+              {step < 0
+                ? "Choose a section below to set up. You can return anytime from Business Setup."
+                : STEP_HELP[STEPS[step]]}
+            </p>
+          </div>
+
+          {/* Row 4 — step track; reserve height on sm+ so hub↔step does not jump as much */}
+          <div className="min-h-0 pb-3 sm:min-h-[2.75rem]">
+            {step >= 0 ? (
+              <WizardStepTrack
+                current={step}
+                labels={STEPS}
+                complete={stepCompleteFlags}
+                onSelect={goToStep}
+                className="mt-0"
+              />
+            ) : null}
+          </div>
         </div>
       </header>
 
-      <div className="mx-auto w-full min-w-0 max-w-6xl flex-1 overflow-x-hidden px-5 py-6 sm:px-8">
+      <div className="mx-auto w-full min-w-0 max-w-6xl flex-1 min-h-0 overflow-x-hidden overflow-y-auto px-5 py-6 sm:px-8">
         {step < 0 ? (
           <div className="grid gap-4 sm:grid-cols-2">
             {STEPS.map((label, index) => {
@@ -750,7 +951,7 @@ export function OwnerSetupWizardPage() {
                   key={label}
                   type="button"
                   onClick={() => goToStep(index)}
-                  className="owner-card p-5 text-left transition hover:border-[#B9C7D8] hover:bg-[#FAFBFC]"
+                  className="owner-card p-5 text-left transition hover:border-[color-mix(in_srgb,var(--owner-accent)_32%,white)] hover:bg-[#FAFBFC]"
                 >
                   <div className="flex items-start gap-3">
                     <span className="owner-icon-well h-10 w-10 shrink-0">
@@ -882,7 +1083,8 @@ export function OwnerSetupWizardPage() {
                       <div className="min-w-0">
                         <p className="truncate font-medium text-[#1F2937]">{s.name}</p>
                         <p className="mt-0.5 text-xs text-[#6B7280]">
-                          {formatShiftTime(s.start_time)}–{formatShiftTime(s.end_time)}
+                          {formatShiftTime(s.start_time)}–{formatShiftTime(s.end_time)}{" "}
+                          · Capacity {s.employee_capacity}
                         </p>
                       </div>
                       <div className="flex shrink-0 items-center gap-2">
@@ -892,7 +1094,7 @@ export function OwnerSetupWizardPage() {
                           className="h-8 rounded-lg px-2.5 text-xs"
                           onClick={() => openEditShiftTimes(s)}
                         >
-                          Edit times
+                          Edit shift
                         </Button>
                         <Button
                           size="sm"
@@ -914,36 +1116,108 @@ export function OwnerSetupWizardPage() {
             {step === 1 && (
               <>
                 <div className="grid gap-4 sm:grid-cols-2">
-                  <WizardField label="Job role name" className="sm:col-span-2">
+                  <WizardField label="1. Employment type">
+                    <WizardSelect
+                      value={posForm.employment_type}
+                      onChange={(e) =>
+                        setPosForm({
+                          ...posForm,
+                          employment_type: e.target.value as
+                            | "full_time"
+                            | "part_time",
+                        })
+                      }
+                    >
+                      <option value="full_time">Full-time</option>
+                      <option value="part_time">Part-time</option>
+                    </WizardSelect>
+                  </WizardField>
+                  <WizardField label="2. Role / position name">
                     <Input
                       className={wizardInputClass}
                       value={posForm.title}
                       onChange={(e) =>
                         setPosForm({ ...posForm, title: e.target.value })
                       }
+                      placeholder="e.g. Cashier"
                     />
                   </WizardField>
-                  <WizardField label="Daily pay (₱)">
-                    <Input
-                      className={wizardInputClass}
-                      type="number"
-                      value={posForm.daily_rate}
-                      onChange={(e) =>
-                        setPosForm({ ...posForm, daily_rate: e.target.value })
-                      }
-                    />
-                  </WizardField>
-                  <WizardField label="Hourly pay (₱, optional)">
-                    <Input
-                      className={wizardInputClass}
-                      type="number"
-                      value={posForm.hourly_rate}
-                      onChange={(e) =>
-                        setPosForm({ ...posForm, hourly_rate: e.target.value })
-                      }
-                    />
-                  </WizardField>
-                  <WizardField label="Description" className="sm:col-span-2">
+                  <div className="space-y-3 sm:col-span-2">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-[#9CA3AF]">
+                      3. Pay configurations
+                    </p>
+                    <p className="text-sm text-[#6B7280]">
+                      Add Daily, Hourly, or both. Each role keeps rates separate
+                      by employment type.
+                    </p>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div className="rounded-xl border border-slate-200 bg-white px-3 py-3">
+                        <label className="flex items-center gap-2 text-sm font-medium text-[#1F2937]">
+                          <input
+                            type="checkbox"
+                            className="accent-[var(--owner-accent)]"
+                            checked={posForm.enable_daily}
+                            onChange={(e) =>
+                              setPosForm({
+                                ...posForm,
+                                enable_daily: e.target.checked,
+                              })
+                            }
+                          />
+                          Daily
+                        </label>
+                        {posForm.enable_daily ? (
+                          <Input
+                            className={`${wizardInputClass} mt-2`}
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            placeholder="Daily amount (₱)"
+                            value={posForm.daily_rate}
+                            onChange={(e) =>
+                              setPosForm({
+                                ...posForm,
+                                daily_rate: e.target.value,
+                              })
+                            }
+                          />
+                        ) : null}
+                      </div>
+                      <div className="rounded-xl border border-slate-200 bg-white px-3 py-3">
+                        <label className="flex items-center gap-2 text-sm font-medium text-[#1F2937]">
+                          <input
+                            type="checkbox"
+                            className="accent-[var(--owner-accent)]"
+                            checked={posForm.enable_hourly}
+                            onChange={(e) =>
+                              setPosForm({
+                                ...posForm,
+                                enable_hourly: e.target.checked,
+                              })
+                            }
+                          />
+                          Hourly
+                        </label>
+                        {posForm.enable_hourly ? (
+                          <Input
+                            className={`${wizardInputClass} mt-2`}
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            placeholder="Hourly amount (₱)"
+                            value={posForm.hourly_rate}
+                            onChange={(e) =>
+                              setPosForm({
+                                ...posForm,
+                                hourly_rate: e.target.value,
+                              })
+                            }
+                          />
+                        ) : null}
+                      </div>
+                    </div>
+                  </div>
+                  <WizardField label="Description (optional)" className="sm:col-span-2">
                     <Input
                       className={wizardInputClass}
                       value={posForm.description}
@@ -960,31 +1234,118 @@ export function OwnerSetupWizardPage() {
                 >
                   Add job role
                 </Button>
+
+                {positions.some((p) => !p.employment_type) ? (
+                  <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+                    <p className="font-semibold">Unclassified existing roles</p>
+                    <p className="mt-1 text-amber-900/80">
+                      These roles still work for current employees, but they
+                      will not appear in Add Employee until you assign Full-time
+                      or Part-time.
+                    </p>
+                    <ul className="mt-3 space-y-2">
+                      {positions
+                        .filter((p) => !p.employment_type)
+                        .map((p) => (
+                          <li
+                            key={p.id}
+                            className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-white/80 px-3 py-2"
+                          >
+                            <div className="min-w-0">
+                              <p className="truncate font-medium">{p.title}</p>
+                              <p className="text-xs text-amber-900/70">
+                                {positionRateLabel(p)}
+                              </p>
+                            </div>
+                            <div className="flex gap-2">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-8 rounded-lg px-2.5 text-xs"
+                                disabled={classifyPosition.isPending}
+                                onClick={() =>
+                                  classifyPosition.mutate({
+                                    id: p.id,
+                                    employment_type: "full_time",
+                                  })
+                                }
+                              >
+                                Full-time
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-8 rounded-lg px-2.5 text-xs"
+                                disabled={classifyPosition.isPending}
+                                onClick={() =>
+                                  classifyPosition.mutate({
+                                    id: p.id,
+                                    employment_type: "part_time",
+                                  })
+                                }
+                              >
+                                Part-time
+                              </Button>
+                            </div>
+                          </li>
+                        ))}
+                    </ul>
+                  </div>
+                ) : null}
+
                 <WizardRecordList empty="No job roles yet. Add one above.">
-                  {positions.map((p) => (
-                    <li
-                      key={p.id}
-                      className="flex items-center justify-between gap-3 px-4 py-3"
-                    >
-                      <div className="min-w-0">
-                        <p className="truncate font-medium text-[#1F2937]">{p.title}</p>
-                        <p className="mt-0.5 text-xs text-[#6B7280]">
-                          ₱{p.daily_rate}/day
-                          {p.hourly_rate != null ? ` · ₱${p.hourly_rate}/hr` : ""}
+                  {(["full_time", "part_time"] as const).map((etype) => {
+                    const group = positions.filter(
+                      (p) => p.employment_type === etype
+                    );
+                    if (group.length === 0) return null;
+                    return (
+                      <li key={etype} className="list-none space-y-0 border-b border-slate-100 last:border-0">
+                        <p className="bg-slate-50 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-[#6B7280]">
+                          {employmentTypeLabel(etype)}
                         </p>
-                      </div>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="h-8 rounded-lg px-2.5 text-xs"
-                        onClick={() =>
-                          deletePosition(p.id).then(() => refetchPositions())
-                        }
-                      >
-                        Remove
-                      </Button>
-                    </li>
-                  ))}
+                        <ul>
+                          {group.map((p) => (
+                            <li
+                              key={p.id}
+                              className="flex items-center justify-between gap-3 px-4 py-3"
+                            >
+                              <div className="min-w-0">
+                                <p className="truncate font-medium text-[#1F2937]">
+                                  {p.title}
+                                </p>
+                                <p className="mt-0.5 text-xs text-[#6B7280]">
+                                  {positionRateLabel(p)}
+                                </p>
+                              </div>
+                              <div className="flex shrink-0 items-center gap-2">
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-8 rounded-lg px-2.5 text-xs"
+                                  onClick={() => openEditPayConfigs(p)}
+                                >
+                                  Edit rates
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-8 rounded-lg px-2.5 text-xs"
+                                  onClick={() =>
+                                    deletePosition(p.id).then(() =>
+                                      refetchPositions()
+                                    )
+                                  }
+                                >
+                                  Remove
+                                </Button>
+                              </div>
+                            </li>
+                          ))}
+                        </ul>
+                      </li>
+                    );
+                  })}
                 </WizardRecordList>
               </>
             )}
@@ -1148,21 +1509,21 @@ export function OwnerSetupWizardPage() {
                 </WizardSection>
 
                 <WizardSection
-                  title="Holiday pay rules"
-                  description="Choose how unworked and worked holidays are paid."
+                  title="Holiday Rules"
+                  description="Choose how Aroll+ interprets holiday types for worked and unworked days."
                 >
                   <div className="space-y-2">
                     <label
                       className={cn(
                         "flex cursor-pointer items-start gap-3 rounded-xl border bg-white px-4 py-3 text-sm",
                         payrollForm.holiday_rules_mode === "philippine_labor"
-                          ? "border-[#1E3A5F]/30 bg-[#F4F8FC]"
+                          ? "border-[color-mix(in_srgb,var(--owner-accent)_45%,white)] bg-[var(--owner-well)]"
                           : "border-slate-200"
                       )}
                     >
                       <input
                         type="radio"
-                        className="mt-1"
+                        className="mt-1 accent-[var(--owner-accent)]"
                         name="holiday_rules_mode"
                         checked={
                           payrollForm.holiday_rules_mode === "philippine_labor"
@@ -1179,8 +1540,10 @@ export function OwnerSetupWizardPage() {
                           Philippine labor rules
                         </span>
                         <span className="mt-0.5 block text-xs text-[#6B7280]">
-                          Regular holidays pay even if unworked. Special
-                          holidays follow no-work-no-pay unless worked.
+                          Regular holidays pay the scheduled day even if
+                          unworked. Special non-working days follow
+                          no-work-no-pay unless worked. Company holidays follow
+                          Pay Scheduled Day When Not Working.
                         </span>
                       </span>
                     </label>
@@ -1188,13 +1551,13 @@ export function OwnerSetupWizardPage() {
                       className={cn(
                         "flex cursor-pointer items-start gap-3 rounded-xl border bg-white px-4 py-3 text-sm",
                         payrollForm.holiday_rules_mode === "custom_company"
-                          ? "border-[#1E3A5F]/30 bg-[#F4F8FC]"
+                          ? "border-[color-mix(in_srgb,var(--owner-accent)_45%,white)] bg-[var(--owner-well)]"
                           : "border-slate-200"
                       )}
                     >
                       <input
                         type="radio"
-                        className="mt-1"
+                        className="mt-1 accent-[var(--owner-accent)]"
                         name="holiday_rules_mode"
                         checked={
                           payrollForm.holiday_rules_mode === "custom_company"
@@ -1211,8 +1574,8 @@ export function OwnerSetupWizardPage() {
                           Custom company rules
                         </span>
                         <span className="mt-0.5 block text-xs text-[#6B7280]">
-                          Use each holiday&apos;s Paid flag and pay multiplier
-                          only.
+                          Use each holiday&apos;s Pay Scheduled Day When Not
+                          Working setting and Worked Holiday Premium only.
                         </span>
                       </span>
                     </label>
@@ -1256,7 +1619,7 @@ export function OwnerSetupWizardPage() {
                       })
                     }
                   />
-                  <WizardField label="Extra pay per overtime minute (₱)">
+                  <WizardField label="Extra Pay per Overtime Minute (₱)">
                     <Input
                       className={wizardInputClass}
                       type="number"
@@ -1274,12 +1637,24 @@ export function OwnerSetupWizardPage() {
                   </WizardField>
                   <WizardSettingRow
                     title="Late–OT Balancing"
-                    description="When enabled, overtime minutes are first used to recover late arrival. Only the remaining overtime minutes are paid."
+                    description="Employees who arrive late may offset the late time by working beyond their scheduled end time."
                     checked={payrollForm.enable_late_overtime_balancing}
                     onChange={(next) =>
                       setPayrollForm({
                         ...payrollForm,
                         enable_late_overtime_balancing: next,
+                      })
+                    }
+                    disabled={!payrollForm.overtime_enabled}
+                  />
+                  <WizardSettingRow
+                    title="OT Approval Required"
+                    description="When enabled, overtime must be approved before it is included as payable additional pay."
+                    checked={payrollForm.overtime_approval_required}
+                    onChange={(next) =>
+                      setPayrollForm({
+                        ...payrollForm,
+                        overtime_approval_required: next,
                       })
                     }
                     disabled={!payrollForm.overtime_enabled}
@@ -1359,8 +1734,8 @@ export function OwnerSetupWizardPage() {
                       [
                         [
                           "absent_threshold_percent",
-                          "Absent if under (% of shift)",
-                          "Status cutoff as percent of scheduled shift length.",
+                          "Minimum Worked Shift (%)",
+                          "Employees must work at least the configured percentage of their scheduled shift to avoid being marked Absent.",
                         ],
                         [
                           "half_day_threshold_percent",
@@ -1426,10 +1801,10 @@ export function OwnerSetupWizardPage() {
                 </WizardSection>
 
                 <WizardNotice>
-                  Absent and half-day status use percent of each employee&apos;s
-                  scheduled shift. Maximum overtime duration is an attendance
-                  cutoff only — overtime pay still uses ₱
-                  {payrollForm.overtime_per_minute} per minute (
+                  Minimum Worked Shift (%) and half-day cutoffs use percent of
+                  each employee&apos;s scheduled shift. Maximum overtime
+                  duration is an attendance cutoff only — overtime pay still
+                  uses ₱{payrollForm.overtime_per_minute} per minute (
                   {payrollForm.overtime_enabled ? "turned on" : "turned off"} in
                   pay settings).
                 </WizardNotice>
@@ -1499,7 +1874,7 @@ export function OwnerSetupWizardPage() {
         </div>
 
       {step >= 0 ? (
-        <footer className="sticky bottom-0 z-10 border-t border-slate-200/80 bg-white/95 backdrop-blur-sm">
+        <footer className="shrink-0 z-10 border-t border-slate-200/80 bg-white/95 backdrop-blur-sm">
           <div className="mx-auto flex w-full min-w-0 max-w-6xl flex-col-reverse gap-2 px-5 py-3 sm:flex-row sm:items-center sm:justify-end sm:px-8">
             {step < STEPS.length - 1 ? (
               <>
@@ -1555,15 +1930,24 @@ export function OwnerSetupWizardPage() {
         <DialogContent className="sm:max-w-md sm:rounded-2xl">
           <DialogHeader>
             <DialogTitle className="text-[#1F2937]">
-              Edit {editingShift?.name} times
+              {editingShift?.has_in_progress_today
+                ? "Shift In Progress"
+                : `Edit ${editingShift?.name}`}
             </DialogTitle>
           </DialogHeader>
+          {editingShift?.has_in_progress_today ? (
+            <p className="text-sm leading-relaxed text-[#6B7280]">
+              This shift has already started and cannot be changed. Changes to
+              an active shift could affect attendance and payroll records.
+            </p>
+          ) : null}
           <div className="grid gap-4 sm:grid-cols-2">
             <WizardField label="Start time">
               <Input
                 className={wizardInputClass}
                 type="time"
                 value={editTimes.start_time}
+                disabled={Boolean(editingShift?.has_in_progress_today)}
                 onChange={(e) =>
                   setEditTimes({ ...editTimes, start_time: e.target.value })
                 }
@@ -1574,8 +1958,24 @@ export function OwnerSetupWizardPage() {
                 className={wizardInputClass}
                 type="time"
                 value={editTimes.end_time}
+                disabled={Boolean(editingShift?.has_in_progress_today)}
                 onChange={(e) =>
                   setEditTimes({ ...editTimes, end_time: e.target.value })
+                }
+              />
+            </WizardField>
+            <WizardField label="Employee Capacity">
+              <Input
+                className={wizardInputClass}
+                type="number"
+                min={1}
+                step={1}
+                value={editTimes.employee_capacity}
+                onChange={(e) =>
+                  setEditTimes({
+                    ...editTimes,
+                    employee_capacity: e.target.value,
+                  })
                 }
               />
             </WizardField>
@@ -1593,11 +1993,113 @@ export function OwnerSetupWizardPage() {
               disabled={
                 !editTimes.start_time ||
                 !editTimes.end_time ||
+                !editTimes.employee_capacity ||
+                Number(editTimes.employee_capacity) < 1 ||
+                !Number.isInteger(Number(editTimes.employee_capacity)) ||
                 saveShiftTimes.isPending
               }
               onClick={() => saveShiftTimes.mutate()}
             >
-              {saveShiftTimes.isPending ? "Saving..." : "Save times"}
+              {saveShiftTimes.isPending ? "Saving..." : "Save"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(editingPayPosition)}
+        onOpenChange={(open) => {
+          if (!open) setEditingPayPosition(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-[#1F2937]">
+              Edit rates · {editingPayPosition?.title}
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-[#6B7280]">
+            Enable Daily and/or Hourly. Removing a configuration only removes
+            that rate option — the role stays.
+          </p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="rounded-xl border border-slate-200 bg-white px-3 py-3">
+              <label className="flex items-center gap-2 text-sm font-medium text-[#1F2937]">
+                <input
+                  type="checkbox"
+                  className="accent-[var(--owner-accent)]"
+                  checked={editPayForm.enable_daily}
+                  onChange={(e) =>
+                    setEditPayForm({
+                      ...editPayForm,
+                      enable_daily: e.target.checked,
+                    })
+                  }
+                />
+                Daily
+              </label>
+              {editPayForm.enable_daily ? (
+                <Input
+                  className={`${wizardInputClass} mt-2`}
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={editPayForm.daily_rate}
+                  onChange={(e) =>
+                    setEditPayForm({
+                      ...editPayForm,
+                      daily_rate: e.target.value,
+                    })
+                  }
+                />
+              ) : null}
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-white px-3 py-3">
+              <label className="flex items-center gap-2 text-sm font-medium text-[#1F2937]">
+                <input
+                  type="checkbox"
+                  className="accent-[var(--owner-accent)]"
+                  checked={editPayForm.enable_hourly}
+                  onChange={(e) =>
+                    setEditPayForm({
+                      ...editPayForm,
+                      enable_hourly: e.target.checked,
+                    })
+                  }
+                />
+                Hourly
+              </label>
+              {editPayForm.enable_hourly ? (
+                <Input
+                  className={`${wizardInputClass} mt-2`}
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={editPayForm.hourly_rate}
+                  onChange={(e) =>
+                    setEditPayForm({
+                      ...editPayForm,
+                      hourly_rate: e.target.value,
+                    })
+                  }
+                />
+              ) : null}
+            </div>
+          </div>
+          <DialogFooter className="gap-2 sm:justify-end">
+            <Button
+              className={wizardOutlineBtnClass}
+              variant="outline"
+              onClick={() => setEditingPayPosition(null)}
+            >
+              Cancel
+            </Button>
+            <Button
+              className={wizardPrimaryBtnClass}
+              disabled={!editPayDraftValid || savePayConfigs.isPending}
+              onClick={() => savePayConfigs.mutate()}
+            >
+              {savePayConfigs.isPending ? "Saving..." : "Save"}
             </Button>
           </DialogFooter>
         </DialogContent>

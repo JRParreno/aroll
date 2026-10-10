@@ -9,7 +9,13 @@ from app.api.owner_reports import _calculate_employee_payslip
 from app.models.attendance import AttendanceRecord
 from app.models.attendance_policy import BusinessAttendancePolicy
 from app.models.business import Business
-from app.models.enums import AttendanceStatus, EmploymentType, HolidayRulesMode, HolidayType
+from app.models.enums import (
+    AttendanceStatus,
+    EmploymentType,
+    HolidayRulesMode,
+    HolidayType,
+    PayBasis,
+)
 from app.models.holiday import Holiday
 from app.models.payroll import BusinessPayrollConfig, Position
 from app.models.rest_day_policy import BusinessRestDayPolicy
@@ -171,11 +177,15 @@ def test_ph_worked_regular_holiday_premium():
         pay_multiplier=2.0,
     )
     record = SimpleNamespace(
+        id=uuid4(),
         shift_assignment_id=assignment.id,
         status=AttendanceStatus.complete,
         time_in=datetime(2026, 7, 28, 8, 0),
         time_out=datetime(2026, 7, 28, 16, 0),
         created_at=datetime(2026, 7, 28, 8, 0),
+        pay_basis_at_completion=PayBasis.daily,
+        daily_rate_at_completion=800.0,
+        hourly_rate_at_completion=None,
     )
     # Fix employee id on assignment path via payslip employee — rebind
     slip = _run_payslip(
@@ -204,11 +214,15 @@ def test_ph_worked_special_holiday_premium():
         pay_multiplier=1.3,
     )
     record = SimpleNamespace(
+        id=uuid4(),
         shift_assignment_id=assignment.id,
         status=AttendanceStatus.complete,
         time_in=datetime(2026, 7, 28, 8, 0),
         time_out=datetime(2026, 7, 28, 16, 0),
         created_at=datetime(2026, 7, 28, 8, 0),
+        pay_basis_at_completion=PayBasis.daily,
+        daily_rate_at_completion=800.0,
+        hourly_rate_at_completion=None,
     )
     slip = _run_payslip(
         mode=HolidayRulesMode.philippine_labor,
@@ -329,11 +343,15 @@ def test_custom_worked_uses_multiplier():
         pay_multiplier=2.0,
     )
     record = SimpleNamespace(
+        id=uuid4(),
         shift_assignment_id=assignment.id,
         status=AttendanceStatus.complete,
         time_in=datetime(2026, 7, 28, 8, 0),
         time_out=datetime(2026, 7, 28, 16, 0),
         created_at=datetime(2026, 7, 28, 8, 0),
+        pay_basis_at_completion=PayBasis.daily,
+        daily_rate_at_completion=800.0,
+        hourly_rate_at_completion=None,
     )
     slip = _run_payslip(
         mode=HolidayRulesMode.custom_company,
@@ -398,11 +416,15 @@ def test_ordinary_workday_unchanged():
     shift = _shift(business_id)
     assignment = _assignment(uuid4(), shift, work_date)
     record = SimpleNamespace(
+        id=uuid4(),
         shift_assignment_id=assignment.id,
         status=AttendanceStatus.complete,
         time_in=datetime(2026, 7, 28, 8, 0),
         time_out=datetime(2026, 7, 28, 16, 0),
         created_at=datetime(2026, 7, 28, 8, 0),
+        pay_basis_at_completion=PayBasis.daily,
+        daily_rate_at_completion=800.0,
+        hourly_rate_at_completion=None,
     )
     slip = _run_payslip(
         mode=HolidayRulesMode.philippine_labor,
@@ -422,11 +444,15 @@ def test_ot_unchanged_on_ordinary_day():
     shift = _shift(business_id)
     assignment = _assignment(uuid4(), shift, work_date)
     record = SimpleNamespace(
+        id=uuid4(),
         shift_assignment_id=assignment.id,
         status=AttendanceStatus.complete,
         time_in=datetime(2026, 7, 28, 8, 0),
         time_out=datetime(2026, 7, 28, 17, 0),  # 60 min OT
         created_at=datetime(2026, 7, 28, 8, 0),
+        pay_basis_at_completion=PayBasis.daily,
+        daily_rate_at_completion=800.0,
+        hourly_rate_at_completion=None,
     )
     slip = _run_payslip(
         mode=HolidayRulesMode.philippine_labor,
@@ -446,6 +472,7 @@ def test_paid_leave_unchanged():
     shift = _shift(business_id)
     assignment = _assignment(uuid4(), shift, work_date)
     record = SimpleNamespace(
+        id=uuid4(),
         shift_assignment_id=assignment.id,
         status=AttendanceStatus.on_leave,
         time_in=None,

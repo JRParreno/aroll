@@ -16,7 +16,11 @@ class AppState extends ChangeNotifier {
   /// UI-only DEMO01 research notice. Not a demo-mode security flag.
   bool researchEvalAcknowledged = false;
 
-  void setSession(UserSession s, {required bool mustChange}) {
+  void setSession(
+    UserSession s, {
+    required bool mustChange,
+    bool? permissionsIntroSeen,
+  }) {
     session = s;
     isLoggedIn = true;
     mustChangePassword = mustChange;
@@ -24,6 +28,11 @@ class AppState extends ChangeNotifier {
     consentsCompleted = s.isDemo ? true : s.consentsCompleted;
     legalConsentSatisfied = consentsCompleted;
     biometricConsentSatisfied = consentsCompleted;
+    // Prefer an explicit pre-resolved value so the router does not redirect to
+    // /permissions before async gate loading finishes. Fall back to the
+    // server account flag (never leave a completed account as "unseen").
+    this.permissionsIntroSeen = permissionsIntroSeen ??
+        (s.isDemo || s.permissionsOnboardingCompleted == true);
     if (s.isEmployee) {
       employeeProfileImageUrl = s.profileImageUrl;
       // Locked until server confirms enrollment (login, restore, or resume).
@@ -56,6 +65,13 @@ class AppState extends ChangeNotifier {
 
   void setPermissionsIntroSeen(bool seen) {
     permissionsIntroSeen = seen;
+    notifyListeners();
+  }
+
+  void setPermissionsOnboardingCompleted(bool completed) {
+    final current = session;
+    if (current == null) return;
+    session = current.copyWith(permissionsOnboardingCompleted: completed);
     notifyListeners();
   }
 
@@ -112,6 +128,7 @@ class AppState extends ChangeNotifier {
         isDemo: current.isDemo,
         isInternalTest: current.isInternalTest,
         consentsCompleted: current.consentsCompleted,
+        permissionsOnboardingCompleted: current.permissionsOnboardingCompleted,
         timezone: current.timezone,
       );
     }

@@ -16,7 +16,7 @@ export function OwnerNotificationBell({ className }: { className?: string }) {
     <Link
       to="/owner/notifications"
       className={cn(
-        "relative inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200/90 bg-white text-[#374151] shadow-sm transition hover:border-[#1E3A5F]/20 hover:bg-[#F8FAFC] hover:text-[#1E3A5F]",
+        "relative inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200/90 bg-white text-[#374151] shadow-sm transition hover:border-[color-mix(in_srgb,var(--owner-navy)_20%,transparent)] hover:bg-[#F8FAFC] hover:text-[var(--owner-navy)]",
         className
       )}
       aria-label={

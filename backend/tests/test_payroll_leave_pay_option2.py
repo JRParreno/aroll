@@ -80,6 +80,9 @@ def _complete_record(assignment, time_in, time_out):
         time_in=time_in,
         time_out=time_out,
         status=AttendanceStatus.complete,
+        pay_basis_at_completion=PayBasis.hourly,
+        hourly_rate_at_completion=100.0,
+        daily_rate_at_completion=None,
     )
 
 

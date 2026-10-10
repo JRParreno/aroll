@@ -1,5 +1,6 @@
 import 'package:aroll_mobile/core/app_state.dart';
 import 'package:aroll_mobile/core/di/injection.dart';
+import 'package:aroll_mobile/domain/repositories/auth_repository.dart';
 import 'package:aroll_mobile/core/legal/employee_gate_loader.dart';
 import 'package:aroll_mobile/core/router/app_router.dart';
 import 'package:aroll_mobile/core/theme/business_brand_theme.dart';
@@ -41,7 +42,22 @@ class _ArollAppState extends State<ArollApp> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       _refreshFaceEnrollmentGate();
+      _refreshOwnerBranding();
     }
+  }
+
+  /// Pull the same saved business branding Owner Web persists, without
+  /// replacing the session when the request fails.
+  Future<void> _refreshOwnerBranding() async {
+    final current = _appState.session;
+    if (_restoring || current == null || !current.isOwner) return;
+    try {
+      final fresh = await sl<AuthRepository>().restoreSession();
+      final branding = fresh?.branding;
+      if (branding != null) {
+        _appState.updateBusinessBranding(branding);
+      }
+    } catch (_) {}
   }
 
   Future<void> _restoreSession() async {
@@ -108,8 +124,11 @@ class _ArollAppState extends State<ArollApp> with WidgetsBindingObserver {
     return AnimatedBuilder(
       animation: _appState,
       builder: (context, _) {
-        final branding = _appState.session?.branding;
-        final theme = buildBusinessThemeData(branding);
+        final session = _appState.session;
+        // Logged out: no session branding, so the application palette stays.
+        // Signed-in Owner or employee: the branding object on the session is
+        // the theme, including when a saved color matches an AppColors value.
+        final theme = buildBusinessThemeData(session?.branding);
 
         return ShadApp.custom(
           themeMode: ThemeMode.light,

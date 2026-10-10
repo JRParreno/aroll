@@ -1,7 +1,7 @@
 from typing import Annotated
 import uuid
 
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
@@ -33,6 +33,8 @@ from app.schemas.profile_image import (
 from app.schemas.owner_setup import (
     AttendancePolicyResponse,
     AttendancePolicyUpdate,
+    LeaveAllowanceResponse,
+    LeaveAllowanceUpdate,
     LeavePolicyResponse,
     LeavePolicyUpdate,
     PayrollConfigResponse,
@@ -71,6 +73,8 @@ from app.services.consent_catalog import (
 )
 from app.services.leave_policy import (
     get_or_create_leave_policy,
+    list_leave_allowances,
+    replace_leave_allowances,
     serialize_leave_policy,
     update_leave_policy,
 )
@@ -225,6 +229,9 @@ def get_payroll_config(
         enable_late_overtime_balancing=bool(
             getattr(cfg, "enable_late_overtime_balancing", False)
         ),
+        overtime_approval_required=bool(
+            getattr(cfg, "overtime_approval_required", False)
+        ),
         # Stored for schema/API compatibility only. Active OT premium is 0%
         # on ordinary/rest days and holiday.ot_premium_percent on holidays.
         ordinary_ot_premium_percent=_ot_percent(
@@ -270,6 +277,8 @@ def update_payroll_config(
     cfg.overtime_per_minute = body.overtime_per_minute
     if body.enable_late_overtime_balancing is not None:
         cfg.enable_late_overtime_balancing = body.enable_late_overtime_balancing
+    if body.overtime_approval_required is not None:
+        cfg.overtime_approval_required = body.overtime_approval_required
     if body.ordinary_ot_premium_percent is not None:
         cfg.ordinary_ot_premium_percent = body.ordinary_ot_premium_percent
     if body.rest_day_ot_premium_percent is not None:
@@ -384,10 +393,46 @@ def put_leave_policy(
         db,
         business_id=user.business_id,
         treatments=body.treatments,
+        minimum_advance_notice_days=body.minimum_advance_notice_days,
         actor=user,
         **meta,
     )
     return serialize_leave_policy(policy)
+
+
+@router.get("/me/leave-policy/allowances", response_model=LeaveAllowanceResponse)
+def get_leave_allowances(
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(require_roles(UserRole.owner, UserRole.manager))],
+    year: Annotated[int, Query(ge=2000, le=2100)],
+):
+    if user.business_id is None:
+        raise HTTPException(400, "No business context")
+    return {
+        "year": year,
+        "items": list_leave_allowances(db, business_id=user.business_id, year=year),
+    }
+
+
+@router.put("/me/leave-policy/allowances", response_model=LeaveAllowanceResponse)
+def put_leave_allowances(
+    body: LeaveAllowanceUpdate,
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(require_roles(UserRole.owner, UserRole.manager))],
+):
+    if user.business_id is None:
+        raise HTTPException(400, "No business context")
+    meta = audit_meta_from_request(request)
+    items = replace_leave_allowances(
+        db,
+        business_id=user.business_id,
+        year=body.year,
+        items=[item.model_dump() for item in body.items],
+        actor=user,
+        **meta,
+    )
+    return {"year": body.year, "items": items}
 
 
 @router.get("/me/location", response_model=LocationResponse)

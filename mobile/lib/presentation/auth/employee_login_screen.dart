@@ -33,9 +33,14 @@ class _EmployeeLoginScreenState extends State<EmployeeLoginScreen> {
     SuccessLoginState state,
   ) async {
     final appState = sl<AppState>();
+    // Resolve before setSession notifies GoRouter — otherwise a completed
+    // employee is briefly (or stuck) sent to /permissions every login.
+    final permissionsIntroSeen =
+        await resolvePermissionsIntroSeen(state.session);
     appState.setSession(
       state.session,
       mustChange: state.session.mustChangePassword,
+      permissionsIntroSeen: permissionsIntroSeen,
     );
     await loadEmployeePostAuthGates(appState, state.session);
     if (!context.mounted) return;

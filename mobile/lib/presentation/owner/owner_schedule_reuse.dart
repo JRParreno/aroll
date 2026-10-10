@@ -1,3 +1,4 @@
+import 'package:aroll_mobile/core/theme/business_brand_theme.dart';
 import 'package:aroll_mobile/data/repositories/owner_repository.dart';
 import 'package:aroll_mobile/presentation/shared/app_ui.dart';
 import 'package:dio/dio.dart';
@@ -174,7 +175,7 @@ class _OwnerScheduleDateBannerState extends State<OwnerScheduleDateBanner> {
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, controller.text.trim()),
-            style: TextButton.styleFrom(foregroundColor: AppColors.primaryDark),
+            style: TextButton.styleFrom(foregroundColor: BrandColors.of(context).toneButton),
             child: const Text('Save'),
           ),
         ],
@@ -307,8 +308,8 @@ class _OwnerScheduleDateBannerState extends State<OwnerScheduleDateBanner> {
         width: double.infinity,
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            colors: [AppColors.primary, AppColors.primaryDark],
+          gradient: LinearGradient(
+            colors: [BrandColors.of(context).tonePrimary, BrandColors.of(context).toneButton],
           ),
           borderRadius: BorderRadius.circular(16),
         ),
@@ -438,12 +439,12 @@ class _LibraryFloatCard extends StatelessWidget {
                   width: 36,
                   height: 36,
                   decoration: BoxDecoration(
-                    color: AppColors.iconWell,
+                    color: BrandColors.of(context).toneWell,
                     borderRadius: BorderRadius.circular(10),
                   ),
-                  child: const Icon(
+                  child: Icon(
                     Icons.folder_copy_outlined,
-                    color: AppColors.primary,
+                    color: BrandColors.of(context).tonePrimary,
                     size: 18,
                   ),
                 ),
@@ -469,14 +470,14 @@ class _LibraryFloatCard extends StatelessWidget {
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                 decoration: BoxDecoration(
-                  color: AppColors.iconWell,
+                  color: BrandColors.of(context).toneWell,
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Text(
                   'Tip: this week is empty. Copy last week to get started.',
                   style: appMutedStyle().copyWith(
                     fontSize: 12,
-                    color: AppColors.primaryDark,
+                    color: BrandColors.of(context).toneButton,
                   ),
                 ),
               ),
@@ -610,10 +611,10 @@ class _LibraryAction extends StatelessWidget {
                 width: 36,
                 height: 36,
                 decoration: BoxDecoration(
-                  color: AppColors.iconWell,
+                  color: BrandColors.of(context).toneWell,
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: Icon(icon, size: 18, color: AppColors.primary),
+                child: Icon(icon, size: 18, color: BrandColors.of(context).tonePrimary),
               ),
               const SizedBox(width: 10),
               Expanded(
@@ -798,7 +799,7 @@ class _PreviewDialogState extends State<_PreviewDialog> {
                   Expanded(
                     child: FilledButton(
                       style: FilledButton.styleFrom(
-                        backgroundColor: AppColors.primaryDark,
+                        backgroundColor: BrandColors.of(context).toneButton,
                       ),
                       onPressed: () => Navigator.pop(context, {
                         'conflict_mode': _conflictMode,

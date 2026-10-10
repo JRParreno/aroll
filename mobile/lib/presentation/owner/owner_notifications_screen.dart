@@ -1,4 +1,5 @@
 import 'package:aroll_mobile/core/di/injection.dart';
+import 'package:aroll_mobile/core/theme/business_brand_theme.dart';
 import 'package:aroll_mobile/data/repositories/owner_repository.dart';
 import 'package:aroll_mobile/presentation/owner/owner_shell.dart';
 import 'package:aroll_mobile/presentation/shared/app_ui.dart';
@@ -143,13 +144,13 @@ class _OwnerNotificationsScreenState extends State<OwnerNotificationsScreen> {
                             width: 36,
                             height: 36,
                             decoration: BoxDecoration(
-                              color: AppColors.primary.withValues(alpha: 0.1),
+                              color: BrandColors.of(context).tonePrimary.withValues(alpha: 0.1),
                               borderRadius: BorderRadius.circular(10),
                             ),
                             child: Icon(
                               _iconFor('${item['type'] ?? ''}'),
                               size: 18,
-                              color: AppColors.primary,
+                              color: BrandColors.of(context).tonePrimary,
                             ),
                           ),
                           const SizedBox(width: 10),
@@ -183,8 +184,8 @@ class _OwnerNotificationsScreenState extends State<OwnerNotificationsScreen> {
                               width: 8,
                               height: 8,
                               margin: const EdgeInsets.only(top: 6),
-                              decoration: const BoxDecoration(
-                                color: AppColors.primary,
+                              decoration: BoxDecoration(
+                                color: BrandColors.of(context).tonePrimary,
                                 shape: BoxShape.circle,
                               ),
                             ),

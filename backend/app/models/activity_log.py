@@ -23,6 +23,15 @@ class ActivityLog(Base):
         nullable=True,
     )
 
+    # Set at hard-delete (and backfilled) so Owner audit stays business-scoped
+    # after user_id is cleared.
+    business_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("business.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
     action: Mapped[str] = mapped_column(String(100))
     description: Mapped[str] = mapped_column(String(500))
     previous_value: Mapped[str | None] = mapped_column(Text, nullable=True)

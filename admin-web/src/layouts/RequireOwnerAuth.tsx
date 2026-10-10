@@ -1,3 +1,4 @@
+import { useLayoutEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Navigate } from "react-router-dom";
 import { getMe } from "@/lib/api";
@@ -8,6 +9,7 @@ import {
   isOwnerRole,
   ME_QUERY_KEY,
 } from "@/lib/authSession";
+import { applyOwnerBrandCss, clearOwnerBrandCss } from "@/lib/ownerBrandCss";
 
 export function RequireOwnerAuth({
   children,
@@ -25,6 +27,12 @@ export function RequireOwnerAuth({
     retry: false,
     staleTime: 0,
   });
+
+  useLayoutEffect(() => {
+    if (!me || !isOwnerRole(me.role)) return;
+    applyOwnerBrandCss(me.branding?.theme);
+    return () => clearOwnerBrandCss();
+  }, [me]);
 
   if (!token) {
     return <Navigate to="/owner-login" replace />;

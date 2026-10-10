@@ -16,11 +16,18 @@ from app.models.business import Business
 from app.models.employee import Employee
 from app.models.enums import EmployeeStatus, LeaveRequestStatus, LeaveType, UserRole
 from app.models.user import User
+from app.core.timezone import business_today
 from app.schemas.leave_request import (
+    LeaveBalanceResponse,
     LeaveRequestCreate,
+    LeaveRequestPreviewResponse,
     LeaveRequestResponse,
     LeaveRequestReviewRequest,
     LeaveRequestUpdate,
+)
+from app.services.leave_entitlements import (
+    list_balances,
+    request_balance_preview,
 )
 from app.services.leave_requests import (
     approve_leave_cancellation,
@@ -63,6 +70,48 @@ def _current_employee(db: Session, user: User) -> tuple[Employee, Business]:
     return employee, business
 
 
+def _balance_year(db: Session, business: Business, year: int | None) -> int:
+    if year is not None:
+        return year
+    return business_today(business.timezone).year
+
+
+@employee_router.get("/leave-balances", response_model=LeaveBalanceResponse)
+def employee_leave_balances(
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+    year: Annotated[int | None, Query(ge=2000, le=2100)] = None,
+):
+    employee, business = _current_employee(db, user)
+    selected_year = _balance_year(db, business, year)
+    return {
+        "employee_id": employee.id,
+        "year": selected_year,
+        "items": list_balances(db, employee_id=employee.id, year=selected_year),
+    }
+
+
+@employee_router.get(
+    "/leave-request-preview",
+    response_model=LeaveRequestPreviewResponse,
+)
+def employee_leave_request_preview(
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+    leave_type: Annotated[LeaveType, Query()],
+    start_date: Annotated[date, Query()],
+    end_date: Annotated[date, Query()],
+):
+    employee, _business = _current_employee(db, user)
+    return request_balance_preview(
+        db,
+        employee=employee,
+        leave_type=leave_type,
+        start_date=start_date,
+        end_date=end_date,
+    )
+
+
 @employee_router.post(
     "/leave-requests",
     response_model=LeaveRequestResponse,
@@ -84,6 +133,7 @@ def employee_create_leave_request(
         start_date=body.start_date,
         end_date=body.end_date,
         reason=body.reason,
+        other_leave_specification=body.other_leave_specification,
         supporting_document=body.supporting_document,
         actor=user,
         **meta,
@@ -160,6 +210,7 @@ def employee_edit_leave_request(
         start_date=body.start_date,
         end_date=body.end_date,
         reason=body.reason,
+        other_leave_specification=body.other_leave_specification,
         supporting_document=body.supporting_document,
         actor=user,
         **meta,
@@ -354,3 +405,38 @@ def owner_reject_leave_cancellation(
     )
     employee = db.get(Employee, updated.employee_id)
     return serialize_leave_request(updated, employee=employee, include_document=True)
+
+
+def _owner_employee(
+    db: Session, *, business_id: uuid.UUID, employee_id: uuid.UUID
+) -> Employee:
+    employee = db.get(Employee, employee_id)
+    if employee is None or employee.business_id != business_id:
+        raise HTTPException(404, "Employee not found.")
+    return employee
+
+
+@owner_router.get(
+    "/employees/{employee_id}/leave-balances",
+    response_model=LeaveBalanceResponse,
+)
+def owner_get_leave_balances(
+    employee_id: uuid.UUID,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(require_roles(UserRole.owner, UserRole.manager))],
+    year: Annotated[int | None, Query(ge=2000, le=2100)] = None,
+):
+    if user.business_id is None:
+        raise HTTPException(400, "No business context")
+    employee = _owner_employee(
+        db, business_id=user.business_id, employee_id=employee_id
+    )
+    business = db.get(Business, user.business_id)
+    selected_year = (
+        _balance_year(db, business, year) if business is not None else date.today().year
+    )
+    return {
+        "employee_id": employee.id,
+        "year": selected_year,
+        "items": list_balances(db, employee_id=employee.id, year=selected_year),
+    }

@@ -1,4 +1,5 @@
 import 'package:aroll_mobile/core/app_state.dart';
+import 'package:aroll_mobile/core/theme/business_brand_theme.dart';
 import 'package:aroll_mobile/core/di/injection.dart';
 import 'package:aroll_mobile/core/tenant_mode.dart';
 import 'package:aroll_mobile/data/repositories/owner_repository.dart';
@@ -30,6 +31,7 @@ class _OwnerPayrollListScreenState extends State<OwnerPayrollListScreen> {
   List<Map<String, dynamic>> _employees = const [];
   Map<String, String> _profileImages = const {};
   int _incompleteCount = 0;
+  int _unresolvedHistoricalCount = 0;
   bool _canFinalize = false;
   bool _isFinalized = false;
 
@@ -77,6 +79,9 @@ class _OwnerPayrollListScreenState extends State<OwnerPayrollListScreen> {
         _profileImages = images;
         _incompleteCount =
             (payroll['incomplete_attendance_count'] as num?)?.toInt() ?? 0;
+        _unresolvedHistoricalCount =
+            (payroll['unresolved_historical_rate_count'] as num?)?.toInt() ??
+                0;
         _canFinalize = payroll['can_finalize'] == true;
         _isFinalized = payroll['is_finalized'] == true;
         _loading = false;
@@ -91,7 +96,11 @@ class _OwnerPayrollListScreenState extends State<OwnerPayrollListScreen> {
   }
 
   Future<void> _finalize() async {
-    if (_finalizing || _isFinalized || _incompleteCount > 0 || !_canFinalize) {
+    if (_finalizing ||
+        _isFinalized ||
+        _incompleteCount > 0 ||
+        _unresolvedHistoricalCount > 0 ||
+        !_canFinalize) {
       return;
     }
     setState(() {
@@ -108,10 +117,18 @@ class _OwnerPayrollListScreenState extends State<OwnerPayrollListScreen> {
       await _load();
     } catch (e) {
       if (!mounted) return;
+      String message =
+          'Payroll cannot be finalized. Resolve attendance issues first.';
+      try {
+        final response = (e as dynamic).response?.data;
+        if (response is Map && response['detail'] is Map) {
+          final msg = '${response['detail']['message'] ?? ''}';
+          if (msg.isNotEmpty) message = msg;
+        }
+      } catch (_) {}
       setState(() {
         _finalizing = false;
-        _finalizeMessage =
-            'Payroll cannot be finalized. Resolve incomplete attendance first.';
+        _finalizeMessage = message;
       });
     }
   }
@@ -206,6 +223,31 @@ class _OwnerPayrollListScreenState extends State<OwnerPayrollListScreen> {
                               ),
                             ),
                           ),
+                        )
+                      else if (_unresolvedHistoricalCount > 0)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 10),
+                          child: Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFFFBEB),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: const Color(0xFFFDE68A)),
+                            ),
+                            child: Text(
+                              'Payroll cannot be finalized because a completed '
+                              'attendance has an unresolved historical pay rate '
+                              '($_unresolvedHistoricalCount). Resolve the '
+                              'historical rate before finalizing.',
+                              style: const TextStyle(
+                                fontSize: 12.5,
+                                height: 1.4,
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFF92400E),
+                              ),
+                            ),
+                          ),
                         ),
                       if (_finalizeMessage != null)
                         Padding(
@@ -215,7 +257,8 @@ class _OwnerPayrollListScreenState extends State<OwnerPayrollListScreen> {
                             style: TextStyle(
                               fontSize: 12.5,
                               fontWeight: FontWeight.w600,
-                              color: _incompleteCount > 0
+                              color: (_incompleteCount > 0 ||
+                                      _unresolvedHistoricalCount > 0)
                                   ? const Color(0xFFB91C1C)
                                   : const Color(0xFF166534),
                             ),
@@ -229,6 +272,7 @@ class _OwnerPayrollListScreenState extends State<OwnerPayrollListScreen> {
                             onPressed: (_finalizing ||
                                     _isFinalized ||
                                     _incompleteCount > 0 ||
+                                    _unresolvedHistoricalCount > 0 ||
                                     !_canFinalize)
                                 ? null
                                 : _finalize,
@@ -325,12 +369,12 @@ class _FilterCard extends StatelessWidget {
                 width: 36,
                 height: 36,
                 decoration: BoxDecoration(
-                  color: AppColors.iconWell,
+                  color: BrandColors.of(context).toneWell,
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: const Icon(
+                child: Icon(
                   Icons.filter_list_rounded,
-                  color: AppColors.primary,
+                  color: BrandColors.of(context).tonePrimary,
                   size: 18,
                 ),
               ),
@@ -435,15 +479,15 @@ class _FilterCard extends StatelessWidget {
               width: double.infinity,
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               decoration: BoxDecoration(
-                color: AppColors.iconWell,
+                color: BrandColors.of(context).toneWell,
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Row(
                 children: [
-                  const Icon(
+                  Icon(
                     Icons.date_range_outlined,
                     size: 16,
-                    color: AppColors.primary,
+                    color: BrandColors.of(context).tonePrimary,
                   ),
                   const SizedBox(width: 8),
                   Expanded(
@@ -451,7 +495,7 @@ class _FilterCard extends StatelessWidget {
                       'Period ${ownerPayrollShortDate(periodStart)} – ${ownerPayrollShortDate(periodEnd)}',
                       style: appMutedStyle().copyWith(
                         fontSize: 12,
-                        color: AppColors.primaryDark,
+                        color: BrandColors.of(context).toneButton,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
@@ -500,7 +544,7 @@ class _EmployeePayrollCard extends StatelessWidget {
                       imageUrl: profileImageUrl,
                       name: '${item['employee_name'] ?? 'Employee'}',
                       size: 48,
-                      backgroundColor: AppColors.iconWell,
+                      backgroundColor: BrandColors.of(context).toneWell,
                     ),
                     const SizedBox(width: 12),
                     Expanded(

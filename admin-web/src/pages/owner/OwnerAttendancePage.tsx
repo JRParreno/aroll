@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Search } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { Check, Clock3, History, Search, X } from "lucide-react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { Link } from "react-router-dom";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -20,10 +21,13 @@ import { SimulatedBadge } from "@/components/tenant/SimulatedBadge";
 import { useTenantMode } from "@/lib/tenantMode";
 import {
   approveOwnerAttendanceCorrection,
+  approveOvertime,
   completeOwnerAttendance,
   getOwnerAttendanceCorrections,
   getOwnerAttendanceReport,
+  listOvertimeApprovals,
   rejectOwnerAttendanceCorrection,
+  rejectOvertime,
   type OwnerAttendanceCorrection,
   type OwnerAttendanceReport,
 } from "@/lib/api";
@@ -44,6 +48,53 @@ function formatTime(value: string | null, timeZone?: string | null) {
 function formatWeekday(value?: string) {
   if (!value) return "";
   return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+/** FastAPI string detail or `{ message }` object (e.g. payroll_finalized 409). */
+function apiDetailMessage(error: unknown, fallback: string): string {
+  if (
+    typeof error !== "object" ||
+    error === null ||
+    !("response" in error)
+  ) {
+    return fallback;
+  }
+  const detail = (
+    error as { response?: { data?: { detail?: { message?: string } | string } } }
+  ).response?.data?.detail;
+  if (typeof detail === "string" && detail.trim()) return detail;
+  if (
+    typeof detail === "object" &&
+    detail !== null &&
+    typeof detail.message === "string" &&
+    detail.message.trim()
+  ) {
+    return detail.message;
+  }
+  return fallback;
+}
+
+function formatOtDuration(minutes: number | undefined) {
+  if (typeof minutes !== "number" || !Number.isFinite(minutes)) return null;
+  const total = Math.max(0, Math.round(minutes));
+  const hours = Math.floor(total / 60);
+  const mins = total % 60;
+  if (hours > 0 && mins > 0) return `${hours}h ${mins}m`;
+  if (hours > 0) return `${hours}h`;
+  return `${mins}m`;
+}
+
+function formatSubmittedAt(value: string | null | undefined) {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
 }
 
 function formatDisplayDate(value: string) {
@@ -156,6 +207,10 @@ export function OwnerAttendancePage() {
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [rejectingId, setRejectingId] = useState<string | null>(null);
   const [rejectNote, setRejectNote] = useState("");
+  const [reviewCorrectionId, setReviewCorrectionId] = useState<string | null>(
+    null
+  );
+  const [reviewOtId, setReviewOtId] = useState<string | null>(null);
   const [detailsEmployee, setDetailsEmployee] =
     useState<AttendanceRecord | null>(null);
   const [completing, setCompleting] = useState<AttendanceRecord | null>(null);
@@ -187,9 +242,24 @@ export function OwnerAttendancePage() {
     queryFn: () => getOwnerAttendanceCorrections("pending"),
   });
 
+  const {
+    data: pendingOtData,
+    isLoading: otLoading,
+  } = useQuery({
+    queryKey: ["owner-overtime-approvals", "pending"],
+    queryFn: () => listOvertimeApprovals("pending"),
+  });
+  const pendingOt = pendingOtData?.items ?? [];
+  const reviewCorrection =
+    pendingCorrections.find((item) => item.id === reviewCorrectionId) ?? null;
+  const reviewOt =
+    pendingOt.find((item) => item.attendance_record_id === reviewOtId) ??
+    null;
+
   const invalidateAttendance = async () => {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ["owner-attendance-corrections"] }),
+      queryClient.invalidateQueries({ queryKey: ["owner-overtime-approvals"] }),
       queryClient.invalidateQueries({ queryKey: ["owner-attendance-report"] }),
       queryClient.invalidateQueries({ queryKey: ["owner-payroll-report"] }),
       queryClient.invalidateQueries({ queryKey: ["owner-performance"] }),
@@ -203,7 +273,8 @@ export function OwnerAttendancePage() {
       toast.success("Correction approved. Attendance updated.");
       void invalidateAttendance();
     },
-    onError: () => toast.error("Could not approve this correction."),
+    onError: (error: unknown) =>
+      toast.error(apiDetailMessage(error, "Could not approve this correction.")),
   });
 
   const rejectMutation = useMutation({
@@ -221,6 +292,65 @@ export function OwnerAttendancePage() {
       void invalidateAttendance();
     },
     onError: () => toast.error("Could not reject this correction."),
+  });
+
+  const approveOtMutation = useMutation({
+    mutationFn: (recordId: string) => approveOvertime(recordId),
+    onSuccess: () => {
+      toast.success("Overtime approved. It will be included as payable OT.");
+      void invalidateAttendance();
+    },
+    onError: (error: unknown) => {
+      const detail =
+        typeof error === "object" &&
+        error !== null &&
+        "response" in error &&
+        typeof (error as { response?: { data?: { detail?: { message?: string } | string } } })
+          .response?.data?.detail === "object"
+          ? String(
+              (
+                error as {
+                  response?: { data?: { detail?: { message?: string } } };
+                }
+              ).response?.data?.detail?.message ?? "Could not approve overtime."
+            )
+          : typeof error === "object" &&
+              error !== null &&
+              "response" in error &&
+              typeof (error as { response?: { data?: { detail?: string } } })
+                .response?.data?.detail === "string"
+            ? String(
+                (error as { response?: { data?: { detail?: string } } }).response
+                  ?.data?.detail
+              )
+            : "Could not approve overtime.";
+      toast.error(detail);
+    },
+  });
+
+  const rejectOtMutation = useMutation({
+    mutationFn: (recordId: string) => rejectOvertime(recordId),
+    onSuccess: () => {
+      toast.success("Overtime rejected. Worked time is kept; OT is not paid.");
+      void invalidateAttendance();
+    },
+    onError: (error: unknown) => {
+      const detail =
+        typeof error === "object" &&
+        error !== null &&
+        "response" in error &&
+        typeof (error as { response?: { data?: { detail?: { message?: string } | string } } })
+          .response?.data?.detail === "object"
+          ? String(
+              (
+                error as {
+                  response?: { data?: { detail?: { message?: string } } };
+                }
+              ).response?.data?.detail?.message ?? "Could not reject overtime."
+            )
+          : "Could not reject overtime.";
+      toast.error(detail);
+    },
   });
 
   const completeMutation = useMutation({
@@ -245,18 +375,7 @@ export function OwnerAttendancePage() {
       void invalidateAttendance();
     },
     onError: (error: unknown) => {
-      const detail =
-        typeof error === "object" &&
-        error !== null &&
-        "response" in error &&
-        typeof (error as { response?: { data?: { detail?: unknown } } }).response
-          ?.data?.detail === "string"
-          ? String(
-              (error as { response?: { data?: { detail?: string } } }).response
-                ?.data?.detail
-            )
-          : "Could not complete attendance.";
-      toast.error(detail);
+      toast.error(apiDetailMessage(error, "Could not complete attendance."));
     },
   });
 
@@ -301,33 +420,42 @@ export function OwnerAttendancePage() {
             ? "Simulated Time In / Time Out records for demonstration only."
             : "Review Time In and Time Out records for your team."
         }
+        actions={
+          <Button asChild variant="outline" className="h-10 rounded-xl bg-white">
+            <Link to="/owner/attendance/shift-history">
+              <History className="mr-2 h-4 w-4" />
+              Shift History
+            </Link>
+          </Button>
+        }
       />
 
       <OwnerPageContent>
-        <section className="rounded-2xl border border-amber-200 bg-amber-50/40 p-5 shadow-sm">
+        <section className="owner-panel">
           <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <h2 className="text-base font-semibold text-[#1F2937]">
+            <div className="min-w-0">
+              <h2 className="owner-section-title">
                 Pending correction requests
               </h2>
-              <p className="mt-1 text-sm text-[#6B7280]">
+              <p className="mt-1 max-w-2xl text-sm text-[#6B7280]">
                 Employees can request corrected Time In and Time Out for
                 a shift. Approve to update attendance and payroll.
               </p>
             </div>
-            <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-800">
-              {pendingCorrections.length} pending
+            <span className="rounded-full bg-[var(--owner-well)] px-2.5 py-1 text-xs font-medium text-[var(--owner-navy)]">
+              {pendingCorrections.length} to review
             </span>
           </div>
 
           {correctionsLoading ? (
             <p className="mt-4 text-sm text-[#6B7280]">Loading requests…</p>
           ) : pendingCorrections.length === 0 ? (
-            <p className="mt-4 text-sm text-[#6B7280]">
-              No pending correction requests right now.
-            </p>
+            <ReviewEmptyState
+              title="No pending correction requests"
+              detail="New Time In and Time Out requests will appear here."
+            />
           ) : (
-            <div className="mt-4 grid gap-3">
+            <div className="mt-4 divide-y divide-slate-100 overflow-hidden rounded-xl border border-slate-200">
               {pendingCorrections.map((item) => (
                 <CorrectionCard
                   key={item.id}
@@ -341,27 +469,12 @@ export function OwnerAttendancePage() {
                     rejectMutation.isPending &&
                     rejectMutation.variables?.requestId === item.id
                   }
-                  isRejectOpen={rejectingId === item.id}
-                  rejectNote={rejectingId === item.id ? rejectNote : ""}
+                  onOpen={() => setReviewCorrectionId(item.id)}
                   onApprove={() => approveMutation.mutate(item.id)}
-                  onOpenReject={() => {
+                  onReject={() => {
+                    setReviewCorrectionId(item.id);
                     setRejectingId(item.id);
                     setRejectNote("");
-                  }}
-                  onCancelReject={() => {
-                    setRejectingId(null);
-                    setRejectNote("");
-                  }}
-                  onRejectNoteChange={setRejectNote}
-                  onConfirmReject={() => {
-                    if (rejectNote.trim().length < 3) {
-                      toast.error("Add a short rejection reason.");
-                      return;
-                    }
-                    rejectMutation.mutate({
-                      requestId: item.id,
-                      note: rejectNote.trim(),
-                    });
                   }}
                 />
               ))}
@@ -369,7 +482,100 @@ export function OwnerAttendancePage() {
           )}
         </section>
 
-        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <section className="owner-panel">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0">
+              <h2 className="owner-section-title">
+                Pending overtime approvals
+              </h2>
+              <p className="mt-1 max-w-2xl text-sm text-[#6B7280]">
+                When OT Approval Required is on, qualifying overtime must be
+                approved before it is paid. Rejecting OT keeps the recorded Time
+                In / Time Out and only withholds OT pay.
+              </p>
+            </div>
+            <span className="rounded-full bg-[var(--owner-well)] px-2.5 py-1 text-xs font-medium text-[var(--owner-navy)]">
+              {pendingOt.length} to review
+            </span>
+          </div>
+
+          {otLoading ? (
+            <p className="mt-4 text-sm text-[#6B7280]">Loading overtime…</p>
+          ) : pendingOt.length === 0 ? (
+            <ReviewEmptyState
+              title="No pending OT approvals"
+              detail="Qualifying overtime will show up here for review."
+            />
+          ) : (
+            <div className="mt-4 divide-y divide-slate-100 overflow-hidden rounded-xl border border-slate-200">
+              {pendingOt.map((item) => {
+                const duration = formatOtDuration(item.worked_ot_minutes);
+                const busy =
+                  approveOtMutation.isPending || rejectOtMutation.isPending;
+                const approving =
+                  approveOtMutation.isPending &&
+                  approveOtMutation.variables === item.attendance_record_id;
+                const rejecting =
+                  rejectOtMutation.isPending &&
+                  rejectOtMutation.variables === item.attendance_record_id;
+                return (
+                  <div
+                    key={item.attendance_record_id}
+                    className="flex flex-col gap-3 bg-white px-3 py-3 md:flex-row md:items-center md:px-4"
+                  >
+                    <button
+                      type="button"
+                      className="flex min-w-0 flex-1 items-start gap-3 rounded-lg text-left transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--owner-accent)]"
+                      onClick={() =>
+                        setReviewOtId(item.attendance_record_id)
+                      }
+                    >
+                      <EmployeeAvatar
+                        name={item.employee_name}
+                        className="h-9 w-9 text-xs"
+                        fallbackClassName="bg-[var(--owner-well)] text-[var(--owner-navy)]"
+                      />
+                      <span className="min-w-0">
+                        <span className="block break-words text-sm font-semibold text-[#111827]">
+                          {item.employee_name}
+                        </span>
+                        <span className="mt-0.5 block break-words text-xs text-[#6B7280]">
+                          {item.work_date
+                            ? formatDisplayDate(item.work_date)
+                            : "Shift"}
+                          {item.shift_name ? ` · ${item.shift_name}` : ""}
+                        </span>
+                      </span>
+                    </button>
+                    <div className="flex flex-wrap items-center gap-2 md:justify-end">
+                      {duration ? (
+                        <span className="rounded-md bg-[var(--owner-well)] px-2 py-1 text-xs font-semibold text-[var(--owner-navy)]">
+                          {duration}
+                        </span>
+                      ) : null}
+                      <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-[#4B5563]">
+                        Pending
+                      </span>
+                      <ReviewDecisionButtons
+                        approveLabel={approving ? "Approving…" : "Approve"}
+                        rejectLabel={rejecting ? "Rejecting…" : "Reject"}
+                        disabled={busy}
+                        onApprove={() =>
+                          approveOtMutation.mutate(item.attendance_record_id)
+                        }
+                        onReject={() =>
+                          rejectOtMutation.mutate(item.attendance_record_id)
+                        }
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+
+        <section className="owner-toolbar">
           <div className="mx-auto max-w-3xl space-y-3">
             <div className="relative">
               <Search className="pointer-events-none absolute left-4 top-3 h-5 w-5 text-[#6B7280]" />
@@ -422,7 +628,7 @@ export function OwnerAttendancePage() {
         </section>
 
         <section className="grid gap-5 lg:grid-cols-[1fr_220px]">
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="owner-panel">
             <div
               className="flex items-end gap-12 border-b border-l border-slate-200 px-8"
               style={{ height: `${chartHeight}px` }}
@@ -463,7 +669,7 @@ export function OwnerAttendancePage() {
             </div>
           </div>
 
-          <div className="flex items-center justify-center rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="owner-panel flex items-center justify-center">
             <div
               className="flex h-32 w-32 items-center justify-center rounded-full"
               style={{
@@ -482,10 +688,10 @@ export function OwnerAttendancePage() {
           </div>
         </section>
 
-        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <section className="owner-panel">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <h2 className="text-base font-semibold text-[#1F2937]">
+              <h2 className="owner-section-title">
                 Rest Day Work
               </h2>
               <p className="mt-1 text-sm text-[#6B7280]">
@@ -569,24 +775,24 @@ export function OwnerAttendancePage() {
 
         <section className="max-h-[430px] overflow-y-auto pr-2">
           {isLoading ? (
-            <div className="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-[#6B7280] shadow-sm">
+            <div className="owner-panel px-6 py-10 text-center text-sm text-[#6B7280]">
               Loading attendance...
             </div>
           ) : isError ? (
-            <div className="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-[#6B7280] shadow-sm">
+            <div className="owner-panel px-6 py-10 text-center text-sm text-[#6B7280]">
               <p>
                 Couldn’t load attendance. Check your connection and try again.
               </p>
               <button
                 type="button"
-                className="mt-3 rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white"
+                className="mt-3 rounded-xl bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white"
                 onClick={() => void refetch()}
               >
                 Retry
               </button>
             </div>
           ) : records.length === 0 ? (
-            <div className="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-[#6B7280] shadow-sm">
+            <div className="owner-empty">
               No attendance records found
               {date ? ` for ${formatDisplayDate(date)}` : ""}
               {debouncedSearch ? ` matching “${debouncedSearch}”` : ""}.
@@ -602,7 +808,7 @@ export function OwnerAttendancePage() {
                 const restDay = Boolean(record.is_rest_day && record.time_in);
                 return (
                   <div
-                    className="flex cursor-pointer items-center gap-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-[#C5D4E3] hover:shadow-md"
+                    className="owner-list-row flex cursor-pointer items-center gap-4"
                     key={record.id}
                     onClick={() => setDetailsEmployee(record)}
                     onKeyDown={(event) => {
@@ -842,13 +1048,233 @@ export function OwnerAttendancePage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <CorrectionReviewDialog
+        item={reviewCorrection}
+        timeZone={attendanceTz}
+        open={reviewCorrection != null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setReviewCorrectionId(null);
+            setRejectingId(null);
+            setRejectNote("");
+          }
+        }}
+        approving={
+          reviewCorrection != null &&
+          approveMutation.isPending &&
+          approveMutation.variables === reviewCorrection.id
+        }
+        rejecting={
+          reviewCorrection != null &&
+          rejectMutation.isPending &&
+          rejectMutation.variables?.requestId === reviewCorrection.id
+        }
+        isRejectOpen={
+          reviewCorrection != null && rejectingId === reviewCorrection.id
+        }
+        rejectNote={rejectNote}
+        onApprove={() => {
+          if (!reviewCorrection) return;
+          approveMutation.mutate(reviewCorrection.id);
+        }}
+        onOpenReject={() => {
+          if (!reviewCorrection) return;
+          setRejectingId(reviewCorrection.id);
+          setRejectNote("");
+        }}
+        onCancelReject={() => {
+          setRejectingId(null);
+          setRejectNote("");
+        }}
+        onRejectNoteChange={setRejectNote}
+        onConfirmReject={() => {
+          if (!reviewCorrection) return;
+          if (rejectNote.trim().length < 3) {
+            toast.error("Add a short rejection reason.");
+            return;
+          }
+          rejectMutation.mutate({
+            requestId: reviewCorrection.id,
+            note: rejectNote.trim(),
+          });
+        }}
+      />
+
+      <OvertimeReviewDialog
+        item={reviewOt}
+        timeZone={attendanceTz}
+        open={reviewOt != null}
+        onOpenChange={(open) => {
+          if (!open) setReviewOtId(null);
+        }}
+        approving={
+          reviewOt != null &&
+          approveOtMutation.isPending &&
+          approveOtMutation.variables === reviewOt.attendance_record_id
+        }
+        rejecting={
+          reviewOt != null &&
+          rejectOtMutation.isPending &&
+          rejectOtMutation.variables === reviewOt.attendance_record_id
+        }
+        disabled={approveOtMutation.isPending || rejectOtMutation.isPending}
+        onApprove={() => {
+          if (!reviewOt) return;
+          approveOtMutation.mutate(reviewOt.attendance_record_id);
+        }}
+        onReject={() => {
+          if (!reviewOt) return;
+          rejectOtMutation.mutate(reviewOt.attendance_record_id);
+        }}
+      />
     </OwnerPage>
+  );
+}
+
+const reviewApproveClass =
+  "inline-flex h-8 items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 text-xs font-medium text-emerald-800 transition hover:bg-emerald-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700/30 active:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50";
+
+const reviewRejectClass =
+  "inline-flex h-8 items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-2.5 text-xs font-medium text-rose-800 transition hover:bg-rose-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-700/30 active:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50";
+
+function ReviewDecisionButtons({
+  approveLabel,
+  rejectLabel,
+  disabled,
+  onApprove,
+  onReject,
+}: {
+  approveLabel: string;
+  rejectLabel: string;
+  disabled?: boolean;
+  onApprove: () => void;
+  onReject: () => void;
+}) {
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      <button
+        type="button"
+        className={reviewRejectClass}
+        disabled={disabled}
+        onClick={onReject}
+      >
+        <X className="h-3.5 w-3.5" aria-hidden />
+        {rejectLabel}
+      </button>
+      <button
+        type="button"
+        className={reviewApproveClass}
+        disabled={disabled}
+        onClick={onApprove}
+      >
+        <Check className="h-3.5 w-3.5" aria-hidden />
+        {approveLabel}
+      </button>
+    </div>
+  );
+}
+
+function ReviewEmptyState({
+  title,
+  detail,
+}: {
+  title: string;
+  detail: string;
+}) {
+  return (
+    <div className="mt-4 flex items-start gap-3 rounded-xl border border-dashed border-slate-200 px-4 py-4">
+      <Clock3 className="mt-0.5 h-4 w-4 shrink-0 text-[#9CA3AF]" aria-hidden />
+      <div className="min-w-0">
+        <p className="text-sm font-medium text-[#1F2937]">{title}</p>
+        <p className="mt-0.5 text-xs leading-5 text-[#6B7280]">{detail}</p>
+      </div>
+    </div>
+  );
+}
+
+function ReviewField({
+  label,
+  children,
+}: {
+  label: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="min-w-0">
+      <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-[#9CA3AF]">
+        {label}
+      </p>
+      <div className="mt-1 text-sm leading-6 text-[#1F2937]">{children}</div>
+    </div>
   );
 }
 
 function CorrectionCard({
   item,
   timeZone,
+  approving,
+  rejecting,
+  onOpen,
+  onApprove,
+  onReject,
+}: {
+  item: OwnerAttendanceCorrection;
+  timeZone?: string | null;
+  approving: boolean;
+  rejecting: boolean;
+  onOpen: () => void;
+  onApprove: () => void;
+  onReject: () => void;
+}) {
+  return (
+    <div className="flex flex-col gap-3 bg-white px-3 py-3 md:flex-row md:items-center md:px-4">
+      <button
+        type="button"
+        className="flex min-w-0 flex-1 items-start gap-3 rounded-lg text-left transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--owner-accent)]"
+        onClick={onOpen}
+      >
+        <EmployeeAvatar
+          name={item.employee_name}
+          imageUrl={item.profile_image_url}
+          className="h-9 w-9 text-xs"
+          fallbackClassName="bg-[var(--owner-well)] text-[var(--owner-navy)]"
+        />
+        <span className="min-w-0">
+          <span className="block break-words text-sm font-semibold text-[#111827]">
+            {item.employee_name}
+          </span>
+          <span className="mt-0.5 block break-words text-xs text-[#6B7280]">
+            {formatDisplayDate(item.work_date)}
+            {item.shift_name ? ` · ${item.shift_name}` : ""}
+          </span>
+          <span className="mt-1 block truncate text-xs text-[#4B5563]">
+            Requested {formatTime(item.requested_time_in, timeZone)} –{" "}
+            {formatTime(item.requested_time_out, timeZone)}
+          </span>
+        </span>
+      </button>
+      <div className="flex flex-wrap items-center gap-2 md:justify-end">
+        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium capitalize text-[#4B5563]">
+          {item.status.replace(/_/g, " ")}
+        </span>
+        <ReviewDecisionButtons
+          approveLabel={approving ? "Approving…" : "Approve"}
+          rejectLabel="Reject"
+          disabled={approving || rejecting}
+          onApprove={onApprove}
+          onReject={onReject}
+        />
+      </div>
+    </div>
+  );
+}
+
+function CorrectionReviewDialog({
+  item,
+  timeZone,
+  open,
+  onOpenChange,
   approving,
   rejecting,
   isRejectOpen,
@@ -859,8 +1285,10 @@ function CorrectionCard({
   onRejectNoteChange,
   onConfirmReject,
 }: {
-  item: OwnerAttendanceCorrection;
+  item: OwnerAttendanceCorrection | null;
   timeZone?: string | null;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
   approving: boolean;
   rejecting: boolean;
   isRejectOpen: boolean;
@@ -871,89 +1299,178 @@ function CorrectionCard({
   onRejectNoteChange: (value: string) => void;
   onConfirmReject: () => void;
 }) {
+  const submitted = item ? formatSubmittedAt(item.created_at) : null;
   return (
-    <div className="rounded-xl border border-amber-200 bg-white p-4">
-      <div className="flex flex-wrap items-start gap-3">
-        <EmployeeAvatar
-          name={item.employee_name}
-          imageUrl={item.profile_image_url}
-          className="h-12 w-12 text-sm"
-          fallbackClassName="bg-amber-100 text-amber-800"
-        />
-        <div className="min-w-0 flex-1">
-          <h3 className="truncate text-sm font-semibold text-[#111827]">
-            {item.employee_name}
-          </h3>
-          <p className="mt-0.5 text-xs text-[#6B7280]">
-            {formatDisplayDate(item.work_date)}
-            {item.shift_name ? ` · ${item.shift_name}` : ""}
-            {item.shift_start && item.shift_end
-              ? ` · ${item.shift_start} - ${item.shift_end}`
-              : ""}
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent
+        overlayClassName="bg-slate-900/20"
+        className="max-h-[min(85vh,40rem)] w-[min(32rem,calc(100vw-2rem))] max-w-lg gap-0 overflow-y-auto rounded-2xl p-0"
+      >
+        <DialogHeader className="border-b border-slate-100 px-5 pb-4 pr-12 pt-5 text-left">
+          <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-[#9CA3AF]">
+            Correction request
           </p>
-          <div className="mt-2 grid gap-1 text-xs text-[#374151] sm:grid-cols-2">
-            <p>
-              Recorded: In {formatTime(item.recorded_time_in, timeZone)} · Out{" "}
-              {formatTime(item.recorded_time_out, timeZone)}
-            </p>
-            <p>
-              Requested: In {formatTime(item.requested_time_in, timeZone)} · Out{" "}
-              {formatTime(item.requested_time_out, timeZone)}
-            </p>
+          <DialogTitle className="text-lg font-semibold tracking-tight text-[#111827]">
+            {item?.employee_name ?? "Request"}
+          </DialogTitle>
+          {item ? (
+            <span className="mt-2 inline-flex w-fit rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium capitalize text-[#4B5563]">
+              {item.status.replace(/_/g, " ")}
+            </span>
+          ) : null}
+        </DialogHeader>
+        {item ? (
+          <div className="space-y-5 px-5 py-5">
+            <ReviewField label="Employee">{item.employee_name}</ReviewField>
+            <ReviewField label="Request">
+              <p>{formatDisplayDate(item.work_date)}</p>
+              <p className="text-[#4B5563]">
+                {item.shift_name ?? "Shift"}
+                {item.shift_start && item.shift_end
+                  ? ` · ${item.shift_start} – ${item.shift_end}`
+                  : ""}
+              </p>
+              <p className="mt-2 text-[#4B5563]">
+                Recorded {formatTime(item.recorded_time_in, timeZone)} –{" "}
+                {formatTime(item.recorded_time_out, timeZone)}
+              </p>
+              <p>
+                Requested {formatTime(item.requested_time_in, timeZone)} –{" "}
+                {formatTime(item.requested_time_out, timeZone)}
+              </p>
+            </ReviewField>
+            <ReviewField label="Reason">
+              <p className="whitespace-pre-wrap rounded-xl bg-[#F8FAFC] px-3 py-3 text-[#374151]">
+                {item.reason}
+              </p>
+            </ReviewField>
+            {submitted ? (
+              <ReviewField label="Submitted">{submitted}</ReviewField>
+            ) : null}
           </div>
-          <p className="mt-2 text-sm text-[#4B5563]">
-            <span className="font-medium text-[#111827]">Reason: </span>
-            {item.reason}
-          </p>
-        </div>
-      </div>
+        ) : null}
+        <DialogFooter className="gap-2 border-t border-slate-100 px-5 py-4 sm:justify-end">
+          {isRejectOpen ? (
+            <div className="flex w-full flex-col gap-2">
+              <Input
+                className="h-10 rounded-xl bg-[#FAFBFC]"
+                placeholder="Rejection reason (required)"
+                value={rejectNote}
+                onChange={(event) => onRejectNoteChange(event.target.value)}
+              />
+              <div className="flex flex-wrap justify-end gap-2">
+                <button
+                  type="button"
+                  className="inline-flex h-8 items-center rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-medium text-[#374151] hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/40"
+                  onClick={onCancelReject}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className={reviewRejectClass}
+                  disabled={rejecting}
+                  onClick={onConfirmReject}
+                >
+                  <X className="h-3.5 w-3.5" aria-hidden />
+                  {rejecting ? "Rejecting…" : "Confirm reject"}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <ReviewDecisionButtons
+              approveLabel={approving ? "Approving…" : "Approve"}
+              rejectLabel="Reject"
+              disabled={approving || rejecting}
+              onApprove={onApprove}
+              onReject={onOpenReject}
+            />
+          )}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
-      {isRejectOpen ? (
-        <div className="mt-3 space-y-2">
-          <Input
-            className="h-10 rounded-xl bg-[#FAFBFC]"
-            placeholder="Rejection reason (required)"
-            value={rejectNote}
-            onChange={(e) => onRejectNoteChange(e.target.value)}
-          />
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-60"
-              disabled={rejecting}
-              onClick={onConfirmReject}
-            >
-              {rejecting ? "Rejecting…" : "Confirm reject"}
-            </button>
-            <button
-              type="button"
-              className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-[#374151]"
-              onClick={onCancelReject}
-            >
-              Cancel
-            </button>
+function OvertimeReviewDialog({
+  item,
+  timeZone,
+  open,
+  onOpenChange,
+  approving,
+  rejecting,
+  disabled,
+  onApprove,
+  onReject,
+}: {
+  item: {
+    attendance_record_id: string;
+    employee_name: string;
+    work_date: string | null;
+    shift_name: string | null;
+    time_in: string | null;
+    time_out: string | null;
+    worked_ot_minutes?: number;
+    ot_approval_status: string | null;
+  } | null;
+  timeZone?: string | null;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  approving: boolean;
+  rejecting: boolean;
+  disabled: boolean;
+  onApprove: () => void;
+  onReject: () => void;
+}) {
+  const duration = formatOtDuration(item?.worked_ot_minutes);
+  const status = item?.ot_approval_status?.replace(/_/g, " ") || "Pending";
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent
+        overlayClassName="bg-slate-900/20"
+        className="max-h-[min(85vh,40rem)] w-[min(32rem,calc(100vw-2rem))] max-w-lg gap-0 overflow-y-auto rounded-2xl p-0"
+      >
+        <DialogHeader className="border-b border-slate-100 px-5 pb-4 pr-12 pt-5 text-left">
+          <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-[#9CA3AF]">
+            Overtime approval
+          </p>
+          <DialogTitle className="text-lg font-semibold tracking-tight text-[#111827]">
+            {item?.employee_name ?? "Request"}
+          </DialogTitle>
+          <span className="mt-2 inline-flex w-fit rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium capitalize text-[#4B5563]">
+            {status}
+          </span>
+        </DialogHeader>
+        {item ? (
+          <div className="space-y-5 px-5 py-5">
+            <ReviewField label="Employee">{item.employee_name}</ReviewField>
+            <ReviewField label="Request">
+              <p>
+                {item.work_date ? formatDisplayDate(item.work_date) : "Shift"}
+                {item.shift_name ? ` · ${item.shift_name}` : ""}
+              </p>
+              <p className="text-[#4B5563]">
+                In {formatTime(item.time_in, timeZone)} · Out{" "}
+                {formatTime(item.time_out, timeZone)}
+              </p>
+              {duration ? (
+                <p className="mt-2 font-medium text-[var(--owner-navy)]">
+                  Worked OT {duration}
+                </p>
+              ) : null}
+            </ReviewField>
           </div>
-        </div>
-      ) : (
-        <div className="mt-3 flex flex-wrap gap-2">
-          <button
-            type="button"
-            className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-60"
-            disabled={approving || rejecting}
-            onClick={onApprove}
-          >
-            {approving ? "Approving…" : "Approve"}
-          </button>
-          <button
-            type="button"
-            className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-[#374151]"
-            disabled={approving || rejecting}
-            onClick={onOpenReject}
-          >
-            Reject
-          </button>
-        </div>
-      )}
-    </div>
+        ) : null}
+        <DialogFooter className="border-t border-slate-100 px-5 py-4 sm:justify-end">
+          <ReviewDecisionButtons
+            approveLabel={approving ? "Approving…" : "Approve"}
+            rejectLabel={rejecting ? "Rejecting…" : "Reject"}
+            disabled={disabled}
+            onApprove={onApprove}
+            onReject={onReject}
+          />
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
