@@ -9,15 +9,20 @@ from app.models.employee import Employee
 from app.models.face_embedding import EmployeeFaceEmbedding
 from app.models.face_liveness import FaceLivenessChallenge
 from app.models.holiday import Holiday
+from app.models.leave_allowance import BusinessLeaveAllowance
+from app.models.leave_entitlement import EmployeeLeaveEntitlement
 from app.models.leave_policy import BusinessLeavePolicy
 from app.models.leave_request import LeaveRequest
 from app.models.notification import Notification
-from app.models.payroll import BusinessPayrollConfig, Payslip, PayrollRun, Position
+from app.models.device_push_token import DevicePushToken
+from app.models.payroll import BusinessPayrollConfig, Payslip, PayrollRun, Position, PositionPayConfig
 from app.models.payroll_adjustment import PayrollAdjustment
+from app.models.daily_workday_rate_resolution import DailyWorkdayRateResolution
 from app.models.rest_day_policy import BusinessRestDayPolicy
 from app.models.scheduling import Shift, ShiftAssignment
 from app.models.schedule_template import ScheduleTemplate, ScheduleTemplateEntry
 from app.models.user import User
+from app.models.password_reset import PasswordResetChallenge
 from app.models.activity_log import ActivityLog
 from app.models.registration_document import RegistrationDocument
 
@@ -33,10 +38,13 @@ __all__ = [
     "EmployeeFaceEmbedding",
     "FaceLivenessChallenge",
     "Position",
+    "PositionPayConfig",
     "BusinessPayrollConfig",
     "BusinessAttendancePolicy",
     "BusinessRestDayPolicy",
     "BusinessLeavePolicy",
+    "BusinessLeaveAllowance",
+    "EmployeeLeaveEntitlement",
     "Holiday",
     "Shift",
     "ShiftAssignment",
@@ -46,9 +54,11 @@ __all__ = [
     "AttendanceCorrectionRequest",
     "LeaveRequest",
     "Notification",
+    "DevicePushToken",
     "PayrollRun",
     "Payslip",
     "PayrollAdjustment",
+    "DailyWorkdayRateResolution",
     "ActivityLog",
     "RegistrationDocument",
 ]

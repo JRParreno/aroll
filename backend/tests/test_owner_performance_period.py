@@ -485,3 +485,71 @@ def test_noshow_cutoff_uses_business_local_now_not_utc_wall_clock():
 
     assert result.summary.absent_shifts == 1
     assert result.summary.assigned_shifts == 1
+
+def test_period_week_returns_matching_late_event_with_punches():
+    business_id = uuid4()
+    user = SimpleNamespace(business_id=business_id, role="owner")
+    employee = _employee(business_id)
+    shift = _shift(business_id)
+    day = date(2026, 7, 10)  # Friday
+    assignment = _assignment(employee.id, day, shift)
+    record = _record(
+        business_id,
+        assignment.id,
+        time_in=datetime(2026, 7, 10, 8, 42),
+        time_out=datetime(2026, 7, 10, 16, 5),
+        status=AttendanceStatus.late,
+    )
+    db = _mock_performance_db(
+        employees=[employee],
+        assignment_rows=[(assignment, shift)],
+        records=[record],
+    )
+    now = datetime(2026, 7, 10, 18, 0, tzinfo=ZoneInfo("Asia/Manila"))
+
+    with (
+        patch("app.api.owner_performance.business_now", return_value=now),
+        patch("app.api.owner_performance.business_today", return_value=day),
+    ):
+        result = get_owner_performance(db=db, user=user, period="week")
+
+    assert result.summary.late_clock_ins == 1
+    late_events = [event for event in result.events if event.category == "late"]
+    assert len(late_events) == 1
+    assert late_events[0].full_name == employee.full_name
+    assert late_events[0].time_in == record.time_in
+    assert late_events[0].time_out == record.time_out
+
+
+def test_period_year_includes_year_to_date_on_time_event():
+    business_id = uuid4()
+    user = SimpleNamespace(business_id=business_id, role="owner")
+    employee = _employee(business_id)
+    shift = _shift(business_id)
+    jan_day = date(2026, 1, 5)
+    assignment = _assignment(employee.id, jan_day, shift)
+    record = _record(
+        business_id,
+        assignment.id,
+        time_in=datetime(2026, 1, 5, 8, 0),
+        time_out=datetime(2026, 1, 5, 16, 0),
+        status=AttendanceStatus.complete,
+    )
+    db = _mock_performance_db(
+        employees=[employee],
+        assignment_rows=[(assignment, shift)],
+        records=[record],
+    )
+    now = datetime(2026, 3, 15, 12, 0, tzinfo=ZoneInfo("Asia/Manila"))
+
+    with (
+        patch("app.api.owner_performance.business_now", return_value=now),
+        patch(
+            "app.api.owner_performance.business_today",
+            return_value=date(2026, 3, 15),
+        ),
+    ):
+        result = get_owner_performance(db=db, user=user, period="year")
+
+    assert result.summary.on_time_clock_ins == 1
+    assert any(event.category == "on_time" for event in result.events)

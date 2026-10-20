@@ -19,11 +19,16 @@ Rules encoded here:
   offsets late.
 - OT minimum is applied to remaining OT after balancing. It is a
   qualification threshold and is never subtracted from payable minutes.
-- OT pay uses owner overtime_per_minute × (1 + premium%/100).
-- OT premium is 0% on ordinary days and rest days. The only extra premium
-  is a holiday's own ot_premium_percent. NULL/unconfigured holiday OT
-  premium is 0%. Business ordinary/rest-day OT percent fields are legacy
-  and are not read.
+- Which minutes qualify as overtime is the scheduled shift end, then the
+  business OT minimum and optional late balancing. A shift shorter than
+  eight hours still qualifies past its own scheduled end. Eight hours is
+  not an overtime threshold.
+- How those minutes are priced follows overtime_calculation_method.
+  The default, flat_per_minute, uses the owner's overtime_per_minute.
+  hourly_statutory prices the same minutes from the basic hourly rate
+  and the day factor. The owner rate is not replaced unless that method
+  is selected. A flat rate can be below the handbook minimum; that
+  conflict is not silently corrected.
 - scheduled_paid_minutes is the canonical paid entitlement for a shift.
   Unpaid break minutes reduce it; paid breaktime does not. OT still starts
   at the original scheduled shift end.
@@ -38,6 +43,8 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta
 from typing import Any, Sequence
+
+from app.models.enums import HolidayRulesMode, HolidayType
 
 _TERMINAL_ASSIGNMENT_STATUSES = frozenset({"absent", "incomplete", "on_leave"})
 
@@ -191,16 +198,174 @@ def early_departure_minutes(
     return max((scheduled_end - time_out).total_seconds() / 60.0, 0.0)
 
 
+FLAT_PER_MINUTE = "flat_per_minute"
+HOURLY_STATUTORY = "hourly_statutory"
+
+
+def resolve_overtime_calculation_method(config: Any) -> str:
+    """Owner OT pricing method. Missing or unknown values stay flat.
+
+    `holiday_rules_mode` is not this setting. Holiday classification and
+    the overtime price are separate owner choices. Missing or invalid
+    values stay on the saved peso-per-minute rate. The stored peso rate
+    itself is not changed.
+    """
+    raw = getattr(config, "overtime_calculation_method", None) if config is not None else None
+    value = _enum_value(raw)
+    if value == HOURLY_STATUTORY:
+        return HOURLY_STATUTORY
+    return FLAT_PER_MINUTE
+
+
 def overtime_pay_amount(
     overtime_minutes: float,
     ot_rate_per_minute: float,
     premium_percent: float,
 ) -> float:
-    """Owner OT ₱/minute × (1 + premium/100) × qualifying minutes."""
+    """Owner ₱/minute × (1 + premium/100) × qualifying minutes.
+
+    This is the flat_per_minute payslip method. The premium argument is
+    the holiday's own ot_premium_percent, or 0 on ordinary and rest days.
+    """
     minutes = max(float(overtime_minutes or 0), 0.0)
     rate = max(float(ot_rate_per_minute or 0), 0.0)
     premium = max(float(premium_percent or 0), 0.0)
     return minutes * rate * (1.0 + premium / 100.0)
+
+
+def _enum_value(value: Any) -> str:
+    if value is None:
+        return ""
+    return str(getattr(value, "value", value))
+
+
+def overtime_rate_factors(
+    *,
+    holiday: Any,
+    is_rest_day: bool,
+    rest_premium_percent: float,
+    rules_mode: Any = None,
+) -> tuple[float, float]:
+    """Return (day_factor, overtime_factor) for one classified workday.
+
+    OT hourly rate = basic hourly rate × day_factor × overtime_factor.
+    The day factor is the multiple that already applies to an hour on
+    that kind of day. The overtime factor is applied once to that rate.
+    Holiday pay and rest-day premium for scheduled hours stay outside
+    this amount, so those premiums are not added again here.
+
+    Handbook on Workers' Statutory Monetary Benefits (2024 edition):
+    ordinary OT is 125% of the basic hourly rate; OT on a rest day,
+    special non-working day, or regular holiday is 130% of the hourly
+    rate on that day. A special day on a rest day is 150% of basic for
+    the day, then × 130%. A regular holiday on a rest day is the
+    holiday rate × the rest-day rate, then × 130%.
+    """
+    rest_ratio = max(float(rest_premium_percent or 0.0), 0.0) / 100.0
+    rest_factor = 1.0 + rest_ratio
+    if holiday is None:
+        if is_rest_day:
+            return rest_factor, 1.30
+        return 1.0, 1.25
+
+    raw_multiplier = getattr(holiday, "pay_multiplier", 1.0)
+    try:
+        multiplier = float(raw_multiplier if raw_multiplier is not None else 1.0)
+    except (TypeError, ValueError):
+        multiplier = 1.0
+    if multiplier <= 0:
+        multiplier = 1.0
+
+    holiday_type = _enum_value(getattr(holiday, "holiday_type", None))
+    custom = _enum_value(rules_mode) == HolidayRulesMode.custom_company.value
+    if (
+        holiday_type == HolidayType.special_non_working.value
+        and is_rest_day
+        and not custom
+    ):
+        return 1.50, 1.30
+    if is_rest_day and (
+        holiday_type == HolidayType.regular.value
+        or holiday_type == HolidayType.company.value
+        or custom
+    ):
+        return multiplier * rest_factor, 1.30
+    return multiplier, 1.30
+
+
+def statutory_overtime_pay_amount(
+    overtime_minutes: float,
+    basic_hourly_rate: float,
+    *,
+    holiday: Any = None,
+    is_rest_day: bool = False,
+    rest_premium_percent: float = 0.0,
+    rules_mode: Any = None,
+) -> float:
+    """Qualifying minutes priced at the basic hourly rate and day factors."""
+    minutes = max(float(overtime_minutes or 0), 0.0)
+    hourly = max(float(basic_hourly_rate or 0), 0.0)
+    if minutes <= 0.0 or hourly <= 0.0:
+        return 0.0
+    day_factor, overtime_factor = overtime_rate_factors(
+        holiday=holiday,
+        is_rest_day=is_rest_day,
+        rest_premium_percent=rest_premium_percent,
+        rules_mode=rules_mode,
+    )
+    return (minutes / 60.0) * hourly * day_factor * overtime_factor
+
+
+def scheduled_premium_amounts(
+    earned: float,
+    *,
+    holiday: Any,
+    is_rest_day: bool,
+    rest_premium_percent: float,
+    rules_mode: Any = None,
+    worked_multiplier: float | None = None,
+) -> tuple[float, float]:
+    """Premiums above basic for scheduled hours: (holiday, rest).
+
+    A rest day alone uses the saved percent of basic. A holiday that is
+    not a rest day uses the saved multiplier minus the basic amount.
+    Under Philippine labor rules, a regular holiday on a rest day pays the
+    rest percent on the holiday rate, so a 2.00 multiplier and 30% rest
+    premium total 260% of basic. A special non-working day on a rest day
+    is 150% of basic once; the rest percent is not added again. Company
+    holidays and custom rules stay additive.
+    """
+    base = max(float(earned or 0.0), 0.0)
+    if base <= 0.0:
+        return 0.0, 0.0
+    rest_ratio = max(float(rest_premium_percent or 0.0), 0.0) / 100.0
+    if holiday is None:
+        if is_rest_day:
+            return 0.0, base * rest_ratio
+        return 0.0, 0.0
+
+    raw_multiplier = (
+        worked_multiplier
+        if worked_multiplier is not None
+        else getattr(holiday, "pay_multiplier", 1.0)
+    )
+    try:
+        multiplier = float(raw_multiplier if raw_multiplier is not None else 1.0)
+    except (TypeError, ValueError):
+        multiplier = 1.0
+    if multiplier <= 0.0:
+        multiplier = 1.0
+    holiday_premium = max(base * (multiplier - 1.0), 0.0)
+    if not is_rest_day:
+        return holiday_premium, 0.0
+
+    holiday_type = _enum_value(getattr(holiday, "holiday_type", None))
+    custom = _enum_value(rules_mode) == HolidayRulesMode.custom_company.value
+    if holiday_type == HolidayType.special_non_working.value and not custom:
+        return base * 0.50, 0.0
+    if holiday_type == HolidayType.regular.value and not custom:
+        return holiday_premium, base * multiplier * rest_ratio
+    return holiday_premium, base * rest_ratio
 
 
 def hours_worked_from_payable_minutes(payable_minutes: float) -> float:

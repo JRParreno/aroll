@@ -22,6 +22,7 @@ class OwnerSetupScreen extends StatelessWidget {
       'payroll' => Icons.payments_outlined,
       'attendance_policy' => Icons.fact_check_outlined,
       'holidays' => Icons.event_outlined,
+      'leave_policy' => Icons.event_busy_outlined,
       'location' => Icons.location_on_outlined,
       _ => Icons.settings_outlined,
     };
@@ -34,6 +35,7 @@ class OwnerSetupScreen extends StatelessWidget {
       'payroll' => 'Choose pay frequency and pay rules.',
       'attendance_policy' => 'Set on-time, late, absent, and overtime rules.',
       'holidays' => 'Add holidays your business follows.',
+      'leave_policy' => 'Set paid or unpaid leave and advance notice.',
       'location' => 'Set your workplace and attendance distance.',
       _ => 'Open this setup section.',
     };
@@ -55,7 +57,7 @@ class OwnerSetupScreen extends StatelessWidget {
               child: FilledButton(
                 onPressed: () =>
                     context.push('/owner/setup-wizard?step=menu'),
-                style: SetupUi.primaryButton,
+                style: SetupUi.primaryButtonOf(context),
                 child: const Text('Open Setup Wizard'),
               ),
             ),
@@ -86,7 +88,7 @@ class OwnerSetupScreen extends StatelessWidget {
               SizedBox(
                 width: double.infinity,
                 child: FilledButton(
-                  style: SetupUi.primaryButton,
+                  style: SetupUi.primaryButtonOf(context),
                   onPressed: () => context.go('/owner/home'),
                   child: const Text('Continue to Dashboard'),
                 ),

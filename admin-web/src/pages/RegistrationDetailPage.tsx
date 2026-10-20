@@ -36,8 +36,16 @@ import {
   approveRegistration,
   getRegistration,
   rejectRegistration,
+  sendRegistrationApprovalEmail,
 } from "@/lib/api";
 import { formatBusinessType } from "@/lib/registrationDocuments";
+import {
+  OTHER_REJECTION_REASON_ID,
+  REGISTRATION_REJECTION_REASONS,
+  buildRejectionPayload,
+  canConfirmRejection,
+  toggleRejectionReason,
+} from "@/lib/registrationRejectionReasons";
 
 export function RegistrationDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -45,7 +53,13 @@ export function RegistrationDetailPage() {
   const qc = useQueryClient();
 
   const [rejectOpen, setRejectOpen] = useState(false);
-  const [reason, setReason] = useState("");
+  const [selectedReasons, setSelectedReasons] = useState<string[]>([]);
+  const [otherExplanation, setOtherExplanation] = useState("");
+  const [emailDialog, setEmailDialog] = useState<{
+    businessName: string;
+    ownerEmail: string;
+    navigateOnClose: boolean;
+  } | null>(null);
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ["registration", id],
@@ -55,23 +69,77 @@ export function RegistrationDetailPage() {
 
   const approve = useMutation({
     mutationFn: () => approveRegistration(id!),
-    onSuccess: (res: { business_code: string }) => {
+    onSuccess: (res: { business_code: string; owner_email: string }) => {
       toast.success(`Approved. Business code: ${res.business_code}`);
       qc.invalidateQueries({ queryKey: ["registrations"] });
       qc.invalidateQueries({ queryKey: ["businesses"] });
-      navigate("/admin/registrations");
+      qc.invalidateQueries({ queryKey: ["registration", id] });
+      setEmailDialog({
+        businessName: data?.business_name ?? "this business",
+        ownerEmail: res.owner_email,
+        navigateOnClose: true,
+      });
     },
     onError: () => toast.error("Approval failed"),
   });
 
+  const sendEmail = useMutation({
+    mutationFn: () => sendRegistrationApprovalEmail(id!),
+    onSuccess: (res) => {
+      toast.success(`Login instructions sent to ${res.recipient}`);
+      const shouldNavigate = emailDialog?.navigateOnClose === true;
+      setEmailDialog(null);
+      if (shouldNavigate) {
+        navigate("/admin/registrations");
+      }
+    },
+    onError: (error: unknown) => {
+      const detail =
+        error &&
+        typeof error === "object" &&
+        "response" in error &&
+        error.response &&
+        typeof error.response === "object" &&
+        "data" in error.response &&
+        error.response.data &&
+        typeof error.response.data === "object" &&
+        "detail" in error.response.data
+          ? String((error.response.data as { detail: unknown }).detail)
+          : "Could not send the login email. Approval is unchanged.";
+      toast.error(detail);
+    },
+  });
+
+  function closeEmailDialog() {
+    const shouldNavigate = emailDialog?.navigateOnClose === true;
+    setEmailDialog(null);
+    if (shouldNavigate) {
+      navigate("/admin/registrations");
+    }
+  }
+
   const reject = useMutation({
-    mutationFn: () => rejectRegistration(id!, reason.trim()),
-    onSuccess: () => {
-      toast.success("Registration rejected");
+    mutationFn: () =>
+      rejectRegistration(id!, buildRejectionPayload(selectedReasons, otherExplanation)),
+    onSuccess: (res) => {
+      if (res.email_status === "sent") {
+        toast.success(
+          res.recipient
+            ? `Registration rejected. The owner was notified at ${res.recipient}.`
+            : "Registration rejected. The owner was notified."
+        );
+      } else {
+        toast.success("Registration rejected");
+        toast.error(
+          res.email_error ||
+            "The rejection email could not be sent. The application remains rejected."
+        );
+      }
       qc.invalidateQueries({ queryKey: ["registrations"] });
       qc.invalidateQueries({ queryKey: ["registration", id] });
       setRejectOpen(false);
-      setReason("");
+      setSelectedReasons([]);
+      setOtherExplanation("");
     },
     onError: () => toast.error("Rejection failed"),
   });
@@ -134,6 +202,22 @@ export function RegistrationDetailPage() {
                   Reject
                 </Button>
               </>
+            ) : data.status === "approved" ||
+              data.application_status === "approved" ? (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() =>
+                  setEmailDialog({
+                    businessName: data.business_name,
+                    ownerEmail: data.owner_email,
+                    navigateOnClose: false,
+                  })
+                }
+              >
+                <Mail className="mr-2 h-4 w-4" />
+                Send login email
+              </Button>
             ) : undefined
           }
         />
@@ -244,7 +328,7 @@ export function RegistrationDetailPage() {
                 <h2 className="text-sm font-semibold text-red-800">
                   Rejection Reason
                 </h2>
-                <p className="mt-2 text-sm leading-relaxed text-red-700">
+                <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-red-700">
                   {data.rejection_reason}
                 </p>
               </section>
@@ -265,30 +349,128 @@ export function RegistrationDetailPage() {
         </div>
       </div>
 
-      <Dialog open={rejectOpen} onOpenChange={setRejectOpen}>
+      <Dialog
+        open={emailDialog !== null}
+        onOpenChange={(open) => {
+          if (!open && !sendEmail.isPending) {
+            closeEmailDialog();
+          }
+        }}
+      >
         <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Business Registration Approved</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            The registration for {emailDialog?.businessName} has been approved
+            successfully.
+          </p>
+          <p className="text-sm text-muted-foreground">
+            Would you like to send the Business Code and first-login
+            instructions to {emailDialog?.ownerEmail} now?
+          </p>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={sendEmail.isPending}
+              onClick={closeEmailDialog}
+            >
+              Not Now
+            </Button>
+            <Button
+              type="button"
+              disabled={sendEmail.isPending}
+              onClick={() => sendEmail.mutate()}
+            >
+              {sendEmail.isPending ? "Sending…" : "Send Email"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={rejectOpen}
+        onOpenChange={(open) => {
+          if (reject.isPending) return;
+          setRejectOpen(open);
+          if (!open) {
+            setSelectedReasons([]);
+            setOtherExplanation("");
+          }
+        }}
+      >
+        <DialogContent className="max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Reject Registration</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
-            Provide a clear reason so the business owner understands why this
-            request was declined.
+            Select one or more reasons. These will be included in the rejection
+            email sent to the business owner.
           </p>
-          <Input
-            placeholder="Enter rejection reason"
-            value={reason}
-            onChange={(e) => setReason(e.target.value)}
-          />
+          <div className="space-y-2">
+            {REGISTRATION_REJECTION_REASONS.map((option) => {
+              const checked = selectedReasons.includes(option.id);
+              return (
+                <label
+                  key={option.id}
+                  className={`flex cursor-pointer items-start gap-3 rounded-lg border px-3 py-2.5 text-sm ${
+                    checked
+                      ? "border-[#1E3A5F] bg-[#EAF2FB]"
+                      : "border-slate-200 bg-white"
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    className="mt-0.5 h-4 w-4 accent-[#1E3A5F]"
+                    checked={checked}
+                    disabled={reject.isPending}
+                    onChange={() =>
+                      setSelectedReasons((current) =>
+                        toggleRejectionReason(current, option.id)
+                      )
+                    }
+                  />
+                  <span className="leading-5 text-[#1F2937]">{option.label}</span>
+                </label>
+              );
+            })}
+          </div>
+          {selectedReasons.includes(OTHER_REJECTION_REASON_ID) && (
+            <Input
+              placeholder="Briefly explain the other reason"
+              value={otherExplanation}
+              disabled={reject.isPending}
+              onChange={(e) => setOtherExplanation(e.target.value)}
+            />
+          )}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setRejectOpen(false)}>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={reject.isPending}
+              onClick={() => setRejectOpen(false)}
+            >
               Cancel
             </Button>
             <Button
+              type="button"
               variant="destructive"
-              disabled={!reason.trim() || reject.isPending}
-              onClick={() => reject.mutate()}
+              disabled={
+                !canConfirmRejection(selectedReasons, otherExplanation) ||
+                reject.isPending
+              }
+              onClick={() => {
+                if (
+                  reject.isPending ||
+                  !canConfirmRejection(selectedReasons, otherExplanation)
+                ) {
+                  return;
+                }
+                reject.mutate();
+              }}
             >
-              Confirm Reject
+              {reject.isPending ? "Rejecting…" : "Confirm Rejection"}
             </Button>
           </DialogFooter>
         </DialogContent>

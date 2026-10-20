@@ -5,13 +5,15 @@ import {
   CalendarOff,
   ChevronRight,
   Clock3,
+  ClipboardList,
+  FileText,
   MapPin,
   ShieldCheck,
   UserRoundCog,
 } from "lucide-react";
 import { Link } from "react-router-dom";
-import { Card, CardContent } from "@/components/ui/card";
 import {
+  OwnerCard,
   OwnerPage,
   OwnerPageContent,
   OwnerPageHeader,
@@ -50,7 +52,8 @@ const setupSections = [
   },
   {
     title: "Holiday Management",
-    description: "Company holidays, paid leave, and special non-working days.",
+    description:
+      "Holiday calendar, holiday rules, and how holiday pay works in Aroll+.",
     to: "/owner/setup-wizard?step=4",
     icon: CalendarDays,
   },
@@ -59,6 +62,18 @@ const setupSections = [
     description: "Set which leave types are Paid Leave or Unpaid Leave.",
     to: "/owner/settings/leave-policy",
     icon: CalendarOff,
+  },
+  {
+    title: "Consent Configuration",
+    description: "Workplace consent documents, required flags, and custom catalogs.",
+    to: "/owner/settings/consents",
+    icon: FileText,
+  },
+  {
+    title: "Audit History",
+    description: "Read-only history of account and workplace activity.",
+    to: "/owner/settings/audit-history",
+    icon: ClipboardList,
   },
   {
     title: "Account Settings",
@@ -84,31 +99,29 @@ export function OwnerBusinessSetupsPage() {
 
       <OwnerPageContent>
         <section>
-          <h2 className="mb-4 text-sm font-medium uppercase tracking-wide text-[#6B7280]">
-            Settings Modules
-          </h2>
+          <h2 className="owner-section-kicker">Settings Modules</h2>
           <div className="grid gap-4 md:grid-cols-2">
             {setupSections.map((section) => {
               const Icon = section.icon;
 
               return (
                 <Link key={section.title} to={section.to} className="block">
-                  <Card className="h-full rounded-2xl border-slate-200 shadow-sm transition hover:border-slate-300 hover:bg-[#FAFBFC]">
-                    <CardContent className="flex items-center gap-4 p-5">
-                      <span className="rounded-xl bg-[#F3F6FA] p-2 text-[#1E3A5F]">
+                  <OwnerCard className="group h-full transition hover:border-[color-mix(in_srgb,var(--owner-accent)_32%,white)] hover:shadow-[0_8px_24px_rgba(15,23,42,0.06)]">
+                    <div className="flex items-center gap-4 p-5">
+                      <span className="owner-icon-well h-11 w-11 shrink-0">
                         <Icon className="h-5 w-5" />
                       </span>
                       <span className="min-w-0 flex-1">
-                        <span className="block text-sm font-semibold text-[#1F2937]">
+                        <span className="block text-sm font-semibold text-[#1F2937] group-hover:text-[var(--owner-navy)]">
                           {section.title}
                         </span>
-                        <span className="mt-1 block text-xs leading-5 text-[#6B7280]">
+                        <span className="owner-section-subtitle mt-1 block text-[0.8125rem] leading-5">
                           {section.description}
                         </span>
                       </span>
-                      <ChevronRight className="h-5 w-5 shrink-0 text-[#9CA3AF]" />
-                    </CardContent>
-                  </Card>
+                      <ChevronRight className="h-5 w-5 shrink-0 text-[#9CA3AF] transition group-hover:translate-x-0.5 group-hover:text-[var(--owner-navy)]" />
+                    </div>
+                  </OwnerCard>
                 </Link>
               );
             })}

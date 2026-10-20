@@ -7,11 +7,13 @@ from app.api import (
     businesses,
     consents,
     employee_mobile,
+    employee_password_reset,
     employees,
     face,
     holidays,
     leave_requests,
     notifications,
+    owner_activity_logs,
     owner_performance,
     owner_reports,
     payroll_adjustments,
@@ -26,6 +28,8 @@ from app.api import (
 
 api_router = APIRouter(prefix="/api/v1")
 api_router.include_router(auth.router)
+api_router.include_router(employee_password_reset.router)
+api_router.include_router(employee_password_reset.owner_router)
 api_router.include_router(public_legal.router)
 api_router.include_router(public_consents.router)
 api_router.include_router(consents.router)
@@ -48,5 +52,6 @@ api_router.include_router(schedule_reuse.templates_router)
 api_router.include_router(positions.router)
 api_router.include_router(holidays.router)
 api_router.include_router(owner_performance.router)
+api_router.include_router(owner_activity_logs.router)
 api_router.include_router(owner_reports.router)
 api_router.include_router(payroll_adjustments.router)

@@ -40,14 +40,21 @@ def adjustments_editable(period_end: date, *, today: date | None = None) -> bool
     return (today or date.today()) <= period_end
 
 
+_DEFAULT_FINALIZED_MESSAGE = (
+    "This payroll period is already finalized. "
+    "Adjustments cannot be created, changed, or deleted."
+)
+
+
 def raise_if_period_finalized(
     db: Session,
     *,
     business_id: uuid.UUID,
     period_start: date,
     period_end: date,
+    message: str | None = None,
 ) -> None:
-    """Reject adjustment writes once a PayrollRun exists for this period."""
+    """Reject writes once a PayrollRun exists for this period."""
     from app.services.payroll_snapshot import find_finalized_run_for_period
 
     run = find_finalized_run_for_period(
@@ -62,11 +69,36 @@ def raise_if_period_finalized(
         status_code=409,
         detail={
             "code": "payroll_finalized",
-            "message": (
-                "This payroll period is already finalized. "
-                "Adjustments cannot be created, changed, or deleted."
-            ),
+            "message": message or _DEFAULT_FINALIZED_MESSAGE,
         },
+    )
+
+
+def raise_if_work_date_period_finalized(
+    db: Session,
+    *,
+    business_id: uuid.UUID,
+    work_date: date | None,
+    message: str,
+) -> None:
+    """Resolve the pay period for ``work_date`` and reject if that period is finalized.
+
+    Uses the same ``resolve_pay_period`` + ``find_finalized_run_for_period``
+    path as OT approval and adjustment locks. Prefer assignment ``work_date``.
+    """
+    if work_date is None:
+        return
+    from app.models.payroll import BusinessPayrollConfig
+    from app.services.pay_period import resolve_pay_period
+
+    config = db.get(BusinessPayrollConfig, business_id)
+    period_start, period_end = resolve_pay_period(config, today=work_date)
+    raise_if_period_finalized(
+        db,
+        business_id=business_id,
+        period_start=period_start,
+        period_end=period_end,
+        message=message,
     )
 
 
@@ -273,6 +305,12 @@ def create_adjustment(
     db.add(row)
     db.commit()
     db.refresh(row)
+    try:
+        from app.services.activity_notifications import notify_payroll_adjustment_event
+
+        notify_payroll_adjustment_event(db, row, action="added")
+    except Exception:
+        pass
     return row
 
 
@@ -324,6 +362,18 @@ def update_adjustment(
     if abs(float(row.amount) - amount_value) > 0.0001:
         row.previous_amount = float(row.amount)
 
+    previous_description = row.description
+    next_description = (
+        description.strip() or None if description is not None else previous_description
+    )
+    changed = (
+        row.kind != kind_norm
+        or row.type_key != type_norm
+        or (row.custom_name or None) != (custom or None)
+        or abs(float(row.amount) - amount_value) > 0.0001
+        or (previous_description or None) != (next_description or None)
+    )
+
     row.kind = kind_norm
     row.type_key = type_norm
     row.custom_name = custom
@@ -334,6 +384,15 @@ def update_adjustment(
     row.updated_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(row)
+    if changed:
+        try:
+            from app.services.activity_notifications import (
+                notify_payroll_adjustment_event,
+            )
+
+            notify_payroll_adjustment_event(db, row, action="changed")
+        except Exception:
+            pass
     return row
 
 
@@ -368,6 +427,12 @@ def soft_delete_adjustment(
     row.deleted_at = datetime.now(timezone.utc)
     row.deleted_by = actor_id
     db.commit()
+    try:
+        from app.services.activity_notifications import notify_payroll_adjustment_event
+
+        notify_payroll_adjustment_event(db, row, action="removed")
+    except Exception:
+        pass
 
 
 def preset_catalog() -> dict:

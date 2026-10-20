@@ -8,13 +8,14 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 const _tokenKey = 'aroll_token';
 const _businessCodeKey = 'aroll_business_code';
+const _triedBasesKey = 'aroll_tried_bases';
 
 class ApiClient {
   ApiClient(this._storage, this._appState) {
-    final base = dotenv.env['API_BASE_URL'] ?? _defaultApiBaseUrl();
+    final bases = _apiBaseCandidates();
     _dio = Dio(
       BaseOptions(
-        baseUrl: base,
+        baseUrl: bases.first,
         connectTimeout: const Duration(seconds: 15),
         receiveTimeout: const Duration(seconds: 15),
         headers: {'Content-Type': 'application/json'},
@@ -41,6 +42,13 @@ class ApiClient {
           handler.next(options);
         },
         onError: (error, handler) async {
+          if (_isUnreachable(error)) {
+            final retried = await _retryWithNextBase(error);
+            if (retried != null) {
+              handler.resolve(retried);
+              return;
+            }
+          }
           if (error.response?.statusCode == 401 &&
               !_skipUnauthorizedHandling(error.requestOptions.path)) {
             // Deduplicate: concurrent expired requests all return 401 at once.
@@ -88,7 +96,31 @@ class ApiClient {
     if (path.startsWith('/')) {
       return '$apiOrigin$path';
     }
-    return '$apiOrigin/${path}';
+    return '$apiOrigin/$path';
+  }
+
+  Future<Response<dynamic>?> _retryWithNextBase(DioException error) async {
+    final tried = List<String>.from(
+      error.requestOptions.extra[_triedBasesKey] as List<dynamic>? ??
+          [_dio.options.baseUrl],
+    );
+    for (final candidate in _apiBaseCandidates()) {
+      if (tried.contains(candidate)) continue;
+      debugPrint(
+        '[ApiClient] ${error.requestOptions.path} unreachable at '
+        '${_dio.options.baseUrl}; retrying $candidate',
+      );
+      _dio.options.baseUrl = candidate;
+      final opts = error.requestOptions;
+      opts.baseUrl = candidate;
+      opts.extra[_triedBasesKey] = [...tried, candidate];
+      try {
+        return await _dio.fetch(opts);
+      } on DioException catch (retryError) {
+        if (!_isUnreachable(retryError)) rethrow;
+      }
+    }
+    return null;
   }
 
   Future<void> saveToken(String token) {
@@ -123,9 +155,29 @@ bool _skipUnauthorizedHandling(String path) {
       path == '/auth/me';
 }
 
+bool _isUnreachable(DioException error) {
+  return error.type == DioExceptionType.connectionError ||
+      error.type == DioExceptionType.connectionTimeout;
+}
+
 String _defaultApiBaseUrl() {
   if (Platform.isAndroid) {
     return 'http://10.0.2.2:8000/api/v1';
   }
   return 'http://127.0.0.1:8000/api/v1';
+}
+
+List<String> _apiBaseCandidates() {
+  final configured = dotenv.env['API_BASE_URL']?.trim();
+  final seen = <String>{};
+  final ordered = <String>[];
+  for (final candidate in [
+    if (configured != null && configured.isNotEmpty) configured,
+    _defaultApiBaseUrl(),
+    'http://127.0.0.1:8000/api/v1',
+    'http://10.0.2.2:8000/api/v1',
+  ]) {
+    if (seen.add(candidate)) ordered.add(candidate);
+  }
+  return ordered;
 }

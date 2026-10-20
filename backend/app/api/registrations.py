@@ -73,10 +73,22 @@ def create_registration(
                 400,
                 "A rejected application exists for this email. Please resubmit your documents.",
             )
-        raise HTTPException(
-            400,
-            "An active registration already exists for this email",
-        )
+        if existing.application_status == ApplicationStatus.pending:
+            raise HTTPException(
+                400,
+                "An active registration already exists for this email",
+            )
+        # Resume the in-progress draft so an already-approved email can
+        # register another business, and so Next is idempotent.
+        existing.business_name = body.business_name
+        existing.owner_name = body.owner_name
+        existing.owner_email = email
+        existing.owner_phone = body.owner_phone
+        existing.proposed_address = body.proposed_address
+        existing.business_type = body.business_type
+        db.commit()
+        db.refresh(existing)
+        return registration_response(existing)
 
     reg = BusinessRegistration(
         business_name=body.business_name,

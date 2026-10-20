@@ -182,6 +182,8 @@ def _upsert_position(db: Session, business: Business) -> Position:
         row = Position(
             business_id=business.id,
             title="QA Tester",
+            employment_type=EmploymentType.full_time,
+            pay_basis=PayBasis.daily,
             daily_rate=500.00,
             hourly_rate=None,
             description="Internal test employee role",

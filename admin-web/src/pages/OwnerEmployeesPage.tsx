@@ -9,15 +9,18 @@ import {
   Filter,
   IdCard,
   KeyRound,
-  Phone,
+  Mail,
   Plus,
   Scale,
   Search,
+  Trash2,
+  UserMinus,
   UserPlus,
 } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
+import { ConfirmActionDialog } from "@/components/ConfirmActionDialog";
 import { SimulatedBadge } from "@/components/tenant/SimulatedBadge";
 import { useTenantMode } from "@/lib/tenantMode";
 import { Button } from "@/components/ui/button";
@@ -37,6 +40,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   createEmployee,
+  deactivateEmployee,
   deleteEmployee,
   getWeeklySchedule,
   listEmployees,
@@ -45,6 +49,7 @@ import {
   updateEmployee,
   type Employee,
   type PayBasis,
+  type Position,
 } from "@/lib/api";
 import { getWeekStart, toDateKey } from "@/components/owner/schedule/scheduleUtils";
 import { cn } from "@/lib/utils";
@@ -54,7 +59,6 @@ type EmployeeForm = {
   positionTitle: string;
   positionId: string;
   employmentType: "full_time" | "part_time";
-  phone: string;
   payBasis: PayBasis;
   dailyRate: string;
   hourlyRate: string;
@@ -66,7 +70,6 @@ const emptyForm: EmployeeForm = {
   positionTitle: "",
   positionId: "",
   employmentType: "full_time",
-  phone: "",
   payBasis: "daily",
   dailyRate: "",
   hourlyRate: "",
@@ -94,10 +97,85 @@ function ratePayload(form: EmployeeForm) {
   };
 }
 
+function positionPayConfigs(position: Position | undefined) {
+  if (!position) return [] as NonNullable<Position["pay_configs"]>;
+  if (position.pay_configs && position.pay_configs.length > 0) {
+    return position.pay_configs;
+  }
+  const legacy: NonNullable<Position["pay_configs"]> = [];
+  if (position.daily_rate != null && Number(position.daily_rate) > 0) {
+    legacy.push({
+      id: `${position.id}-daily`,
+      pay_basis: "daily",
+      rate: Number(position.daily_rate),
+    });
+  }
+  if (position.hourly_rate != null && Number(position.hourly_rate) > 0) {
+    legacy.push({
+      id: `${position.id}-hourly`,
+      pay_basis: "hourly",
+      rate: Number(position.hourly_rate),
+    });
+  }
+  return legacy;
+}
+
+function configRateForBasis(
+  position: Position | undefined,
+  basis: PayBasis
+): number | null {
+  if (basis !== "daily" && basis !== "hourly") return null;
+  const match = positionPayConfigs(position).find((c) => c.pay_basis === basis);
+  return match != null ? Number(match.rate) : null;
+}
+
+function availablePayBases(position: Position | undefined): Array<"daily" | "hourly"> {
+  return positionPayConfigs(position).map((c) => c.pay_basis);
+}
+
+function ratesFromConfig(
+  position: Position | undefined,
+  basis: PayBasis
+): Pick<EmployeeForm, "dailyRate" | "hourlyRate" | "monthlySalary"> {
+  if (basis === "daily") {
+    const rate = configRateForBasis(position, "daily");
+    return {
+      dailyRate: rate != null ? String(rate) : "",
+      hourlyRate: "",
+      monthlySalary: "",
+    };
+  }
+  if (basis === "hourly") {
+    const rate = configRateForBasis(position, "hourly");
+    return {
+      dailyRate: "",
+      hourlyRate: rate != null ? String(rate) : "",
+      monthlySalary: "",
+    };
+  }
+  return { dailyRate: "", hourlyRate: "", monthlySalary: "" };
+}
+
 function formPayReady(form: EmployeeForm) {
   if (form.payBasis === "daily") return Number(form.dailyRate) > 0;
   if (form.payBasis === "hourly") return Number(form.hourlyRate) > 0;
   return Number(form.monthlySalary) > 0;
+}
+
+function formCompensationReady(
+  form: EmployeeForm,
+  positions: Position[],
+  { allowLegacyMonthly = false }: { allowLegacyMonthly?: boolean } = {}
+) {
+  if (!form.positionId.trim()) return false;
+  const selected = positions.find((p) => p.id === form.positionId);
+  if (!selected) return false;
+  if (form.payBasis === "monthly") {
+    return allowLegacyMonthly && formPayReady(form);
+  }
+  const bases = availablePayBases(selected);
+  if (!bases.includes(form.payBasis as "daily" | "hourly")) return false;
+  return formPayReady(form);
 }
 
 function initials(name: string) {
@@ -174,7 +252,7 @@ function DetailInfoRow({
 }) {
   return (
     <div className="flex items-start gap-3 px-1 py-2.5">
-      <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-[#EEF3F8] text-[#1F456B]">
+      <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-[var(--owner-well)] text-[var(--owner-navy)]">
         {icon}
       </div>
       <div className="min-w-0 flex-1">
@@ -202,6 +280,9 @@ export function OwnerEmployeesPage() {
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
   const [newCredentials, setNewCredentials] = useState<Employee | null>(null);
   const [employeeToDelete, setEmployeeToDelete] = useState<Employee | null>(null);
+  const [employeeToDeactivate, setEmployeeToDeactivate] = useState<Employee | null>(
+    null
+  );
   const [showDetailsPassword, setShowDetailsPassword] = useState(false);
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const [form, setForm] = useState<EmployeeForm>(emptyForm);
@@ -241,7 +322,6 @@ export function OwnerEmployeesPage() {
     return employees.filter((employee) =>
       [
         employee.full_name,
-        employee.phone ?? "",
         employee.position_title ?? "",
         employee.employment_type,
         employee.username,
@@ -265,54 +345,61 @@ export function OwnerEmployeesPage() {
 
   function pickPosition(nextPositionId: string, target: "create" | "edit") {
     const selected = positions.find((position) => position.id === nextPositionId);
-    if (target === "create") {
-      setForm((current) => ({
-        ...current,
-        positionId: nextPositionId,
-        positionTitle: selected?.title ?? "",
-        // Prefill Position default; owner may override before save.
-        dailyRate:
-          current.payBasis === "daily" && selected?.daily_rate != null
-            ? String(selected.daily_rate)
-            : current.dailyRate,
-        hourlyRate:
-          current.payBasis === "hourly" && selected?.hourly_rate != null
-            ? String(selected.hourly_rate)
-            : current.hourlyRate,
-      }));
-      return;
-    }
-    // Edit: suggest Position default only when daily pay and rate still empty /
-    // still matches the previous position default — never silently overwrite.
-    setEditForm((current) => {
-      const prev = positions.find((p) => p.id === current.positionId);
-      const stillDefault =
-        current.payBasis === "daily" &&
-        (!current.dailyRate.trim() ||
-          (prev?.daily_rate != null &&
-            Number(current.dailyRate) === Number(prev.daily_rate)));
-      const stillDefaultHourly =
-        current.payBasis === "hourly" &&
-        (!current.hourlyRate.trim() ||
-          (prev?.hourly_rate != null &&
-            Number(current.hourlyRate) === Number(prev.hourly_rate)));
+    const bases = availablePayBases(selected);
+    const preferred =
+      bases.length === 1 ? bases[0] : bases.includes("daily") ? "daily" : bases[0];
+    const apply = (current: EmployeeForm): EmployeeForm => {
+      if (!nextPositionId || !selected) {
+        return {
+          ...current,
+          positionId: "",
+          positionTitle: "",
+          payBasis: "daily",
+          dailyRate: "",
+          hourlyRate: "",
+          monthlySalary: target === "edit" ? current.monthlySalary : "",
+        };
+      }
+      if (!preferred) {
+        return {
+          ...current,
+          positionId: nextPositionId,
+          positionTitle: selected.title,
+          payBasis: current.payBasis === "monthly" ? "monthly" : "daily",
+          dailyRate: current.payBasis === "daily" ? current.dailyRate : "",
+          hourlyRate: current.payBasis === "hourly" ? current.hourlyRate : "",
+          monthlySalary:
+            current.payBasis === "monthly" ? current.monthlySalary : "",
+        };
+      }
       return {
         ...current,
         positionId: nextPositionId,
-        positionTitle: selected?.title ?? "",
-        dailyRate:
-          stillDefault && selected?.daily_rate != null
-            ? String(selected.daily_rate)
-            : current.dailyRate,
-        hourlyRate: stillDefaultHourly
-          ? selected?.hourly_rate != null
-            ? String(selected.hourly_rate)
-            : prev?.hourly_rate != null
-              ? ""
-              : current.hourlyRate
-          : current.hourlyRate,
+        positionTitle: selected.title,
+        payBasis: preferred,
+        ...ratesFromConfig(selected, preferred),
       };
+    };
+    if (target === "create") setForm(apply);
+    else setEditForm(apply);
+  }
+
+  function changeEmploymentType(
+    nextType: EmployeeForm["employmentType"],
+    target: "create" | "edit"
+  ) {
+    const apply = (current: EmployeeForm): EmployeeForm => ({
+      ...current,
+      employmentType: nextType,
+      positionId: "",
+      positionTitle: "",
+      payBasis: "daily",
+      dailyRate: "",
+      hourlyRate: "",
+      monthlySalary: target === "edit" ? current.monthlySalary : "",
     });
+    if (target === "create") setForm(apply);
+    else setEditForm(apply);
   }
 
   const create = useMutation({
@@ -322,7 +409,6 @@ export function OwnerEmployeesPage() {
         position_title: form.positionTitle,
         position_id: form.positionId || undefined,
         employment_type: form.employmentType,
-        phone: form.phone.trim() || undefined,
         ...ratePayload(form),
       }),
     onSuccess: (employee) => {
@@ -342,7 +428,6 @@ export function OwnerEmployeesPage() {
         position_title: editForm.positionTitle,
         position_id: editForm.positionId || undefined,
         employment_type: editForm.employmentType,
-        phone: editForm.phone.trim() || null,
         ...ratePayload(editForm),
       });
     },
@@ -398,26 +483,70 @@ export function OwnerEmployeesPage() {
     onError: () => toast.error("Failed to restore employee"),
   });
 
+  const deactivate = useMutation({
+    mutationFn: deactivateEmployee,
+    onSuccess: () => {
+      toast.success("Employee deactivated");
+      setEmployeeToDeactivate(null);
+      setDetailsEmployee(null);
+      qc.invalidateQueries({ queryKey: ["employees"] });
+    },
+    onError: (error: unknown) => {
+      const detail =
+        typeof error === "object" &&
+        error !== null &&
+        "response" in error &&
+        typeof error.response === "object" &&
+        error.response !== null &&
+        "data" in error.response &&
+        typeof error.response.data === "object" &&
+        error.response.data !== null &&
+        "detail" in error.response.data
+          ? String(error.response.data.detail)
+          : "Failed to deactivate employee";
+      toast.error(detail);
+    },
+  });
+
   function openEdit(employee: Employee) {
     const matchedPosition =
       positions.find((position) => position.id === (employee.position_id ?? "")) ??
       positions.find(
         (position) => position.title === (employee.position_title ?? "")
       );
+    const employeeBasis = (employee.pay_basis ?? "daily") as PayBasis;
+    const bases = availablePayBases(matchedPosition);
+    const basisStillConfigured =
+      employeeBasis === "daily" || employeeBasis === "hourly"
+        ? bases.includes(employeeBasis)
+        : false;
+
+    let payBasis = employeeBasis;
+    let dailyRate =
+      employee.daily_rate != null ? String(employee.daily_rate) : "";
+    let hourlyRate =
+      employee.hourly_rate != null ? String(employee.hourly_rate) : "";
+    let monthlySalary =
+      employee.monthly_salary != null ? String(employee.monthly_salary) : "";
+
+    if (matchedPosition && basisStillConfigured) {
+      const configured = ratesFromConfig(matchedPosition, employeeBasis);
+      payBasis = employeeBasis;
+      dailyRate = configured.dailyRate;
+      hourlyRate = configured.hourlyRate;
+      monthlySalary = "";
+    }
+
     setEditingEmployee(employee);
     setEditForm({
       fullName: employee.full_name,
       positionTitle: employee.position_title ?? "",
       positionId: matchedPosition?.id ?? employee.position_id ?? "",
       employmentType: employee.employment_type as EmployeeForm["employmentType"],
-      phone: employee.phone ?? "",
-      payBasis: employee.pay_basis ?? "daily",
-      dailyRate:
-        employee.daily_rate != null ? String(employee.daily_rate) : "",
-      hourlyRate:
-        employee.hourly_rate != null ? String(employee.hourly_rate) : "",
-      monthlySalary:
-        employee.monthly_salary != null ? String(employee.monthly_salary) : "",
+      payBasis,
+      dailyRate,
+      hourlyRate,
+      monthlySalary,
     });
   }
 
@@ -433,11 +562,15 @@ export function OwnerEmployeesPage() {
   }
 
   const createReady =
-    form.fullName.trim() && form.positionTitle.trim() && formPayReady(form);
+    form.fullName.trim() &&
+    form.positionId.trim() &&
+    form.positionTitle.trim() &&
+    formCompensationReady(form, positions);
   const editReady =
     editForm.fullName.trim() &&
+    editForm.positionId.trim() &&
     editForm.positionTitle.trim() &&
-    formPayReady(editForm);
+    formCompensationReady(editForm, positions, { allowLegacyMonthly: true });
 
   return (
     <OwnerPage>
@@ -464,7 +597,7 @@ export function OwnerEmployeesPage() {
           <Search className="h-4 w-4 shrink-0 text-[#9CA3AF]" />
           <input
             className="h-full flex-1 bg-transparent text-sm text-[#1F2937] outline-none placeholder:text-[#9CA3AF]"
-            placeholder="Search by name, role, phone, or username..."
+            placeholder="Search by name, role, or username..."
             value={query}
             onChange={(event) => {
               setQuery(event.target.value);
@@ -480,7 +613,7 @@ export function OwnerEmployeesPage() {
         {isLoading ? (
           <p className="text-sm text-[#6B7280]">Loading employees...</p>
         ) : visibleEmployees.length === 0 ? (
-          <div className="owner-card p-8 text-center text-sm text-[#6B7280]">
+          <div className="owner-empty">
             No employees found.
           </div>
         ) : (
@@ -500,7 +633,7 @@ export function OwnerEmployeesPage() {
                   <div className="flex gap-3 px-4 pt-4">
                     <EmployeeAvatar employee={employee} />
                     <div className="min-w-0 flex-1">
-                      <h2 className="truncate text-sm font-semibold text-[#1F2937] group-hover:text-[#1E3A5F]">
+                      <h2 className="truncate text-sm font-semibold text-[#1F2937] group-hover:text-[var(--owner-navy)]">
                         {employee.full_name}
                       </h2>
                       {isDemo ? (
@@ -508,13 +641,13 @@ export function OwnerEmployeesPage() {
                           <SimulatedBadge label="Demo Employee" />
                         </p>
                       ) : null}
+                      {employee.recovery_email ? (
+                        <div className="mt-2 flex items-center gap-2 text-[11px] font-medium text-[#6B7280]">
+                          <Mail className="h-3.5 w-3.5 shrink-0 text-[#9CA3AF]" />
+                          <span className="truncate">{employee.recovery_email}</span>
+                        </div>
+                      ) : null}
                       <div className="mt-2 flex items-center gap-2 text-[11px] font-medium text-[#6B7280]">
-                        <Phone className="h-3.5 w-3.5 shrink-0 text-[#9CA3AF]" />
-                        <span className="truncate">
-                          {employee.phone || "No contact number"}
-                        </span>
-                      </div>
-                      <div className="mt-1 flex items-center gap-2 text-[11px] font-medium text-[#6B7280]">
                         <BriefcaseBusiness className="h-3.5 w-3.5 shrink-0 text-[#9CA3AF]" />
                         <span className="truncate">
                           {workdays || "No assigned workdays this week"}
@@ -581,7 +714,7 @@ export function OwnerEmployeesPage() {
             <DialogTitle className="text-[#111827]">Add Employee</DialogTitle>
           </DialogHeader>
           <div className="space-y-5 px-6 py-5">
-            <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#1F456B] to-[#2A5A84] p-4 text-white shadow-sm">
+            <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[var(--owner-button)] to-[var(--owner-navy-soft)] p-4 text-white shadow-sm">
               <div className="pointer-events-none absolute -right-8 -top-10 h-32 w-32 rounded-full bg-white/10" />
               <div className="pointer-events-none absolute -bottom-10 right-10 h-24 w-24 rounded-full bg-[#B9D8EE]/20" />
               <div className="relative flex items-center gap-4">
@@ -625,6 +758,9 @@ export function OwnerEmployeesPage() {
                 positions={positions}
                 onChange={setForm}
                 onPositionChange={(id) => pickPosition(id, "create")}
+                onEmploymentTypeChange={(type) =>
+                  changeEmploymentType(type, "create")
+                }
               />
             </div>
           </div>
@@ -637,7 +773,7 @@ export function OwnerEmployeesPage() {
               Cancel
             </Button>
             <Button
-              className="rounded-xl bg-[#1F456B] hover:bg-[#2A5A84]"
+              className="rounded-xl bg-[var(--owner-button)] hover:bg-[var(--owner-navy-soft)]"
               onClick={() => create.mutate()}
               disabled={!createReady || create.isPending}
             >
@@ -659,7 +795,7 @@ export function OwnerEmployeesPage() {
           </DialogHeader>
           {editingEmployee && (
             <div className="space-y-5 px-6 py-5">
-              <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#1F456B] to-[#2A5A84] p-4 text-white shadow-sm">
+              <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[var(--owner-button)] to-[var(--owner-navy-soft)] p-4 text-white shadow-sm">
                 <div className="pointer-events-none absolute -right-8 -top-10 h-32 w-32 rounded-full bg-white/10" />
                 <div className="pointer-events-none absolute -bottom-10 right-10 h-24 w-24 rounded-full bg-[#B9D8EE]/20" />
                 <div className="relative flex items-center gap-4">
@@ -702,6 +838,9 @@ export function OwnerEmployeesPage() {
                   positions={positions}
                   onChange={setEditForm}
                   onPositionChange={(id) => pickPosition(id, "edit")}
+                  onEmploymentTypeChange={(type) =>
+                    changeEmploymentType(type, "edit")
+                  }
                 />
               </div>
             </div>
@@ -715,7 +854,7 @@ export function OwnerEmployeesPage() {
               Cancel
             </Button>
             <Button
-              className="rounded-xl bg-[#1F456B] text-white hover:bg-[#17395D]"
+              className="rounded-xl bg-[var(--owner-button)] text-white hover:bg-[var(--owner-navy-soft)]"
               onClick={() => update.mutate()}
               disabled={!editReady || update.isPending}
             >
@@ -748,7 +887,7 @@ export function OwnerEmployeesPage() {
 
                 return (
                   <>
-                    <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#1F456B] to-[#2A5A84] p-4 text-white shadow-sm">
+                    <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[var(--owner-button)] to-[var(--owner-navy-soft)] p-4 text-white shadow-sm">
                       <div className="pointer-events-none absolute -right-8 -top-10 h-32 w-32 rounded-full bg-white/10" />
                       <div className="pointer-events-none absolute -bottom-10 right-10 h-24 w-24 rounded-full bg-[#B9D8EE]/20" />
                       <div className="relative flex items-center gap-4">
@@ -799,11 +938,6 @@ export function OwnerEmployeesPage() {
 
                     <div className="divide-y divide-slate-100 rounded-2xl border border-slate-200 bg-[#FAFBFC] px-3 py-1">
                       <DetailInfoRow
-                        icon={<Phone className="h-4 w-4" />}
-                        label="Contact"
-                        value={detailsEmployee.phone || "No contact number"}
-                      />
-                      <DetailInfoRow
                         icon={<BriefcaseBusiness className="h-4 w-4" />}
                         label="Role"
                         value={detailsEmployee.position_title ?? "No role"}
@@ -822,6 +956,11 @@ export function OwnerEmployeesPage() {
                         icon={<KeyRound className="h-4 w-4" />}
                         label="Username"
                         value={detailsEmployee.username}
+                      />
+                      <DetailInfoRow
+                        icon={<Mail className="h-4 w-4" />}
+                        label="Recovery email"
+                        value={detailsEmployee.recovery_email || "Not registered yet"}
                       />
                     </div>
 
@@ -944,73 +1083,119 @@ export function OwnerEmployeesPage() {
               <>
                 <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
                   <Button
-                    className="rounded-xl bg-[#1F456B] text-white hover:bg-[#17395D]"
+                    className="rounded-xl bg-[var(--owner-button)] text-white hover:bg-[var(--owner-navy-soft)]"
                     onClick={() => {
                       openEdit(detailsEmployee);
                       setDetailsEmployee(null);
                     }}
+                    disabled={
+                      deactivate.isPending || restore.isPending || remove.isPending
+                    }
                   >
                     Edit
                   </Button>
                 </div>
-                {detailsEmployee.status === "inactive" ? (
-                  <Button
-                    className="rounded-xl bg-[#1F456B] text-white hover:bg-[#17395D]"
-                    onClick={() => restore.mutate(detailsEmployee.id)}
-                    disabled={restore.isPending}
-                  >
-                    Restore
-                  </Button>
-                ) : (
+                <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+                  {detailsEmployee.status === "inactive" ? (
+                    <Button
+                      className="rounded-xl bg-[var(--owner-button)] text-white hover:bg-[var(--owner-navy-soft)]"
+                      onClick={() => restore.mutate(detailsEmployee.id)}
+                      disabled={
+                        restore.isPending || deactivate.isPending || remove.isPending
+                      }
+                    >
+                      Restore
+                    </Button>
+                  ) : (
+                    <Button
+                      className="rounded-xl bg-[var(--owner-button)] text-white hover:bg-[var(--owner-navy-soft)]"
+                      onClick={() => setEmployeeToDeactivate(detailsEmployee)}
+                      disabled={
+                        deactivate.isPending || restore.isPending || remove.isPending
+                      }
+                    >
+                      Deactivate
+                    </Button>
+                  )}
                   <Button
                     className="rounded-xl"
                     variant="destructive"
                     onClick={() => setEmployeeToDelete(detailsEmployee)}
-                    disabled={remove.isPending}
+                    disabled={
+                      remove.isPending || deactivate.isPending || restore.isPending
+                    }
                   >
                     Delete
                   </Button>
-                )}
+                </div>
               </>
             )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      <Dialog
+      <ConfirmActionDialog
+        open={Boolean(employeeToDeactivate)}
+        onOpenChange={(open) => {
+          if (!open && !deactivate.isPending) setEmployeeToDeactivate(null);
+        }}
+        icon={<UserMinus className="h-5 w-5" strokeWidth={2.25} aria-hidden />}
+        title="Deactivate Employee?"
+        description="This will disable the employee's account and employee access. Their existing attendance and payroll history will be preserved. You can reactivate the employee later."
+        confirmLabel="Deactivate"
+        tone="primary"
+        cancelDisabled={deactivate.isPending}
+        confirmDisabled={deactivate.isPending}
+        onConfirm={() => {
+          if (employeeToDeactivate && !deactivate.isPending) {
+            deactivate.mutate(employeeToDeactivate.id);
+          }
+        }}
+      />
+
+      <ConfirmActionDialog
         open={Boolean(employeeToDelete)}
         onOpenChange={(open) => {
           if (!open && !remove.isPending) setEmployeeToDelete(null);
         }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Delete Employee</DialogTitle>
-          </DialogHeader>
-          <p className="text-sm text-[#6B7280]">
-            Are you sure you want to delete this employee? This action cannot be
-            undone.
-          </p>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setEmployeeToDelete(null)}
-              disabled={remove.isPending}
-            >
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={() => {
-                if (employeeToDelete) remove.mutate(employeeToDelete.id);
-              }}
-              disabled={remove.isPending}
-            >
-              Delete
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        icon={<Trash2 className="h-5 w-5" strokeWidth={2.25} aria-hidden />}
+        title="Permanently Delete Employee?"
+        description={
+          <div className="space-y-3 text-left">
+            <p>
+              This action permanently removes this employee from the business.
+            </p>
+            <div>
+              <p className="font-semibold text-[#4B5563]">
+                The following will be deleted:
+              </p>
+              <ul className="mt-1.5 list-disc space-y-1 pl-5">
+                <li>Employee profile and account access</li>
+                <li>Face and attendance access data</li>
+                <li>Attendance and schedule assignment records</li>
+                <li>Payroll adjustments</li>
+                <li>Employee schedule-template entries</li>
+              </ul>
+            </div>
+            <p>
+              Finalized payslips will be preserved for record-keeping, but they
+              will no longer be linked to this employee account.
+            </p>
+            <p className="font-medium text-[#B91C1C]">
+              This action cannot be undone. If you only want to prevent the
+              employee from accessing the system while keeping their records,
+              use Deactivate instead.
+            </p>
+          </div>
+        }
+        confirmLabel="Delete Permanently"
+        tone="danger"
+        cancelDisabled={remove.isPending}
+        confirmDisabled={remove.isPending}
+        onConfirm={() => {
+          if (employeeToDelete) remove.mutate(employeeToDelete.id);
+        }}
+      />
 
       <Dialog
         open={Boolean(newCredentials)}
@@ -1026,7 +1211,7 @@ export function OwnerEmployeesPage() {
           </DialogHeader>
           {newCredentials && (
             <div className="space-y-4 px-6 py-5">
-              <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#1F456B] to-[#2A5A84] p-4 text-white">
+              <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[var(--owner-button)] to-[var(--owner-navy-soft)] p-4 text-white">
                 <div className="pointer-events-none absolute -right-6 -top-8 h-24 w-24 rounded-full bg-white/10" />
                 <div className="relative flex items-center gap-3">
                   <div className="flex h-11 w-11 items-center justify-center rounded-full bg-white/15 ring-2 ring-[#B9D8EE]/40">
@@ -1068,7 +1253,7 @@ export function OwnerEmployeesPage() {
           )}
           <DialogFooter className="border-t border-slate-100 px-6 py-4 sm:justify-end">
             <Button
-              className="rounded-xl bg-[#1F456B] hover:bg-[#2A5A84]"
+              className="rounded-xl bg-[var(--owner-button)] hover:bg-[var(--owner-navy-soft)]"
               onClick={() => setNewCredentials(null)}
             >
               Done
@@ -1122,35 +1307,70 @@ function EmployeeFields({
   editing = false,
   onChange,
   onPositionChange,
+  onEmploymentTypeChange,
 }: {
   form: EmployeeForm;
-  positions: { id: string; title: string; daily_rate: number; hourly_rate?: number | null }[];
+  positions: Position[];
   editing?: boolean;
   onChange: (form: EmployeeForm) => void;
   onPositionChange: (positionId: string) => void;
+  onEmploymentTypeChange: (employmentType: EmployeeForm["employmentType"]) => void;
 }) {
   const fieldClass =
-    "h-11 rounded-xl border-slate-200 bg-white shadow-sm focus-visible:ring-[#1F456B]/30";
+    "h-11 rounded-xl border-slate-200 bg-white shadow-sm focus-visible:ring-[color-mix(in_srgb,var(--owner-navy)_30%,transparent)]";
   const selectClass =
-    "flex h-11 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm outline-none focus:border-[#1F456B] focus:ring-2 focus:ring-[#1F456B]/20";
+    "flex h-11 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm outline-none focus:border-[var(--owner-navy)] focus:ring-2 focus:ring-[color-mix(in_srgb,var(--owner-navy)_20%,transparent)]";
+
+  const configuredRoles = positions.filter(
+    (p) => p.employment_type === form.employmentType
+  );
+  const selected = positions.find((p) => p.id === form.positionId);
+  const roleOptions =
+    editing &&
+    selected &&
+    !configuredRoles.some((p) => p.id === selected.id)
+      ? [selected, ...configuredRoles]
+      : configuredRoles;
+
+  const bases = availablePayBases(selected);
+  const basisConfigured =
+    form.payBasis === "daily" || form.payBasis === "hourly"
+      ? bases.includes(form.payBasis)
+      : false;
+  const isLegacyMonthly = form.payBasis === "monthly";
+  const configuredRateLocked =
+    Boolean(form.positionId) && (basisConfigured || isLegacyMonthly);
+  const missingConfig =
+    Boolean(form.positionId) &&
+    !isLegacyMonthly &&
+    (bases.length === 0 || !basisConfigured);
+
+  const rateSummary =
+    form.payBasis === "hourly"
+      ? `Hourly · ₱${form.hourlyRate || "—"}/hr`
+      : form.payBasis === "monthly"
+        ? `Monthly · ₱${form.monthlySalary || "—"} (legacy)`
+        : `Daily · ₱${form.dailyRate || "—"}/day`;
 
   return (
     <div className="space-y-4">
       {!editing && (
         <div className="flex gap-3 rounded-xl border border-[#D7E6F5] bg-[#F3F8FD] px-3.5 py-3">
-          <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-white text-[#1F456B] shadow-sm">
+          <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-white text-[var(--owner-navy)] shadow-sm">
             <KeyRound className="h-4 w-4" />
           </div>
           <p className="text-[13px] leading-relaxed text-[#334155]">
             Username and temporary password are generated automatically after
             enrollment. You’ll get them to share once the employee is added.
+            Choose employment type, role, then pay basis — the rate comes from
+            Setup Wizard and cannot be typed here.
           </p>
         </div>
       )}
       {editing ? (
         <p className="text-sm text-[#6B7280]">
           Update the employee’s profile details below. Login credentials stay the
-          same.
+          same. Configured rates are read-only from Setup Wizard.
         </p>
       ) : null}
       <div className="space-y-2">
@@ -1167,60 +1387,17 @@ function EmployeeFields({
         />
       </div>
       <div className="space-y-2">
-        <Label className="text-xs font-semibold uppercase tracking-wide text-[#9CA3AF]" htmlFor="employee-phone">
-          Contact Number
-        </Label>
-        <Input
-          className={fieldClass}
-          id="employee-phone"
-          value={form.phone}
-          onChange={(event) =>
-            onChange({ ...form, phone: event.target.value })
-          }
-        />
-      </div>
-      <div className="space-y-2">
-        <Label className="text-xs font-semibold uppercase tracking-wide text-[#9CA3AF]" htmlFor="employee-position">
-          Position/Role
-        </Label>
-        {positions.length > 0 ? (
-          <select
-            id="employee-position"
-            className={selectClass}
-            value={form.positionId}
-            onChange={(event) => onPositionChange(event.target.value)}
-          >
-            <option value="">Select position</option>
-            {positions.map((position) => (
-              <option key={position.id} value={position.id}>
-                {position.title}
-              </option>
-            ))}
-          </select>
-        ) : (
-          <Input
-            className={fieldClass}
-            id="employee-position"
-            value={form.positionTitle}
-            onChange={(event) =>
-              onChange({ ...form, positionTitle: event.target.value })
-            }
-          />
-        )}
-      </div>
-      <div className="space-y-2">
         <Label className="text-xs font-semibold uppercase tracking-wide text-[#9CA3AF]" htmlFor="employee-type">
-          Employment Type
+          1. Employment Type
         </Label>
         <select
           id="employee-type"
           className={selectClass}
           value={form.employmentType}
           onChange={(event) =>
-            onChange({
-              ...form,
-              employmentType: event.target.value as EmployeeForm["employmentType"],
-            })
+            onEmploymentTypeChange(
+              event.target.value as EmployeeForm["employmentType"]
+            )
           }
         >
           <option value="full_time">Full-Time</option>
@@ -1228,113 +1405,99 @@ function EmployeeFields({
         </select>
       </div>
       <div className="space-y-2">
-        <Label
-          className="text-xs font-semibold uppercase tracking-wide text-[#9CA3AF]"
-          htmlFor="employee-pay-basis"
-        >
-          Pay Basis
+        <Label className="text-xs font-semibold uppercase tracking-wide text-[#9CA3AF]" htmlFor="employee-position">
+          2. Role / Position
         </Label>
-        <select
-          id="employee-pay-basis"
-          className={selectClass}
-          value={form.payBasis}
-          onChange={(event) => {
-            const payBasis = event.target.value as PayBasis;
-            const selected = positions.find((p) => p.id === form.positionId);
-            onChange({
-              ...form,
-              payBasis,
-              dailyRate:
-                payBasis === "daily" &&
-                !form.dailyRate.trim() &&
-                selected?.daily_rate != null
-                  ? String(selected.daily_rate)
-                  : form.dailyRate,
-              hourlyRate:
-                payBasis === "hourly" &&
-                !form.hourlyRate.trim() &&
-                selected?.hourly_rate != null
-                  ? String(selected.hourly_rate)
-                  : form.hourlyRate,
-            });
-          }}
-        >
-          <option value="daily">Daily</option>
-          <option value="hourly">Hourly</option>
-          <option value="monthly">Monthly</option>
-        </select>
+        {roleOptions.length > 0 ? (
+          <select
+            id="employee-position"
+            className={selectClass}
+            value={form.positionId}
+            onChange={(event) => onPositionChange(event.target.value)}
+          >
+            <option value="">Select role</option>
+            {roleOptions.map((position) => (
+              <option key={position.id} value={position.id}>
+                {position.title}
+                {!position.employment_type ? " (unclassified)" : ""}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <div className="rounded-xl border border-dashed border-slate-300 bg-white px-3 py-3 text-sm text-[#6B7280]">
+            No roles configured for{" "}
+            {form.employmentType === "part_time" ? "Part-time" : "Full-time"}.
+            Add them in Business Setup → Positions & Salary Rates.
+          </div>
+        )}
       </div>
-      {form.payBasis === "daily" ? (
+      {form.positionId ? (
         <div className="space-y-2">
           <Label
             className="text-xs font-semibold uppercase tracking-wide text-[#9CA3AF]"
-            htmlFor="employee-daily-rate"
+            htmlFor="employee-pay-basis"
           >
-            Daily Rate (₱)
+            3. Pay Basis
           </Label>
-          <Input
-            className={fieldClass}
-            id="employee-daily-rate"
-            type="number"
-            min="0"
-            step="0.01"
-            value={form.dailyRate}
-            onChange={(event) =>
-              onChange({ ...form, dailyRate: event.target.value })
+          <select
+            id="employee-pay-basis"
+            className={selectClass}
+            value={
+              isLegacyMonthly && !basisConfigured
+                ? "monthly"
+                : basisConfigured
+                  ? form.payBasis
+                  : ""
             }
-          />
-          <p className="text-xs text-[#6B7280]">
-            Prefills from the selected position. You can override it for this
-            employee. Payroll uses this employee daily rate (position rate is
-            fallback only).
-          </p>
+            onChange={(event) => {
+              const payBasis = event.target.value as PayBasis;
+              if (payBasis !== "daily" && payBasis !== "hourly") return;
+              onChange({
+                ...form,
+                payBasis,
+                ...ratesFromConfig(selected, payBasis),
+              });
+            }}
+          >
+            <option value="">Select pay basis</option>
+            {bases.map((basis) => (
+              <option key={basis} value={basis}>
+                {basis === "hourly" ? "Hourly" : "Daily"}
+              </option>
+            ))}
+            {isLegacyMonthly ? (
+              <option value="monthly">Monthly (legacy)</option>
+            ) : null}
+          </select>
+          {missingConfig ? (
+            <p className="text-xs text-amber-800">
+              This employee’s previous pay basis is no longer configured for
+              this role. Select a valid Daily or Hourly option before saving.
+            </p>
+          ) : null}
+          {isLegacyMonthly ? (
+            <p className="text-xs text-amber-800">
+              Monthly pay is a legacy employee setting. To change compensation,
+              select a configured Daily or Hourly option for this role.
+            </p>
+          ) : null}
         </div>
       ) : null}
-      {form.payBasis === "hourly" ? (
+      {configuredRateLocked || missingConfig ? (
         <div className="space-y-2">
-          <Label
-            className="text-xs font-semibold uppercase tracking-wide text-[#9CA3AF]"
-            htmlFor="employee-hourly-rate"
-          >
-            Hourly Rate (₱)
+          <Label className="text-xs font-semibold uppercase tracking-wide text-[#9CA3AF]">
+            4. Configured Rate
           </Label>
-          <Input
-            className={fieldClass}
-            id="employee-hourly-rate"
-            type="number"
-            min="0"
-            step="0.01"
-            value={form.hourlyRate}
-            onChange={(event) =>
-              onChange({ ...form, hourlyRate: event.target.value })
-            }
-          />
-          <p className="text-xs text-[#6B7280]">
-            Prefills from the selected position when an hourly rate is
-            configured. You can override it for this employee. Payroll uses this
-            employee hourly rate (position hourly rate is fallback only).
-          </p>
-        </div>
-      ) : null}
-      {form.payBasis === "monthly" ? (
-        <div className="space-y-2">
-          <Label
-            className="text-xs font-semibold uppercase tracking-wide text-[#9CA3AF]"
-            htmlFor="employee-monthly-salary"
-          >
-            Monthly Salary (₱)
-          </Label>
-          <Input
-            className={fieldClass}
-            id="employee-monthly-salary"
-            type="number"
-            min="0"
-            step="0.01"
-            value={form.monthlySalary}
-            onChange={(event) =>
-              onChange({ ...form, monthlySalary: event.target.value })
-            }
-          />
+          <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm font-medium text-[#1F2937]">
+            {rateSummary}
+            {missingConfig ? " · not in Setup Wizard" : ""}
+          </div>
+          {configuredRateLocked && !missingConfig ? (
+            <p className="text-xs text-[#6B7280]">
+              Rate is configured in Setup Wizard. To change this rate, update the
+              Setup Wizard configuration.
+            </p>
+          ) : null}
         </div>
       ) : null}
     </div>

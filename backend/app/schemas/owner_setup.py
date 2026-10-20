@@ -4,9 +4,13 @@ from uuid import UUID
 from pydantic import BaseModel, Field, model_validator
 
 from app.models.enums import (
+    EmploymentType,
     HolidayRulesMode,
     HolidayType,
+    LeaveType,
     MissingClockOutPolicy,
+    OvertimeCalculationMethod,
+    PayBasis,
     PayPeriodType,
     ShiftType,
     Weekday,
@@ -44,20 +48,91 @@ class ShiftResponse(BaseModel):
     employee_capacity: int
     color: str | None
     is_active: bool
+    has_in_progress_today: bool = False
 
     class Config:
         from_attributes = True
 
 
+def _validate_position_rates(
+    *,
+    pay_basis: PayBasis,
+    daily_rate: float | None,
+    hourly_rate: float | None,
+) -> None:
+    if pay_basis not in (PayBasis.daily, PayBasis.hourly):
+        raise ValueError(
+            "Position pay_basis must be daily or hourly. "
+            "Monthly pay remains employee-only."
+        )
+    if pay_basis == PayBasis.daily:
+        if daily_rate is None or daily_rate <= 0:
+            raise ValueError("daily_rate is required when pay_basis is daily.")
+    elif pay_basis == PayBasis.hourly:
+        if hourly_rate is None or hourly_rate <= 0:
+            raise ValueError("hourly_rate is required when pay_basis is hourly.")
+
+
+class PositionPayConfigPayload(BaseModel):
+    pay_basis: PayBasis
+    rate: float = Field(gt=0)
+
+    @model_validator(mode="after")
+    def _daily_or_hourly(self):
+        if self.pay_basis not in (PayBasis.daily, PayBasis.hourly):
+            raise ValueError(
+                "Position pay configurations must be daily or hourly. "
+                "Monthly pay remains employee-only."
+            )
+        return self
+
+
+class PositionPayConfigResponse(BaseModel):
+    id: str
+    pay_basis: PayBasis
+    rate: float
+
+
 class PositionCreate(BaseModel):
     title: str = Field(min_length=1, max_length=100)
-    daily_rate: float = Field(gt=0)
+    employment_type: EmploymentType
+    # Design B: preferred multi-config payload.
+    pay_configs: list[PositionPayConfigPayload] | None = None
+    # Legacy single-basis create (converted to one pay_config).
+    pay_basis: PayBasis | None = None
+    daily_rate: float | None = Field(default=None, gt=0)
     hourly_rate: float | None = Field(default=None, gt=0)
     description: str | None = None
+
+    @model_validator(mode="after")
+    def _rates_match_basis(self):
+        if self.pay_configs is not None:
+            if not self.pay_configs:
+                raise ValueError(
+                    "At least one pay configuration (Daily or Hourly) is required."
+                )
+            bases = [c.pay_basis for c in self.pay_configs]
+            if len(bases) != len(set(bases)):
+                raise ValueError(
+                    "Duplicate pay basis is not allowed for the same role."
+                )
+            return self
+        if self.pay_basis is None:
+            self.pay_basis = PayBasis.daily
+        _validate_position_rates(
+            pay_basis=self.pay_basis,
+            daily_rate=self.daily_rate,
+            hourly_rate=self.hourly_rate,
+        )
+        return self
 
 
 class PositionUpdate(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=100)
+    employment_type: EmploymentType | None = None
+    pay_configs: list[PositionPayConfigPayload] | None = None
+    # Legacy single-basis update fields (still accepted).
+    pay_basis: PayBasis | None = None
     daily_rate: float | None = Field(default=None, gt=0)
     hourly_rate: float | None = Field(default=None, gt=0)
     description: str | None = None
@@ -67,8 +142,12 @@ class PositionUpdate(BaseModel):
 class PositionResponse(BaseModel):
     id: str
     title: str
-    daily_rate: float
+    employment_type: EmploymentType | None = None
+    # Convenience mirrors of pay_configs for older clients.
+    pay_basis: PayBasis = PayBasis.daily
+    daily_rate: float | None = None
     hourly_rate: float | None = None
+    pay_configs: list[PositionPayConfigResponse] = []
     description: str | None
     is_active: bool
 
@@ -84,7 +163,9 @@ class PayrollConfigResponse(BaseModel):
     late_deduction_per_minute: float
     overtime_enabled: bool
     overtime_per_minute: float
+    overtime_calculation_method: str
     enable_late_overtime_balancing: bool
+    overtime_approval_required: bool
     # Stored for API compatibility. Active payroll OT premium does not read these.
     ordinary_ot_premium_percent: float
     rest_day_ot_premium_percent: float
@@ -103,8 +184,11 @@ class PayrollConfigUpdate(BaseModel):
     late_deduction_per_minute: float = 1.0
     overtime_enabled: bool = True
     overtime_per_minute: float = 1.0
+    # None = leave the stored method unchanged. Unknown values are rejected.
+    overtime_calculation_method: OvertimeCalculationMethod | None = None
     # Optional so older clients do not reset an existing setting.
     enable_late_overtime_balancing: bool | None = None
+    overtime_approval_required: bool | None = None
     # Stored for API compatibility. Active payroll OT premium does not read these.
     ordinary_ot_premium_percent: float | None = Field(default=None, ge=0)
     rest_day_ot_premium_percent: float | None = Field(default=None, ge=0)
@@ -200,11 +284,38 @@ class LeavePolicyResponse(BaseModel):
     business_id: UUID
     items: list[LeavePolicyItem]
     treatments: dict[str, bool]
+    minimum_advance_notice_days: int = 0
     updated_at: datetime | None = None
 
 
 class LeavePolicyUpdate(BaseModel):
     treatments: dict[str, bool]
+    minimum_advance_notice_days: int | None = Field(default=None, ge=0, le=365)
+
+
+class LeaveAllowanceItem(BaseModel):
+    leave_type: str
+    leave_type_label: str
+    enabled: bool
+    disabled: bool = False
+    configured: bool
+    allowance_days: int | None = None
+
+
+class LeaveAllowanceResponse(BaseModel):
+    year: int
+    items: list[LeaveAllowanceItem]
+
+
+class LeaveAllowanceWriteItem(BaseModel):
+    leave_type: LeaveType
+    enabled: bool
+    allowance_days: int | None = Field(default=None, ge=0, le=366)
+
+
+class LeaveAllowanceUpdate(BaseModel):
+    year: int = Field(ge=2000, le=2100)
+    items: list[LeaveAllowanceWriteItem]
 
 
 class HolidayCreate(BaseModel):

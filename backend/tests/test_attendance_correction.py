@@ -1,7 +1,7 @@
 """Unit tests for missed attendance correction workflow."""
 
 from datetime import date, datetime, time, timezone
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
@@ -204,12 +204,18 @@ def test_approve_creates_attendance_record():
 
     db.get.side_effect = get_side_effect
 
-    result = approve_correction(
-        db,
-        request_id=request.id,
-        reviewer=reviewer,
-        business=business,
-    )
+    with patch(
+        "app.services.payroll_snapshot.find_finalized_run_for_period",
+        return_value=None,
+    ), patch(
+        "app.services.ot_approval.sync_ot_approval_after_close",
+    ):
+        result = approve_correction(
+            db,
+            request_id=request.id,
+            reviewer=reviewer,
+            business=business,
+        )
     assert request.status == AttendanceCorrectionStatus.approved
     assert result["status"] == "approved"
     assert db.add.called
@@ -372,12 +378,18 @@ def test_approve_incomplete_keeps_official_clock_in():
 
     db.get.side_effect = get_side_effect
 
-    result = approve_correction(
-        db,
-        request_id=request.id,
-        reviewer=reviewer,
-        business=business,
-    )
+    with patch(
+        "app.services.payroll_snapshot.find_finalized_run_for_period",
+        return_value=None,
+    ), patch(
+        "app.services.ot_approval.sync_ot_approval_after_close",
+    ):
+        result = approve_correction(
+            db,
+            request_id=request.id,
+            reviewer=reviewer,
+            business=business,
+        )
     assert result["status"] == "approved"
     assert record.time_in == official_in
     assert record.time_out is not None

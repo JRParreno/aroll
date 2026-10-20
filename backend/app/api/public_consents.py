@@ -40,9 +40,10 @@ def get_public_consent_document(
 def get_public_consent_page(
     document_id: UUID,
     db: Annotated[Session, Depends(get_db)],
+    embed: bool = False,
 ):
     document = _published_document(db, document_id)
-    return render_document_html(document)
+    return render_document_html(document, embed=embed)
 
 
 @router.get("/{document_id}/file")

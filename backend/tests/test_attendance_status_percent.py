@@ -277,12 +277,18 @@ def test_correction_approve_recomputes_short_shift_complete():
 
     db.get.side_effect = get_side_effect
 
-    result = approve_correction(
-        db,
-        request_id=request.id,
-        reviewer=reviewer,
-        business=business,
-    )
+    with patch(
+        "app.services.payroll_snapshot.find_finalized_run_for_period",
+        return_value=None,
+    ), patch(
+        "app.services.ot_approval.sync_ot_approval_after_close",
+    ):
+        result = approve_correction(
+            db,
+            request_id=request.id,
+            reviewer=reviewer,
+            business=business,
+        )
     assert result["status"] == "approved"
     assert record.status == AttendanceStatus.complete
     assert record.time_out is not None
@@ -324,7 +330,12 @@ def test_owner_complete_attendance_recomputes_short_shift():
 
     db.get.side_effect = get_side_effect
 
-    with patch("app.services.missing_clock_out.create_log"):
+    with patch("app.services.missing_clock_out.create_log"), patch(
+        "app.services.payroll_snapshot.find_finalized_run_for_period",
+        return_value=None,
+    ), patch(
+        "app.services.ot_approval.sync_ot_approval_after_close",
+    ):
         updated = complete_incomplete_attendance(
             db,
             record_id=record.id,

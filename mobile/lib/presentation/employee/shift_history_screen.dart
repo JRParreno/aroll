@@ -1,8 +1,9 @@
-import 'package:aroll_mobile/core/di/injection.dart';
+﻿import 'package:aroll_mobile/core/di/injection.dart';
 import 'package:aroll_mobile/core/theme/business_brand_theme.dart';
 import 'package:aroll_mobile/domain/entities/employee_portal.dart';
 import 'package:aroll_mobile/domain/repositories/employee_repository.dart';
 import 'package:aroll_mobile/presentation/employee/employee_ui.dart';
+import 'package:aroll_mobile/presentation/shared/shift_history_grouping.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
@@ -131,8 +132,14 @@ class _ShiftHistoryScreenState extends State<ShiftHistoryScreen> {
     if (status == 'incomplete') {
       return 'Incomplete';
     }
+    if (status == 'holiday_paid') return 'Paid Holiday — Not Worked';
+    if (status == 'on_leave') {
+      final amount = item.shiftNet ?? item.earned;
+      if (amount != null && amount > 0) return 'Paid Leave';
+      if (amount != null) return 'Unpaid Leave';
+      return 'On Leave';
+    }
     if (status == 'absent') return 'Absent';
-    if (status == 'on_leave') return 'On Leave';
     if (status == 'overtime' || status == 'over_time') return 'Over Time';
     if (status == 'undertime' || status == 'under_time') return 'Under Time';
     if (status == 'late') return 'Late';
@@ -242,18 +249,49 @@ class _ShiftHistoryScreenState extends State<ShiftHistoryScreen> {
                       inCard: true,
                     )
                   else
-                    ...items.map(
-                      (item) => Padding(
-                        key: _keyForItem(item),
-                        padding: const EdgeInsets.only(bottom: 8),
-                        child: _HistoryCard(
-                          item: item,
-                          remark: remarkLabel(item),
-                          highlighted: _highlightedItemId == item.id,
-                          onRequestCorrection: () => _openCorrection(item),
-                        ),
-                      ),
-                    ),
+                    ...() {
+                      final entries = buildEmployeeShiftHistoryEntries(
+                        items: items,
+                        dateOf: (e) => e.date,
+                        shiftName: (e) => e.shiftName,
+                        scheduledStart: (e) => e.shiftStart,
+                      );
+                      return entries.map((entry) {
+                        if (entry is List<EmployeeShiftHistoryItem>) {
+                          final multi = entry;
+                          EmployeeShiftHistoryItem? focusChild;
+                          for (final e in multi) {
+                            if (e.id == _highlightedItemId) {
+                              focusChild = e;
+                              break;
+                            }
+                          }
+                          final keyItem = focusChild ?? multi.first;
+                          return Padding(
+                            key: _keyForItem(keyItem),
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: _MultiShiftHistoryCard(
+                              items: multi,
+                              remarkFor: remarkLabel,
+                              highlighted:
+                                  multi.any((e) => e.id == _highlightedItemId),
+                              onRequestCorrection: _openCorrection,
+                            ),
+                          );
+                        }
+                        final item = entry as EmployeeShiftHistoryItem;
+                        return Padding(
+                          key: _keyForItem(item),
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: _HistoryCard(
+                            item: item,
+                            remark: remarkLabel(item),
+                            highlighted: _highlightedItemId == item.id,
+                            onRequestCorrection: () => _openCorrection(item),
+                          ),
+                        );
+                      });
+                    }(),
                 ],
               ),
             );
@@ -606,7 +644,468 @@ class _FilterMenuButton extends StatelessWidget {
   }
 }
 
-class _HistoryCard extends StatelessWidget {
+class _MultiShiftHistoryCard extends StatelessWidget {
+  const _MultiShiftHistoryCard({
+    required this.items,
+    required this.remarkFor,
+    required this.onRequestCorrection,
+    this.highlighted = false,
+  });
+
+  final List<EmployeeShiftHistoryItem> items;
+  final String Function(EmployeeShiftHistoryItem) remarkFor;
+  final void Function(EmployeeShiftHistoryItem) onRequestCorrection;
+  final bool highlighted;
+
+  static const _moneyGreen = Color(0xFF16A34A);
+
+  String _hoursWorkedLabel(EmployeeShiftHistoryItem item) {
+    final worked = item.workedMinutes;
+    if (worked != null && worked > 0) {
+      final hours = worked / 60.0;
+      if ((hours - hours.round()).abs() < 0.05) {
+        return '${hours.round()} hrs';
+      }
+      return '${hours.toStringAsFixed(1)} hrs';
+    }
+    return '--';
+  }
+
+  String _rateUsedLabel(EmployeeShiftHistoryItem item) {
+    if (item.historicalRateRequired || item.dailyRateConflict) {
+      return 'Historical Rate Required';
+    }
+    if (item.rateUsed == null) return '—';
+    final basis = (item.payBasisUsed ?? '').toLowerCase();
+    final suffix = basis == 'hourly'
+        ? '/hour'
+        : basis == 'monthly'
+            ? '/month'
+            : '/day';
+    return '${money(item.rateUsed!)}$suffix';
+  }
+
+  String _earnedLabel(
+    EmployeeShiftHistoryItem item,
+    List<EmployeeShiftHistoryItem> siblings,
+  ) {
+    if (item.historicalRateRequired || item.dailyRateConflict) {
+      return 'Unresolved';
+    }
+    final face = presentShiftPayFromMap(
+      _shiftPayMap(item),
+      siblings.map(_shiftPayMap).toList(),
+    );
+    if (!face.showEarned || face.earned == null) return '—';
+    return money(face.earned!);
+  }
+
+  String _payBasisLabel(EmployeeShiftHistoryItem item) {
+    final basis = (item.payBasisUsed ?? '').toLowerCase();
+    if (basis == 'hourly') return 'Hourly';
+    if (basis == 'monthly') return 'Monthly';
+    if (basis == 'daily') return 'Daily';
+    return item.payBasisUsed?.isNotEmpty == true ? item.payBasisUsed! : '—';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final useReconciled =
+        items.isNotEmpty && items.every((e) => e.hasReconciledDayTotal);
+    final netSum = useReconciled
+        ? null
+        : sumAuthoritativeShiftNet(
+            items.map(
+              (e) => (
+                shiftNet: e.shiftNet,
+                historicalRateRequired:
+                    e.historicalRateRequired || e.dailyRateConflict,
+              ),
+            ),
+          );
+    final reconciledTotal = useReconciled ? items.first.reconciledDayTotal : null;
+    final unresolved = items.any(
+      (e) => e.historicalRateRequired || e.dailyRateConflict,
+    );
+    final finalLabel = unresolved
+        ? 'Unresolved'
+        : useReconciled
+            ? (reconciledTotal == null ? '—' : money(reconciledTotal))
+            : (netSum!.unresolved
+                ? 'Unresolved'
+                : (netSum.total == null ? '—' : money(netSum.total!)));
+    final equation = !unresolved &&
+            useReconciled &&
+            reconciledTotal != null
+        ? historyDayEquationFromMaps(
+            items.map(_shiftPayMap).toList(),
+            reconciledTotal,
+            money,
+          )
+        : (!useReconciled &&
+                netSum != null &&
+                !netSum.unresolved &&
+                netSum.parts.length >= 2 &&
+                netSum.total != null
+            ? '${netSum.parts.map(money).join(' + ')} = ${money(netSum.total!)}'
+            : null);
+
+    return Container(
+      decoration: BoxDecoration(
+        color: highlighted ? const Color(0xFFFFFBEB) : Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: highlighted
+              ? const Color(0xFFF59E0B)
+              : EmployeeColors.border,
+          width: highlighted ? 1.3 : 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.03),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Container(height: 3, color: const Color(0xFF0F766E)),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  DateFormat('MMMM d, yyyy').format(items.first.date),
+                  style: const TextStyle(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w800,
+                    color: EmployeeColors.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '${items.length} shifts',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: EmployeeColors.textMuted,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                if (dateLevelPayFromMaps(items.map(_shiftPayMap).toList())
+                    case final datePay?) ...[
+                  if (datePay.dailyEntitlement != null)
+                    _KvRow(
+                      label: 'Daily Entitlement',
+                      value: money(datePay.dailyEntitlement!),
+                      valueColor: const Color(0xFF16A34A),
+                    ),
+                  if (datePay.restDayPremium != null)
+                    _KvRow(
+                      label: 'Rest-Day Premium',
+                      value: money(datePay.restDayPremium!),
+                      valueColor: const Color(0xFF16A34A),
+                    ),
+                  if (datePay.holidayPay != null)
+                    _KvRow(
+                      label: 'Holiday Pay',
+                      value: money(datePay.holidayPay!),
+                      valueColor: const Color(0xFF16A34A),
+                    ),
+                  const SizedBox(height: 10),
+                ],
+                for (var i = 0; i < items.length; i++) ...[
+                  if (i > 0) const SizedBox(height: 10),
+                  _MultiShiftSection(
+                    title: shiftIndexLabel(i, items[i].shiftName),
+                    remark: remarkFor(items[i]),
+                    hoursLabel: _hoursWorkedLabel(items[i]),
+                    payBasisLabel: _payBasisLabel(items[i]),
+                    rateLabel: _rateUsedLabel(items[i]),
+                    earnedLabel: _earnedLabel(items[i], items),
+                    showEarned: presentShiftPayFromMap(
+                      _shiftPayMap(items[i]),
+                      items.map(_shiftPayMap).toList(),
+                    ).showEarned,
+                    item: items[i],
+                    siblings: items,
+                    onRequestCorrection: () =>
+                        onRequestCorrection(items[i]),
+                  ),
+                ],
+                const SizedBox(height: 12),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFECFDF5),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: const Color(0xFFA7F3D0)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        children: [
+                          const Text(
+                            'DAY TOTAL',
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 0.4,
+                              color: Color(0xFF065F46),
+                            ),
+                          ),
+                          const Spacer(),
+                          Text(
+                            finalLabel,
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w800,
+                              color: _moneyGreen,
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (equation != null) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          equation,
+                          style: const TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF047857),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MultiShiftSection extends StatefulWidget {
+  const _MultiShiftSection({
+    required this.title,
+    required this.remark,
+    required this.hoursLabel,
+    required this.payBasisLabel,
+    required this.rateLabel,
+    required this.earnedLabel,
+    required this.showEarned,
+    required this.item,
+    required this.siblings,
+    required this.onRequestCorrection,
+  });
+
+  final String title;
+  final String remark;
+  final String hoursLabel;
+  final String payBasisLabel;
+  final String rateLabel;
+  final String earnedLabel;
+  final bool showEarned;
+  final EmployeeShiftHistoryItem item;
+  final List<EmployeeShiftHistoryItem> siblings;
+  final VoidCallback onRequestCorrection;
+
+  @override
+  State<_MultiShiftSection> createState() => _MultiShiftSectionState();
+}
+
+class _MultiShiftSectionState extends State<_MultiShiftSection> {
+  bool _payDetailsOpen = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final item = widget.item;
+    final brand = BrandColors.of(context);
+    final rowFace = presentShiftPayFromMap(
+      _shiftPayMap(item),
+      widget.siblings.map(_shiftPayMap).toList(),
+    );
+    final hasPay = item.historicalRateRequired ||
+        item.dailyRateConflict ||
+        item.rateUsed != null ||
+        item.earned != null ||
+        item.expectedSalaryPay != null ||
+        item.payBasisUsed != null;
+    final isIncomplete = item.status.toLowerCase() == 'incomplete';
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFE8EEF4)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  widget.title,
+                  style: const TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w800,
+                    color: EmployeeColors.textPrimary,
+                  ),
+                ),
+              ),
+              EmployeeStatusChip(
+                label: widget.remark,
+                color: statusColor(item.status),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          _KvRow(
+            label: item.status == 'holiday_paid' ? 'Scheduled start' : 'Time In',
+            value: item.status == 'holiday_paid'
+                ? (item.shiftStart ?? '—')
+                : timeOnly(item.timeIn),
+          ),
+          const SizedBox(height: 4),
+          _KvRow(
+            label: item.status == 'holiday_paid' ? 'Scheduled end' : 'Time Out',
+            value: item.status == 'holiday_paid'
+                ? (item.shiftEnd ?? '—')
+                : timeOnly(item.timeOut),
+            emphasizeMissing:
+                item.status != 'holiday_paid' && isIncomplete && item.timeOut == null,
+          ),
+          if (item.status == 'holiday_paid') ...[
+            const SizedBox(height: 4),
+            const _KvRow(label: 'Attendance', value: 'Not Worked'),
+          ],
+          const SizedBox(height: 4),
+          _KvRow(
+            label: 'Scheduled',
+            value: '${item.shiftStart ?? '—'} – ${item.shiftEnd ?? '—'}',
+          ),
+          const SizedBox(height: 4),
+          _KvRow(label: 'Hours Worked', value: widget.hoursLabel),
+          if (hasPay) ...[
+            const SizedBox(height: 4),
+            _KvRow(label: 'Pay Basis', value: widget.payBasisLabel),
+            const SizedBox(height: 4),
+            _KvRow(label: 'Rate Used', value: widget.rateLabel),
+            if (widget.showEarned) ...[
+              const SizedBox(height: 4),
+              _KvRow(
+                label: presentShiftPayFromMap(
+                  _shiftPayMap(item),
+                  widget.siblings.map(_shiftPayMap).toList(),
+                ).baseLabel,
+                value: widget.earnedLabel,
+                valueColor: const Color(0xFF16A34A),
+                emphasize: true,
+              ),
+            ],
+            if (rowFace.holidayPay != null) ...[
+              const SizedBox(height: 4),
+              _KvRow(
+                label: 'Holiday Pay',
+                value: money(rowFace.holidayPay!),
+                valueColor: const Color(0xFF16A34A),
+              ),
+            ],
+            if (!rowFace.hideShiftTotal && rowFace.shiftTotal != null) ...[
+              const SizedBox(height: 4),
+              _KvRow(
+                label: 'Shift Total',
+                value: money(rowFace.shiftTotal!),
+                valueColor: const Color(0xFF16A34A),
+                emphasize: true,
+              ),
+            ],
+            const SizedBox(height: 4),
+            InkWell(
+              onTap: () => setState(() => _payDetailsOpen = !_payDetailsOpen),
+              borderRadius: BorderRadius.circular(8),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Row(
+                  children: [
+                    Text(
+                      'Pay Details',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: brand.primary,
+                      ),
+                    ),
+                    Icon(
+                      _payDetailsOpen
+                          ? Icons.expand_less_rounded
+                          : Icons.expand_more_rounded,
+                      size: 18,
+                      color: brand.primary,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            if (_payDetailsOpen)
+              _EmployeePayDetails(item: item, siblings: widget.siblings),
+          ],
+          if (item.canRequestCorrection &&
+              item.correctionStatus != 'approved' &&
+              item.correctionStatus != 'pending') ...[
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: widget.onRequestCorrection,
+                icon: Icon(
+                  Icons.edit_calendar_outlined,
+                  size: 16,
+                  color: brand.primary,
+                ),
+                label: Text(
+                  isIncomplete
+                      ? 'Fix incomplete attendance'
+                      : 'Request correction',
+                ),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: brand.primary,
+                  backgroundColor: brand.iconWell,
+                  side: BorderSide(
+                    color: brand.primary.withValues(alpha: 0.22),
+                  ),
+                  minimumSize: const Size(0, 36),
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  textStyle: const TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _HistoryCard extends StatefulWidget {
   const _HistoryCard({
     required this.item,
     required this.remark,
@@ -618,6 +1117,18 @@ class _HistoryCard extends StatelessWidget {
   final String remark;
   final VoidCallback onRequestCorrection;
   final bool highlighted;
+
+  @override
+  State<_HistoryCard> createState() => _HistoryCardState();
+}
+
+class _HistoryCardState extends State<_HistoryCard> {
+  bool _payDetailsOpen = false;
+
+  EmployeeShiftHistoryItem get item => widget.item;
+  String get remark => widget.remark;
+
+  static const _moneyGreen = Color(0xFF16A34A);
 
   Color get _statusColor {
     final normalized = remark.toLowerCase();
@@ -638,7 +1149,15 @@ class _HistoryCard extends StatelessWidget {
     return '$start – $end';
   }
 
-  String get _totalHours {
+  String get _hoursWorkedLabel {
+    final worked = item.workedMinutes;
+    if (worked != null && worked > 0) {
+      final hours = worked / 60.0;
+      if ((hours - hours.round()).abs() < 0.05) {
+        return '${hours.round()} hrs';
+      }
+      return '${hours.toStringAsFixed(1)} hrs';
+    }
     if (item.timeIn != null && item.timeOut != null) {
       final minutes = item.timeOut!.difference(item.timeIn!).inMinutes;
       if (minutes > 0) {
@@ -654,6 +1173,51 @@ class _HistoryCard extends StatelessWidget {
 
   bool get _isIncomplete => item.status.toLowerCase() == 'incomplete';
 
+  bool get _hasPayProjection =>
+      item.historicalRateRequired ||
+      item.dailyRateConflict ||
+      item.rateUsed != null ||
+      item.earned != null ||
+      item.expectedSalaryPay != null ||
+      item.shiftNet != null ||
+      item.payBasisUsed != null;
+
+  String get _rateUsedLabel {
+    if (item.historicalRateRequired || item.dailyRateConflict) {
+      return 'Historical Rate Required';
+    }
+    if (item.rateUsed == null) return '—';
+    final basis = (item.payBasisUsed ?? '').toLowerCase();
+    final suffix = basis == 'hourly'
+        ? '/hour'
+        : basis == 'monthly'
+            ? '/month'
+            : '/day';
+    return '${money(item.rateUsed!)}$suffix';
+  }
+
+  ShiftPayFace get _face => presentShiftPayFromMap(
+        _shiftPayMap(item),
+        [_shiftPayMap(item)],
+      );
+
+  String get _earnedLabel {
+    if (item.historicalRateRequired || item.dailyRateConflict) {
+      return 'Unresolved';
+    }
+    if (!_face.showEarned || _face.earned == null) return '—';
+    return money(_face.earned!);
+  }
+
+  String get _shiftNetLabel {
+    if (item.historicalRateRequired || item.dailyRateConflict) {
+      return 'Unresolved';
+    }
+    if (_face.hideShiftTotal) return 'Included in this day';
+    if (_face.shiftTotal == null) return '—';
+    return money(_face.shiftTotal!);
+  }
+
   @override
   Widget build(BuildContext context) {
     final statusColorValue = _statusColor;
@@ -661,13 +1225,13 @@ class _HistoryCard extends StatelessWidget {
 
     return Container(
       decoration: BoxDecoration(
-        color: highlighted ? const Color(0xFFFFFBEB) : Colors.white,
+        color: widget.highlighted ? const Color(0xFFFFFBEB) : Colors.white,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
-          color: highlighted
+          color: widget.highlighted
               ? const Color(0xFFF59E0B)
               : EmployeeColors.border,
-          width: highlighted ? 1.3 : 1,
+          width: widget.highlighted ? 1.3 : 1,
         ),
         boxShadow: [
           BoxShadow(
@@ -724,38 +1288,118 @@ class _HistoryCard extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 8),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF8FAFC),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: const Color(0xFFE8EEF4)),
-                  ),
-                  child: Column(
+                _InfoBlock(
+                  children: [
+                    _KvRow(
+                      label: item.status == 'holiday_paid'
+                          ? 'Scheduled start'
+                          : 'Time In',
+                      value: item.status == 'holiday_paid'
+                          ? (item.shiftStart ?? '—')
+                          : timeOnly(item.timeIn),
+                    ),
+                    _KvRow(
+                      label: item.status == 'holiday_paid'
+                          ? 'Scheduled end'
+                          : 'Time Out',
+                      value: item.status == 'holiday_paid'
+                          ? (item.shiftEnd ?? '—')
+                          : timeOnly(item.timeOut),
+                      emphasizeMissing: item.status != 'holiday_paid' &&
+                          _isIncomplete &&
+                          item.timeOut == null,
+                    ),
+                    if (item.status == 'holiday_paid')
+                      const _KvRow(label: 'Attendance', value: 'Not Worked'),
+                    _KvRow(label: 'Hours Worked', value: _hoursWorkedLabel),
+                  ],
+                ),
+                if (_hasPayProjection) ...[
+                  const SizedBox(height: 8),
+                  _InfoBlock(
+                    tint: item.historicalRateRequired || item.dailyRateConflict
+                        ? const Color(0xFFFFFBEB)
+                        : const Color(0xFFF0FDF4),
+                    borderColor:
+                        item.historicalRateRequired || item.dailyRateConflict
+                            ? const Color(0xFFFDE68A)
+                            : const Color(0xFFBBF7D0),
                     children: [
-                      _MetricRow(
-                        label: 'Time In',
-                        value: timeOnly(item.timeIn),
-                      ),
-                      const SizedBox(height: 5),
-                      const Divider(height: 1, color: Color(0xFFE8EEF4)),
-                      const SizedBox(height: 5),
-                      _MetricRow(
-                        label: 'Time Out',
-                        value: timeOnly(item.timeOut),
-                        emphasizeMissing: _isIncomplete && item.timeOut == null,
-                      ),
-                      const SizedBox(height: 5),
-                      const Divider(height: 1, color: Color(0xFFE8EEF4)),
-                      const SizedBox(height: 5),
-                      _MetricRow(
-                        label: 'Total Hours',
-                        value: _totalHours,
-                      ),
+                      _KvRow(label: 'Rate Used', value: _rateUsedLabel),
+                      if (_face.showEarned)
+                        _KvRow(label: _face.baseLabel, value: _earnedLabel),
+                      if (_face.holidayPay != null)
+                        _KvRow(
+                          label: 'Holiday Pay',
+                          value: money(_face.holidayPay!),
+                        ),
                     ],
                   ),
-                ),
+                  const SizedBox(height: 8),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFECFDF5),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: const Color(0xFFA7F3D0)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Text(
+                          'SHIFT TOTAL',
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 0.4,
+                            color: Color(0xFF065F46),
+                          ),
+                        ),
+                        const Spacer(),
+                        Text(
+                          _shiftNetLabel,
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
+                            color: _moneyGreen,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  InkWell(
+                    onTap: () =>
+                        setState(() => _payDetailsOpen = !_payDetailsOpen),
+                    borderRadius: BorderRadius.circular(8),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 2,
+                        vertical: 6,
+                      ),
+                      child: Row(
+                        children: [
+                          Text(
+                            'Pay Details',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              color: brand.primary,
+                            ),
+                          ),
+                          Icon(
+                            _payDetailsOpen
+                                ? Icons.expand_less_rounded
+                                : Icons.expand_more_rounded,
+                            size: 18,
+                            color: brand.primary,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  if (_payDetailsOpen) _EmployeePayDetails(item: item),
+                ],
                 if (item.holidayName != null &&
                     item.holidayName!.isNotEmpty) ...[
                   const SizedBox(height: 6),
@@ -816,7 +1460,7 @@ class _HistoryCard extends StatelessWidget {
                   SizedBox(
                     width: double.infinity,
                     child: OutlinedButton.icon(
-                      onPressed: onRequestCorrection,
+                      onPressed: widget.onRequestCorrection,
                       icon: Icon(
                         Icons.edit_calendar_outlined,
                         size: 16,
@@ -855,29 +1499,70 @@ class _HistoryCard extends StatelessWidget {
   }
 }
 
-class _MetricRow extends StatelessWidget {
-  const _MetricRow({
+class _InfoBlock extends StatelessWidget {
+  const _InfoBlock({
+    required this.children,
+    this.tint = const Color(0xFFF8FAFC),
+    this.borderColor = const Color(0xFFE8EEF4),
+  });
+
+  final List<Widget> children;
+  final Color tint;
+  final Color borderColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+      decoration: BoxDecoration(
+        color: tint,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: borderColor),
+      ),
+      child: Column(
+        children: [
+          for (var i = 0; i < children.length; i++) ...[
+            if (i > 0) ...[
+              const SizedBox(height: 5),
+              const Divider(height: 1, color: Color(0xFFE8EEF4)),
+              const SizedBox(height: 5),
+            ],
+            children[i],
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _KvRow extends StatelessWidget {
+  const _KvRow({
     required this.label,
     required this.value,
     this.emphasizeMissing = false,
+    this.valueColor,
+    this.emphasize = false,
   });
 
   final String label;
   final String value;
   final bool emphasizeMissing;
+  final Color? valueColor;
+  final bool emphasize;
 
   @override
   Widget build(BuildContext context) {
-    final showMissing =
-        emphasizeMissing && (value == '--' || value.trim().isEmpty);
+    final showMissing = emphasizeMissing &&
+        (value == '--' || value == '—' || value.trim().isEmpty);
     return Row(
       children: [
         Expanded(
           child: Text(
             label,
-            style: const TextStyle(
-              fontSize: 11.5,
-              fontWeight: FontWeight.w600,
+            style: TextStyle(
+              fontSize: emphasize ? 12 : 11.5,
+              fontWeight: emphasize ? FontWeight.w700 : FontWeight.w500,
               color: EmployeeColors.textMuted,
             ),
           ),
@@ -885,14 +1570,160 @@ class _MetricRow extends StatelessWidget {
         Text(
           showMissing ? 'Missing' : value,
           style: TextStyle(
-            fontSize: 12,
+            fontSize: emphasize ? 13 : 12,
             fontWeight: FontWeight.w700,
             color: showMissing
                 ? const Color(0xFFD97706)
-                : EmployeeColors.textPrimary,
+                : (valueColor ?? EmployeeColors.textPrimary),
           ),
         ),
       ],
+    );
+  }
+}
+
+class _EmployeePayDetails extends StatelessWidget {
+  const _EmployeePayDetails({
+    required this.item,
+    this.siblings = const [],
+  });
+
+  final EmployeeShiftHistoryItem item;
+  final List<EmployeeShiftHistoryItem> siblings;
+
+  static const _moneyGreen = Color(0xFF16A34A);
+
+  String get _payBasisLabel {
+    final basis = (item.payBasisUsed ?? '').toLowerCase();
+    if (basis == 'hourly') return 'Hourly';
+    if (basis == 'monthly') return 'Monthly';
+    if (basis == 'daily') return 'Daily';
+    return basis.isEmpty ? '—' : basis;
+  }
+
+  String get _rateUsedLabel {
+    if (item.historicalRateRequired || item.dailyRateConflict) {
+      return 'Historical Rate Required';
+    }
+    if (item.rateUsed == null) return '—';
+    final basis = (item.payBasisUsed ?? '').toLowerCase();
+    final suffix = basis == 'hourly'
+        ? '/hour'
+        : basis == 'monthly'
+            ? '/month'
+            : '/day';
+    return '${money(item.rateUsed!)}$suffix';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final unresolved =
+        item.historicalRateRequired || item.dailyRateConflict;
+    final face = presentShiftPayFromMap(
+      _shiftPayMap(item),
+      (siblings.isEmpty ? [item] : siblings).map(_shiftPayMap).toList(),
+    );
+    final additionalLines = buildAdditionalPayLines(
+      overtimePay: item.overtimePay,
+      overtimeMinutes: item.overtimeMinutes,
+      restDayPremiumPay: face.restPay,
+      holidayPay: face.holidayPay,
+    );
+    final deductionLines = buildDeductionLines(
+      lateDeduction: item.lateDeduction,
+      lateMinutes: item.lateMinutes,
+      undertimeDeduction: item.undertimeDeduction,
+      undertimeMinutes: item.undertimeMinutes,
+    );
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 4),
+      padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFE8EEF4)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const _SectionLabel('Pay summary'),
+          _KvRow(label: 'Pay Basis', value: _payBasisLabel),
+          _KvRow(label: 'Rate Used', value: _rateUsedLabel),
+          if (face.showEarned && face.earned != null && !unresolved)
+            _KvRow(label: face.baseLabel, value: money(face.earned!)),
+          if (additionalLines.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            const _SectionLabel('Additional pay'),
+            for (final line in additionalLines)
+              _KvRow(
+                label: line.label,
+                value: line.amount > 0 ? '+${money(line.amount)}' : '—',
+                valueColor: line.amount > 0 ? _moneyGreen : null,
+              ),
+          ],
+          if (deductionLines.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            const _SectionLabel('Deductions'),
+            for (final line in deductionLines)
+              _KvRow(
+                label: line.label,
+                value: line.amount > 0 ? '-${money(line.amount)}' : '—',
+                valueColor:
+                    line.amount > 0 ? const Color(0xFFB91C1C) : null,
+              ),
+          ],
+          if (item.historicalRateRequired || item.dailyRateConflict) ...[
+            const SizedBox(height: 8),
+            const _SectionLabel('Historical rate'),
+            _KvRow(
+              label: item.dailyRateConflict
+                  ? 'Daily Rate Conflict'
+                  : 'Historical Rate Required',
+              value: 'Owner resolution needed',
+              valueColor: const Color(0xFF92400E),
+            ),
+          ],
+          const SizedBox(height: 8),
+          const Divider(height: 1, color: Color(0xFFE8EEF4)),
+          const SizedBox(height: 6),
+          _KvRow(
+            label: 'Shift Total',
+            value: unresolved
+                ? 'Unresolved'
+                : (face.hideShiftTotal
+                    ? 'Included in this day'
+                    : (face.shiftTotal == null
+                        ? '—'
+                        : money(face.shiftTotal!))),
+            valueColor: unresolved ? const Color(0xFF92400E) : _moneyGreen,
+            emphasize: true,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SectionLabel extends StatelessWidget {
+  const _SectionLabel(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Text(
+        text.toUpperCase(),
+        style: const TextStyle(
+          fontSize: 10.5,
+          fontWeight: FontWeight.w800,
+          letterSpacing: 0.5,
+          color: Color(0xFF6B7280),
+        ),
+      ),
     );
   }
 }
@@ -940,12 +1771,12 @@ class _CorrectionStatusBanner extends StatelessWidget {
             title,
             style: TextStyle(
               color: fg,
-              fontWeight: FontWeight.w700,
               fontSize: 12,
+              fontWeight: FontWeight.w700,
             ),
           ),
           if (item.correctionReviewNote != null &&
-              item.correctionReviewNote!.isNotEmpty) ...[
+              item.correctionReviewNote!.trim().isNotEmpty) ...[
             const SizedBox(height: 4),
             Text(
               item.correctionReviewNote!,
@@ -956,4 +1787,23 @@ class _CorrectionStatusBanner extends StatelessWidget {
       ),
     );
   }
+}
+
+Map<String, dynamic> _shiftPayMap(EmployeeShiftHistoryItem item) {
+  return {
+    'pay_basis_used': item.payBasisUsed,
+    'status': item.status,
+    'holiday_included_in_shift_net': item.holidayIncludedInShiftNet,
+    'historical_rate_required': item.historicalRateRequired,
+    'expected_salary_pay': item.expectedSalaryPay,
+    'earned': item.earned,
+    'holiday_pay': item.holidayPay,
+    'rest_day_premium_pay': item.restDayPremiumPay,
+    'day_holiday_pay': item.dayHolidayPay,
+    'day_rest_day_pay': item.dayRestDayPay,
+    'day_entitlement': item.dayEntitlement,
+    'shift_net': item.shiftNet,
+    'reconciled_shift_total': item.reconciledShiftTotal,
+    'late_deduction': item.lateDeduction,
+  };
 }

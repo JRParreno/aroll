@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:aroll_mobile/domain/entities/employee_portal.dart';
+import 'package:aroll_mobile/domain/entities/employee_workplace_policies.dart';
 import 'package:aroll_mobile/domain/entities/face_liveness.dart';
 import 'package:aroll_mobile/domain/entities/leave_request.dart';
 import 'package:aroll_mobile/domain/entities/legal_consent.dart';
@@ -9,6 +10,8 @@ abstract class EmployeeRepository {
   Future<EmployeeDashboard> getDashboard();
 
   Future<EmployeeProfile> getProfile();
+
+  Future<void> registerRecoveryEmail(String email);
 
   Future<List<EmployeeScheduleItem>> getSchedule({
     DateTime? startDate,
@@ -52,6 +55,12 @@ abstract class EmployeeRepository {
     String client = 'mobile',
   });
 
+  /// Append-only biometric consent withdrawal (existing backend endpoint).
+  Future<void> withdrawBiometricConsent({String client = 'mobile'});
+
+  /// Mark account-level permissions onboarding complete (auth identity only).
+  Future<void> completePermissionsOnboarding();
+
   Future<PublicLegalPage> getPublicLegalPage(String businessCode);
 
   Future<FaceStatus> enrollFaceSamples(List<File> images);
@@ -63,6 +72,8 @@ abstract class EmployeeRepository {
   Future<String> downloadPayslipPdf({DateTime? asOf});
 
   Future<EmployeeWorksite> getWorksite();
+
+  Future<EmployeeWorkplacePolicies> getWorkplacePolicies();
 
   Future<AttendanceClockResult> clockInWithFace({
     required double latitude,
@@ -86,6 +97,7 @@ abstract class EmployeeRepository {
     required DateTime startDate,
     required DateTime endDate,
     required String reason,
+    String? otherLeaveSpecification,
     String? supportingDocument,
   });
 
@@ -95,19 +107,33 @@ abstract class EmployeeRepository {
     required DateTime startDate,
     required DateTime endDate,
     required String reason,
+    String? otherLeaveSpecification,
     String? supportingDocument,
   });
 
   Future<LeaveRequestItem> cancelLeaveRequest(String requestId);
+
+  Future<LeaveBalance> getLeaveBalances({int? year});
+
+  Future<LeaveRequestPreview> previewLeaveRequest({
+    required String leaveType,
+    required DateTime startDate,
+    required DateTime endDate,
+  });
 
   Future<List<Map<String, dynamic>>> notifications({
     bool unreadOnly = false,
     int limit = 50,
   });
 
-  Future<int> unreadNotificationCount();
+  Future<int> unreadNotificationCount({String? createdAfter});
 
   Future<void> markNotificationRead(String notificationId);
 
-  Future<void> markAllNotificationsRead();
+  Future<int> markAllNotificationsRead({String? createdThrough});
+
+  Future<void> registerDeviceToken({
+    required String token,
+    required String platform,
+  });
 }

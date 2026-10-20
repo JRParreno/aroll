@@ -1,5 +1,6 @@
 import 'package:aroll_mobile/presentation/auth/password_visibility.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 
 abstract final class OwnerAuthColors {
@@ -188,7 +189,10 @@ class OwnerAuthField extends StatefulWidget {
     this.maxLines = 1,
     this.textInputAction,
     this.onSubmitted,
+    this.onChanged,
     this.prefixIcon,
+    this.readOnly = false,
+    this.inputFormatters,
   });
 
   final TextEditingController controller;
@@ -199,7 +203,10 @@ class OwnerAuthField extends StatefulWidget {
   final int maxLines;
   final TextInputAction? textInputAction;
   final ValueChanged<String>? onSubmitted;
+  final ValueChanged<String>? onChanged;
   final IconData? prefixIcon;
+  final bool readOnly;
+  final List<TextInputFormatter>? inputFormatters;
 
   @override
   State<OwnerAuthField> createState() => _OwnerAuthFieldState();
@@ -233,6 +240,9 @@ class _OwnerAuthFieldState extends State<OwnerAuthField> {
             maxLines: widget.maxLines,
             textInputAction: widget.textInputAction,
             onSubmitted: widget.onSubmitted,
+            onChanged: widget.onChanged,
+            readOnly: widget.readOnly,
+            inputFormatters: widget.inputFormatters,
             autocorrect: false,
             enableSuggestions: !widget.obscureText,
             style: const TextStyle(

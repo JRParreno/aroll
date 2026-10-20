@@ -115,6 +115,14 @@ class AttendanceCorrectionStatus(str, enum.Enum):
     rejected = "rejected"
 
 
+class OvertimeApprovalStatus(str, enum.Enum):
+    """Payable OT gate when BusinessPayrollConfig.overtime_approval_required."""
+
+    pending = "pending"
+    approved = "approved"
+    rejected = "rejected"
+
+
 class ShiftType(str, enum.Enum):
     morning = "morning"
     afternoon = "afternoon"
@@ -133,6 +141,13 @@ class HolidayRulesMode(str, enum.Enum):
 
     philippine_labor = "philippine_labor"
     custom_company = "custom_company"
+
+
+class OvertimeCalculationMethod(str, enum.Enum):
+    """How qualifying overtime minutes are priced. Not a holiday-rule setting."""
+
+    flat_per_minute = "flat_per_minute"
+    hourly_statutory = "hourly_statutory"
 
 
 class MissingClockOutPolicy(str, enum.Enum):

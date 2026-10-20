@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:aroll_mobile/core/app_state.dart';
+import 'package:aroll_mobile/core/theme/business_brand_theme.dart';
 import 'package:aroll_mobile/core/di/injection.dart';
 import 'package:aroll_mobile/core/location/business_location_defaults.dart';
 import 'package:aroll_mobile/core/location/business_location_geocoding.dart';
@@ -21,8 +22,6 @@ class OwnerLocationScreen extends StatefulWidget {
 }
 
 class _OwnerLocationScreenState extends State<OwnerLocationScreen> {
-  static const _navy = Color(0xFF1F456B);
-  static const _softBlue = Color(0xFFB9D8EE);
   static const _panelBg = Colors.white;
 
   final _repo = sl<OwnerRepository>();
@@ -382,7 +381,7 @@ class _OwnerLocationScreenState extends State<OwnerLocationScreen> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.info_outline_rounded, color: _navy),
+          Icon(Icons.info_outline_rounded, color: BrandColors.of(context).toneButton),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
@@ -446,7 +445,7 @@ class _OwnerLocationScreenState extends State<OwnerLocationScreen> {
                             : const Icon(Icons.my_location_rounded, size: 18),
                         label: const Text('Use My Current Location'),
                         style: TextButton.styleFrom(
-                          foregroundColor: _navy,
+                          foregroundColor: BrandColors.of(context).toneButton,
                           padding: EdgeInsets.zero,
                           visualDensity: VisualDensity.compact,
                         ),
@@ -489,10 +488,10 @@ class _OwnerLocationScreenState extends State<OwnerLocationScreen> {
                   SliderTheme(
                     data: SliderTheme.of(context).copyWith(
                       trackHeight: 10,
-                      activeTrackColor: _navy,
-                      inactiveTrackColor: _softBlue,
+                      activeTrackColor: BrandColors.of(context).toneButton,
+                      inactiveTrackColor: BrandColors.of(context).toneWell,
                       thumbColor: Colors.white,
-                      overlayColor: _navy.withValues(alpha: 0.12),
+                      overlayColor: BrandColors.of(context).toneButton.withValues(alpha: 0.12),
                       thumbShape: const RoundSliderThumbShape(
                         enabledThumbRadius: 11,
                         elevation: 2,
@@ -574,10 +573,10 @@ class _OwnerLocationScreenState extends State<OwnerLocationScreen> {
                           child: FilledButton(
                             onPressed: _isManager ? null : _cancelEdits,
                             style: FilledButton.styleFrom(
-                              backgroundColor: _softBlue,
+                              backgroundColor: BrandColors.of(context).toneWell,
                               foregroundColor: Colors.white,
                               disabledBackgroundColor:
-                                  _softBlue.withValues(alpha: 0.5),
+                                  BrandColors.of(context).toneWell.withValues(alpha: 0.5),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(14),
                               ),
@@ -600,10 +599,10 @@ class _OwnerLocationScreenState extends State<OwnerLocationScreen> {
                           child: FilledButton(
                             onPressed: _canSave ? _save : null,
                             style: FilledButton.styleFrom(
-                              backgroundColor: _navy,
+                              backgroundColor: BrandColors.of(context).toneButton,
                               foregroundColor: Colors.white,
                               disabledBackgroundColor:
-                                  _navy.withValues(alpha: 0.4),
+                                  BrandColors.of(context).toneButton.withValues(alpha: 0.4),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(14),
                               ),
@@ -691,7 +690,7 @@ class _OwnerLocationScreenState extends State<OwnerLocationScreen> {
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
-            borderSide: const BorderSide(color: _navy, width: 1.2),
+            borderSide: BorderSide(color: BrandColors.of(context).toneButton, width: 1.2),
           ),
           filled: true,
           fillColor: Colors.white,

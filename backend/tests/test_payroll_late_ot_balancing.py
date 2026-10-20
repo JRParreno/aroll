@@ -14,6 +14,7 @@ from app.models.holiday import Holiday
 from app.models.payroll import BusinessPayrollConfig, Position
 from app.models.rest_day_policy import BusinessRestDayPolicy
 from app.models.scheduling import Shift, ShiftAssignment
+from app.services.employee_pay import stamp_attendance_completion_pay
 
 
 def _run_payslip(
@@ -83,6 +84,8 @@ def _run_payslip(
         time_out=time_out,
         status=status,
     )
+    if time_in is not None and time_out is not None:
+        stamp_attendance_completion_pay(record, employee, position=position)
 
     db = MagicMock()
 
@@ -475,6 +478,7 @@ def test_holiday_premium_uses_day_earned_not_ot_balancing():
         time_out=_ph(18, 0),
         status=AttendanceStatus.late,
     )
+    stamp_attendance_completion_pay(record, employee, position=position)
     db = MagicMock()
 
     def db_get(model, key=None):

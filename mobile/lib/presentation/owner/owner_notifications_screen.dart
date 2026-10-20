@@ -1,7 +1,9 @@
 import 'package:aroll_mobile/core/di/injection.dart';
+import 'package:aroll_mobile/core/theme/business_brand_theme.dart';
 import 'package:aroll_mobile/data/repositories/owner_repository.dart';
 import 'package:aroll_mobile/presentation/owner/owner_shell.dart';
 import 'package:aroll_mobile/presentation/shared/app_ui.dart';
+import 'package:aroll_mobile/presentation/shared/notification_routing.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
@@ -31,11 +33,20 @@ class _OwnerNotificationsScreenState extends State<OwnerNotificationsScreen> {
   }
 
   IconData _iconFor(String type) {
-    if (type.startsWith('leave')) return Icons.event_busy_rounded;
-    if (type.startsWith('attendance')) return Icons.fact_check_outlined;
-    if (type.startsWith('payroll')) return Icons.payments_outlined;
-    if (type.startsWith('schedule')) return Icons.calendar_month_outlined;
-    return Icons.notifications_outlined;
+    switch (notificationIconKind(type)) {
+      case IconDataForType.leave:
+        return Icons.event_busy_rounded;
+      case IconDataForType.overtime:
+        return Icons.more_time_rounded;
+      case IconDataForType.attendance:
+        return Icons.fact_check_outlined;
+      case IconDataForType.payroll:
+        return Icons.payments_outlined;
+      case IconDataForType.schedule:
+        return Icons.calendar_month_outlined;
+      case IconDataForType.generic:
+        return Icons.notifications_outlined;
+    }
   }
 
   String _relativeTime(DateTime? value) {
@@ -56,31 +67,13 @@ class _OwnerNotificationsScreenState extends State<OwnerNotificationsScreen> {
       } catch (_) {}
     }
     if (!mounted) return;
-    final deepLink = '${item['deep_link'] ?? ''}';
-    final type = '${item['type'] ?? ''}';
-    final entityType = '${item['entity_type'] ?? ''}';
-    final entityId = '${item['entity_id'] ?? ''}';
-    if (deepLink.isNotEmpty) {
-      context.push(deepLink);
-      return;
-    }
-    if (type.startsWith('leave') || entityType == 'leave') {
-      if (entityId.isNotEmpty) {
-        context.push('/owner/leave/$entityId');
-      } else {
-        context.push('/owner/leave');
-      }
-      return;
-    }
-    if (type.startsWith('attendance') || entityType == 'attendance_correction') {
-      if (entityId.isNotEmpty) {
-        context.push('/owner/attendance?correctionId=$entityId');
-      } else {
-        context.push('/owner/attendance');
-      }
-      return;
-    }
-    context.push('/owner/leave');
+    final destination = notificationDestination(
+      type: '${item['type'] ?? ''}',
+      deepLink: '${item['deep_link'] ?? ''}',
+      entityId: '${item['entity_id'] ?? ''}',
+      owner: true,
+    );
+    context.push(destination);
   }
 
   @override
@@ -143,13 +136,13 @@ class _OwnerNotificationsScreenState extends State<OwnerNotificationsScreen> {
                             width: 36,
                             height: 36,
                             decoration: BoxDecoration(
-                              color: AppColors.primary.withValues(alpha: 0.1),
+                              color: BrandColors.of(context).tonePrimary.withValues(alpha: 0.1),
                               borderRadius: BorderRadius.circular(10),
                             ),
                             child: Icon(
                               _iconFor('${item['type'] ?? ''}'),
                               size: 18,
-                              color: AppColors.primary,
+                              color: BrandColors.of(context).tonePrimary,
                             ),
                           ),
                           const SizedBox(width: 10),
@@ -183,8 +176,8 @@ class _OwnerNotificationsScreenState extends State<OwnerNotificationsScreen> {
                               width: 8,
                               height: 8,
                               margin: const EdgeInsets.only(top: 6),
-                              decoration: const BoxDecoration(
-                                color: AppColors.primary,
+                              decoration: BoxDecoration(
+                                color: BrandColors.of(context).tonePrimary,
                                 shape: BoxShape.circle,
                               ),
                             ),

@@ -6,7 +6,7 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
-from app.models.enums import AttendanceStatus
+from app.models.enums import AttendanceStatus, OvertimeApprovalStatus, PayBasis
 
 
 class AttendanceRecord(Base):
@@ -42,6 +42,44 @@ class AttendanceRecord(Base):
         Numeric(5, 4), nullable=True
     )
     liveness_passed: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    # Payable OT gate when business requires OT approval. Null when approval is
+    # off or there is no qualifying OT. Does not alter Time In / Time Out.
+    ot_approval_status: Mapped[OvertimeApprovalStatus | None] = mapped_column(
+        Enum(
+            OvertimeApprovalStatus,
+            name="overtimeapprovalstatus",
+            values_callable=lambda enum_cls: [item.value for item in enum_cls],
+        ),
+        nullable=True,
+    )
+    ot_reviewed_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("user.id"), nullable=True
+    )
+    ot_reviewed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    # Pay rates captured when the punch first closes (time_out + closed status).
+    # Live unfinalized payroll uses these for that day so a later Employee Role
+    # restamp does not reprice completed shifts. Null = legacy / not yet stamped
+    # → keep using current Employee rates (existing Design B behavior).
+    pay_basis_at_completion: Mapped[PayBasis | None] = mapped_column(
+        Enum(
+            PayBasis,
+            name="paybasis",
+            values_callable=lambda enum_cls: [item.value for item in enum_cls],
+            create_type=False,
+        ),
+        nullable=True,
+    )
+    daily_rate_at_completion: Mapped[float | None] = mapped_column(
+        Numeric(10, 2), nullable=True
+    )
+    hourly_rate_at_completion: Mapped[float | None] = mapped_column(
+        Numeric(10, 2), nullable=True
+    )
+    monthly_salary_at_completion: Mapped[float | None] = mapped_column(
+        Numeric(10, 2), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

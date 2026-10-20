@@ -11,7 +11,12 @@ class RestoreSessionUsecase {
   Future<void> call() async {
     final session = await _authRepository.restoreSession();
     if (session != null) {
-      _appState.setSession(session, mustChange: session.mustChangePassword);
+      final permissionsIntroSeen = await resolvePermissionsIntroSeen(session);
+      _appState.setSession(
+        session,
+        mustChange: session.mustChangePassword,
+        permissionsIntroSeen: permissionsIntroSeen,
+      );
       await loadEmployeePostAuthGates(_appState, session);
       return;
     }

@@ -14,7 +14,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, func
+from sqlalchemy import DateTime, ForeignKey, Integer, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -31,6 +31,11 @@ class BusinessLeavePolicy(Base):
     treatments: Mapped[dict] = mapped_column(JSONB, nullable=False)
     # Reserved for future leave credits / balances / probation rules.
     config_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    # 0 disables the rule. A positive value is a date-based minimum:
+    # start_date must be at least this many calendar days after business today.
+    minimum_advance_notice_days: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

@@ -1,3 +1,4 @@
+import 'package:aroll_mobile/core/theme/business_brand_theme.dart';
 import 'package:aroll_mobile/presentation/shared/app_ui.dart';
 import 'package:flutter/material.dart';
 
@@ -5,6 +6,16 @@ import 'package:flutter/material.dart';
 abstract final class SetupUi {
   static const navy = AppColors.primaryDark;
   static const navySoft = AppColors.primary;
+
+  static Color navyOf(BuildContext context) {
+    final brand = BrandColors.of(context);
+    return brand.saved ? brand.toneButton : navy;
+  }
+
+  static Color wellOf(BuildContext context) {
+    final brand = BrandColors.of(context);
+    return brand.saved ? brand.toneWell : AppColors.iconWell;
+  }
   static const scaffold = AppColors.scaffold;
   static const cardRadius = 18.0;
   static const panelRadius = 14.0;
@@ -53,45 +64,53 @@ abstract final class SetupUi {
     );
   }
 
-  static ButtonStyle get primaryButton => FilledButton.styleFrom(
-        backgroundColor: navy,
-        foregroundColor: Colors.white,
-        disabledBackgroundColor: navy.withValues(alpha: 0.45),
-        minimumSize: const Size(0, 44),
-        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(14),
-        ),
-        textStyle: const TextStyle(
-          fontSize: 14,
-          fontWeight: FontWeight.w700,
-        ),
-      );
+  static ButtonStyle primaryButtonOf(BuildContext context) {
+    final color = navyOf(context);
+    return FilledButton.styleFrom(
+      backgroundColor: color,
+      foregroundColor: Colors.white,
+      disabledBackgroundColor: color.withValues(alpha: 0.45),
+      minimumSize: const Size(0, 44),
+      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+      ),
+      textStyle: const TextStyle(
+        fontSize: 14,
+        fontWeight: FontWeight.w700,
+      ),
+    );
+  }
 
-  static ButtonStyle get secondaryButton => OutlinedButton.styleFrom(
-        foregroundColor: navy,
-        backgroundColor: Colors.white,
-        side: const BorderSide(color: Color(0xFFD7E0EA)),
-        minimumSize: const Size(0, 44),
-        padding: const EdgeInsets.symmetric(vertical: 11, horizontal: 14),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(14),
-        ),
-        textStyle: const TextStyle(
-          fontSize: 13.5,
-          fontWeight: FontWeight.w600,
-        ),
-      );
+  static ButtonStyle secondaryButtonOf(BuildContext context) {
+    return OutlinedButton.styleFrom(
+      foregroundColor: navyOf(context),
+      backgroundColor: Colors.white,
+      side: const BorderSide(color: Color(0xFFD7E0EA)),
+      minimumSize: const Size(0, 44),
+      padding: const EdgeInsets.symmetric(vertical: 11, horizontal: 14),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+      ),
+      textStyle: const TextStyle(
+        fontSize: 13.5,
+        fontWeight: FontWeight.w600,
+      ),
+    );
+  }
 
-  static ButtonStyle get ghostButton => TextButton.styleFrom(
-        foregroundColor: navySoft,
-        visualDensity: VisualDensity.compact,
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-        textStyle: const TextStyle(
-          fontSize: 13,
-          fontWeight: FontWeight.w600,
-        ),
-      );
+  static ButtonStyle ghostButtonOf(BuildContext context) {
+    final brand = BrandColors.of(context);
+    return TextButton.styleFrom(
+      foregroundColor: brand.saved ? brand.tonePrimary : navySoft,
+      visualDensity: VisualDensity.compact,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      textStyle: const TextStyle(
+        fontSize: 13,
+        fontWeight: FontWeight.w600,
+      ),
+    );
+  }
 }
 
 class SetupSurfaceCard extends StatelessWidget {
@@ -157,10 +176,10 @@ class SetupPanel extends StatelessWidget {
                   width: 32,
                   height: 32,
                   decoration: BoxDecoration(
-                    color: AppColors.iconWell,
+                    color: SetupUi.wellOf(context),
                     borderRadius: BorderRadius.circular(10),
                   ),
-                  child: Icon(icon, size: 17, color: SetupUi.navy),
+                  child: Icon(icon, size: 17, color: SetupUi.navyOf(context)),
                 ),
                 const SizedBox(width: 10),
               ],
@@ -333,6 +352,7 @@ class SetupListTileCard extends StatelessWidget {
     this.iconColor,
     this.iconBackground,
     this.trailing,
+    this.actions,
     this.onTap,
   });
 
@@ -342,43 +362,118 @@ class SetupListTileCard extends StatelessWidget {
   final Color? iconColor;
   final Color? iconBackground;
   final Widget? trailing;
+  final List<Widget>? actions;
   final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    final resolvedIconColor = iconColor ?? SetupUi.navy;
+    final resolvedIconColor = iconColor ?? SetupUi.navyOf(context);
     return SetupSurfaceCard(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-      child: ListTile(
-        contentPadding: EdgeInsets.zero,
-        dense: true,
-        onTap: onTap,
-        leading: Container(
-          width: 36,
-          height: 36,
-          decoration: BoxDecoration(
-            color: iconBackground ?? AppColors.iconWell,
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Icon(leadingIcon, size: 18, color: resolvedIconColor),
-        ),
-        title: Text(
-          title,
-          style: const TextStyle(
-            fontSize: 13.5,
-            fontWeight: FontWeight.w600,
-            color: AppColors.textPrimary,
-          ),
-        ),
-        subtitle: subtitle == null
-            ? null
-            : Text(
-                subtitle!,
-                style: appMutedStyle().copyWith(fontSize: 11.5),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            dense: true,
+            onTap: onTap,
+            leading: Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: iconBackground ?? SetupUi.wellOf(context),
+                borderRadius: BorderRadius.circular(10),
               ),
-        trailing: trailing,
+              child: Icon(leadingIcon, size: 18, color: resolvedIconColor),
+            ),
+            title: Text(
+              title,
+              style: const TextStyle(
+                fontSize: 13.5,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            subtitle: subtitle == null
+                ? null
+                : Text(
+                    subtitle!,
+                    style: appMutedStyle().copyWith(fontSize: 11.5),
+                  ),
+            trailing: trailing,
+          ),
+          if (actions != null && actions!.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(left: 52, bottom: 6),
+              child: Wrap(
+                spacing: 4,
+                runSpacing: 0,
+                alignment: WrapAlignment.end,
+                children: actions!,
+              ),
+            ),
+        ],
       ),
+    );
+  }
+}
+
+class OvertimeCalculationMethodField extends StatelessWidget {
+  const OvertimeCalculationMethodField({
+    super.key,
+    required this.value,
+    required this.enabled,
+    required this.onChanged,
+    this.decoration,
+  });
+
+  static const options = <(String, String)>[
+    ('flat_per_minute', 'Flat rate per overtime minute'),
+    ('hourly_statutory', 'Hourly-based overtime calculation'),
+  ];
+
+  final String value;
+  final bool enabled;
+  final ValueChanged<String> onChanged;
+  final InputDecoration? decoration;
+
+  @override
+  Widget build(BuildContext context) {
+    return DropdownButtonFormField<String>(
+      initialValue: value,
+      isExpanded: true,
+      isDense: true,
+      decoration: decoration,
+      items: [
+        for (final option in options)
+          DropdownMenuItem(
+            value: option.$1,
+            child: Text(
+              option.$2,
+              maxLines: 2,
+              softWrap: true,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+      ],
+      selectedItemBuilder: (context) => [
+        for (final option in options)
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              option.$2,
+              maxLines: 2,
+              softWrap: true,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+      ],
+      onChanged: enabled
+          ? (next) {
+              if (next != null) onChanged(next);
+            }
+          : null,
     );
   }
 }
@@ -450,13 +545,13 @@ class SetupMenuCard extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: complete
                       ? const Color(0xFFECFDF5)
-                      : AppColors.iconWell,
+                      : SetupUi.wellOf(context),
                   borderRadius: BorderRadius.circular(14),
                 ),
                 child: Icon(
                   icon,
                   size: 22,
-                  color: complete ? const Color(0xFF059669) : SetupUi.navy,
+                  color: complete ? const Color(0xFF059669) : SetupUi.navyOf(context),
                 ),
               ),
               const SizedBox(width: 12),
@@ -528,6 +623,21 @@ class SetupMenuCard extends StatelessWidget {
   }
 }
 
+/// Plain setup-step help text. Not a banner.
+class SetupWizardStepIntro extends StatelessWidget {
+  const SetupWizardStepIntro(this.text, {super.key});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      text,
+      style: appMutedStyle().copyWith(fontSize: 13, height: 1.4),
+    );
+  }
+}
+
 class SetupSectionHeader extends StatelessWidget {
   const SetupSectionHeader({
     super.key,
@@ -550,10 +660,10 @@ class SetupSectionHeader extends StatelessWidget {
             width: 40,
             height: 40,
             decoration: BoxDecoration(
-              color: AppColors.iconWell,
+              color: SetupUi.wellOf(context),
               borderRadius: BorderRadius.circular(12),
             ),
-            child: Icon(icon, size: 20, color: SetupUi.navy),
+            child: Icon(icon, size: 20, color: SetupUi.navyOf(context)),
           ),
           const SizedBox(width: 12),
         ],
@@ -604,7 +714,7 @@ class SetupCompactSwitch extends StatelessWidget {
       contentPadding: EdgeInsets.zero,
       dense: true,
       visualDensity: VisualDensity.compact,
-      activeThumbColor: SetupUi.navy,
+      activeThumbColor: SetupUi.navyOf(context),
       title: Text(
         title,
         style: const TextStyle(

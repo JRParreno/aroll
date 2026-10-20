@@ -46,3 +46,28 @@ num? _positiveRate(num? value) {
   if (value <= 0) return null;
   return value;
 }
+
+/// Downloaded payslip Daily Rate / Hourly Rate values.
+/// Unused field is an empty string — never ₱0.00, N/A, or a derived equivalent.
+({String daily, String hourly}) payslipRateFieldValues({
+  String? payBasis,
+  num? dailyRate,
+  num? hourlyRate,
+}) {
+  final basis = (payBasis ?? 'daily').toLowerCase();
+  final daily = _positiveRate(dailyRate);
+  final hourly = _positiveRate(hourlyRate);
+  if (basis == 'hourly') {
+    return (daily: '', hourly: hourly == null ? '' : formatPeso(hourly));
+  }
+  if (basis == 'daily') {
+    return (daily: daily == null ? '' : formatPeso(daily), hourly: '');
+  }
+  if (basis == 'monthly') {
+    return (daily: '', hourly: '');
+  }
+  return (
+    daily: daily == null ? '' : formatPeso(daily),
+    hourly: hourly == null ? '' : formatPeso(hourly),
+  );
+}

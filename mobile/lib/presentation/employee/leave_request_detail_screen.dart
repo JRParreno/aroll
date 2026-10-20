@@ -3,6 +3,8 @@ import 'package:aroll_mobile/core/theme/business_brand_theme.dart';
 import 'package:aroll_mobile/domain/entities/leave_request.dart';
 import 'package:aroll_mobile/domain/repositories/employee_repository.dart';
 import 'package:aroll_mobile/presentation/employee/employee_ui.dart';
+import 'package:aroll_mobile/presentation/shared/app_ui.dart';
+import 'package:aroll_mobile/presentation/shared/confirm_action_dialog.dart';
 import 'package:aroll_mobile/presentation/shared/supporting_document_viewer.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
@@ -45,28 +47,22 @@ class _LeaveRequestDetailScreenState extends State<LeaveRequestDetailScreen> {
     final isApproved = item.isApproved;
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(isApproved ? 'Request cancellation?' : 'Cancel leave request?'),
-        content: Text(
-          isApproved
-              ? 'Your owner must approve this cancellation before the leave is removed from your schedule.'
-              : 'This will withdraw your pending leave request. You can submit a new request later if needed.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Keep request'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: FilledButton.styleFrom(
-              backgroundColor: isApproved
-                  ? const Color(0xFF7C3AED)
-                  : const Color(0xFFDC2626),
-            ),
-            child: Text(isApproved ? 'Request cancellation' : 'Cancel request'),
-          ),
-        ],
+      builder: (context) => ConfirmActionDialog(
+        icon: isApproved
+            ? Icons.event_busy_rounded
+            : Icons.cancel_outlined,
+        title: isApproved ? 'Request cancellation?' : 'Cancel leave request?',
+        message: isApproved
+            ? 'Your owner must approve this cancellation before the leave is removed from your schedule.'
+            : 'This will withdraw your pending leave request. You can submit a new request later if needed.',
+        cancelLabel: 'Keep request',
+        confirmLabel:
+            isApproved ? 'Request cancellation' : 'Cancel request',
+        iconColor: isApproved ? AppColors.primaryDark : AppColors.danger,
+        iconBackground:
+            isApproved ? AppColors.iconWell : const Color(0xFFFEE2E2),
+        confirmColor:
+            isApproved ? AppColors.primaryDark : const Color(0xFFB91C1C),
       ),
     );
     if (confirmed != true || !mounted) return;
@@ -174,14 +170,7 @@ class _LeaveRequestDetailScreenState extends State<LeaveRequestDetailScreen> {
                     end: Alignment.bottomRight,
                     colors: [soft, brand.primary],
                   ),
-                  borderRadius: BorderRadius.circular(20),
-                  boxShadow: [
-                    BoxShadow(
-                      color: brand.primary.withValues(alpha: 0.2),
-                      blurRadius: 16,
-                      offset: const Offset(0, 8),
-                    ),
-                  ],
+                  borderRadius: BorderRadius.circular(16),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -189,8 +178,8 @@ class _LeaveRequestDetailScreenState extends State<LeaveRequestDetailScreen> {
                     Row(
                       children: [
                         Container(
-                          width: 46,
-                          height: 46,
+                          width: 40,
+                          height: 40,
                           decoration: BoxDecoration(
                             color: Colors.white.withValues(alpha: 0.16),
                             borderRadius: BorderRadius.circular(14),
@@ -198,7 +187,7 @@ class _LeaveRequestDetailScreenState extends State<LeaveRequestDetailScreen> {
                           child: const Icon(
                             Icons.beach_access_rounded,
                             color: Colors.white,
-                            size: 24,
+                            size: 20,
                           ),
                         ),
                         const SizedBox(width: 12),
@@ -210,8 +199,8 @@ class _LeaveRequestDetailScreenState extends State<LeaveRequestDetailScreen> {
                                 item.leaveTypeLabel,
                                 style: const TextStyle(
                                   color: Colors.white,
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w800,
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.w600,
                                 ),
                               ),
                               const SizedBox(height: 4),
@@ -236,7 +225,7 @@ class _LeaveRequestDetailScreenState extends State<LeaveRequestDetailScreen> {
                       ),
                       decoration: BoxDecoration(
                         color: Colors.white.withValues(alpha: 0.16),
-                        borderRadius: BorderRadius.circular(999),
+                        borderRadius: BorderRadius.circular(8),
                         border: Border.all(
                           color: Colors.white.withValues(alpha: 0.28),
                         ),
@@ -246,7 +235,7 @@ class _LeaveRequestDetailScreenState extends State<LeaveRequestDetailScreen> {
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 12,
-                          fontWeight: FontWeight.w700,
+                          fontWeight: FontWeight.w500,
                         ),
                       ),
                     ),
@@ -304,6 +293,13 @@ class _LeaveRequestDetailScreenState extends State<LeaveRequestDetailScreen> {
                           ? const Color(0xFF15803D)
                           : const Color(0xFFB45309),
                     ),
+                    if ((item.otherLeaveSpecification ?? '').trim().isNotEmpty)
+                      _DetailRow(
+                        icon: Icons.label_outline_rounded,
+                        label: 'Other Leave Type',
+                        value: item.otherLeaveSpecification!.trim(),
+                        accent: brand.primary,
+                      ),
                     _DetailRow(
                       icon: Icons.notes_rounded,
                       label: 'Reason',
@@ -381,60 +377,53 @@ class _LeaveRequestDetailScreenState extends State<LeaveRequestDetailScreen> {
               ),
               if (item.canEdit || item.canCancel) ...[
                 const SizedBox(height: 20),
-                Row(
-                  children: [
-                    if (item.canEdit)
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: _actionInProgress
-                              ? null
-                              : () => _openEdit(item),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: brand.primary,
-                            side: BorderSide(color: brand.primary),
-                            minimumSize: const Size.fromHeight(48),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(14),
-                            ),
-                          ),
-                          icon: const Icon(Icons.edit_outlined, size: 18),
-                          label: const Text(
-                            'Edit',
-                            style: TextStyle(fontWeight: FontWeight.w700),
-                          ),
-                        ),
+                if (item.canEdit)
+                  OutlinedButton(
+                    onPressed: _actionInProgress ? null : () => _openEdit(item),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: brand.primary,
+                      side: BorderSide(
+                        color: brand.primary.withValues(alpha: 0.35),
                       ),
-                    if (item.canEdit && item.canCancel)
-                      const SizedBox(width: 10),
-                    if (item.canCancel)
-                      Expanded(
-                        child: FilledButton.icon(
-                          onPressed: _actionInProgress
-                              ? null
-                              : () => _confirmCancel(item),
-                          style: FilledButton.styleFrom(
-                            backgroundColor: item.isApproved
-                                ? const Color(0xFF7C3AED)
-                                : const Color(0xFFDC2626),
-                            minimumSize: const Size.fromHeight(48),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(14),
-                            ),
-                          ),
-                          icon: Icon(
-                            item.isApproved
-                                ? Icons.event_busy_outlined
-                                : Icons.close_rounded,
-                            size: 18,
-                          ),
-                          label: Text(
-                            item.isApproved ? 'Request cancel' : 'Cancel',
-                            style: const TextStyle(fontWeight: FontWeight.w700),
-                          ),
-                        ),
+                      minimumSize: const Size.fromHeight(44),
+                      textStyle: const TextStyle(
+                        fontWeight: FontWeight.w500,
+                        fontSize: 14,
                       ),
-                  ],
-                ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: const Text('Edit'),
+                  ),
+                if (item.canEdit && item.canCancel) const SizedBox(height: 8),
+                if (item.canCancel)
+                  OutlinedButton(
+                    onPressed:
+                        _actionInProgress ? null : () => _confirmCancel(item),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: item.isApproved
+                          ? const Color(0xFF6D28D9)
+                          : const Color(0xFFB91C1C),
+                      side: BorderSide(
+                        color: (item.isApproved
+                                ? const Color(0xFF6D28D9)
+                                : const Color(0xFFB91C1C))
+                            .withValues(alpha: 0.35),
+                      ),
+                      minimumSize: const Size.fromHeight(44),
+                      textStyle: const TextStyle(
+                        fontWeight: FontWeight.w500,
+                        fontSize: 14,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: Text(
+                      item.isApproved ? 'Request cancel' : 'Cancel',
+                    ),
+                  ),
               ],
             ],
           );
@@ -475,7 +464,7 @@ class _PreviousRequestCard extends StatelessWidget {
                 'Previous version',
                 style: TextStyle(
                   color: accent,
-                  fontWeight: FontWeight.w700,
+                  fontWeight: FontWeight.w500,
                   fontSize: 13,
                 ),
               ),
@@ -485,17 +474,27 @@ class _PreviousRequestCard extends StatelessWidget {
           Text(
             previous.leaveTypeLabel,
             style: const TextStyle(
-              fontWeight: FontWeight.w700,
+              fontWeight: FontWeight.w600,
               color: EmployeeColors.textPrimary,
             ),
           ),
+          if ((previous.otherLeaveSpecification ?? '').trim().isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(
+              'Other Leave Type: ${previous.otherLeaveSpecification!.trim()}',
+              style: const TextStyle(
+                fontSize: 13,
+                color: EmployeeColors.textPrimary,
+              ),
+            ),
+          ],
           const SizedBox(height: 4),
           Text(
             '${dateFmt.format(previous.startDate)} – ${dateFmt.format(previous.endDate)} · ${previous.leaveDays} day${previous.leaveDays == 1 ? '' : 's'}',
             style: const TextStyle(
               fontSize: 12,
               color: EmployeeColors.textMuted,
-              fontWeight: FontWeight.w600,
+              fontWeight: FontWeight.w400,
             ),
           ),
           if (previous.reason.trim().isNotEmpty) ...[
@@ -561,7 +560,7 @@ class _DetailRow extends StatelessWidget {
                       label,
                       style: const TextStyle(
                         fontSize: 11,
-                        fontWeight: FontWeight.w700,
+                        fontWeight: FontWeight.w500,
                         color: Color(0xFF9CA3AF),
                       ),
                     ),
@@ -569,7 +568,7 @@ class _DetailRow extends StatelessWidget {
                     Text(
                       value,
                       style: const TextStyle(
-                        fontWeight: FontWeight.w600,
+                        fontWeight: FontWeight.w500,
                         color: Color(0xFF111827),
                         height: 1.35,
                       ),
@@ -584,14 +583,14 @@ class _DetailRow extends StatelessWidget {
                       const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
                     color: (trailingColor ?? accent).withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(999),
+                    borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
                     trailing!,
                     style: TextStyle(
                       color: trailingColor ?? accent,
                       fontSize: 11,
-                      fontWeight: FontWeight.w700,
+                      fontWeight: FontWeight.w500,
                     ),
                   ),
                 ),

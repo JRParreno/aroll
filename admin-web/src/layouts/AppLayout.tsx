@@ -20,6 +20,7 @@ type NavItem = { to: string; label: string };
 const navIcons: Record<string, LucideIcon> = {
   Dashboard: LayoutDashboard,
   "Approved Businesses": CheckSquare,
+  "Recently Approved": CheckSquare,
   "Registration Request": ClipboardList,
   Consents: Scale,
   "Legal Defaults": Scale,

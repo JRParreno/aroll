@@ -369,6 +369,20 @@ def complete_incomplete_attendance(
     if bundle is None:
         raise HTTPException(400, "Attendance record is not linked to a shift.")
     assignment, shift = bundle
+
+    from app.services.payroll_adjustments import raise_if_work_date_period_finalized
+
+    # Block before any AttendanceRecord / OT mutation when the period is finalized.
+    raise_if_work_date_period_finalized(
+        db,
+        business_id=business.id,
+        work_date=assignment.work_date,
+        message=(
+            "This payroll period is already finalized. "
+            "Attendance cannot be changed until payroll is unfinalized."
+        ),
+    )
+
     policy = _attendance_policy(db, business.id)
 
     validate_manual_clock_out(
@@ -396,7 +410,30 @@ def complete_incomplete_attendance(
     record.status = status
     db.flush()
 
+    from app.services.ot_approval import sync_ot_approval_after_close
+
+    sync_ot_approval_after_close(
+        db,
+        record,
+        assignment=assignment,
+        shift=shift,
+        business_timezone=business.timezone or "Asia/Manila",
+        force_rereview=True,
+    )
+
+    from app.models.payroll import Position
+    from app.services.employee_pay import stamp_attendance_completion_pay
+
     employee = db.get(Employee, record.employee_id)
+    position = (
+        db.get(Position, employee.position_id)
+        if employee is not None and employee.position_id
+        else None
+    )
+    if employee is not None:
+        stamp_attendance_completion_pay(record, employee, position=position)
+        db.flush()
+
     employee_name = employee.full_name if employee else str(record.employee_id)
     reason_part = f" Reason: {reason.strip()}." if reason and reason.strip() else ""
     description = (
@@ -410,6 +447,12 @@ def complete_incomplete_attendance(
     # Persist attendance first, then audit (create_log commits).
     db.commit()
     db.refresh(record)
+    try:
+        from app.services.activity_notifications import notify_overtime_pending_if_needed
+
+        notify_overtime_pending_if_needed(db, record)
+    except Exception:
+        pass
     create_log(
         db,
         user_id=reviewer.id,

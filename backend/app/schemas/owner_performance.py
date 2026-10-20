@@ -1,3 +1,5 @@
+from datetime import date, datetime
+
 from pydantic import BaseModel
 
 
@@ -44,7 +46,19 @@ class EmployeePerformanceItem(BaseModel):
     punctuality_rate: float
 
 
+class OwnerPerformanceEventItem(BaseModel):
+    """One shift occurrence counted toward a Performance Overview bar."""
+
+    category: str  # on_time | late | undertime | overtime | absent
+    employee_id: str
+    full_name: str
+    work_date: date
+    time_in: datetime | None = None
+    time_out: datetime | None = None
+
+
 class OwnerPerformanceResponse(BaseModel):
     summary: OwnerPerformanceSummary
     trend: list[OwnerPerformanceTrendItem]
     employees: list[EmployeePerformanceItem]
+    events: list[OwnerPerformanceEventItem] = []

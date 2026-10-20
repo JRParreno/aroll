@@ -51,6 +51,7 @@ def _slip(*, employee_id, name, **overrides):
         "paid_leave_days": 0,
         "unpaid_leave_days": 0,
         "regular_pay": 730.0,
+        "leave_pay": 0.0,
         "gross_pay": 760.48,
         "net_pay": 741.26,
         "attendance_records": [{"date": "2026-08-04", "earned": 730.0}],
@@ -175,6 +176,10 @@ def _run_finalize(db, user, *, slips_by_employee, adjustments=None):
         ),
         patch(
             "app.api.owner_reports.count_unresolved_scheduled_assignments_in_period",
+            return_value=0,
+        ),
+        patch(
+            "app.api.owner_reports.count_unresolved_historical_rate_in_period",
             return_value=0,
         ),
         patch(
@@ -364,6 +369,10 @@ def test_snapshot_failure_rolls_back_payroll_run():
             return_value=0,
         ),
         patch(
+            "app.api.owner_reports.count_unresolved_historical_rate_in_period",
+            return_value=0,
+        ),
+        patch(
             "app.api.owner_reports._calculate_employee_payslip",
             return_value=live,
         ),
@@ -393,7 +402,9 @@ def test_delete_employee_does_not_delete_payslip_snapshots():
         user_id=uuid4(),
         is_active=True,
     )
-    linked_user = SimpleNamespace(id=employee.user_id, is_active=True)
+    linked_user = SimpleNamespace(
+        id=employee.user_id, is_active=True, business_id=business_id
+    )
     owner = User(
         id=uuid4(),
         business_id=business_id,

@@ -123,6 +123,13 @@ def _run_payslip(
         )
         rows = [(record, assignment, shift)]
 
+    from app.services.employee_pay import stamp_attendance_completion_pay
+
+    # Completed fixture rows need completion stamps (same as production clock-out).
+    for record, _assignment, _shift in rows:
+        if getattr(record, "time_out", None) is not None:
+            stamp_attendance_completion_pay(record, employee, position=position)
+
     holiday = None
     if with_holiday_premium or unworked_holiday_noshow:
         holiday = Holiday(
@@ -284,6 +291,8 @@ def test_hourly_overtime_uses_config_rate():
 def test_hourly_paid_leave():
     slip = _run_payslip(hourly_rate=100.0, is_leave=True)
     assert slip["paid_leave_days"] == 1
+    assert slip["leave_pay"] == 800.0
+    assert slip["regular_pay"] == 0.0
     assert slip["gross_pay"] == 800.0
     assert slip["overtime_minutes"] == 0.0
 
@@ -295,6 +304,8 @@ def test_hourly_leave_reconciliation():
         approved_leave_dates=[date(2026, 8, 4)],
     )
     assert slip["paid_leave_days"] == 1
+    assert slip["leave_pay"] == 800.0
+    assert slip["regular_pay"] == 0.0
     assert slip["gross_pay"] == 800.0
 
 
@@ -506,6 +517,11 @@ def test_hourly_two_shifts_same_day_are_paid_independently():
         return MagicMock()
 
     db.query.side_effect = real_query
+
+    from app.services.employee_pay import stamp_attendance_completion_pay
+
+    stamp_attendance_completion_pay(morning_record, employee, position=position)
+    stamp_attendance_completion_pay(evening_record, employee, position=position)
 
     with ExitStack() as stack:
         stack.enter_context(patch("app.api.owner_reports.ensure_incomplete_for_employee"))

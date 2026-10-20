@@ -57,6 +57,8 @@ def _run(
     rest_day_ot: float = 25.0,
     overtime_enabled: bool = True,
     overtime_per_minute: float = 1.0,
+    overtime_calculation_method: str | None = None,
+    overtime_approval_required: bool = False,
     late_deduction_per_minute: float = 1.0,
     late_deduction_enabled: bool = True,
     employment_type: EmploymentType = EmploymentType.full_time,
@@ -67,6 +69,7 @@ def _run(
     now: datetime | None = None,
     clock_out_deadline_passed: bool | None = True,
     breaktime_is_paid: bool = False,
+    leave_paid: bool = True,
 ):
     business_id = uuid4()
     employee_id = uuid4()
@@ -95,6 +98,8 @@ def _run(
     )
     config = SimpleNamespace(
         overtime_per_minute=overtime_per_minute,
+        overtime_calculation_method=overtime_calculation_method,
+        overtime_approval_required=overtime_approval_required,
         late_deduction_per_minute=late_deduction_per_minute,
         late_deduction_enabled=late_deduction_enabled,
         overtime_enabled=overtime_enabled,
@@ -147,6 +152,14 @@ def _run(
 
     db.query.side_effect = real_query
 
+    from app.services.employee_pay import stamp_attendance_completion_pay
+
+    # Completed rows in these fixtures predate completion stamps; stamp from the
+    # test employee so same-day Daily/Hourly math matches production close.
+    for record, _assignment, _shift in rows or []:
+        if getattr(record, "time_out", None) is not None:
+            stamp_attendance_completion_pay(record, employee, position=position)
+
     with ExitStack() as stack:
         stack.enter_context(patch("app.api.owner_reports.ensure_incomplete_for_employee"))
         stack.enter_context(
@@ -184,7 +197,7 @@ def _run(
         stack.enter_context(
             patch(
                 "app.api.owner_reports.leave_is_paid_for_attendance_day",
-                return_value=True,
+                return_value=leave_paid,
             )
         )
         return _calculate_employee_payslip(
@@ -633,6 +646,7 @@ def test_hourly_pdf_uses_regular_pay_not_daily_times_days():
             "hourly_rate": 100.0,
             "daily_rate": 650.0,
             "regular_pay": 900.0,
+            "leave_pay": 0.0,
             "overtime_pay": 125.0,
             "holiday_pay": 0.0,
             "rest_day_pay": 0.0,
@@ -642,8 +656,12 @@ def test_hourly_pdf_uses_regular_pay_not_daily_times_days():
         }
     )
     assert b"Basic salary: PHP 900.00" in pdf
-    assert b"Hourly rate: PHP 100.00" in pdf
+    assert b"Leave pay: PHP 0.00" in pdf
+    assert b"Hourly Rate: PHP 100.00" in pdf
+    assert b"Daily Rate:" in pdf
+    assert b"Daily Rate: PHP" not in pdf
     assert b"1,300.00" not in pdf
+    assert b"650.00" not in pdf
     assert b"Hours worked: 9.0" in pdf
 
 
@@ -670,6 +688,7 @@ def test_pdf_totals_agree_with_backend_regular_pay():
             "hourly_rate": slip["hourly_rate"],
             "daily_rate": slip["daily_rate"],
             "regular_pay": slip["regular_pay"],
+            "leave_pay": slip.get("leave_pay", 0),
             "overtime_pay": slip["overtime_pay"],
             "holiday_pay": slip["holiday_pay"],
             "rest_day_pay": slip["rest_day_pay"],
@@ -679,6 +698,7 @@ def test_pdf_totals_agree_with_backend_regular_pay():
         }
     )
     assert f"Basic salary: PHP {slip['regular_pay']:,.2f}".encode() in pdf
+    assert f"Leave pay: PHP {slip.get('leave_pay', 0):,.2f}".encode() in pdf
     assert f"Gross pay: PHP {slip['gross_pay']:,.2f}".encode() in pdf
 
 
@@ -940,7 +960,8 @@ def test_daily_two_leave_rows_same_date_one_daily_rate():
         rows=rows,
         scheduled=[(morning_asg, morning), (evening_asg, evening)],
     )
-    assert abs(slip["regular_pay"] - 850.0) < 0.01
+    assert abs(slip["leave_pay"] - 850.0) < 0.01
+    assert abs(slip["regular_pay"] - 0.0) < 0.01
     assert slip["paid_leave_days"] == 1
     assert slip["worked_days"] == 1.0
 
@@ -1844,7 +1865,7 @@ def test_balancing_20_late_50_raw_ot_pays_30_and_clears_late():
         ordinary_ot=25.0,
     )
     assert slip["overtime_minutes"] == 30.0
-    assert abs(slip["overtime_pay"] - 30.0) < 0.01
+    assert abs(slip["overtime_pay"] - overtime_pay_amount(30, 1.0, 0.0)) < 0.01
     assert slip["late_deductions"] == 0.0
 
 
@@ -2248,7 +2269,7 @@ def test_ot_exactly_threshold_after_balancing_pays_ot_clears_late():
     )
     assert slip["overtime_minutes"] == 30.0
     assert abs(slip["overtime_hours"] - 0.5) < 0.01
-    assert abs(slip["overtime_pay"] - 30.0) < 0.01
+    assert abs(slip["overtime_pay"] - overtime_pay_amount(30, 1.0, 0.0)) < 0.01
     assert slip["late_deductions"] == 0.0
 
 
@@ -2370,8 +2391,8 @@ def test_holiday_ot_premium_unchanged_when_late_is_balanced():
         overtime_per_minute=1.0,
         late_deduction_per_minute=1.0,
     )
-    expected_ot = overtime_pay_amount(40, 1.0, 30.0)
     assert abs(slip["overtime_minutes"] - 40.0) < 0.01
+    expected_ot = overtime_pay_amount(40, 1.0, 30.0)
     assert abs(slip["overtime_pay"] - expected_ot) < 0.01
     assert slip["late_deductions"] == 0.0
     assert overtime_premium_percent(None, holiday, False) == 30.0

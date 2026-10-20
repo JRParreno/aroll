@@ -63,7 +63,11 @@ from app.services.missing_clock_out import (
     list_incomplete_for_employee,
 )
 from app.services.face_enrollment import enroll_face_sample_bytes, face_status_for_employee
-from app.models.payroll import BusinessPayrollConfig
+from app.models.attendance_policy import BusinessAttendancePolicy
+from app.models.payroll import BusinessPayrollConfig, Position
+from app.models.rest_day_policy import BusinessRestDayPolicy
+from app.services.employee_pay import resolve_employee_pay
+from app.services.payroll_engine import resolve_overtime_calculation_method
 from app.schemas.face import FaceEnrollResponse, FaceStatusResponse
 from app.schemas.legal_consent import (
     LegalConsentAcceptRequest,
@@ -88,6 +92,8 @@ class FaceRegistrationRequest(BaseModel):
 def _current_employee(
     db: Session,
     user: User,
+    *,
+    require_recovery_email: bool = True,
 ) -> tuple[Employee, Business]:
     if user.role != UserRole.employee:
         raise HTTPException(403, "Only employees can access this endpoint")
@@ -130,6 +136,16 @@ def _current_employee(
                     "This workplace isn’t active right now. "
                     "Please contact your employer."
                 ),
+            },
+        )
+    from app.services.employee_password_reset import needs_recovery_email
+
+    if require_recovery_email and needs_recovery_email(employee):
+        raise HTTPException(
+            403,
+            detail={
+                "code": "recovery_email_required",
+                "message": "Register a recovery email to finish account setup.",
             },
         )
     return employee, business
@@ -189,6 +205,17 @@ def _business_owner_name(db: Session, business: Business) -> str | None:
     return registration.owner_name if registration else None
 
 
+def _business_owner_email(db: Session, business: Business) -> str | None:
+    """Registered owner email from business registration (not a Business.email field)."""
+    if business.registration_id is None:
+        return None
+    registration = db.get(BusinessRegistration, business.registration_id)
+    if registration is None:
+        return None
+    email = (registration.owner_email or "").strip()
+    return email or None
+
+
 def _employee_profile_response(
     db: Session,
     employee: Employee,
@@ -203,6 +230,7 @@ def _employee_profile_response(
         "position": employee.position_title,
         "employment_type": employee.employment_type.value,
         "phone": employee.phone,
+        "recovery_email": employee.recovery_email,
         "profile_image_url": employee.profile_image_url,
         "hire_date": employee.hire_date.isoformat() if employee.hire_date else None,
         "status": employee.status.value,
@@ -210,6 +238,7 @@ def _employee_profile_response(
         "business_code": business.business_code,
         "business_type": business.business_type,
         "owner_name": _business_owner_name(db, business),
+        "owner_email": _business_owner_email(db, business),
         "face_registration_status": employee.face_registration_status,
         "face_registered_at": _dt_label(employee.face_registered_at),
         "face_registration_skipped_at": _dt_label(
@@ -217,6 +246,76 @@ def _employee_profile_response(
         ),
         "branding": _branding_response(business),
         "timezone": business.timezone,
+    }
+
+
+def _employee_attendance_policy_payload(policy: BusinessAttendancePolicy | None) -> dict | None:
+    if policy is None:
+        return None
+    return {
+        "early_clock_in_minutes": policy.early_clock_in_minutes,
+        "on_time_grace_minutes": policy.on_time_grace_minutes,
+        "half_day_threshold_minutes": policy.half_day_threshold_minutes,
+        "absent_threshold_minutes": policy.absent_threshold_minutes,
+        "absent_threshold_percent": getattr(policy, "absent_threshold_percent", None),
+        "half_day_threshold_percent": getattr(policy, "half_day_threshold_percent", None),
+        "early_out_deduction_enabled": bool(policy.early_out_deduction_enabled),
+        "early_out_deduction_per_minute": (
+            float(policy.early_out_deduction_per_minute)
+            if policy.early_out_deduction_enabled
+            else None
+        ),
+        "overtime_minimum_minutes": policy.overtime_minimum_minutes,
+        "maximum_overtime_minutes": getattr(policy, "maximum_overtime_minutes", None),
+        "missing_clock_out_policy": policy.missing_clock_out_policy.value,
+        "attendance_based_salary_enabled": bool(policy.attendance_based_salary_enabled),
+        "breaktime_is_paid": bool(getattr(policy, "breaktime_is_paid", False)),
+    }
+
+
+def _employee_payroll_policy_payload(config: BusinessPayrollConfig | None) -> dict | None:
+    if config is None:
+        return None
+    overtime_enabled = bool(config.overtime_enabled)
+    method = resolve_overtime_calculation_method(config)
+    late_enabled = bool(config.late_deduction_enabled)
+    return {
+        "late_deduction_enabled": late_enabled,
+        "late_deduction_per_minute": (
+            float(config.late_deduction_per_minute) if late_enabled else None
+        ),
+        "overtime_enabled": overtime_enabled,
+        "overtime_calculation_method": method if overtime_enabled else None,
+        "overtime_per_minute": (
+            float(config.overtime_per_minute)
+            if overtime_enabled and method == "flat_per_minute"
+            else None
+        ),
+        "enable_late_overtime_balancing": bool(
+            overtime_enabled and getattr(config, "enable_late_overtime_balancing", False)
+        ),
+        "overtime_approval_required": bool(
+            overtime_enabled and getattr(config, "overtime_approval_required", False)
+        ),
+    }
+
+
+def _employee_rest_day_policy_payload(policy: BusinessRestDayPolicy | None) -> dict | None:
+    if policy is None:
+        return None
+    return {
+        "rest_day_premium_percent": float(policy.rest_day_premium_percent),
+    }
+
+
+def _employee_pay_policy_payload(employee: Employee, position: Position | None) -> dict:
+    resolved = resolve_employee_pay(employee, position=position)
+    basis = resolved.pay_basis.value if resolved.pay_basis is not None else None
+    return {
+        "pay_basis": basis,
+        "daily_rate": resolved.daily_rate,
+        "hourly_rate": resolved.hourly_rate,
+        "monthly_salary": resolved.monthly_salary,
     }
 
 
@@ -377,6 +476,310 @@ def _overtime_minutes(
     return round(max(overtime / 60, 0), 2)
 
 
+def _snapshot_overtime_minutes(row: dict) -> float:
+    """OT minutes already frozen on a payslip attendance row (no recalculation)."""
+    ot = row.get("ot")
+    if isinstance(ot, dict) and ot.get("worked_ot_minutes") is not None:
+        return round(float(ot["worked_ot_minutes"]), 2)
+    return 0.0
+
+
+def _index_snapshot_attendance_rows(slip: dict | None) -> dict[str, dict]:
+    """Map shift_assignment_id (preferred) and date to frozen attendance rows."""
+    by_assignment: dict[str, dict] = {}
+    if not isinstance(slip, dict):
+        return by_assignment
+    for row in slip.get("attendance_records") or []:
+        if not isinstance(row, dict):
+            continue
+        assignment_id = row.get("shift_assignment_id")
+        if assignment_id:
+            by_assignment[str(assignment_id)] = row
+    return by_assignment
+
+
+def _overlay_shift_history_with_finalized_snapshots(
+    db: Session,
+    employee: Employee,
+    items: list[dict],
+) -> list[dict]:
+    """Replace live punch fields with frozen payslip attendance when finalized.
+
+    Uses existing Phase 1 snapshot loaders only — never calls
+    ``_calculate_employee_payslip``. Open (unfinalized) dates stay live.
+    """
+    from app.services.payroll_snapshot import (
+        find_snapshot_run,
+        load_period_payslip,
+        payslips_for_run,
+        snapshot_payslip_dict,
+    )
+
+    if not items:
+        return items
+
+    run_for_date: dict[date, object | None] = {}
+    attendance_by_run: dict[object, dict[str, dict]] = {}
+    live_by_as_of: dict[date, dict[str, dict]] = {}
+
+    def _run_for(work_date: date):
+        if work_date not in run_for_date:
+            run_for_date[work_date] = find_snapshot_run(
+                db,
+                business_id=employee.business_id,
+                as_of=work_date,
+            )
+        return run_for_date[work_date]
+
+    def _attendance_index(run) -> dict[str, dict]:
+        run_id = getattr(run, "id", run)
+        if run_id not in attendance_by_run:
+            matched: dict | None = None
+            for payslip_row in payslips_for_run(db, run):
+                frozen = snapshot_payslip_dict(payslip_row)
+                if frozen is None:
+                    continue
+                if getattr(payslip_row, "employee_id", None) == employee.id:
+                    matched = frozen
+                    break
+                if str(frozen.get("employee_id") or "") == str(employee.id):
+                    matched = frozen
+                    break
+            attendance_by_run[run_id] = _index_snapshot_attendance_rows(matched)
+        return attendance_by_run[run_id]
+
+    def _live_index(work_date: date) -> dict[str, dict]:
+        if work_date not in live_by_as_of:
+            loaded = load_period_payslip(
+                db,
+                employee,
+                as_of=work_date,
+                calculate_payslip=_calculate_employee_payslip,
+            )
+            slip = loaded.slip if loaded is not None else None
+            live_by_as_of[work_date] = _index_snapshot_attendance_rows(slip)
+        return live_by_as_of[work_date]
+
+    def _apply_pay_fields(item: dict, snap_row: dict, *, frozen: bool) -> None:
+        if frozen:
+            item["time_in"] = snap_row.get("time_in")
+            item["time_out"] = snap_row.get("time_out")
+            if snap_row.get("status") is not None:
+                item["status"] = snap_row.get("status")
+            if snap_row.get("shift_name"):
+                item["shift_name"] = snap_row.get("shift_name")
+            item["holiday_name"] = snap_row.get("holiday_name")
+            item["overtime_minutes"] = _snapshot_overtime_minutes(snap_row)
+        else:
+            if snap_row.get("overtime_minutes") is not None:
+                item["overtime_minutes"] = snap_row.get("overtime_minutes")
+            elif snap_row.get("ot"):
+                item["overtime_minutes"] = _snapshot_overtime_minutes(snap_row)
+            # Live payslip names an unworked credit holiday_paid. Do not
+            # overwrite other live statuses.
+            if snap_row.get("status") == "holiday_paid":
+                item["status"] = "holiday_paid"
+        # Authoritative shift pay projection (live or frozen).
+        for key in (
+            "scheduled_start",
+            "scheduled_end",
+            "worked_minutes",
+            "pay_basis_used",
+            "rate_used",
+            "expected_salary_pay",
+            "earned",
+            "late_minutes",
+            "late_deduction",
+            "undertime_minutes",
+            "undertime_deduction",
+            "overtime_pay",
+            "rest_day_premium_pay",
+            "shift_deductions",
+            "shift_net",
+            "holiday_pay",
+            "holiday_included_in_shift_net",
+            "day_holiday_pay",
+            "day_entitlement",
+            "day_rest_day_pay",
+            "reconciled_shift_total",
+            "reconciled_day_total",
+            "historical_rate_required",
+            "daily_rate_conflict",
+            "payroll_status",
+            "is_rest_day",
+        ):
+            if key in snap_row:
+                item[key] = snap_row.get(key)
+        if snap_row.get("ot") is not None:
+            item["ot"] = snap_row.get("ot")
+
+    for item in items:
+        raw_date = item.get("date")
+        if not raw_date:
+            continue
+        try:
+            work_date = date.fromisoformat(str(raw_date))
+        except ValueError:
+            continue
+        assignment_key = str(item.get("assignment_id") or "")
+        run = _run_for(work_date)
+        if run is not None:
+            snap_row = _attendance_index(run).get(assignment_key)
+            if snap_row is not None:
+                _apply_pay_fields(item, snap_row, frozen=True)
+            continue
+        live_row = _live_index(work_date).get(assignment_key)
+        if live_row is not None:
+            _apply_pay_fields(item, live_row, frozen=False)
+    return items
+
+
+def _append_today_unworked_holiday_shifts(
+    db: Session,
+    employee: Employee,
+    deduped: list[tuple[ShiftAssignment, Shift, AttendanceRecord | None]],
+    seen_assignments: set[uuid.UUID],
+    *,
+    today: date,
+    holidays: dict[date, Holiday],
+    business_timezone: str | None,
+) -> None:
+    """Include today's ended shifts that payroll would credit as unworked holiday.
+
+    Future shifts are not added. No attendance row is created.
+    Ordinary same-day absences are added separately once their own
+    scheduled end + grace has passed.
+    """
+    from app.core.timezone import business_now
+    from app.models.attendance_policy import BusinessAttendancePolicy
+    from app.models.payroll import BusinessPayrollConfig
+    from app.services.holiday_pay import (
+        resolve_holiday_policy,
+        resolve_holiday_rules_mode,
+    )
+    from app.services.leave_requests import employee_on_payroll_active_leave
+    from app.services.missing_clock_out import is_past_clock_out_deadline
+
+    holiday = holidays.get(today)
+    if holiday is None:
+        return
+    config = db.get(BusinessPayrollConfig, employee.business_id)
+    policy = resolve_holiday_policy(
+        holiday=holiday,
+        mode=resolve_holiday_rules_mode(config),
+    )
+    if policy is None or not policy.pay_if_not_worked:
+        return
+
+    att_policy = db.get(BusinessAttendancePolicy, employee.business_id)
+    grace = getattr(att_policy, "on_time_grace_minutes", None)
+    grace_minutes = int(grace) if grace is not None else 0
+    now_local = business_now(business_timezone)
+
+    rows = (
+        db.query(ShiftAssignment, Shift, AttendanceRecord)
+        .join(Shift, ShiftAssignment.shift_id == Shift.id)
+        .outerjoin(
+            AttendanceRecord,
+            and_(
+                AttendanceRecord.shift_assignment_id == ShiftAssignment.id,
+                AttendanceRecord.employee_id == employee.id,
+            ),
+        )
+        .filter(
+            ShiftAssignment.employee_id == employee.id,
+            ShiftAssignment.work_date == today,
+            Shift.business_id == employee.business_id,
+        )
+        .all()
+    )
+    for assignment, shift, record in rows:
+        if assignment.id in seen_assignments:
+            continue
+        if record is not None and (
+            record.time_in is not None or record.status == AttendanceStatus.on_leave
+        ):
+            continue
+        if employee_on_payroll_active_leave(
+            db, employee_id=employee.id, work_date=today
+        ):
+            continue
+        if not is_past_clock_out_deadline(
+            now_local=now_local,
+            work_date=today,
+            shift=shift,
+            grace_minutes=grace_minutes,
+        ):
+            continue
+        seen_assignments.add(assignment.id)
+        deduped.append((assignment, shift, record))
+
+
+def _append_today_elapsed_absences(
+    db: Session,
+    employee: Employee,
+    deduped: list[tuple[ShiftAssignment, Shift, AttendanceRecord | None]],
+    seen_assignments: set[uuid.UUID],
+    *,
+    today: date,
+    business_timezone: str | None,
+) -> None:
+    """Include today's scheduled shifts with no attendance once they have ended.
+
+    Visibility only. Uses the same scheduled-end + on-time grace deadline as
+    unworked holiday history. Does not create an AttendanceRecord. Assignments
+    already included (punches, leave, or a paid unworked holiday) are skipped.
+    Each shift is judged on its own end time. Future dates are not queried.
+    """
+    from app.core.timezone import business_now
+    from app.models.attendance_policy import BusinessAttendancePolicy
+    from app.services.leave_requests import employee_on_payroll_active_leave
+    from app.services.missing_clock_out import is_past_clock_out_deadline
+
+    att_policy = db.get(BusinessAttendancePolicy, employee.business_id)
+    grace = getattr(att_policy, "on_time_grace_minutes", None)
+    grace_minutes = int(grace) if grace is not None else 0
+    now_local = business_now(business_timezone)
+
+    rows = (
+        db.query(ShiftAssignment, Shift, AttendanceRecord)
+        .join(Shift, ShiftAssignment.shift_id == Shift.id)
+        .outerjoin(
+            AttendanceRecord,
+            and_(
+                AttendanceRecord.shift_assignment_id == ShiftAssignment.id,
+                AttendanceRecord.employee_id == employee.id,
+            ),
+        )
+        .filter(
+            ShiftAssignment.employee_id == employee.id,
+            ShiftAssignment.work_date == today,
+            Shift.business_id == employee.business_id,
+        )
+        .all()
+    )
+    for assignment, shift, record in rows:
+        if assignment.id in seen_assignments:
+            continue
+        if assignment.work_date != today:
+            continue
+        if record is not None:
+            continue
+        if employee_on_payroll_active_leave(
+            db, employee_id=employee.id, work_date=today
+        ):
+            continue
+        if not is_past_clock_out_deadline(
+            now_local=now_local,
+            work_date=today,
+            shift=shift,
+            grace_minutes=grace_minutes,
+        ):
+            continue
+        seen_assignments.add(assignment.id)
+        deduped.append((assignment, shift, record))
+
+
 def _shift_history_rows(
     db: Session,
     employee: Employee,
@@ -392,6 +795,13 @@ def _shift_history_rows(
     - today's assignment once a clock-in exists (any status: in_progress, late,
       complete, absent) so Shift History reflects the live attendance record
       immediately after face clock-in/out — not only when status is `complete`
+    - today's assignment with no AttendanceRecord once that shift's scheduled
+      end plus the on-time grace period has passed (absent until a payslip
+      overlay marks a paid unworked holiday)
+
+    When a work date falls in a Phase 1 finalized payroll period, punch and
+    OT fields are replaced from that employee's frozen payslip snapshot so
+    history matches the employee payslip. Unfinalized dates stay live.
     """
     from app.services.attendance_correction import latest_corrections_by_assignment
 
@@ -437,6 +847,24 @@ def _shift_history_rows(
             continue
         seen_assignments.add(assignment.id)
         deduped.append((assignment, shift, record))
+
+    _append_today_unworked_holiday_shifts(
+        db,
+        employee,
+        deduped,
+        seen_assignments,
+        today=work_today,
+        holidays=holidays,
+        business_timezone=business_timezone,
+    )
+    _append_today_elapsed_absences(
+        db,
+        employee,
+        deduped,
+        seen_assignments,
+        today=work_today,
+        business_timezone=business_timezone,
+    )
 
     assignment_ids = [assignment.id for assignment, _shift, _record in deduped]
     corrections = latest_corrections_by_assignment(
@@ -510,8 +938,7 @@ def _shift_history_rows(
                 ),
             }
         )
-    return items
-
+    return _overlay_shift_history_with_finalized_snapshots(db, employee, items)
 
 def _performance_summary(
     db: Session,
@@ -705,6 +1132,38 @@ def _payroll_status(period_start: date, period_end: date, today: date) -> str:
     return "upcoming"
 
 
+def _empty_payroll_summary(loaded, *, payroll_status: str) -> dict:
+    period_start = loaded.period_start.isoformat()
+    period_end = loaded.period_end.isoformat()
+    return {
+        "employee_id": "",
+        "employee_name": "",
+        "period_start": period_start,
+        "period_end": period_end,
+        "pay_date": period_end,
+        "payroll_status": payroll_status,
+        "daily_rate": 0,
+        "worked_days": 0,
+        "hours_worked": 0,
+        "regular_pay": 0,
+        "leave_pay": 0,
+        "overtime_hours": 0,
+        "overtime_pay": 0,
+        "holiday_pay": 0,
+        "rest_day_pay": 0,
+        "deductions": 0,
+        "late_deductions": 0,
+        "undertime_deductions": 0,
+        "absent_days": 0,
+        "gross_pay": 0,
+        "net_pay": 0,
+        "final_net_pay": 0,
+        "payroll_adjustments": [],
+        "payroll_adjustments_total": 0,
+        "attendance_records": [],
+    }
+
+
 def _payroll_response(
     db: Session,
     employee: Employee,
@@ -712,6 +1171,7 @@ def _payroll_response(
     *,
     as_of: date | None = None,
     history_limit: int = 0,
+    require_slip: bool = True,
 ) -> dict:
     from app.services.pay_period import list_pay_periods
 
@@ -723,17 +1183,66 @@ def _payroll_response(
         as_of=today,
         calculate_payslip=_calculate_employee_payslip,
     )
+    if loaded.slip is None and not require_slip:
+        status = _payroll_status(
+            loaded.period_start, loaded.period_end, date.today()
+        )
+        empty = _empty_payroll_summary(loaded, payroll_status=status)
+        return {
+            "business_name": business.name,
+            "business_branding": _branding_response(business),
+            "pay_period_type": config.pay_period_type.value if config else "monthly",
+            "period_start": empty["period_start"],
+            "period_end": empty["period_end"],
+            "pay_date": empty["pay_date"],
+            "payroll_status": status,
+            "summary": empty,
+            "rows": [],
+            "history": [],
+        }
     payslip = require_loaded_slip(loaded)
     period_start, period_end = loaded.period_start, loaded.period_end
     rows = []
     for record in payslip["attendance_records"]:
+        historical_required = bool(record.get("historical_rate_required"))
+        # Day rate from the payslip row (completion stamp / expected salary).
+        # Do not reuse slip-level current daily_rate for unresolved historical days.
+        # Shift display uses the engine's stamp rate and shift_net. ``earned``
+        # stays available for older clients and is not the employee-facing amount.
+        if historical_required:
+            day_rate = None
+            earned_value = None
+            pay_basis_used = None
+            rate_used = None
+            shift_net = None
+        else:
+            day_rate = record.get("expected_salary_pay")
+            if day_rate is None:
+                day_rate = payslip["daily_rate"]
+            earned_raw = record.get("earned")
+            earned_value = (
+                None if earned_raw is None else _money(float(earned_raw))
+            )
+            pay_basis_used = record.get("pay_basis_used")
+            raw_rate = record.get("rate_used")
+            rate_used = None if raw_rate is None else _money(float(raw_rate))
+            raw_net = record.get("shift_net")
+            shift_net = None if raw_net is None else _money(float(raw_net))
         rows.append(
             {
                 "date": record["date"],
                 "status": record["status"],
-                "daily_rate": _money(payslip["daily_rate"]),
-                "earned": _money(float(record.get("earned") or 0)),
+                "daily_rate": (
+                    None if day_rate is None else _money(float(day_rate or 0))
+                ),
+                "earned": earned_value,
+                "pay_basis_used": pay_basis_used,
+                "rate_used": rate_used,
+                "shift_net": shift_net,
                 "holiday_name": record["holiday_name"],
+                "historical_rate_required": historical_required,
+                "payroll_status": record.get("payroll_status"),
+                "attendance_record_id": record.get("attendance_record_id"),
             }
         )
     payload = {
@@ -786,6 +1295,7 @@ def _payroll_response(
                     "overtime_pay": slip["overtime_pay"],
                     "overtime_hours": slip["overtime_hours"],
                     "regular_pay": slip.get("regular_pay"),
+                    "leave_pay": slip.get("leave_pay", 0),
                     "gross_pay": slip["gross_pay"],
                     "deductions": slip["deductions"],
                     "net_pay": slip["net_pay"],
@@ -804,6 +1314,37 @@ def _payroll_response(
     return payload
 
 
+class RecoveryEmailRequest(BaseModel):
+    email: str
+
+
+@router.post("/recovery-email")
+def register_recovery_email(
+    body: RecoveryEmailRequest,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+):
+    """Save this employee's own recovery email. Does not change the password."""
+    from app.services.employee_password_reset import (
+        needs_recovery_email,
+        save_recovery_email,
+    )
+
+    employee, business = _current_employee(
+        db, user, require_recovery_email=False
+    )
+    try:
+        saved = save_recovery_email(employee, body.email)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    db.commit()
+    db.refresh(employee)
+    return {
+        "recovery_email": saved,
+        "needs_recovery_email": needs_recovery_email(employee),
+    }
+
+
 @router.get("/profile")
 def profile(
     db: Annotated[Session, Depends(get_db)],
@@ -811,6 +1352,28 @@ def profile(
 ):
     employee, business = _current_employee(db, user)
     return _employee_profile_response(db, employee, business)
+
+
+@router.get("/workplace-policies")
+def workplace_policies(
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+):
+    """Read-only owner-configured attendance and payroll rules for this employee."""
+    employee, business = _current_employee(db, user)
+    attendance = db.get(BusinessAttendancePolicy, business.id)
+    payroll = db.get(BusinessPayrollConfig, business.id)
+    rest_day = db.get(BusinessRestDayPolicy, business.id)
+    position = (
+        db.get(Position, employee.position_id) if employee.position_id is not None else None
+    )
+    return {
+        "business_name": business.name,
+        "attendance": _employee_attendance_policy_payload(attendance),
+        "payroll": _employee_payroll_policy_payload(payroll),
+        "rest_day": _employee_rest_day_policy_payload(rest_day),
+        "your_pay": _employee_pay_policy_payload(employee, position),
+    }
 
 
 @router.post("/profile/image")
@@ -857,7 +1420,7 @@ def dashboard(
         end_date=today + timedelta(days=7),
         today=today,
     )
-    payroll = _payroll_response(db, employee, business)
+    payroll = _payroll_response(db, employee, business, require_slip=False)
     incomplete_rows = list_incomplete_for_employee(db, employee)
     latest_incomplete = incomplete_rows[0] if incomplete_rows else None
     attendance_status = _today_attendance_status(
@@ -1065,6 +1628,28 @@ def employee_withdraw_biometric(
     )
     db.commit()
     return LegalConsentStatusResponse(**consent_status_payload(db, employee, business))
+
+
+@router.post("/permissions-onboarding/complete")
+def complete_permissions_onboarding(
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+):
+    """Mark account-level permissions onboarding complete for the authenticated employee.
+
+    Does not claim OS permissions were granted. Uses the auth token identity only.
+    """
+    employee, _business = _current_employee(db, user)
+    if employee.permissions_onboarding_completed_at is None:
+        employee.permissions_onboarding_completed_at = datetime.now(timezone.utc)
+        db.commit()
+        db.refresh(employee)
+    return {
+        "permissions_onboarding_completed": True,
+        "completed_at": employee.permissions_onboarding_completed_at.isoformat()
+        if employee.permissions_onboarding_completed_at
+        else None,
+    }
 
 
 @router.get("/worksite", response_model=WorksiteResponse)
@@ -1341,6 +1926,35 @@ def _pdf_escape(value: object) -> str:
     return str(value).replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
 
 
+PAYSLIP_RECEIPT_WIDTH = 300
+
+
+def _positive_payslip_rate(value: object) -> float | None:
+    amount = _money(value)
+    if amount <= 0:
+        return None
+    return amount
+
+
+def _payslip_display_rates(data: dict) -> tuple[float | None, float | None]:
+    """Daily and hourly amounts for the downloaded payslip. Unused is None."""
+    raw_basis = data.get("pay_basis")
+    basis = str(raw_basis).lower() if raw_basis not in (None, "") else ""
+    daily = _positive_payslip_rate(data.get("daily_rate"))
+    hourly = _positive_payslip_rate(
+        data.get("hourly_rate")
+        if data.get("hourly_rate") is not None
+        else data.get("hourly_rate_configured")
+    )
+    if basis == "hourly":
+        return None, hourly
+    if basis == "daily":
+        return daily, None
+    if basis == "monthly":
+        return None, None
+    return daily, hourly
+
+
 def _simple_payslip_pdf(data: dict, *, sample: bool = False) -> bytes:
     lines = []
     if sample:
@@ -1350,14 +1964,24 @@ def _simple_payslip_pdf(data: dict, *, sample: bool = False) -> bytes:
                 "NOT FOR ACTUAL SALARY PAYMENT",
             ]
         )
-    pay_basis = str(data.get("pay_basis") or "daily")
-    if pay_basis == "hourly":
-        rate_line = f"Hourly rate: PHP {_money(data.get('hourly_rate')):,.2f}"
-    elif pay_basis == "monthly":
-        rate_line = f"Monthly salary: PHP {_money(data.get('monthly_salary')):,.2f}"
-    else:
-        rate_line = f"Daily rate: PHP {_money(data.get('daily_rate')):,.2f}"
+    daily_rate, hourly_rate = _payslip_display_rates(data)
+    daily_line = (
+        f"Daily Rate: PHP {daily_rate:,.2f}" if daily_rate is not None else "Daily Rate:"
+    )
+    hourly_line = (
+        f"Hourly Rate: PHP {hourly_rate:,.2f}"
+        if hourly_rate is not None
+        else "Hourly Rate:"
+    )
+    pay_basis = str(data.get("pay_basis") or "daily").lower()
+    monthly = _positive_payslip_rate(data.get("monthly_salary"))
     basic_salary = _money(data.get("regular_pay"))
+    unresolved_note = None
+    if data.get("has_unresolved_historical_rate"):
+        unresolved_note = (
+            "NOTE: Completed attendance with unresolved historical pay rate. "
+            "Amounts exclude unresolved days until the Owner resolves the rate."
+        )
     lines.extend(
         [
             "PAYSLIP",
@@ -1367,8 +1991,16 @@ def _simple_payslip_pdf(data: dict, *, sample: bool = False) -> bytes:
             f"Period: {data['period_start']} to {data['period_end']}",
             f"Worked days: {data['worked_days']}",
             f"Hours worked: {data.get('hours_worked', 0)}",
-            rate_line,
+            daily_line,
+            hourly_line,
+        ]
+    )
+    if pay_basis == "monthly" and monthly is not None:
+        lines.append(f"Monthly salary: PHP {monthly:,.2f}")
+    lines.extend(
+        [
             f"Basic salary: PHP {basic_salary:,.2f}",
+            f"Leave pay: PHP {_money(data.get('leave_pay')):,.2f}",
             f"Overtime pay: PHP {_money(data['overtime_pay']):,.2f}",
             f"Holiday pay: PHP {_money(data['holiday_pay']):,.2f}",
             f"Rest day premium: PHP {_money(data.get('rest_day_pay', 0)):,.2f}",
@@ -1377,6 +2009,8 @@ def _simple_payslip_pdf(data: dict, *, sample: bool = False) -> bytes:
             f"Base net pay: PHP {_money(data.get('base_net_pay', data['net_pay'])):,.2f}",
         ]
     )
+    if unresolved_note:
+        lines.insert(6, unresolved_note)
     for adj in data.get("payroll_adjustments") or []:
         sign = "-" if adj.get("kind") == "deduction" else "+"
         lines.append(
@@ -1385,11 +2019,16 @@ def _simple_payslip_pdf(data: dict, *, sample: bool = False) -> bytes:
     lines.append(
         f"Final net pay: PHP {_money(data.get('final_net_pay', data['net_pay'])):,.2f}"
     )
-    # Keep stream builder expecting a flat list.
-    stream_lines = ["BT", "/F1 12 Tf", "72 760 Td"]
+    # Rest-day attendance dates stay off the downloaded receipt. The rest-day
+    # premium amount is already in the earnings lines above.
+    line_h = 13
+    top = 20
+    height = max(top + 16 + len(lines) * line_h + 20, 360)
+    start_y = height - top
+    stream_lines = ["BT", "/F1 9 Tf", f"16 {start_y} Td"]
     for index, line in enumerate(lines):
         if index:
-            stream_lines.append("0 -22 Td")
+            stream_lines.append(f"0 -{line_h} Td")
         stream_lines.append(f"({_pdf_escape(line)}) Tj")
     stream_lines.append("ET")
     stream = "\n".join(stream_lines).encode("latin-1", errors="replace")
@@ -1397,8 +2036,10 @@ def _simple_payslip_pdf(data: dict, *, sample: bool = False) -> bytes:
     objects = [
         b"<< /Type /Catalog /Pages 2 0 R >>",
         b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
-        b"/Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
+        (
+            f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {PAYSLIP_RECEIPT_WIDTH} {height}] "
+            "/Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>"
+        ).encode("ascii"),
         b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
         b"<< /Length " + str(len(stream)).encode("ascii") + b" >>\nstream\n" + stream + b"\nendstream",
     ]

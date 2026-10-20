@@ -2,6 +2,7 @@ import 'package:aroll_mobile/core/app_state.dart';
 import 'package:aroll_mobile/core/di/injection.dart';
 import 'package:aroll_mobile/domain/repositories/auth_repository.dart';
 import 'package:aroll_mobile/presentation/auth/owner_auth_ui.dart';
+import 'package:aroll_mobile/presentation/owner/setup/setup_wizard_constants.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
@@ -48,9 +49,10 @@ class _OwnerLoginScreenState extends State<OwnerLoginScreen> {
     );
     context.go(session.mustChangePassword
         ? '/change-password'
-        : session.setupCompletedAt == null
-            ? '/owner/setup-wizard'
-            : '/owner/home');
+        : ownerLandingRoute(
+            setupCompleted: session.setupCompletedAt != null,
+            needsBrandingOnboarding: session.needsBrandingOnboarding,
+          ));
   }
 
   @override
@@ -86,6 +88,15 @@ class _OwnerLoginScreenState extends State<OwnerLoginScreen> {
               obscureText: true,
               textInputAction: TextInputAction.done,
               onSubmitted: (_) => _submit(),
+            ),
+            Align(
+              alignment: Alignment.center,
+              child: TextButton(
+                onPressed: _loading
+                    ? null
+                    : () => context.push('/login/owner/forgot-password'),
+                child: const Text('Forgot password?'),
+              ),
             ),
             const SizedBox(height: 4),
             OwnerAuthPrimaryButton(

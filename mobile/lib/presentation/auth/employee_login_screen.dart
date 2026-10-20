@@ -33,9 +33,14 @@ class _EmployeeLoginScreenState extends State<EmployeeLoginScreen> {
     SuccessLoginState state,
   ) async {
     final appState = sl<AppState>();
+    // Resolve before setSession notifies GoRouter — otherwise a completed
+    // employee is briefly (or stuck) sent to /permissions every login.
+    final permissionsIntroSeen =
+        await resolvePermissionsIntroSeen(state.session);
     appState.setSession(
       state.session,
       mustChange: state.session.mustChangePassword,
+      permissionsIntroSeen: permissionsIntroSeen,
     );
     await loadEmployeePostAuthGates(appState, state.session);
     if (!context.mounted) return;
@@ -102,6 +107,15 @@ class _EmployeeLoginScreenState extends State<EmployeeLoginScreen> {
                     loading: loading,
                     icon: Icons.arrow_forward_rounded,
                     onPressed: loading ? null : () => _submit(context, false),
+                  ),
+                  Align(
+                    alignment: Alignment.center,
+                    child: TextButton(
+                      onPressed: loading
+                          ? null
+                          : () => context.push('/login/employee/forgot-password'),
+                      child: const Text('Forgot password'),
+                    ),
                   ),
                 ],
               ),

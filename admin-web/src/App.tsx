@@ -6,6 +6,7 @@ import { RequireOwnerAuth } from "@/layouts/RequireOwnerAuth";
 import { AdminRegistrationsPage } from "@/pages/AdminRegistrationsPage";
 import { LoginPage } from "@/pages/LoginPage";
 import { BusinessOwnerLoginPage } from "@/pages/BusinessOwnerLoginPage";
+import { OwnerForgotPasswordPage } from "@/pages/OwnerForgotPasswordPage";
 import { OwnerEmployeesPage } from "@/pages/OwnerEmployeesPage";
 import { AdminDashboardPage } from "@/pages/AdminDashboardPage";
 import { AdminLegalDefaultsPage } from "@/pages/AdminLegalDefaultsPage";
@@ -21,6 +22,7 @@ import { OwnerDashboardPage } from "@/pages/owner/OwnerDashboardPage";
 import { OwnerChangePasswordPage } from "@/pages/owner/OwnerChangePasswordPage";
 import { OwnerSchedulePage } from "@/pages/owner/OwnerSchedulePage";
 import { OwnerAttendancePage } from "@/pages/owner/OwnerAttendancePage";
+import { OwnerShiftHistoryPage } from "@/pages/owner/OwnerShiftHistoryPage";
 import { OwnerLeaveManagementPage } from "@/pages/owner/OwnerLeaveManagementPage";
 import { OwnerNotificationsPage } from "@/pages/owner/OwnerNotificationsPage";
 import { OwnerPayrollPage } from "@/pages/owner/OwnerPayrollPage";
@@ -30,12 +32,15 @@ import { OwnerPositionsSalaryRatesPage } from "@/pages/owner/OwnerPositionsSalar
 import { OwnerPayrollSchedulePage } from "@/pages/owner/OwnerPayrollSchedulePage";
 import { OwnerPersonalSettingsPage } from "@/pages/owner/OwnerPersonalSettingsPage";
 import { OwnerAccountSettingsPage } from "@/pages/owner/OwnerAccountSettingsPage";
+import { OwnerAuditHistoryPage } from "@/pages/owner/OwnerAuditHistoryPage";
 import { OwnerBusinessSettingsPage } from "@/pages/owner/OwnerBusinessSettingsPage";
+import { OwnerConsentConfigurationPage } from "@/pages/owner/OwnerConsentConfigurationPage";
 import { OwnerBusinessSetupsPage } from "@/pages/owner/OwnerBusinessSetupsPage";
 import { OwnerLeavePolicyPage } from "@/pages/owner/OwnerLeavePolicyPage";
 import { OwnerHelpPage } from "@/pages/owner/OwnerHelpPage";
 import { OwnerProfilePage } from "@/pages/owner/OwnerProfilePage";
 import { OwnerSetupWizardPage } from "@/pages/owner/setup/OwnerSetupWizardPage";
+import { OwnerBrandingOnboardingPage } from "@/pages/owner/setup/OwnerBrandingOnboardingPage";
 import { PublicLegalPage } from "@/pages/PublicLegalPage";
 import { PublicConsentDocumentPage } from "@/pages/PublicConsentDocumentPage";
 import { PendingVerificationPage } from "@/pages/owner/PendingVerificationPage";
@@ -50,12 +55,22 @@ export default function App() {
     <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/owner-login" element={<BusinessOwnerLoginPage />} />
+      <Route path="/owner-forgot-password" element={<OwnerForgotPasswordPage />} />
 
       <Route
         path="/owner/change-password"
         element={
           <RequireOwnerAuth passwordChangeOnly>
             <OwnerChangePasswordPage />
+          </RequireOwnerAuth>
+        }
+      />
+
+      <Route
+        path="/owner/branding-setup"
+        element={
+          <RequireOwnerAuth>
+            <OwnerBrandingOnboardingPage />
           </RequireOwnerAuth>
         }
       />
@@ -81,6 +96,7 @@ export default function App() {
         <Route path="employees" element={<OwnerEmployeesPage />} />
         <Route path="schedule" element={<OwnerSchedulePage />} />
         <Route path="attendance" element={<OwnerAttendancePage />} />
+        <Route path="attendance/shift-history" element={<OwnerShiftHistoryPage />} />
         <Route path="leave" element={<OwnerLeaveManagementPage />} />
         <Route path="leave/:requestId" element={<OwnerLeaveManagementPage />} />
         <Route path="notifications" element={<OwnerNotificationsPage />} />
@@ -97,7 +113,9 @@ export default function App() {
         <Route path="payroll-schedule" element={<OwnerPayrollSchedulePage />} />
         <Route path="settings/personal" element={<OwnerPersonalSettingsPage />} />
         <Route path="settings/account" element={<OwnerAccountSettingsPage />} />
+        <Route path="settings/audit-history" element={<OwnerAuditHistoryPage />} />
         <Route path="settings/business" element={<OwnerBusinessSettingsPage />} />
+        <Route path="settings/consents" element={<OwnerConsentConfigurationPage />} />
         <Route path="settings/setup" element={<OwnerBusinessSetupsPage />} />
         <Route path="settings/leave-policy" element={<OwnerLeavePolicyPage />} />
         <Route path="profile" element={<OwnerProfilePage />} />
@@ -113,6 +131,7 @@ export default function App() {
               nav={[
                 { to: "/admin/dashboard", label: "Dashboard" },
                 { to: "/admin/approved-business", label: "Approved Businesses" },
+                { to: "/admin/recently-approved", label: "Recently Approved" },
                 { to: "/admin/registrations", label: "Registration Request" },
                 { to: "/admin/legal", label: "Consents" },
                 { to: "/admin/activity-logs", label: "Activity Logs" },
@@ -125,6 +144,7 @@ export default function App() {
         <Route path="dashboard" element={<AdminDashboardPage />} />
         <Route path="approved-business" element={<ApprovedBusinessPage />} />
         <Route path="approved-business/:id" element={<BusinessDetailPage />} />
+        <Route path="recently-approved" element={<ApprovedBusinessPage />} />
         <Route path="registrations" element={<AdminRegistrationsPage />} />
         <Route path="registrations/:id" element={<RegistrationDetailPage />} />
         <Route path="legal" element={<AdminLegalDefaultsPage />} />

@@ -78,6 +78,7 @@ def notify_incomplete_attendance(
         .all()
     )
     created = 0
+    created_rows = []
     for owner in owners:
         if notification_exists_for_entity(
             db,
@@ -88,7 +89,7 @@ def notify_incomplete_attendance(
         ):
             continue
         try:
-            create_notification(
+            row = create_notification(
                 db,
                 business_id=record.business_id,
                 recipient_user_id=owner.id,
@@ -108,11 +109,17 @@ def notify_incomplete_attendance(
                 },
                 commit=False,
             )
+            created_rows.append(row)
             created += 1
         except Exception:
             pass
     if created:
         try:
             db.commit()
+            from app.services.notifications import _try_push
+
+            for row in created_rows:
+                db.refresh(row)
+                _try_push(db, row)
         except Exception:
             pass

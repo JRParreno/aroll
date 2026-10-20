@@ -12,6 +12,9 @@ import { ScheduleReusePanel } from "@/components/owner/schedule/ScheduleReusePan
 import {
   buildScheduleMatrix,
   formatShiftTime,
+  assignmentsOnDate,
+  restDayPremiumInitialValue,
+  employeesWithScheduleAssignments,
   formatWeekRange,
   getWeekDays,
   getWeekStart,
@@ -75,6 +78,24 @@ function initials(name: string) {
     .join("");
 }
 
+function ScheduleEmployeeAvatar({
+  name,
+  imageUrl,
+}: {
+  name: string;
+  imageUrl?: string | null;
+}) {
+  return (
+    <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-slate-100 text-xs font-semibold text-[#374151]">
+      {imageUrl ? (
+        <img alt={name} className="h-full w-full object-cover" src={imageUrl} />
+      ) : (
+        initials(name)
+      )}
+    </div>
+  );
+}
+
 function overlaps(first: Shift, second: Shift) {
   return first.start_time < second.end_time && second.start_time < first.end_time;
 }
@@ -134,6 +155,41 @@ function parseApprovedLeaveError(error: unknown) {
   return null;
 }
 
+function parseShiftInProgressError(error: unknown): string | null {
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "response" in error &&
+    typeof error.response === "object" &&
+    error.response !== null &&
+    "status" in error.response &&
+    error.response.status === 409 &&
+    "data" in error.response &&
+    typeof error.response.data === "object" &&
+    error.response.data !== null &&
+    "detail" in error.response.data
+  ) {
+    const detail = error.response.data.detail;
+    if (
+      typeof detail === "object" &&
+      detail !== null &&
+      "code" in detail &&
+      detail.code === "shift_in_progress"
+    ) {
+      const title =
+        "title" in detail && typeof detail.title === "string"
+          ? detail.title
+          : "Shift In Progress";
+      const message =
+        "message" in detail && typeof detail.message === "string"
+          ? detail.message
+          : "This shift has already started and cannot be changed.";
+      return `${title}: ${message}`;
+    }
+  }
+  return null;
+}
+
 export function OwnerSchedulePage() {
   const qc = useQueryClient();
   const [mode, setMode] = useState<"assign" | "viewer">("assign");
@@ -143,7 +199,7 @@ export function OwnerSchedulePage() {
   const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<string[]>([]);
   const [employeeModalOpen, setEmployeeModalOpen] = useState(false);
   const [editingAssignmentId, setEditingAssignmentId] = useState<string | null>(null);
-  const [isRestDayWork, setIsRestDayWork] = useState(false);
+  const [isRestDayWork, setIsRestDayWork] = useState(restDayPremiumInitialValue);
   const [search, setSearch] = useState("");
   const [positionFilter, setPositionFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
@@ -154,10 +210,12 @@ export function OwnerSchedulePage() {
   const [defaultStart, setDefaultStart] = useState("09:00");
   const [defaultEnd, setDefaultEnd] = useState("17:00");
   const [showNewShift, setShowNewShift] = useState(false);
-  const [overrideDialogOpen, setOverrideDialogOpen] = useState(false);
-  const [overrideEmployeeNames, setOverrideEmployeeNames] = useState<string[]>([]);
   const [editingShift, setEditingShift] = useState<Shift | null>(null);
-  const [editTimes, setEditTimes] = useState({ start_time: "", end_time: "" });
+  const [editTimes, setEditTimes] = useState({
+    start_time: "",
+    end_time: "",
+    employee_capacity: "1",
+  });
   const [newShift, setNewShift] = useState({
     name: "",
     start_time: "08:00",
@@ -183,7 +241,7 @@ export function OwnerSchedulePage() {
     queryKey: ["holidays"],
     queryFn: listHolidays,
   });
-  const { data: weeklySchedule, isLoading } = useQuery({
+  const { data: weeklySchedule, isLoading, isFetching } = useQuery({
     queryKey: ["weekly-schedule", weekStartKey],
     queryFn: () => getWeeklySchedule(weekStartKey),
   });
@@ -220,6 +278,12 @@ export function OwnerSchedulePage() {
   }, [leaveAvailability]);
 
   const assignments = weeklySchedule?.assignments ?? [];
+  const waitingForAssignments =
+    isLoading || (isFetching && assignments.length === 0);
+  const displayEmployees = employeesWithScheduleAssignments(
+    employees,
+    assignments
+  );
   const businessName =
     me?.business_name ?? localStorage.getItem("aroll_business_name") ?? "Aroll+";
   const selectedShift = shifts.find((shift) => shift.id === selectedShiftId);
@@ -235,19 +299,41 @@ export function OwnerSchedulePage() {
     [employees]
   );
 
-  const assignmentsForDate = assignments.filter(
-    (assignment) => assignment.work_date === workDate
-  );
+  const assignmentsForDate = assignmentsOnDate(assignments, workDate);
   const assignmentsByShift = useMemo(() => {
     const map = new Map<string, ScheduleAssignment[]>();
     for (const assignment of assignmentsForDate) {
-      map.set(assignment.shift_id, [
-        ...(map.get(assignment.shift_id) ?? []),
-        assignment,
-      ]);
+      const shiftId = String(assignment.shift_id);
+      map.set(shiftId, [...(map.get(shiftId) ?? []), assignment]);
     }
     return map;
   }, [assignmentsForDate]);
+  const assignShifts = useMemo(() => {
+    const listed = new Map(shifts.map((shift) => [String(shift.id), shift]));
+    const cards = [...shifts];
+    for (const assignment of assignmentsForDate) {
+      const shiftId = String(assignment.shift_id);
+      if (listed.has(shiftId)) continue;
+      const synthetic: Shift = {
+        id: shiftId,
+        name: assignment.shift_name,
+        shift_type: "",
+        start_time: assignment.shift_start_time,
+        end_time: assignment.shift_end_time,
+        break_minutes: 0,
+        employee_capacity: 0,
+        color: assignment.shift_color,
+        is_active: true,
+      };
+      listed.set(shiftId, synthetic);
+      cards.push(synthetic);
+    }
+    return cards;
+  }, [shifts, assignmentsForDate]);
+  const listedShiftIds = useMemo(
+    () => new Set(shifts.map((shift) => String(shift.id))),
+    [shifts]
+  );
 
   function availabilityFor(employee: Employee): EmployeeAvailability {
     if (!isEmployeeFullyActivated(employee)) return "activationRequired";
@@ -271,12 +357,6 @@ export function OwnerSchedulePage() {
     return hasConflict ? "conflict" : "available";
   }
 
-  function selectedOnLeaveEmployees() {
-    return selectedEmployeeIds.filter(
-      (id) => leaveByEmployee.get(id)?.on_leave
-    );
-  }
-
   const filteredEmployees = employees.filter((employee) => {
     const availability = availabilityFor(employee);
     const matchesSearch = [
@@ -295,7 +375,7 @@ export function OwnerSchedulePage() {
     );
   });
 
-  const viewerEmployees = employees.filter((employee) => {
+  const viewerEmployees = displayEmployees.filter((employee) => {
     const matchesSearch = [employee.full_name, employee.position_title ?? ""]
       .join(" ")
       .toLowerCase()
@@ -350,23 +430,20 @@ export function OwnerSchedulePage() {
   });
 
   const assign = useMutation({
-    mutationFn: (overrideLeave = false) =>
+    mutationFn: () =>
       assignSchedule({
         shift_id: selectedShiftId,
         work_date: workDate,
         employee_ids: selectedEmployeeIds,
         is_rest_day_work: isRestDayWork,
-        override_leave: overrideLeave,
       }),
     onSuccess: (result) => {
       toast.success(
         result.created > 0 ? `Assigned ${result.created} employee(s)` : "No new assignments"
       );
       setSelectedEmployeeIds([]);
-      setIsRestDayWork(false);
+      setIsRestDayWork(restDayPremiumInitialValue());
       setEmployeeModalOpen(false);
-      setOverrideDialogOpen(false);
-      setOverrideEmployeeNames([]);
       qc.invalidateQueries({ queryKey: ["weekly-schedule"] });
       qc.invalidateQueries({ queryKey: ["owner-performance"] });
       qc.invalidateQueries({ queryKey: ["schedule-leave-availability"] });
@@ -374,12 +451,10 @@ export function OwnerSchedulePage() {
     onError: (error: unknown) => {
       const leaveError = parseApprovedLeaveError(error);
       if (leaveError) {
-        const names =
-          leaveError.names ??
-          leaveError.employees?.map((employee) => employee.name).join(", ") ??
-          "selected employee(s)";
-        setOverrideEmployeeNames(names.split(", ").filter(Boolean));
-        setOverrideDialogOpen(true);
+        toast.error(
+          leaveError.message ||
+            "This employee is currently on approved leave for the selected date(s)."
+        );
         return;
       }
       const detail =
@@ -399,18 +474,16 @@ export function OwnerSchedulePage() {
   });
 
   const editAssignment = useMutation({
-    mutationFn: (overrideLeave = false) =>
+    mutationFn: () =>
       updateScheduleAssignment(editingAssignmentId!, {
         shift_id: selectedShiftId,
         work_date: workDate,
         is_rest_day_work: isRestDayWork,
-        override_leave: overrideLeave,
       }),
     onSuccess: () => {
       toast.success("Schedule updated");
       setEditingAssignmentId(null);
-      setIsRestDayWork(false);
-      setOverrideDialogOpen(false);
+      setIsRestDayWork(restDayPremiumInitialValue());
       qc.invalidateQueries({ queryKey: ["weekly-schedule"] });
       qc.invalidateQueries({ queryKey: ["owner-performance"] });
       qc.invalidateQueries({ queryKey: ["schedule-leave-availability"] });
@@ -418,12 +491,10 @@ export function OwnerSchedulePage() {
     onError: (error: unknown) => {
       const leaveError = parseApprovedLeaveError(error);
       if (leaveError) {
-        const names =
-          leaveError.names ??
-          leaveError.employees?.map((employee) => employee.name).join(", ") ??
-          "this employee";
-        setOverrideEmployeeNames(names.split(", ").filter(Boolean));
-        setOverrideDialogOpen(true);
+        toast.error(
+          leaveError.message ||
+            "This employee is currently on approved leave for the selected date(s)."
+        );
         return;
       }
       const detail =
@@ -464,18 +535,39 @@ export function OwnerSchedulePage() {
   const saveShiftTimes = useMutation({
     mutationFn: () => {
       if (!editingShift) throw new Error("No shift selected");
+      const capacity = Number(editTimes.employee_capacity);
+      if (!Number.isInteger(capacity) || capacity < 1) {
+        throw new Error("Invalid employee capacity");
+      }
+      if (editingShift.has_in_progress_today) {
+        return updateShift(editingShift.id, {
+          employee_capacity: capacity,
+        });
+      }
       return updateShift(editingShift.id, {
         start_time: editTimes.start_time,
         end_time: editTimes.end_time,
+        employee_capacity: capacity,
       });
     },
     onSuccess: () => {
-      toast.success("Shift times updated");
+      toast.success("Shift updated");
       setEditingShift(null);
       qc.invalidateQueries({ queryKey: ["shifts"] });
       qc.invalidateQueries({ queryKey: ["weekly-schedule"] });
     },
-    onError: () => toast.error("Could not update shift times"),
+    onError: (error) => {
+      const inProgress = parseShiftInProgressError(error);
+      if (inProgress) {
+        toast.error(inProgress);
+        return;
+      }
+      toast.error(
+        error instanceof Error && error.message === "Invalid employee capacity"
+          ? "Employee capacity must be a whole number of at least 1"
+          : "Could not update shift"
+      );
+    },
   });
 
   const removeAssignment = useMutation({
@@ -490,15 +582,7 @@ export function OwnerSchedulePage() {
 
   function toggleEmployee(employee: Employee) {
     const availability = availabilityFor(employee);
-    if (availability === "activationRequired") return;
-    if (availability === "onLeave") {
-      setSelectedEmployeeIds((current) =>
-        current.includes(employee.id)
-          ? current.filter((id) => id !== employee.id)
-          : [...current, employee.id]
-      );
-      return;
-    }
+    if (availability === "activationRequired" || availability === "onLeave") return;
     if (availability !== "available" && availability !== "leavePending") return;
     setSelectedEmployeeIds((current) =>
       current.includes(employee.id)
@@ -508,31 +592,14 @@ export function OwnerSchedulePage() {
   }
 
   function saveSchedule() {
-    const onLeaveSelected = selectedOnLeaveEmployees();
-    if (onLeaveSelected.length > 0) {
-      const names = onLeaveSelected
-        .map((id) => employees.find((employee) => employee.id === id)?.full_name)
-        .filter(Boolean) as string[];
-      setOverrideEmployeeNames(names);
-      setOverrideDialogOpen(true);
-      return;
-    }
-    assign.mutate(false);
-  }
-
-  function confirmLeaveOverride() {
-    if (editingAssignmentId) {
-      editAssignment.mutate(true);
-      return;
-    }
-    assign.mutate(true);
+    assign.mutate();
   }
 
   function openEmployeeModal(shiftId: string) {
     setSelectedShiftId(shiftId);
     setSelectedEmployeeIds([]);
     setEditingAssignmentId(null);
-    setIsRestDayWork(false);
+    setIsRestDayWork(restDayPremiumInitialValue());
     setEmployeeModalOpen(true);
   }
 
@@ -544,26 +611,23 @@ export function OwnerSchedulePage() {
         actions={
           <>
             <Button
-              variant="outline"
-              className="gap-2"
-              onClick={() => {
-                setMode("assign");
-                setShowNewShift(true);
-              }}
-            >
-              <Plus className="h-4 w-4" />
-              New Shift
-            </Button>
-            <Button
               variant={mode === "assign" ? "default" : "outline"}
-              className={mode === "assign" ? "bg-[#1E3A5F] hover:bg-[#284B73]" : ""}
+              className={
+                mode === "assign"
+                  ? "h-10 rounded-xl bg-[var(--owner-button)] hover:bg-[var(--owner-navy-soft)]"
+                  : "h-10 rounded-xl"
+              }
               onClick={() => setMode("assign")}
             >
               Assign
             </Button>
             <Button
               variant={mode === "viewer" ? "default" : "outline"}
-              className={mode === "viewer" ? "bg-[#1E3A5F] hover:bg-[#284B73]" : ""}
+              className={
+                mode === "viewer"
+                  ? "h-10 rounded-xl bg-[var(--owner-button)] hover:bg-[var(--owner-navy-soft)]"
+                  : "h-10 rounded-xl"
+              }
               onClick={() => setMode("viewer")}
             >
               View Schedule
@@ -584,7 +648,7 @@ export function OwnerSchedulePage() {
         </div>
         {mode === "assign" ? (
           <>
-            <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <section className="owner-panel">
               <div className="grid gap-4 lg:grid-cols-[1fr_1fr_auto] lg:items-end">
                 <div>
                   <label className="mb-2 block text-sm font-medium text-[#374151]">
@@ -601,8 +665,15 @@ export function OwnerSchedulePage() {
                     />
                     <ScheduleReusePanel
                       weekStartKey={weekStartKey}
-                      weekLabel={formatWeekRange(weekStart)}
+                      selectedDate={workDate}
                       assignmentCount={assignments.length}
+                      onApplied={(firstAssignedDate) => {
+                        if (!firstAssignedDate) return;
+                        setWorkDate(firstAssignedDate);
+                        setWeekStart(
+                          getWeekStart(new Date(`${firstAssignedDate}T00:00:00`))
+                        );
+                      }}
                     />
                   </div>
                 </div>
@@ -646,7 +717,7 @@ export function OwnerSchedulePage() {
             </section>
 
             {showNewShift && (
-              <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+              <section className="owner-panel">
                 <h2 className="owner-section-title mb-4">
                   Create Shift
                 </h2>
@@ -686,7 +757,7 @@ export function OwnerSchedulePage() {
                     Cancel
                   </Button>
                   <Button
-                    className="bg-[#1E3A5F] hover:bg-[#284B73]"
+                    className="bg-[var(--owner-button)] hover:bg-[var(--owner-navy-soft)]"
                     onClick={() => addShift.mutate()}
                     disabled={!newShift.name.trim() || addShift.isPending}
                   >
@@ -697,11 +768,15 @@ export function OwnerSchedulePage() {
             )}
 
             <section className="space-y-4">
-              {shifts.map((shift) => {
-                const shiftAssignments = assignmentsByShift.get(shift.id) ?? [];
+              {waitingForAssignments ? (
+                <p className="owner-panel py-8 text-center text-sm text-[#6B7280]">
+                  Loading schedule...
+                </p>
+              ) : assignShifts.map((shift) => {
+                const shiftAssignments = assignmentsByShift.get(String(shift.id)) ?? [];
                 return (
                   <div
-                    className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
+                    className="owner-panel"
                     key={shift.id}
                   >
                     <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -715,6 +790,7 @@ export function OwnerSchedulePage() {
                           {shift.employee_capacity}
                         </p>
                       </div>
+                      {listedShiftIds.has(String(shift.id)) && (
                       <div className="flex flex-wrap gap-2">
                         <Button
                           variant="outline"
@@ -724,11 +800,14 @@ export function OwnerSchedulePage() {
                             setEditTimes({
                               start_time: toTimeInputValue(shift.start_time),
                               end_time: toTimeInputValue(shift.end_time),
+                              employee_capacity: String(
+                                shift.employee_capacity ?? 1
+                              ),
                             });
                           }}
                         >
                           <Pencil className="h-4 w-4" />
-                          Edit times
+                          Edit shift
                         </Button>
                         <Button
                           variant="outline"
@@ -739,6 +818,7 @@ export function OwnerSchedulePage() {
                           Add Employee
                         </Button>
                       </div>
+                      )}
                     </div>
 
                     <div className="mt-5 overflow-x-auto rounded-xl border border-slate-100">
@@ -760,8 +840,9 @@ export function OwnerSchedulePage() {
                             </tr>
                           ) : (
                             shiftAssignments.map((assignment) => {
-                              const employee = employees.find(
-                                (item) => item.id === assignment.employee_id
+                              const employee = displayEmployees.find(
+                                (item) =>
+                                  String(item.id) === String(assignment.employee_id)
                               );
                               return (
                                 <tr className="border-t border-slate-100" key={assignment.id}>
@@ -802,21 +883,7 @@ export function OwnerSchedulePage() {
                                     </div>
                                   </td>
                                   <td className="px-4 py-3 align-middle">
-                                    <div className="flex justify-end gap-2">
-                                      <Button
-                                        variant="outline"
-                                        size="sm"
-                                        onClick={() => {
-                                          setEditingAssignmentId(assignment.id);
-                                          setSelectedShiftId(shift.id);
-                                          setIsRestDayWork(
-                                            Boolean(assignment.is_rest_day_work)
-                                          );
-                                          setEmployeeModalOpen(false);
-                                        }}
-                                      >
-                                        <Pencil className="h-4 w-4" />
-                                      </Button>
+                                    <div className="flex justify-end">
                                       <Button
                                         variant="outline"
                                         size="sm"
@@ -851,7 +918,7 @@ export function OwnerSchedulePage() {
                 </label>
                 <div className="mt-4 flex gap-2">
                   <Button
-                    className="bg-[#1E3A5F] hover:bg-[#284B73]"
+                    className="bg-[var(--owner-button)] hover:bg-[var(--owner-navy-soft)]"
                     disabled={!selectedShiftId || editAssignment.isPending}
                     onClick={() => {
                       const employee = employees.find(
@@ -865,11 +932,12 @@ export function OwnerSchedulePage() {
                         employee &&
                         leaveByEmployee.get(employee.id)?.on_leave
                       ) {
-                        setOverrideEmployeeNames([employee.full_name]);
-                        setOverrideDialogOpen(true);
+                        toast.error(
+                          "This employee is currently on approved leave for the selected date(s)."
+                        );
                         return;
                       }
-                      editAssignment.mutate(false);
+                      editAssignment.mutate();
                     }}
                   >
                     Save Reassignment
@@ -878,7 +946,7 @@ export function OwnerSchedulePage() {
                     variant="outline"
                     onClick={() => {
                       setEditingAssignmentId(null);
-                      setIsRestDayWork(false);
+                      setIsRestDayWork(restDayPremiumInitialValue());
                     }}
                   >
                     Cancel
@@ -888,7 +956,7 @@ export function OwnerSchedulePage() {
             )}
           </>
         ) : (
-          <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <section className="owner-panel">
             <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
               <div>
                 <h2 className="owner-section-title">
@@ -957,7 +1025,7 @@ export function OwnerSchedulePage() {
                   <Printer className="h-4 w-4" />
                   Print
                 </Button>
-                <Button className="bg-[#1E3A5F] hover:bg-[#284B73]" onClick={() => setCustomizing(true)}>
+                <Button className="bg-[var(--owner-button)] hover:bg-[var(--owner-navy-soft)]" onClick={() => setCustomizing(true)}>
                   Edit Table
                 </Button>
               </div>
@@ -991,7 +1059,7 @@ export function OwnerSchedulePage() {
             </div>
 
             <div className="mt-5">
-              {isLoading ? (
+              {waitingForAssignments ? (
                 <p className="py-8 text-center text-sm text-[#6B7280]">
                   Loading schedule...
                 </p>
@@ -1095,7 +1163,7 @@ export function OwnerSchedulePage() {
             </div>
           </div>
 
-          <div className="mt-4 rounded-2xl border border-slate-200 bg-[#FAFBFC] p-5">
+          <div className="owner-panel-muted mt-4">
             <ColorScheduleTable
               colors={tableColors}
               defaultEnd={defaultEnd}
@@ -1110,7 +1178,7 @@ export function OwnerSchedulePage() {
             <Button variant="outline" onClick={() => setTableColors(defaultTableColors)}>
               Reset
             </Button>
-            <Button className="bg-[#1E3A5F] hover:bg-[#284B73]" onClick={() => setCustomizing(false)}>
+            <Button className="bg-[var(--owner-button)] hover:bg-[var(--owner-navy-soft)]" onClick={() => setCustomizing(false)}>
               Apply Changes
             </Button>
           </DialogFooter>
@@ -1118,7 +1186,7 @@ export function OwnerSchedulePage() {
       </Dialog>
 
       <Dialog open={employeeModalOpen} onOpenChange={setEmployeeModalOpen}>
-        <DialogContent className="max-w-4xl">
+        <DialogContent className="flex max-h-[90vh] max-w-4xl flex-col overflow-hidden">
           <DialogHeader>
             <DialogTitle>Select Employees</DialogTitle>
           </DialogHeader>
@@ -1156,7 +1224,7 @@ export function OwnerSchedulePage() {
             </select>
           </div>
 
-          <div className="mt-4 max-h-[420px] overflow-auto rounded-xl border border-slate-100">
+          <div className="mt-4 min-h-0 flex-1 overflow-auto rounded-xl border border-slate-100">
             <p className="sticky top-0 z-10 border-b border-slate-100 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-wide text-[#6B7280]">
               Available
             </p>
@@ -1196,9 +1264,10 @@ export function OwnerSchedulePage() {
                               readOnly
                               type="checkbox"
                             />
-                            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-[#374151]">
-                              {initials(employee.full_name)}
-                            </div>
+                            <ScheduleEmployeeAvatar
+                              name={employee.full_name}
+                              imageUrl={employee.profile_image_url}
+                            />
                             <span className="font-medium text-[#1F2937]">
                               {employee.full_name}
                             </span>
@@ -1237,9 +1306,10 @@ export function OwnerSchedulePage() {
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-3">
                             <input disabled readOnly type="checkbox" />
-                            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-[#374151]">
-                              {initials(employee.full_name)}
-                            </div>
+                            <ScheduleEmployeeAvatar
+                              name={employee.full_name}
+                              imageUrl={employee.profile_image_url}
+                            />
                             <span className="font-medium text-[#1F2937]">
                               {employee.full_name}
                             </span>
@@ -1275,22 +1345,25 @@ export function OwnerSchedulePage() {
                 <table className="w-full min-w-[720px] text-sm">
                   <tbody>
                     {onLeaveEmployees.map((employee) => {
-                      const checked = selectedEmployeeIds.includes(employee.id);
                       return (
                         <tr
-                          className="cursor-pointer border-t border-slate-100 hover:bg-[#FAFBFC]"
+                          className="border-t border-slate-100"
                           key={employee.id}
-                          onClick={() => toggleEmployee(employee)}
                         >
                           <td className="px-4 py-3">
                             <div className="flex items-center gap-3">
-                              <input checked={checked} readOnly type="checkbox" />
-                              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-rose-50 text-xs font-semibold text-rose-700">
-                                {initials(employee.full_name)}
+                              <ScheduleEmployeeAvatar
+                                name={employee.full_name}
+                                imageUrl={employee.profile_image_url}
+                              />
+                              <div>
+                                <span className="font-medium text-[#1F2937]">
+                                  {employee.full_name}
+                                </span>
+                                <p className="text-xs text-rose-700">
+                                  This employee is currently on approved leave for the selected date(s).
+                                </p>
                               </div>
-                              <span className="font-medium text-[#1F2937]">
-                                {employee.full_name}
-                              </span>
                             </div>
                           </td>
                           <td className="px-4 py-3 text-[#6B7280]">
@@ -1313,11 +1386,15 @@ export function OwnerSchedulePage() {
             ) : null}
           </div>
 
-          <DialogFooter className="flex-col items-stretch gap-3 sm:flex-col">
-            <label className="flex items-center gap-2 rounded-xl border border-slate-200 bg-[#FAFBFC] px-4 py-3 text-sm text-[#1F2937]">
+          <DialogFooter className="shrink-0 flex-col items-stretch gap-3 sm:flex-col">
+            <label
+              data-testid="rest-day-premium"
+              className="flex items-center gap-2 rounded-xl border border-slate-200 bg-[#FAFBFC] px-4 py-3 text-sm text-[#1F2937]"
+            >
               <input
                 type="checkbox"
                 checked={isRestDayWork}
+                disabled={false}
                 onChange={(event) => setIsRestDayWork(event.target.checked)}
               />
               Mark as approved rest day work (premium applies)
@@ -1327,43 +1404,13 @@ export function OwnerSchedulePage() {
                 Cancel
               </Button>
               <Button
-                className="bg-[#1E3A5F] hover:bg-[#284B73]"
+                className="bg-[var(--owner-button)] hover:bg-[var(--owner-navy-soft)]"
                 disabled={!selectedShiftId || selectedEmployeeIds.length === 0 || assign.isPending}
                 onClick={saveSchedule}
               >
                 Save Schedule
               </Button>
             </div>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={overrideDialogOpen} onOpenChange={setOverrideDialogOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Assign During Approved Leave?</DialogTitle>
-          </DialogHeader>
-          <p className="text-sm text-[#6B7280]">
-            {overrideEmployeeNames.join(", ")} {overrideEmployeeNames.length === 1 ? "is" : "are"} on
-            approved leave for {workDate}. Assigning a shift will override leave for this date.
-          </p>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setOverrideDialogOpen(false);
-                setOverrideEmployeeNames([]);
-              }}
-            >
-              Cancel
-            </Button>
-            <Button
-              className="bg-[#1E3A5F] hover:bg-[#284B73]"
-              disabled={assign.isPending || editAssignment.isPending}
-              onClick={confirmLeaveOverride}
-            >
-              Assign Anyway
-            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -1376,14 +1423,25 @@ export function OwnerSchedulePage() {
       >
         <DialogContent className="max-w-md sm:rounded-2xl">
           <DialogHeader>
-            <DialogTitle>Edit {editingShift?.name} times</DialogTitle>
+            <DialogTitle>
+              {editingShift?.has_in_progress_today
+                ? "Shift In Progress"
+                : `Edit ${editingShift?.name}`}
+            </DialogTitle>
           </DialogHeader>
+          {editingShift?.has_in_progress_today ? (
+            <p className="text-sm leading-relaxed text-[#6B7280]">
+              This shift has already started and cannot be changed. Changes to
+              an active shift could affect attendance and payroll records.
+            </p>
+          ) : null}
           <div className="grid gap-4 sm:grid-cols-2">
             <label className="space-y-2 text-sm font-medium text-[#374151]">
               <span>Start time</span>
               <Input
                 type="time"
                 value={editTimes.start_time}
+                disabled={Boolean(editingShift?.has_in_progress_today)}
                 onChange={(event) =>
                   setEditTimes({ ...editTimes, start_time: event.target.value })
                 }
@@ -1394,8 +1452,24 @@ export function OwnerSchedulePage() {
               <Input
                 type="time"
                 value={editTimes.end_time}
+                disabled={Boolean(editingShift?.has_in_progress_today)}
                 onChange={(event) =>
                   setEditTimes({ ...editTimes, end_time: event.target.value })
+                }
+              />
+            </label>
+            <label className="space-y-2 text-sm font-medium text-[#374151] sm:col-span-2">
+              <span>Employee Capacity</span>
+              <Input
+                type="number"
+                min={1}
+                step={1}
+                value={editTimes.employee_capacity}
+                onChange={(event) =>
+                  setEditTimes({
+                    ...editTimes,
+                    employee_capacity: event.target.value,
+                  })
                 }
               />
             </label>
@@ -1405,15 +1479,18 @@ export function OwnerSchedulePage() {
               Cancel
             </Button>
             <Button
-              className="bg-[#1E3A5F] hover:bg-[#284B73]"
+              className="bg-[var(--owner-button)] hover:bg-[var(--owner-navy-soft)]"
               disabled={
                 !editTimes.start_time ||
                 !editTimes.end_time ||
+                !editTimes.employee_capacity ||
+                Number(editTimes.employee_capacity) < 1 ||
+                !Number.isInteger(Number(editTimes.employee_capacity)) ||
                 saveShiftTimes.isPending
               }
               onClick={() => saveShiftTimes.mutate()}
             >
-              {saveShiftTimes.isPending ? "Saving..." : "Save times"}
+              {saveShiftTimes.isPending ? "Saving..." : "Save"}
             </Button>
           </DialogFooter>
         </DialogContent>

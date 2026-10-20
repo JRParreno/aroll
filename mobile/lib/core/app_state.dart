@@ -13,17 +13,28 @@ class AppState extends ChangeNotifier {
   bool? biometricConsentSatisfied;
   bool? consentsCompleted;
   bool permissionsIntroSeen = false;
+  bool needsRecoveryEmail = false;
   /// UI-only DEMO01 research notice. Not a demo-mode security flag.
   bool researchEvalAcknowledged = false;
 
-  void setSession(UserSession s, {required bool mustChange}) {
+  void setSession(
+    UserSession s, {
+    required bool mustChange,
+    bool? permissionsIntroSeen,
+  }) {
     session = s;
     isLoggedIn = true;
     mustChangePassword = mustChange;
+    needsRecoveryEmail = s.isEmployee && s.needsRecoveryEmail;
     researchEvalAcknowledged = false;
     consentsCompleted = s.isDemo ? true : s.consentsCompleted;
     legalConsentSatisfied = consentsCompleted;
     biometricConsentSatisfied = consentsCompleted;
+    // Prefer an explicit pre-resolved value so the router does not redirect to
+    // /permissions before async gate loading finishes. Fall back to the
+    // server account flag (never leave a completed account as "unseen").
+    this.permissionsIntroSeen = permissionsIntroSeen ??
+        (s.isDemo || s.permissionsOnboardingCompleted == true);
     if (s.isEmployee) {
       employeeProfileImageUrl = s.profileImageUrl;
       // Locked until server confirms enrollment (login, restore, or resume).
@@ -59,6 +70,13 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  void setPermissionsOnboardingCompleted(bool completed) {
+    final current = session;
+    if (current == null) return;
+    session = current.copyWith(permissionsOnboardingCompleted: completed);
+    notifyListeners();
+  }
+
   void clearSession() {
     session = null;
     isLoggedIn = false;
@@ -69,6 +87,7 @@ class AppState extends ChangeNotifier {
     biometricConsentSatisfied = null;
     consentsCompleted = null;
     permissionsIntroSeen = false;
+    needsRecoveryEmail = false;
     researchEvalAcknowledged = false;
     notifyListeners();
   }
@@ -85,9 +104,23 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  void markRecoveryEmailRegistered() {
+    needsRecoveryEmail = false;
+    if (session != null) {
+      session = session!.copyWith(needsRecoveryEmail: false);
+    }
+    notifyListeners();
+  }
+
   void updateSetupCompletedAt(DateTime? setupCompletedAt) {
     if (session == null) return;
     session = session!.copyWith(setupCompletedAt: setupCompletedAt);
+    notifyListeners();
+  }
+
+  void updateNeedsBrandingOnboarding(bool value) {
+    if (session == null) return;
+    session = session!.copyWith(needsBrandingOnboarding: value);
     notifyListeners();
   }
 
@@ -106,12 +139,15 @@ class AppState extends ChangeNotifier {
         email: current.email,
         businessCode: current.businessCode,
         setupCompletedAt: current.setupCompletedAt,
+        needsBrandingOnboarding: current.needsBrandingOnboarding,
         mustChangePassword: current.mustChangePassword,
         branding: current.branding,
         profileImageUrl: imageUrl,
         isDemo: current.isDemo,
         isInternalTest: current.isInternalTest,
         consentsCompleted: current.consentsCompleted,
+        permissionsOnboardingCompleted: current.permissionsOnboardingCompleted,
+        needsRecoveryEmail: current.needsRecoveryEmail,
         timezone: current.timezone,
       );
     }

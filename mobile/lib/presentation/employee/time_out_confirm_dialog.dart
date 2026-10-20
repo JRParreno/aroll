@@ -1,4 +1,5 @@
 import 'package:aroll_mobile/presentation/shared/app_ui.dart';
+import 'package:aroll_mobile/presentation/shared/confirm_action_dialog.dart';
 import 'package:flutter/material.dart';
 
 Future<bool> showTimeOutConfirmation(BuildContext context) async {
@@ -15,22 +16,23 @@ class TimeOutConfirmDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Are you sure you want to Time Out?'),
-      content: const Text('Your attendance for this shift will be completed.'),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context, false),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          style: FilledButton.styleFrom(
-            backgroundColor: AppColors.primaryDark,
-          ),
-          onPressed: () => Navigator.pop(context, true),
-          child: const Text('Time Out'),
-        ),
-      ],
+    return const ConfirmActionDialog(
+      icon: Icons.schedule_rounded,
+      title: 'Time Out?',
+      message: 'Are you sure you want to Time Out?',
+      messageSecondary: 'Your attendance for this shift will be completed.',
+      // Match primary message color/weight so both lines read as one body.
+      messageSecondaryStyle: TextStyle(
+        fontSize: 14,
+        fontWeight: FontWeight.w500,
+        color: AppColors.textMuted,
+        height: 1.45,
+      ),
+      messageTextAlign: TextAlign.center,
+      confirmLabel: 'Time Out',
+      iconColor: AppColors.primaryDark,
+      iconBackground: AppColors.iconWell,
+      confirmColor: AppColors.primaryDark,
     );
   }
 }

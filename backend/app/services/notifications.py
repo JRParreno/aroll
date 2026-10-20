@@ -1,9 +1,11 @@
-"""Centralized in-app notifications for owners and (future) employees."""
+"""Centralized in-app notifications for owners and employees."""
 
 from __future__ import annotations
 
 import json
+import logging
 import uuid
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -11,6 +13,8 @@ from sqlalchemy.orm import Session
 from app.models.enums import UserRole
 from app.models.notification import Notification
 from app.models.user import User
+
+logger = logging.getLogger("aroll.notifications")
 
 # Stable type keys — keep additive for future payroll/schedule/holiday events.
 NOTIFICATION_TYPES = {
@@ -30,7 +34,17 @@ NOTIFICATION_TYPES = {
     "schedule_conflict",
     "business_setup_reminder",
     "schedule_updated",
+    "schedule_assigned",
+    "schedule_changed",
+    "schedule_cancelled",
+    "schedule_reminder",
     "holiday_announcement",
+    "overtime_submitted",
+    "overtime_approved",
+    "overtime_rejected",
+    "payroll_adjustment_added",
+    "payroll_adjustment_changed",
+    "payroll_adjustment_removed",
 }
 
 
@@ -51,6 +65,15 @@ def notification_exists_for_entity(
     if recipient_user_id is not None:
         query = query.filter(Notification.recipient_user_id == recipient_user_id)
     return query.first() is not None
+
+
+def _try_push(db: Session, row: Notification) -> None:
+    try:
+        from app.services.push_delivery import deliver_notification_push
+
+        deliver_notification_push(db, row)
+    except Exception:
+        logger.exception("push delivery failed notification_id=%s", row.id)
 
 
 def _owner_users(db: Session, business_id: uuid.UUID) -> list[User]:
@@ -97,6 +120,7 @@ def create_notification(
     if commit:
         db.commit()
         db.refresh(row)
+        _try_push(db, row)
     else:
         db.flush()
     return row
@@ -115,23 +139,29 @@ def notify_business_owners(
     metadata: dict[str, Any] | None = None,
 ) -> int:
     owners = _owner_users(db, business_id)
+    rows: list[Notification] = []
     for user in owners:
-        create_notification(
-            db,
-            business_id=business_id,
-            recipient_user_id=user.id,
-            recipient_role=user.role.value,
-            type=type,
-            title=title,
-            message=message,
-            entity_type=entity_type,
-            entity_id=entity_id,
-            deep_link=deep_link,
-            metadata=metadata,
-            commit=False,
+        rows.append(
+            create_notification(
+                db,
+                business_id=business_id,
+                recipient_user_id=user.id,
+                recipient_role=user.role.value,
+                type=type,
+                title=title,
+                message=message,
+                entity_type=entity_type,
+                entity_id=entity_id,
+                deep_link=deep_link,
+                metadata=metadata,
+                commit=False,
+            )
         )
     if owners:
         db.commit()
+        for row in rows:
+            db.refresh(row)
+            _try_push(db, row)
     return len(owners)
 
 
@@ -215,15 +245,24 @@ def list_notifications(
     )
 
 
-def unread_count(db: Session, *, recipient_user_id: uuid.UUID) -> int:
-    return (
-        db.query(Notification)
-        .filter(
-            Notification.recipient_user_id == recipient_user_id,
-            Notification.is_read.is_(False),
-        )
-        .count()
+def unread_count(
+    db: Session,
+    *,
+    recipient_user_id: uuid.UUID,
+    created_after: datetime | None = None,
+) -> int:
+    """Unread rows for this recipient.
+
+    ``created_after`` is the employee inbox watermark. Omit it to count every
+    unread row, which is what the owner badge still does.
+    """
+    query = db.query(Notification).filter(
+        Notification.recipient_user_id == recipient_user_id,
+        Notification.is_read.is_(False),
     )
+    if created_after is not None:
+        query = query.filter(Notification.created_at > created_after)
+    return query.count()
 
 
 def mark_notification_read(
@@ -248,15 +287,28 @@ def mark_notification_read(
     return row
 
 
-def mark_all_read(db: Session, *, recipient_user_id: uuid.UUID) -> int:
-    rows = (
-        db.query(Notification)
-        .filter(
-            Notification.recipient_user_id == recipient_user_id,
-            Notification.is_read.is_(False),
-        )
-        .all()
+def mark_all_read(
+    db: Session,
+    *,
+    recipient_user_id: uuid.UUID,
+    created_through: datetime | None = None,
+) -> int:
+    """Mark this recipient's current unread rows read.
+
+    Rows are loaded first and only those objects are updated, so a notification
+    inserted after the snapshot is left unread. ``created_through`` limits the
+    snapshot to notifications that already existed in the inbox the employee
+    was looking at. Omit it to mark every current unread row for this user.
+    """
+    query = db.query(Notification).filter(
+        Notification.recipient_user_id == recipient_user_id,
+        Notification.is_read.is_(False),
     )
+    if created_through is not None:
+        query = query.filter(Notification.created_at <= created_through)
+    rows = query.all()
+    if not rows:
+        return 0
     for row in rows:
         row.is_read = True
     db.commit()

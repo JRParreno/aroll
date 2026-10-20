@@ -44,7 +44,7 @@ class _EmployeePayrollHistoryScreenState
           if (snapshot.connectionState == ConnectionState.waiting) {
             return loadingView();
           }
-          if (snapshot.hasError) return errorView(snapshot.error);
+          if (snapshot.hasError) return payrollErrorView(snapshot.error);
 
           final items = snapshot.data ?? const [];
           if (items.isEmpty) {

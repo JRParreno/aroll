@@ -1,5 +1,6 @@
 import 'package:aroll_mobile/core/di/injection.dart';
 import 'package:aroll_mobile/data/repositories/owner_repository.dart';
+import 'package:aroll_mobile/presentation/owner/owner_leave_allowances_section.dart';
 import 'package:aroll_mobile/presentation/owner/owner_shell.dart';
 import 'package:aroll_mobile/presentation/owner/setup/setup_ui.dart';
 import 'package:aroll_mobile/presentation/shared/app_ui.dart';
@@ -18,6 +19,8 @@ class _OwnerLeavePolicyScreenState extends State<OwnerLeavePolicyScreen> {
   late Future<Map<String, dynamic>> _future;
   Map<String, bool> _draft = {};
   Map<String, bool> _saved = {};
+  final _notice = TextEditingController(text: '0');
+  int _savedNotice = 0;
   bool _saving = false;
 
   @override
@@ -38,6 +41,9 @@ class _OwnerLeavePolicyScreenState extends State<OwnerLeavePolicyScreen> {
     }
     _draft = Map<String, bool>.from(next);
     _saved = Map<String, bool>.from(next);
+    final notice = data['minimum_advance_notice_days'] as int? ?? 0;
+    _savedNotice = notice;
+    _notice.text = '$notice';
     return data;
   }
 
@@ -49,11 +55,34 @@ class _OwnerLeavePolicyScreenState extends State<OwnerLeavePolicyScreen> {
     return false;
   }
 
+  bool get _noticeDirty => int.tryParse(_notice.text.trim()) != _savedNotice;
+
+  @override
+  void dispose() {
+    _notice.dispose();
+    super.dispose();
+  }
+
   Future<void> _save() async {
-    if (_saving || !_dirty) return;
+    if (_saving || (!_dirty && !_noticeDirty)) return;
+    final notice = int.tryParse(_notice.text.trim());
+    if (notice == null || notice < 0 || notice > 365) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Advance notice must be a whole number from 0 to 365.'),
+        ),
+      );
+      return;
+    }
     setState(() => _saving = true);
     try {
-      await _repo.updateLeavePolicy({'treatments': _draft});
+      await _repo.updateLeavePolicy({
+        'treatments': {
+          for (final entry in _draft.entries)
+            if (entry.key != 'unpaid') entry.key: entry.value,
+        },
+        'minimum_advance_notice_days': notice,
+      });
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Leave Policy saved')),
@@ -90,8 +119,8 @@ class _OwnerLeavePolicyScreenState extends State<OwnerLeavePolicyScreen> {
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting &&
               _draft.isEmpty) {
-            return const Center(
-              child: CircularProgressIndicator(color: SetupUi.navy),
+            return Center(
+              child: CircularProgressIndicator(color: SetupUi.navyOf(context)),
             );
           }
           if (snapshot.hasError && _draft.isEmpty) {
@@ -108,6 +137,7 @@ class _OwnerLeavePolicyScreenState extends State<OwnerLeavePolicyScreen> {
           final items = (snapshot.data?['items'] as List? ?? const [])
               .whereType<Map>()
               .map((item) => Map<String, dynamic>.from(item))
+              .where((item) => item['leave_type'] != 'unpaid')
               .toList();
 
           return ListView(
@@ -146,14 +176,56 @@ class _OwnerLeavePolicyScreenState extends State<OwnerLeavePolicyScreen> {
                 ),
               ),
               const SizedBox(height: 16),
+              SetupSurfaceCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Minimum advance notice',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 15,
+                        color: Color(0xFF111827),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    const Text(
+                      'Calendar days before the leave start date. 0 means no minimum. This applies to every leave type.',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Color(0xFF6B7280),
+                        height: 1.35,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: _notice,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        isDense: true,
+                        suffixText: 'days',
+                        border: OutlineInputBorder(),
+                      ),
+                      onChanged: (_) => setState(() {}),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
               SizedBox(
                 width: double.infinity,
                 child: FilledButton(
-                  style: SetupUi.primaryButton,
-                  onPressed: !_dirty || _saving ? null : _save,
+                  style: SetupUi.primaryButtonOf(context).copyWith(
+                    textStyle: const WidgetStatePropertyAll(
+                      TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                  onPressed: (!_dirty && !_noticeDirty) || _saving ? null : _save,
                   child: Text(_saving ? 'Saving…' : 'Save Leave Policy'),
                 ),
               ),
+              const SizedBox(height: 16),
+              const BusinessLeaveAllowancesSection(),
             ],
           );
         },
@@ -192,7 +264,7 @@ class _LeavePolicyToggleRow extends StatelessWidget {
                   label,
                   style: const TextStyle(
                     fontSize: 14.5,
-                    fontWeight: FontWeight.w700,
+                    fontWeight: FontWeight.w500,
                     color: AppColors.textPrimary,
                   ),
                 ),
@@ -202,13 +274,13 @@ class _LeavePolicyToggleRow extends StatelessWidget {
                       const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                   decoration: BoxDecoration(
                     color: statusFill,
-                    borderRadius: BorderRadius.circular(999),
+                    borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
                     paid ? 'Paid' : 'Unpaid',
                     style: TextStyle(
                       fontSize: 11,
-                      fontWeight: FontWeight.w700,
+                      fontWeight: FontWeight.w500,
                       color: statusColor,
                     ),
                   ),

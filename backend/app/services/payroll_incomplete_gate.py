@@ -59,6 +59,101 @@ def count_incomplete_attendance_in_period(
     )
 
 
+def count_unresolved_historical_rate_in_period(
+    db: Session,
+    *,
+    business_id: uuid.UUID,
+    period_start: date,
+    period_end: date,
+    business_timezone: str | None = None,
+) -> int:
+    """Count closed attendances that cannot be safely priced historically.
+
+    Includes:
+    - closed rows with no completion-rate stamp
+    - completed Daily rows on a work_date where Daily stamps conflict
+    """
+    from app.models.enums import PayBasis
+    from app.services.employee_pay import (
+        attendance_requires_historical_rate,
+        find_conflicting_daily_work_dates,
+        load_daily_workday_entitlements_for_business,
+        _stamp_pay_basis,
+    )
+
+    ensure_incomplete_for_business(
+        db,
+        business_id=business_id,
+        business_timezone=business_timezone,
+    )
+    joined = (
+        db.query(AttendanceRecord, ShiftAssignment, Shift)
+        .outerjoin(
+            ShiftAssignment,
+            AttendanceRecord.shift_assignment_id == ShiftAssignment.id,
+        )
+        .outerjoin(Shift, ShiftAssignment.shift_id == Shift.id)
+        .filter(
+            AttendanceRecord.business_id == business_id,
+            AttendanceRecord.time_in.is_not(None),
+            AttendanceRecord.time_out.is_not(None),
+            AttendanceRecord.status.notin_(
+                (
+                    AttendanceStatus.in_progress,
+                    AttendanceStatus.incomplete,
+                )
+            ),
+            or_(
+                and_(
+                    ShiftAssignment.id.is_not(None),
+                    ShiftAssignment.work_date >= period_start,
+                    ShiftAssignment.work_date <= period_end,
+                ),
+                and_(
+                    AttendanceRecord.shift_assignment_id.is_(None),
+                    AttendanceRecord.created_at >= period_start,
+                    AttendanceRecord.created_at
+                    < period_end + timedelta(days=1),
+                ),
+            ),
+        )
+        .all()
+    )
+    entitlements = load_daily_workday_entitlements_for_business(
+        db,
+        business_id=business_id,
+        period_start=period_start,
+        period_end=period_end,
+    )
+    conflict_dates_by_employee: dict = {}
+    # Group rows by employee for conflict detection.
+    by_employee: dict = {}
+    for record, assignment, shift in joined:
+        by_employee.setdefault(record.employee_id, []).append(
+            (record, assignment, shift)
+        )
+    for employee_id, emp_rows in by_employee.items():
+        conflict_dates_by_employee[employee_id] = find_conflicting_daily_work_dates(
+            emp_rows
+        )
+
+    count = 0
+    for record, assignment, _shift in joined:
+        if attendance_requires_historical_rate(record):
+            count += 1
+            continue
+        work_date = assignment.work_date if assignment is not None else None
+        if work_date is None:
+            continue
+        if (
+            work_date in conflict_dates_by_employee.get(record.employee_id, set())
+            and _stamp_pay_basis(record) == PayBasis.daily
+            and (record.employee_id, work_date) not in entitlements
+        ):
+            count += 1
+    return count
+
+
 def count_unresolved_scheduled_assignments_in_period(
     db: Session,
     *,

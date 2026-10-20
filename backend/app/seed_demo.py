@@ -265,6 +265,8 @@ def _upsert_position(
         row = Position(
             business_id=business.id,
             title=title,
+            employment_type=EmploymentType.full_time,
+            pay_basis=PayBasis.daily,
             daily_rate=daily_rate,
             hourly_rate=hourly_rate,
             description=f"Demo {title} role",

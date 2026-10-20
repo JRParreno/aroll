@@ -26,7 +26,10 @@ class _EmployeeScheduleScreenState extends State<EmployeeScheduleScreen>
   /// UI-only: which day is highlighted in the week strip.
   late DateTime _selectedDay;
 
-  /// Week-start (Sunday) for the data currently loaded.
+  /// Monday of the week currently displayed / loaded.
+  late DateTime _viewedWeekStart;
+
+  /// Week-start (Monday) for the data currently loaded.
   DateTime? _loadedWeekStart;
 
   Timer? _weekWatchTimer;
@@ -37,6 +40,7 @@ class _EmployeeScheduleScreenState extends State<EmployeeScheduleScreen>
     WidgetsBinding.instance.addObserver(this);
     final today = _dateOnly(DateTime.now());
     _selectedDay = today;
+    _viewedWeekStart = _weekDays(today).first;
     _future = _load();
     _weekWatchTimer = Timer.periodic(const Duration(minutes: 1), (_) {
       _ensureCurrentWeek();
@@ -57,37 +61,35 @@ class _EmployeeScheduleScreenState extends State<EmployeeScheduleScreen>
     }
   }
 
-  DateTime get _currentWeekStart => _weekDays(DateTime.now()).first;
+  DateTime get _todayWeekStart => _weekDays(DateTime.now()).first;
 
+  /// Auto-advance only when viewing the current week and the calendar week rolls.
   void _ensureCurrentWeek() {
-    final weekStart = _currentWeekStart;
     final today = _dateOnly(DateTime.now());
-    final weekChanged =
-        _loadedWeekStart == null || !_isSameDay(_loadedWeekStart!, weekStart);
-    final dayDrift = !_isSameDay(_selectedDay, today) &&
-        !_weekDays(today).any((d) => _isSameDay(d, _selectedDay));
+    final todayWeekStart = _todayWeekStart;
+    final viewingCurrentWeek = _isSameDay(_viewedWeekStart, todayWeekStart);
+    if (!viewingCurrentWeek) return;
 
-    if (!weekChanged && !dayDrift) return;
+    final weekChanged = _loadedWeekStart == null ||
+        !_isSameDay(_loadedWeekStart!, todayWeekStart);
+    if (!weekChanged) return;
     if (!mounted) return;
     setState(() {
-      if (weekChanged || dayDrift) {
-        _selectedDay = today;
-      }
-      if (weekChanged) {
-        _future = _load();
-      }
+      _selectedDay = today;
+      _viewedWeekStart = todayWeekStart;
+      _future = _load();
     });
   }
 
   Future<_ScheduleData> _load() async {
     final repo = sl<EmployeeRepository>();
-    final week = _weekDays(DateTime.now());
+    final week = _weekDays(_viewedWeekStart);
     final start = week.first;
     final end = week.last;
 
     final results = await Future.wait([
       repo.getProfile(),
-      // Current week only — includes past days in this week (not activeOnly).
+      // Displayed week only — includes past days in this week (not activeOnly).
       repo.getSchedule(
         startDate: start,
         endDate: end,
@@ -139,17 +141,30 @@ class _EmployeeScheduleScreenState extends State<EmployeeScheduleScreen>
 
   void _jumpToToday() {
     final today = _dateOnly(DateTime.now());
-    setState(() => _selectedDay = today);
-    _ensureCurrentWeek();
+    setState(() {
+      _selectedDay = today;
+      _viewedWeekStart = _weekDays(today).first;
+      _future = _load();
+    });
   }
 
   void _selectDay(DateTime day) {
     setState(() => _selectedDay = _dateOnly(day));
   }
 
+  void _shiftWeek(int weekDelta) {
+    final nextStart = _viewedWeekStart.add(Duration(days: 7 * weekDelta));
+    final weekdayOffset = (_selectedDay.weekday - 1).clamp(0, 6);
+    setState(() {
+      _viewedWeekStart = nextStart;
+      _selectedDay = nextStart.add(Duration(days: weekdayOffset));
+      _future = _load();
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
-    final weekDays = _weekDays(DateTime.now());
+    final weekDays = _weekDays(_viewedWeekStart);
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -202,6 +217,8 @@ class _EmployeeScheduleScreenState extends State<EmployeeScheduleScreen>
                     days: weekDays,
                     selectedDay: _selectedDay,
                     onSelect: _selectDay,
+                    onPreviousWeek: () => _shiftWeek(-1),
+                    onNextWeek: () => _shiftWeek(1),
                   ),
                   const SizedBox(height: 18),
                   const _SectionColumns(),
@@ -267,11 +284,10 @@ DateTime _dateOnly(DateTime value) =>
 bool _isSameDay(DateTime a, DateTime b) =>
     a.year == b.year && a.month == b.month && a.day == b.day;
 
-/// Sunday-start week to match the reference strip (Su–Sa).
+/// Monday-start week (Mon–Sun) to match owner scheduling weeks.
 List<DateTime> _weekDays(DateTime anchor) {
   final day = _dateOnly(anchor);
-  final sundayOffset = day.weekday % 7; // Sun=0 … Sat=6
-  final start = day.subtract(Duration(days: sundayOffset));
+  final start = day.subtract(Duration(days: day.weekday - 1));
   return List.generate(7, (i) => start.add(Duration(days: i)));
 }
 
@@ -462,19 +478,23 @@ class _WeekCalendarCard extends StatelessWidget {
     required this.days,
     required this.selectedDay,
     required this.onSelect,
+    required this.onPreviousWeek,
+    required this.onNextWeek,
   });
 
   final List<DateTime> days;
   final DateTime selectedDay;
   final ValueChanged<DateTime> onSelect;
+  final VoidCallback onPreviousWeek;
+  final VoidCallback onNextWeek;
 
-  static const _labels = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
+  static const _labels = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'];
 
   @override
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 14),
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 14),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(18),
@@ -489,15 +509,43 @@ class _WeekCalendarCard extends StatelessWidget {
       ),
       child: Row(
         children: [
-          for (var i = 0; i < days.length; i++)
-            Expanded(
-              child: _WeekDayCell(
-                label: _labels[i],
-                day: days[i],
-                selected: _isSameDay(days[i], selectedDay),
-                onTap: () => onSelect(days[i]),
-              ),
+          IconButton(
+            onPressed: onPreviousWeek,
+            tooltip: 'Previous week',
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 32, minHeight: 40),
+            icon: const Icon(
+              Icons.chevron_left_rounded,
+              size: 22,
+              color: EmployeeColors.textPrimary,
             ),
+          ),
+          Expanded(
+            child: Row(
+              children: [
+                for (var i = 0; i < days.length; i++)
+                  Expanded(
+                    child: _WeekDayCell(
+                      label: _labels[i],
+                      day: days[i],
+                      selected: _isSameDay(days[i], selectedDay),
+                      onTap: () => onSelect(days[i]),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          IconButton(
+            onPressed: onNextWeek,
+            tooltip: 'Next week',
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 32, minHeight: 40),
+            icon: const Icon(
+              Icons.chevron_right_rounded,
+              size: 22,
+              color: EmployeeColors.textPrimary,
+            ),
+          ),
         ],
       ),
     );

@@ -18,6 +18,7 @@ from app.services.employee_pay import (
     payroll_daily_rate,
     resolve_employee_pay,
     resolve_employee_pay_context,
+    stamp_attendance_completion_pay,
 )
 from app.services.holiday_pay import HolidayPolicy
 
@@ -204,6 +205,8 @@ def _run_payslip(
         time_out=None if is_leave else time_out,
         status=record_status,
     )
+    if not is_leave:
+        stamp_attendance_completion_pay(record, employee, position=position)
 
     holiday = None
     if with_holiday_premium:
@@ -349,6 +352,8 @@ def test_leave_pay_uses_resolved_employee_rate():
         is_leave=True,
     )
     assert slip["paid_leave_days"] == 1
+    assert slip["leave_pay"] == 720.0
+    assert slip["regular_pay"] == 0.0
     assert slip["gross_pay"] == 720.0
     assert slip["overtime_minutes"] == 0.0
 

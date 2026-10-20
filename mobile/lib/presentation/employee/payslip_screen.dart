@@ -3,6 +3,7 @@ import 'package:aroll_mobile/core/di/injection.dart';
 import 'package:aroll_mobile/presentation/shared/tenant_mode_banner.dart';
 import 'package:aroll_mobile/domain/entities/employee_portal.dart';
 import 'package:aroll_mobile/domain/repositories/employee_repository.dart';
+import 'package:aroll_mobile/presentation/employee/employee_payslip_pdf.dart';
 import 'package:aroll_mobile/presentation/employee/employee_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:share_plus/share_plus.dart';
@@ -22,8 +23,11 @@ class _EmployeePayslipScreenState extends State<EmployeePayslipScreen> {
   Future<void> _download() async {
     setState(() => _downloading = true);
     try {
-      final path = await sl<EmployeeRepository>().downloadPayslipPdf(
-        asOf: widget.asOf,
+      final payslip =
+          await sl<EmployeeRepository>().getPayslip(asOf: widget.asOf);
+      final path = await generateEmployeePayslipPdf(
+        payslip: payslip,
+        sample: sl<AppState>().session?.isDemo == true,
       );
       if (!mounted) return;
       await SharePlus.instance.share(
@@ -56,7 +60,7 @@ class _EmployeePayslipScreenState extends State<EmployeePayslipScreen> {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return loadingView();
           }
-          if (snapshot.hasError) return errorView(snapshot.error);
+          if (snapshot.hasError) return payrollErrorView(snapshot.error);
           final payslip = snapshot.data!;
 
           return ListView(
@@ -124,6 +128,7 @@ class _EmployeePayslipScreenState extends State<EmployeePayslipScreen> {
                       'Basic Salary',
                       money(payslip.regularPay),
                     ),
+                    _Row('Leave Pay', money(payslip.leavePay)),
                     _Row('Overtime', money(payslip.overtimePay)),
                     _Row('Holiday Pay', money(payslip.holidayPay)),
                     _Row(

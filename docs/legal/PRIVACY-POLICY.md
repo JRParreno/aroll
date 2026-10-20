@@ -1,188 +1,127 @@
 # Aroll+ Privacy Policy
 
-**Effective date:** `[EFFECTIVE DATE]`  
-**Data controller / operator (pilot):** `[ORGANIZATION NAME]`  
-**Privacy contact:** `[CONTACT EMAIL]`  
-**Pilot period (if applicable):** until `[PILOT END DATE]`
+This notice explains what personal information Aroll+ uses when you use the mobile app, admin web, or APIs.
 
-This Privacy Policy explains how Aroll+ collects, uses, stores, and shares personal data when you use the mobile app, admin web, or APIs during the academic / pilot deployment.
+When Philippine law applies, this use of information is meant to follow the **Data Privacy Act of 2012 (Republic Act No. 10173)** and its implementing rules.
 
-We process personal data in line with the Philippine **Data Privacy Act of 2012 (Republic Act No. 10173)** and its implementing rules, as applicable to this pilot.
+This notice is not legal advice and does not replace your employer’s own privacy duties.
 
 ---
 
 ## 1. Who this applies to
 
-- Business owners and managers  
-- Employees of participating businesses  
-- Platform administrators  
-- Persons who submit a business registration request  
+- Business owners and managers
+- Employees of businesses that use Aroll+
+- Platform administrators
+- People who submit a business sign-up request
 
-Participating **employers** may also act as personal information controllers for employment data they decide to process using Aroll+. `[ORGANIZATION NAME]` operates the platform and processes data to provide the service and conduct the thesis/pilot evaluation.
-
----
-
-## 2. Data we collect
-
-### 2.1 Account and profile
-
-- Name, email address, phone (where provided)  
-- Role (platform admin, owner, manager, employee)  
-- Business affiliation (`business_id`)  
-- Password (stored as a **one-way hash**, not plaintext)  
-- Login timestamps and account status  
-
-### 2.2 Business registration
-
-- Business name and proposed address  
-- Owner identity and contact details  
-- Uploaded registration documents (e.g. permits / IDs as required by the pilot onboarding flow)  
-- Approval / rejection status and review notes  
-
-### 2.3 Employment and workforce
-
-- Employee code, position, hire date, pay-related configuration used by the business  
-- Shift assignments and schedules  
-- Attendance records (time in/out, status, location used for geofence checks)  
-- Payroll runs and payslip data generated in the system  
-
-### 2.4 Biometric-related data
-
-- Face images captured **during enrollment and clock-in** (processed on the server)  
-- **Face embeddings** (numeric templates) stored for matching — not intended as a photo gallery  
-- Liveness challenge results and face match scores associated with attendance events  
-- Design goal: **do not retain raw face images long-term**; embeddings are kept for verification  
-
-See also [BIOMETRIC-CONSENT.md](BIOMETRIC-CONSENT.md).
-
-### 2.5 Location data
-
-- GPS coordinates submitted at clock-in/out to check presence within the employer’s configured geofence  
-- Workplace address and geofence settings configured by the business  
-
-### 2.6 Technical logs
-
-- API request metadata needed for security, debugging, and reliability (e.g. error codes, approximate time of request)  
-- Device/app information reasonably needed to operate the mobile client  
-
-We do **not** sell personal data.
+The employer decides what employment data to keep in Aroll+. Aroll+ runs the platform used to record that data.
 
 ---
 
-## 3. Why we use the data (purposes)
+## 2. Information Aroll+ uses
 
-| Purpose | Examples |
-|---------|----------|
-| Provide the service | Login, RBAC, tenant isolation, shifts, attendance, payslips |
-| Verify identity at clock-in | Face match + liveness + geofence |
-| Business onboarding | Registration review and approval |
-| Security | Detect abuse, protect accounts, investigate incidents |
-| Pilot / thesis evaluation | Aggregate reliability and functional suitability metrics (ISO 25010–oriented), preferably de-identified where possible |
-| Legal compliance | Respond to lawful requests; retain records as required |
+### Account and profile
 
-**Lawful bases (pilot framing):** employment-related legitimate interest / contract with the employer; **consent** for biometric processing; compliance with legal obligations where applicable.
+- Name, email address, and phone number where provided
+- Role and business affiliation
+- Password stored in a protected form that cannot be read back as your password
+- Login and account status information
 
----
+### Business sign-up
 
-## 4. How biometric data is handled
+- Business name and proposed address
+- Owner identity and contact details
+- Uploaded sign-up documents required by the onboarding flow
+- Approval or rejection status and review notes
 
-1. A manager/owner (or authorized flow) enrolls an employee’s face after consent.  
-2. The system converts face samples into **embedding vectors** stored in the database.  
-3. At clock-in, new captures are compared to that employee’s enrolled embeddings.  
-4. Liveness checks reduce use of static photos.  
-5. Matching is scoped to the logged-in employee / business — not used to identify random people in public.  
+### Employment and workforce
 
-Biometric templates are **not** encrypted like Apple Face ID Secure Enclave storage. They are protected by application security (HTTPS, authentication, access control, tenant isolation). Details: [../SECURITY-PLAN.md](../SECURITY-PLAN.md).
+- Employee code, job title, hire date, and pay settings used by the business
+- Shift assignments and schedules
+- Attendance records, including time in and time out, status, correction requests, leave, overtime, and location used to check you are at work
+- Payroll runs and payslip data generated in the system
 
----
+### Face-related data
 
-## 5. Sharing and disclosure
+- Face photos taken during enrollment and face attendance, turned into number codes of your face (templates)
+- Face templates stored for matching
+- Results of the live-person check and face match, linked to attendance
 
-We may share data only with:
+Aroll+ is not designed to keep a long-term photo album of faces. See the Biometric Consent document.
 
-| Recipient | Why |
-|-----------|-----|
-| Your employer (owner/managers) | Workforce, attendance, and payroll administration for your business |
-| Platform administrators | Business registration review and platform operations |
-| Hosting / infrastructure providers | Running servers and databases under contractual controls |
-| Thesis supervisors / evaluators | Aggregated or minimized study results where appropriate |
-| Authorities | When required by law |
+### Location
 
-We do **not** share face embeddings with other businesses on the platform.
+- Coordinates submitted at Time In / Time Out to check the employer’s workplace area
+- Workplace address and workplace-area settings set by the business
 
----
+Aroll+ does not keep tracking location in the background.
 
-## 6. Storage, security, and retention
+### Technical information
 
-### Security measures (summary)
+- Request details needed for security and reliability
+- Device or app information needed to run the mobile app
 
-- HTTPS in staging/production  
-- JWT authentication and role-based access  
-- Per-business data isolation  
-- Password hashing (bcrypt)  
-- Secure token storage on mobile  
-- Server-side face/liveness validation for attendance  
-
-### Retention (pilot defaults — adjust if needed)
-
-| Data | Retention |
-|------|-----------|
-| Account & employment records | Duration of employment on the platform + pilot wind-down period |
-| Attendance & payslips | Duration of pilot / employer need for pay disputes (recommended: at least through final payroll of the pilot) |
-| Face embeddings | While the employee is active and enrolled; delete on face clear / offboarding |
-| Raw face images | Transient processing only; not long-term storage by design |
-| Registration uploads | Until review complete + pilot record-keeping need |
-| Security logs | Limited period needed for operations (e.g. 30–90 days) unless investigating an incident |
-
-At pilot end, `[ORGANIZATION NAME]` will delete or anonymize personal data that is no longer needed, unless retention is required for academic documentation with minimized identifiers, or by law.
+Aroll+ does not sell personal information and does not use it for marketing.
 
 ---
 
-## 7. Your rights
+## 3. Why the information is used
 
-Subject to the Data Privacy Act and practical limits of the pilot, you may request to:
+- Provide login, role-based access, and keep each business’s data separate
+- Record attendance and prepare payslips
+- Confirm it is you at face Time In / Time Out using face match, a live-person check, and a workplace location check when those features are turned on
+- Review business sign-ups
+- Protect accounts and look into abuse
+- Respond to lawful requests
 
-- **Access** personal data we hold about you  
-- **Correct** inaccurate data  
-- **Withdraw biometric consent** (may prevent face-based clock-in; employer may provide an alternative process for the pilot)  
-- **Request deletion** of biometric templates when leaving employment or withdrawing consent  
-- **Complain** to the National Privacy Commission (NPC) if you believe your privacy rights were violated  
-
-How to exercise rights: email `[CONTACT EMAIL]` and copy your employer’s owner/manager for employment records they control.
-
----
-
-## 8. Children
-
-Aroll+ is intended for adult employees and business users. It is not directed at children under 18.
+Face templates stay with this business and are not shared with other workplaces on Aroll+.
 
 ---
 
-## 9. International / cross-border processing
+## 4. Phone permissions
 
-If hosting is outside the Philippines, personal data may be processed in that region under this Policy and applicable safeguards. Prefer Philippine or clearly disclosed hosting for the pilot when possible.
+The mobile app may ask for these phone permissions. They are separate from agreeing to this notice or to the Terms.
 
----
+| Permission | When it is asked | What it is used for | If denied |
+|------------|------------------|---------------------|-----------|
+| Camera | Face enrollment and face Time In / Time Out | Capture a face sample for matching | Face enrollment and face attendance are unavailable |
+| Location while using the app | Time In / Time Out | Check that you are at work | Attendance that requires a workplace check may be rejected |
+| Notifications | App permission onboarding | Attendance and account alerts | Alerts may not appear; other features still work |
 
-## 10. Changes to this Policy
-
-We may update this Policy during the pilot. Material changes will be communicated via the app, admin web notice, or email where practical. The **Effective date** above will be updated.
-
----
-
-## 11. Contact
-
-Privacy questions or requests: `[CONTACT EMAIL]`  
-Operator: `[ORGANIZATION NAME]`
+Aroll+ does not ask for contacts and does not use the camera in the background. You can change or turn a permission off later in your phone settings.
 
 ---
 
-## Acknowledgement (optional)
+## 5. Sharing
 
-I have read the Aroll+ Privacy Policy and understand how my personal data is used in the pilot.
+Information may be available to:
 
-| Field | Value |
-|-------|--------|
-| Full name | |
-| Date | |
-| Signature / digital acknowledgement | |
+- Your employer’s authorized owner and manager users, for workforce, attendance, and payroll
+- Platform administrators, for sign-up review and platform operations
+- Hosting or infrastructure providers that run the service
+- Authorities when required by law
+
+---
+
+## 6. Security and retention
+
+Protections include HTTPS in deployed environments, sign-in tokens, role-based access, per-business isolation, and password hashing.
+
+Aroll+ does not publish a fixed deletion calendar for every record type. Attendance and payroll records are kept while the workplace uses them. Face templates are cleared when biometric consent is withdrawn or face data is removed for that employee.
+
+---
+
+## 7. Your requests
+
+You may ask your employer to review or correct work records they control. You may withdraw biometric consent in the app. Face attendance is then blocked, and stored face templates for your account are cleared.
+
+If you believe your privacy rights were violated, you may complain to the National Privacy Commission.
+
+Aroll+ is meant for adult employees and business users (18+).
+
+---
+
+## 8. Changes
+
+This notice may be updated. Important changes are shown through the app or workplace documents when a new version is published.

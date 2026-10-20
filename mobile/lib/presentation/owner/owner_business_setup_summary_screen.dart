@@ -126,7 +126,7 @@ class OwnerBusinessSetupSummaryScreen extends StatelessWidget {
                 _minutesLabel(summary.attendancePolicy['on_time_grace_minutes']),
               ),
               (
-                'Absent If Under (% of Shift)',
+                'Minimum Worked Shift (%)',
                 '${summary.attendancePolicy['absent_threshold_percent'] ?? '—'}%',
               ),
               (

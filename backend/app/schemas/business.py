@@ -76,3 +76,7 @@ class BusinessSettingsUpdate(BaseModel):
     business_type: str | None = Field(default=None, max_length=100)
     address: str = Field(min_length=5)
     branding: BusinessBrandingSettings | None = None
+
+
+class BrandingOnboardingComplete(BaseModel):
+    branding: BusinessBrandingSettings | None = None

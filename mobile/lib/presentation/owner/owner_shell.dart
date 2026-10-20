@@ -2,7 +2,11 @@ import 'dart:math' as math;
 
 import 'package:aroll_mobile/core/di/injection.dart';
 import 'package:aroll_mobile/data/repositories/owner_repository.dart';
+import 'package:aroll_mobile/presentation/auth/sign_out_dialog.dart';
+import 'package:aroll_mobile/core/theme/business_brand_theme.dart';
 import 'package:aroll_mobile/presentation/shared/app_ui.dart';
+import 'package:aroll_mobile/presentation/shared/in_app_notification_listener.dart';
+import 'package:aroll_mobile/presentation/shared/notification_routing.dart';
 import 'package:aroll_mobile/presentation/shared/tenant_mode_banner.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -22,6 +26,7 @@ class OwnerShell extends StatefulWidget {
     this.showAppBar = true,
     this.backgroundColor,
     this.showNotificationBell = true,
+    this.showLogoutButton = false,
     this.onBack,
     this.footer,
   });
@@ -34,6 +39,8 @@ class OwnerShell extends StatefulWidget {
   final bool showAppBar;
   final Color? backgroundColor;
   final bool showNotificationBell;
+  /// When true, shows a logout icon after the notification bell (dashboard).
+  final bool showLogoutButton;
   final VoidCallback? onBack;
   final Widget? footer;
 
@@ -82,6 +89,7 @@ class _OwnerShellState extends State<OwnerShell> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
+    final brand = BrandColors.of(context);
     final mergedActions = <Widget>[
       ...?widget.actions,
       if (widget.showNotificationBell)
@@ -97,9 +105,27 @@ class _OwnerShellState extends State<OwnerShell> with WidgetsBindingObserver {
             child: const Icon(Icons.notifications_outlined),
           ),
         ),
+      if (widget.showLogoutButton)
+        IconButton(
+          tooltip: 'Log out',
+          onPressed: () => confirmSignOut(context),
+          icon: const Icon(Icons.logout_rounded),
+        ),
     ];
 
-    return Scaffold(
+    return InAppNotificationListener(
+      fetchLatest: () => sl<OwnerRepository>().notifications(),
+      onOpen: (item) async {
+        final destination = notificationDestination(
+          type: '${item['type'] ?? ''}',
+          deepLink: '${item['deep_link'] ?? ''}',
+          entityId: '${item['entity_id'] ?? ''}',
+          owner: true,
+        );
+        if (!context.mounted) return;
+        context.push(destination);
+      },
+      child: Scaffold(
       backgroundColor: widget.backgroundColor ?? AppColors.scaffold,
       appBar: widget.showAppBar
           ? AppBar(
@@ -158,27 +184,42 @@ class _OwnerShellState extends State<OwnerShell> with WidgetsBindingObserver {
                 height: AppSizes.navHeight,
                 backgroundColor: AppColors.white,
                 surfaceTintColor: Colors.transparent,
-                indicatorColor: AppColors.iconWell,
+                indicatorColor: brand.toneWell,
                 labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
                 onDestinationSelected: (index) =>
                     context.go(OwnerShell._routes[index]),
-                destinations: const [
+                destinations: [
                   NavigationDestination(
-                    icon: Icon(Icons.home_outlined, size: AppSizes.iconLg),
-                    selectedIcon:
-                        Icon(Icons.home_rounded, size: AppSizes.iconLg),
+                    icon: const Icon(Icons.home_outlined, size: AppSizes.iconLg),
+                    selectedIcon: Icon(
+                      Icons.home_rounded,
+                      size: AppSizes.iconLg,
+                      color: brand.tonePrimary,
+                    ),
                     label: 'Home',
                   ),
                   NavigationDestination(
-                    icon: Icon(Icons.fact_check_outlined, size: AppSizes.iconLg),
-                    selectedIcon:
-                        Icon(Icons.fact_check_rounded, size: AppSizes.iconLg),
+                    icon: const Icon(
+                      Icons.fact_check_outlined,
+                      size: AppSizes.iconLg,
+                    ),
+                    selectedIcon: Icon(
+                      Icons.fact_check_rounded,
+                      size: AppSizes.iconLg,
+                      color: brand.tonePrimary,
+                    ),
                     label: 'Attendance',
                   ),
                   NavigationDestination(
-                    icon: Icon(Icons.person_outline_rounded, size: AppSizes.iconLg),
-                    selectedIcon:
-                        Icon(Icons.person_rounded, size: AppSizes.iconLg),
+                    icon: const Icon(
+                      Icons.person_outline_rounded,
+                      size: AppSizes.iconLg,
+                    ),
+                    selectedIcon: Icon(
+                      Icons.person_rounded,
+                      size: AppSizes.iconLg,
+                      color: brand.tonePrimary,
+                    ),
                     label: 'Profile',
                   ),
                 ],
@@ -187,6 +228,7 @@ class _OwnerShellState extends State<OwnerShell> with WidgetsBindingObserver {
           ),
         ],
       ),
+    ),
     );
   }
 }
@@ -428,13 +470,15 @@ class OwnerActionCard extends StatelessWidget {
   final bool prominent;
 
   @override
-  Widget build(BuildContext context) => AppPressable(
+  Widget build(BuildContext context) {
+    final brand = BrandColors.of(context);
+    return AppPressable(
         onTap: onTap,
         borderRadius: BorderRadius.circular(AppRadii.card),
         child: Card(
           margin: const EdgeInsets.only(bottom: 10),
           elevation: 0,
-          color: prominent ? AppColors.primary : AppColors.white,
+          color: prominent ? brand.tonePrimary : AppColors.white,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(AppRadii.card),
             side: BorderSide(
@@ -445,11 +489,11 @@ class OwnerActionCard extends StatelessWidget {
             contentPadding: const EdgeInsets.all(14),
             leading: CircleAvatar(
               backgroundColor:
-                  prominent ? Colors.white24 : AppColors.iconWell,
+                  prominent ? Colors.white24 : brand.toneWell,
               child: Icon(
                 icon,
                 size: AppSizes.iconLg,
-                color: prominent ? AppColors.white : AppColors.primary,
+                color: prominent ? AppColors.white : brand.tonePrimary,
               ),
             ),
             title: Text(
@@ -472,6 +516,7 @@ class OwnerActionCard extends StatelessWidget {
           ),
         ),
       );
+  }
 }
 
 /// Rounded gradient bar chart used by Dashboard Performance Overview and
@@ -485,6 +530,7 @@ class OwnerOverviewBarChart extends StatelessWidget {
     required this.overtime,
     required this.absent,
     this.title,
+    this.onBarTap,
   });
 
   final int onTime;
@@ -493,20 +539,21 @@ class OwnerOverviewBarChart extends StatelessWidget {
   final int overtime;
   final int absent;
   final String? title;
+  final void Function(String category, String label)? onBarTap;
 
   static const _undertimeColor = Color(0xFFEA580C);
 
   @override
   Widget build(BuildContext context) {
     final values = [
-      ('On time', onTime, AppColors.success),
-      ('Late', late, AppColors.warning),
-      ('Undertime', undertime, _undertimeColor),
-      ('Overtime', overtime, AppColors.primary),
-      ('Absent', absent, AppColors.danger),
+      ('On time', 'on_time', onTime, AppColors.success),
+      ('Late', 'late', late, AppColors.warning),
+      ('Undertime', 'undertime', undertime, _undertimeColor),
+      ('Overtime', 'overtime', overtime, AppColors.primary),
+      ('Absent', 'absent', absent, AppColors.danger),
     ];
     final maxValue = values
-        .map((entry) => entry.$2)
+        .map((entry) => entry.$3)
         .fold<int>(1, (prev, value) => value > prev ? value : prev);
 
     return Container(
@@ -534,53 +581,62 @@ class OwnerOverviewBarChart extends StatelessWidget {
                   Expanded(
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 4),
-                      child: Column(
-                        children: [
-                          Text(
-                            '${entry.$2}',
-                            style: const TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                              height: 1.2,
-                              color: AppColors.textPrimary,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Expanded(
-                            child: Align(
-                              alignment: Alignment.bottomCenter,
-                              child: FractionallySizedBox(
-                                widthFactor: 1,
-                                heightFactor:
-                                    (entry.$2 / maxValue).clamp(0.18, 1),
-                                child: DecoratedBox(
-                                  decoration: BoxDecoration(
-                                    gradient: LinearGradient(
-                                      begin: Alignment.bottomCenter,
-                                      end: Alignment.topCenter,
-                                      colors: [
-                                        entry.$3,
-                                        entry.$3.withValues(alpha: 0.72),
-                                      ],
+                      child: Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(12),
+                          onTap: onBarTap == null
+                              ? null
+                              : () => onBarTap!(entry.$2, entry.$1),
+                          child: Column(
+                            children: [
+                              Text(
+                                '${entry.$3}',
+                                style: const TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                  height: 1.2,
+                                  color: AppColors.textPrimary,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Expanded(
+                                child: Align(
+                                  alignment: Alignment.bottomCenter,
+                                  child: FractionallySizedBox(
+                                    widthFactor: 1,
+                                    heightFactor:
+                                        (entry.$3 / maxValue).clamp(0.18, 1),
+                                    child: DecoratedBox(
+                                      decoration: BoxDecoration(
+                                        gradient: LinearGradient(
+                                          begin: Alignment.bottomCenter,
+                                          end: Alignment.topCenter,
+                                          colors: [
+                                            entry.$4,
+                                            entry.$4.withValues(alpha: 0.72),
+                                          ],
+                                        ),
+                                        borderRadius: BorderRadius.circular(10),
+                                      ),
                                     ),
-                                    borderRadius: BorderRadius.circular(10),
                                   ),
                                 ),
                               ),
-                            ),
+                              const SizedBox(height: 6),
+                              Text(
+                                entry.$1,
+                                textAlign: TextAlign.center,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: appMutedStyle().copyWith(
+                                  fontSize: 10,
+                                  height: 1.2,
+                                ),
+                              ),
+                            ],
                           ),
-                          const SizedBox(height: 6),
-                          Text(
-                            entry.$1,
-                            textAlign: TextAlign.center,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: appMutedStyle().copyWith(
-                              fontSize: 10,
-                              height: 1.2,
-                            ),
-                          ),
-                        ],
+                        ),
                       ),
                     ),
                   ),

@@ -14,7 +14,10 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
 class ChangePasswordScreen extends StatefulWidget {
-  const ChangePasswordScreen({super.key});
+  const ChangePasswordScreen({super.key, this.voluntary = false});
+
+  /// When true, opened from Profile (not forced first-login flow).
+  final bool voluntary;
 
   @override
   State<ChangePasswordScreen> createState() => _ChangePasswordScreenState();
@@ -43,11 +46,36 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
   Future<void> _onSuccess(SuccessChangePasswordState state) async {
     final appState = sl<AppState>();
     final clearedSession = state.session.copyWith(mustChangePassword: false);
-    appState.setSession(clearedSession, mustChange: false);
+    final permissionsIntroSeen =
+        await resolvePermissionsIntroSeen(clearedSession);
+    appState.setSession(
+      clearedSession,
+      mustChange: false,
+      permissionsIntroSeen: permissionsIntroSeen,
+    );
+
+    if (widget.voluntary) {
+      if (!mounted) return;
+      _current.clear();
+      _newPass.clear();
+      _confirm.clear();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Password changed successfully.')),
+      );
+      if (context.canPop()) {
+        context.pop();
+      } else if (clearedSession.isOwner) {
+        context.go('/owner/profile');
+      } else {
+        context.go('/profile');
+      }
+      return;
+    }
+
     await loadEmployeePostAuthGates(appState, clearedSession);
     if (!mounted) return;
     if (clearedSession.isOwner) {
-      context.go('/owner/home');
+      context.go(resolveAuthenticatedRoute(appState));
       return;
     }
     context.go(resolveAuthenticatedRoute(appState));
@@ -70,6 +98,7 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
   @override
   Widget build(BuildContext context) {
     final validation = validatePassword(_newPass.text);
+    final voluntary = widget.voluntary;
 
     return BlocProvider.value(
       value: _bloc,
@@ -93,6 +122,23 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
               backgroundColor: EmployeeColors.scaffold,
               elevation: 0,
               scrolledUnderElevation: 0,
+              leading: voluntary
+                  ? IconButton(
+                      icon: const Icon(Icons.arrow_back_rounded),
+                      onPressed: () {
+                        if (context.canPop()) {
+                          context.pop();
+                        } else {
+                          final session = sl<AppState>().session;
+                          context.go(
+                            session?.isOwner == true
+                                ? '/owner/profile'
+                                : '/profile',
+                          );
+                        }
+                      },
+                    )
+                  : null,
               title: const Text(
                 'Change Password',
                 style: TextStyle(fontWeight: FontWeight.w700),
@@ -105,15 +151,21 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     Text(
-                      'Change your password',
+                      voluntary
+                          ? 'Update your password'
+                          : 'Change your password',
                       style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                             fontWeight: FontWeight.w700,
                           ),
                     ),
                     const SizedBox(height: 8),
-                    const Text(
-                      'You must set a new password before continuing.',
-                      style: TextStyle(color: EmployeeColors.textMuted),
+                    Text(
+                      voluntary
+                          ? 'Enter your current password, then choose a new one.'
+                          : sl<AppState>().session?.isEmployee == true
+                              ? 'Step 1 of account setup. Choose a new password. Next you will register a recovery email for password reset codes.'
+                              : 'You must set a new password before continuing.',
+                      style: const TextStyle(color: EmployeeColors.textMuted),
                     ),
                     const SizedBox(height: 24),
                     TextField(
@@ -121,7 +173,9 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
                       obscureText: !_showCurrent,
                       decoration: _passwordDecoration(
                         context,
-                        label: 'Current (temporary) password',
+                        label: voluntary
+                            ? 'Current password'
+                            : 'Current (temporary) password',
                         visible: _showCurrent,
                         onToggle: () =>
                             setState(() => _showCurrent = !_showCurrent),
@@ -170,7 +224,11 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
                     ),
                     const SizedBox(height: 24),
                     EmployeePrimaryButton(
-                      label: loading ? 'Saving...' : 'Save password',
+                      label: loading
+                          ? 'Saving...'
+                          : voluntary
+                              ? 'Change Password'
+                              : 'Save password',
                       loading: loading,
                       onPressed: loading
                           ? null
@@ -181,9 +239,11 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
 
                               if (currentPassword.isEmpty) {
                                 ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
+                                  SnackBar(
                                     content: Text(
-                                      'Enter your temporary password first',
+                                      voluntary
+                                          ? 'Enter your current password'
+                                          : 'Enter your temporary password first',
                                     ),
                                   ),
                                 );
@@ -199,10 +259,15 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
                                 return;
                               }
 
-                              if (!passwordsMatch(newPassword, confirmPassword)) {
+                              if (!passwordsMatch(
+                                newPassword,
+                                confirmPassword,
+                              )) {
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   const SnackBar(
-                                    content: Text('Passwords do not match'),
+                                    content: Text(
+                                      'New password and confirmation do not match.',
+                                    ),
                                   ),
                                 );
                                 return;

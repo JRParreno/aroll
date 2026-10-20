@@ -206,14 +206,14 @@ class _ScanAttendanceScreenState extends State<ScanAttendanceScreen> {
   String get _primaryButtonHelper {
     if (_isDemo) {
       if (_submitting) return 'Using seeded demo identity and fictional location…';
-      if (_isCompleted) return 'You already finished this shift.';
+      if (_isCompleted) return '';
       if (_isClockedIn || _canTimeIn) {
         return 'No camera or personal location is required.';
       }
       return 'Time In is closed because this shift has already ended.';
     }
     if (_submitting) return 'Preparing face check and location…';
-    if (_isCompleted) return 'You already finished this shift.';
+    if (_isCompleted) return '';
     if (_isClockedIn) return 'Stay in the work area, then look at the camera.';
     if (_canTimeIn) {
       return 'Stay in the work area, then look at the camera.';
@@ -417,7 +417,6 @@ class _ScanAttendanceScreenState extends State<ScanAttendanceScreen> {
                         _AttendanceHeader(
                           onBack: () => employeeNavigateBack(context),
                           businessName: profile?.businessName ?? 'Attendance',
-                          logoUrl: profile?.branding?.logoUrl,
                         ),
                         const TenantModeBanner(),
                         if (_isDemo) ...[
@@ -511,31 +510,29 @@ class _ScanAttendanceScreenState extends State<ScanAttendanceScreen> {
                           helper: _primaryButtonHelper,
                           enabled: !_submitting && (_isClockedIn || _canTimeIn),
                           submitting: _submitting,
+                          completed: _isCompleted,
                           accent: _isClockedIn ? brand.accent : primary,
                           onPressed: _onPrimaryTap,
                         ),
                         const SizedBox(height: 14),
-                        IntrinsicHeight(
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              Expanded(
-                                child: _NavShortcutButton(
-                                  icon: Icons.home_rounded,
-                                  label: 'Home',
-                                  onTap: () => context.go('/home'),
-                                ),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _NavShortcutButton(
+                                icon: Icons.home_rounded,
+                                label: 'Home',
+                                onTap: () => context.go('/home'),
                               ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: _NavShortcutButton(
-                                  icon: Icons.assignment_rounded,
-                                  label: 'Shift History',
-                                  onTap: () => context.go('/shift-history'),
-                                ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: _NavShortcutButton(
+                                icon: Icons.assignment_rounded,
+                                label: 'Shift History',
+                                onTap: () => context.go('/shift-history'),
                               ),
-                            ],
-                          ),
+                            ),
+                          ],
                         ),
                       ],
                     ),
@@ -549,12 +546,10 @@ class _AttendanceHeader extends StatelessWidget {
   const _AttendanceHeader({
     required this.onBack,
     required this.businessName,
-    this.logoUrl,
   });
 
   final VoidCallback onBack;
   final String businessName;
-  final String? logoUrl;
 
   @override
   Widget build(BuildContext context) {
@@ -601,21 +596,6 @@ class _AttendanceHeader extends StatelessWidget {
                 ),
               ),
             ],
-          ),
-        ),
-        Container(
-          width: 42,
-          height: 42,
-          decoration: BoxDecoration(
-            color: Colors.white,
-            shape: BoxShape.circle,
-            border: Border.all(color: EmployeeColors.border),
-          ),
-          clipBehavior: Clip.antiAlias,
-          child: BusinessLogo(
-            logoUrl: logoUrl,
-            height: 42,
-            width: 42,
           ),
         ),
       ],
@@ -734,7 +714,7 @@ class _LiveClockCard extends StatelessWidget {
     final brand = BrandColors.of(context);
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(16, 18, 16, 18),
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,
@@ -744,31 +724,31 @@ class _LiveClockCard extends StatelessWidget {
             Color.lerp(accent, brand.secondary, 0.45) ?? brand.secondary,
           ],
         ),
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
             color: accent.withValues(alpha: 0.22),
-            blurRadius: 16,
-            offset: const Offset(0, 6),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
           ),
         ],
       ),
       child: Row(
         children: [
           Container(
-            width: 48,
-            height: 48,
+            width: 40,
+            height: 40,
             decoration: BoxDecoration(
               color: Colors.white.withValues(alpha: 0.16),
-              borderRadius: BorderRadius.circular(14),
+              borderRadius: BorderRadius.circular(12),
             ),
             child: const Icon(
               Icons.schedule_rounded,
               color: Colors.white,
-              size: 26,
+              size: 22,
             ),
           ),
-          const SizedBox(width: 14),
+          const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -777,16 +757,16 @@ class _LiveClockCard extends StatelessWidget {
                   dateLabel,
                   style: TextStyle(
                     color: Colors.white.withValues(alpha: 0.82),
-                    fontSize: 12,
+                    fontSize: 11,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 2),
                 Text(
                   timeLabel,
                   style: const TextStyle(
                     color: Colors.white,
-                    fontSize: 28,
+                    fontSize: 24,
                     fontWeight: FontWeight.w800,
                     height: 1.1,
                     letterSpacing: -0.4,
@@ -861,24 +841,20 @@ class _DetailsCard extends StatelessWidget {
             secondary: statusHint,
             accent: statusColor,
           ),
-          if (timeIn != null) ...[
-            const Divider(height: 1, color: EmployeeColors.border),
-            _DetailTile(
-              icon: Icons.login_rounded,
-              label: 'Time in',
-              primary: timeOnly(timeIn),
-              accent: EmployeeColors.success,
-            ),
-          ],
-          if (timeOut != null) ...[
-            const Divider(height: 1, color: EmployeeColors.border),
-            _DetailTile(
-              icon: Icons.logout_rounded,
-              label: 'Time out',
-              primary: timeOnly(timeOut),
-              accent: const Color(0xFF2563EB),
-            ),
-          ],
+          const Divider(height: 1, color: EmployeeColors.border),
+          _DetailTile(
+            icon: Icons.login_rounded,
+            label: 'Time in',
+            primary: timeIn == null ? '—' : timeOnly(timeIn),
+            accent: EmployeeColors.success,
+          ),
+          const Divider(height: 1, color: EmployeeColors.border),
+          _DetailTile(
+            icon: Icons.logout_rounded,
+            label: 'Time out',
+            primary: timeOut == null ? '—' : timeOnly(timeOut),
+            accent: const Color(0xFF2563EB),
+          ),
         ],
       ),
     );
@@ -964,6 +940,7 @@ class _ScanFaceButton extends StatelessWidget {
     required this.helper,
     required this.enabled,
     required this.submitting,
+    required this.completed,
     required this.accent,
     required this.onPressed,
   });
@@ -972,11 +949,40 @@ class _ScanFaceButton extends StatelessWidget {
   final String helper;
   final bool enabled;
   final bool submitting;
+  final bool completed;
   final Color accent;
   final VoidCallback onPressed;
 
   @override
   Widget build(BuildContext context) {
+    if (completed) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(
+              Icons.check_circle_rounded,
+              size: 18,
+              color: EmployeeColors.success,
+            ),
+            const SizedBox(width: 8),
+            Flexible(
+              child: Text(
+                label,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w400,
+                  color: EmployeeColors.textPrimary,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -1036,16 +1042,18 @@ class _ScanFaceButton extends StatelessWidget {
             ),
           ),
         ),
-        const SizedBox(height: 8),
-        Text(
-          helper,
-          textAlign: TextAlign.center,
-          style: const TextStyle(
-            fontSize: 12,
-            color: EmployeeColors.textMuted,
-            height: 1.35,
+        if (helper.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Text(
+            helper,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 12,
+              color: EmployeeColors.textMuted,
+              height: 1.35,
+            ),
           ),
-        ),
+        ],
       ],
     );
   }

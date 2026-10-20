@@ -1,7 +1,8 @@
 """Schedule reuse helpers — copy/preview/apply assignment patterns only.
 
-Does not touch attendance, payroll, or leave records.
+Does not modify attendance, payroll, or leave records.
 Conflict rules mirror existing assign overlap + capacity checks.
+Approved and cancellation-pending leave dates are not copied.
 """
 
 from __future__ import annotations
@@ -17,7 +18,6 @@ from sqlalchemy.orm import Session
 from app.models.employee import Employee
 from app.models.schedule_template import ScheduleTemplate, ScheduleTemplateEntry
 from app.models.scheduling import Shift, ShiftAssignment
-from app.models.user import User
 from app.schemas.schedule_reuse import (
     ScheduleConflictMode,
     ScheduleReuseApplyResponse,
@@ -29,19 +29,68 @@ from app.schemas.schedule_reuse import (
     ScheduleTemplateDetailResponse,
     ScheduleTemplateSummary,
 )
-from app.services.employee_activation import is_employee_fully_activated
+from app.services.leave_requests import blocking_leave_dates_for_employees
+from app.services.schedule_overlap import shifts_times_overlap
+
+_LEAVE_CONFLICT = (
+    "This employee is currently on approved leave for the selected date(s)."
+)
 
 
 def _times_overlap(first: Shift, second: Shift) -> bool:
-    return first.start_time < second.end_time and second.start_time < first.end_time
+    return shifts_times_overlap(first, second)
 
 
-def _assignment_rows_for_week(
+def monday_of(value: date) -> date:
+    """Normalize any calendar date to the application's Monday week start."""
+    return value - timedelta(days=value.weekday())
+
+
+_RANGE_ERROR = "End date must be the same as or later than the start date."
+
+
+def validate_apply_range(start_date: date, end_date: date) -> None:
+    if end_date < start_date:
+        raise HTTPException(400, _RANGE_ERROR)
+
+
+def expand_template_dates(
+    entries: list[ScheduleTemplateEntry],
+    start_date: date,
+    end_date: date,
+) -> list[tuple[uuid.UUID, uuid.UUID, date, bool]]:
+    """Repeat the template's unique shift/employee set on every selected date.
+
+    Rest-day premium is not carried from the template; the owner sets it
+    when assigning an employee. Weekday offsets stay on the saved template
+    for week-style apply without an explicit range.
+    """
+    validate_apply_range(start_date, end_date)
+    pattern: list[tuple[uuid.UUID, uuid.UUID]] = []
+    seen: set[tuple[uuid.UUID, uuid.UUID]] = set()
+    for entry in entries:
+        if entry.day_offset < 0 or entry.day_offset > 6:
+            continue
+        key = (entry.shift_id, entry.employee_id)
+        if key in seen:
+            continue
+        seen.add(key)
+        pattern.append(key)
+    planned: list[tuple[uuid.UUID, uuid.UUID, date, bool]] = []
+    day = start_date
+    while day <= end_date:
+        for shift_id, employee_id in pattern:
+            planned.append((shift_id, employee_id, day, False))
+        day += timedelta(days=1)
+    return planned
+
+
+def _assignment_rows_for_range(
     db: Session,
     business_id: uuid.UUID,
-    week_start: date,
+    start_date: date,
+    end_date: date,
 ) -> list[tuple[ShiftAssignment, Employee, Shift]]:
-    week_end = week_start + timedelta(days=6)
     return (
         db.query(ShiftAssignment, Employee, Shift)
         .join(Shift, ShiftAssignment.shift_id == Shift.id)
@@ -49,11 +98,22 @@ def _assignment_rows_for_week(
         .filter(
             Shift.business_id == business_id,
             Employee.business_id == business_id,
-            ShiftAssignment.work_date >= week_start,
-            ShiftAssignment.work_date <= week_end,
+            ShiftAssignment.work_date >= start_date,
+            ShiftAssignment.work_date <= end_date,
         )
         .order_by(Employee.full_name, ShiftAssignment.work_date, Shift.start_time)
         .all()
+    )
+
+
+def _assignment_rows_for_week(
+    db: Session,
+    business_id: uuid.UUID,
+    week_start: date,
+) -> list[tuple[ShiftAssignment, Employee, Shift]]:
+    week_start = monday_of(week_start)
+    return _assignment_rows_for_range(
+        db, business_id, week_start, week_start + timedelta(days=6)
     )
 
 
@@ -83,8 +143,13 @@ def _source_week_start(
     target_week_start: date,
     source_week_start: date | None,
     template_id: str | None,
+    start_date: date | None = None,
+    end_date: date | None = None,
 ) -> tuple[date | None, str, list[tuple[uuid.UUID, uuid.UUID, date, bool]]]:
     """Return (source_week, label, planned rows as shift/employee/date/rest)."""
+    target_week_start = monday_of(target_week_start)
+    if source_week_start is not None:
+        source_week_start = monday_of(source_week_start)
     if source == ScheduleReuseSource.template:
         if not template_id:
             raise HTTPException(400, "template_id is required for template source")
@@ -96,18 +161,24 @@ def _source_week_start(
             .filter(ScheduleTemplateEntry.template_id == template.id)
             .all()
         )
-        planned: list[tuple[uuid.UUID, uuid.UUID, date, bool]] = []
-        for entry in entries:
-            if entry.day_offset < 0 or entry.day_offset > 6:
-                continue
-            planned.append(
-                (
-                    entry.shift_id,
-                    entry.employee_id,
-                    target_week_start + timedelta(days=entry.day_offset),
-                    bool(entry.is_rest_day_work),
+        if start_date is not None or end_date is not None:
+            range_start = start_date or target_week_start
+            range_end = end_date or range_start
+            validate_apply_range(range_start, range_end)
+            planned = expand_template_dates(entries, range_start, range_end)
+        else:
+            planned = []
+            for entry in entries:
+                if entry.day_offset < 0 or entry.day_offset > 6:
+                    continue
+                planned.append(
+                    (
+                        entry.shift_id,
+                        entry.employee_id,
+                        target_week_start + timedelta(days=entry.day_offset),
+                        False,
+                    )
                 )
-            )
         if not planned:
             raise HTTPException(400, "This template has no assignments to apply")
         return None, template.name, planned
@@ -149,6 +220,23 @@ def _source_week_start(
     return src_start, label, planned
 
 
+def _target_span(
+    source: ScheduleReuseSource,
+    target_week_start: date,
+    start_date: date | None,
+    end_date: date | None,
+) -> tuple[date, date]:
+    if source == ScheduleReuseSource.template and (
+        start_date is not None or end_date is not None
+    ):
+        range_start = start_date or target_week_start
+        range_end = end_date or range_start
+        validate_apply_range(range_start, range_end)
+        return range_start, range_end
+    monday = monday_of(target_week_start)
+    return monday, monday + timedelta(days=6)
+
+
 def build_preview(
     db: Session,
     business_id: uuid.UUID,
@@ -156,7 +244,12 @@ def build_preview(
     target_week_start: date,
     source_week_start: date | None = None,
     template_id: str | None = None,
+    start_date: date | None = None,
+    end_date: date | None = None,
 ) -> ScheduleReusePreviewResponse:
+    span_start, span_end = _target_span(
+        source, target_week_start, start_date, end_date
+    )
     src_week, label, planned = _source_week_start(
         db,
         business_id,
@@ -164,8 +257,9 @@ def build_preview(
         target_week_start,
         source_week_start,
         template_id,
+        start_date=start_date,
+        end_date=end_date,
     )
-    target_end = target_week_start + timedelta(days=6)
 
     employees = {
         emp.id: emp
@@ -173,16 +267,14 @@ def build_preview(
         .filter(Employee.business_id == business_id)
         .all()
     }
-    users = {
-        linked.id: linked
-        for linked in db.query(User).filter(User.business_id == business_id).all()
-    }
     shifts = {
         shift.id: shift
         for shift in db.query(Shift).filter(Shift.business_id == business_id).all()
     }
 
-    existing_rows = _assignment_rows_for_week(db, business_id, target_week_start)
+    existing_rows = _assignment_rows_for_range(
+        db, business_id, span_start, span_end
+    )
     existing_by_employee_date: dict[tuple[uuid.UUID, date], list[tuple[ShiftAssignment, Shift]]] = (
         defaultdict(list)
     )
@@ -208,6 +300,14 @@ def build_preview(
     capacity_counts: dict[tuple[uuid.UUID, date], int] = defaultdict(int)
     for assignment, _emp, shift in existing_rows:
         capacity_counts[(assignment.shift_id, assignment.work_date)] += 1
+
+    protected_leave = blocking_leave_dates_for_employees(
+        db,
+        business_id=business_id,
+        employee_ids=list(employees.keys()),
+        start_date=span_start,
+        end_date=span_end,
+    )
 
     for shift_id, employee_id, work_date, is_rest in planned:
         employee = employees.get(employee_id)
@@ -243,15 +343,15 @@ def build_preview(
             items.append(base)
             continue
 
-        if not is_employee_fully_activated(employee, users.get(employee.user_id)):
-            base.status = "skipped_inactive"
-            base.conflict_reason = "Account not activated"
-            skipped_count += 1
-            items.append(base)
-            continue
-
         employee_ids.add(str(employee_id))
         working_dates.add(work_date)
+
+        if work_date in protected_leave.get(employee_id, set()):
+            base.status = "conflict"
+            base.conflict_reason = _LEAVE_CONFLICT
+            conflict_count += 1
+            items.append(base)
+            continue
 
         if (employee_id, shift_id, work_date) in existing_same_shift:
             base.status = "duplicate"
@@ -303,8 +403,8 @@ def build_preview(
         source=source,
         source_label=label,
         source_week_start=src_week,
-        target_week_start=target_week_start,
-        target_week_end=target_end,
+        target_week_start=span_start,
+        target_week_end=span_end,
         employee_count=len(employee_ids),
         working_day_count=len(working_dates),
         items=items,
@@ -326,7 +426,12 @@ def apply_reuse(
     conflict_mode: ScheduleConflictMode,
     source_week_start: date | None = None,
     template_id: str | None = None,
+    start_date: date | None = None,
+    end_date: date | None = None,
 ) -> ScheduleReuseApplyResponse:
+    span_start, span_end = _target_span(
+        source, target_week_start, start_date, end_date
+    )
     preview = build_preview(
         db,
         business_id,
@@ -334,13 +439,34 @@ def apply_reuse(
         target_week_start,
         source_week_start,
         template_id,
+        start_date=start_date,
+        end_date=end_date,
     )
-    target_end = target_week_start + timedelta(days=6)
     removed = 0
+    protected_leave = blocking_leave_dates_for_employees(
+        db,
+        business_id=business_id,
+        employee_ids=[uuid.UUID(item.employee_id) for item in preview.items],
+        start_date=span_start,
+        end_date=span_end,
+    )
 
+    def _blocked_by_leave(item: ScheduleReusePreviewItem) -> bool:
+        return item.work_date in protected_leave.get(uuid.UUID(item.employee_id), set())
+
+    removed_snapshots: list[dict] = []
+    created_snapshots: list[dict] = []
     if conflict_mode == ScheduleConflictMode.replace:
-        existing = _assignment_rows_for_week(db, business_id, target_week_start)
-        for assignment, _emp, _shift in existing:
+        existing = _assignment_rows_for_range(db, business_id, span_start, span_end)
+        for assignment, emp, shift_row in existing:
+            removed_snapshots.append(
+                {
+                    "assignment_id": assignment.id,
+                    "employee": emp,
+                    "shift": shift_row,
+                    "work_date": assignment.work_date,
+                }
+            )
             db.delete(assignment)
             removed += 1
         db.flush()
@@ -350,10 +476,15 @@ def apply_reuse(
             for item in preview.items
             if item.status
             not in ("skipped_inactive", "skipped_missing_shift")
+            and not _blocked_by_leave(item)
         ]
     else:
         # merge: only create items marked new in preview
-        creatable_items = [item for item in preview.items if item.status == "new"]
+        creatable_items = [
+            item
+            for item in preview.items
+            if item.status == "new" and not _blocked_by_leave(item)
+        ]
 
     created = 0
     skipped = len(preview.items) - len(creatable_items)
@@ -387,36 +518,67 @@ def apply_reuse(
             if capacity_counts[cap_key] + 1 > shift.employee_capacity:
                 skipped += 1
                 continue
-            db.add(
-                ShiftAssignment(
-                    shift_id=shift.id,
-                    employee_id=employee_id,
-                    work_date=item.work_date,
-                    is_rest_day_work=item.is_rest_day_work,
-                )
+            assignment = ShiftAssignment(
+                shift_id=shift.id,
+                employee_id=employee_id,
+                work_date=item.work_date,
+                is_rest_day_work=item.is_rest_day_work,
+            )
+            db.add(assignment)
+            created_snapshots.append(
+                {
+                    "assignment": assignment,
+                    "employee_id": employee_id,
+                    "shift": shift,
+                    "work_date": item.work_date,
+                }
             )
             employee_day_shifts[key].append(shift)
             capacity_counts[cap_key] += 1
             created += 1
     else:
+        shifts = {
+            shift.id: shift
+            for shift in db.query(Shift).filter(Shift.business_id == business_id).all()
+        }
         for item in creatable_items:
-            db.add(
-                ShiftAssignment(
-                    shift_id=uuid.UUID(item.shift_id),
-                    employee_id=uuid.UUID(item.employee_id),
-                    work_date=item.work_date,
-                    is_rest_day_work=item.is_rest_day_work,
-                )
+            assignment = ShiftAssignment(
+                shift_id=uuid.UUID(item.shift_id),
+                employee_id=uuid.UUID(item.employee_id),
+                work_date=item.work_date,
+                is_rest_day_work=item.is_rest_day_work,
+            )
+            db.add(assignment)
+            created_snapshots.append(
+                {
+                    "assignment": assignment,
+                    "employee_id": uuid.UUID(item.employee_id),
+                    "shift": shifts.get(uuid.UUID(item.shift_id)),
+                    "work_date": item.work_date,
+                }
             )
             created += 1
 
     db.commit()
+    try:
+        from app.services.activity_notifications import notify_schedule_reuse_applied
+
+        ready = [
+            item
+            for item in created_snapshots
+            if item.get("assignment") is not None and item.get("shift") is not None
+        ]
+        notify_schedule_reuse_applied(
+            db, removed=removed_snapshots, created=ready
+        )
+    except Exception:
+        pass
     return ScheduleReuseApplyResponse(
         created=created,
         removed=removed,
         skipped=skipped,
-        target_week_start=target_week_start,
-        target_week_end=target_end,
+        target_week_start=span_start,
+        target_week_end=span_end,
     )
 
 
@@ -495,6 +657,7 @@ def create_template_from_week(
     week_start: date,
     created_by: uuid.UUID | None,
 ) -> ScheduleTemplateSummary:
+    week_start = monday_of(week_start)
     clean_name = name.strip()
     if not clean_name:
         raise HTTPException(400, "Template name is required")
@@ -532,7 +695,7 @@ def create_template_from_week(
                 shift_id=assignment.shift_id,
                 employee_id=assignment.employee_id,
                 day_offset=day_offset,
-                is_rest_day_work=bool(assignment.is_rest_day_work),
+                is_rest_day_work=False,
             )
         )
 
@@ -597,6 +760,7 @@ def delete_template(
 def reuse_suggestions(
     db: Session, business_id: uuid.UUID, target_week_start: date
 ) -> ScheduleReuseSuggestionsResponse:
+    target_week_start = monday_of(target_week_start)
     previous_week_start = target_week_start - timedelta(days=7)
     previous_count = len(_assignment_rows_for_week(db, business_id, previous_week_start))
     last_week = _find_last_schedule_week(db, business_id, before=target_week_start)

@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { changePassword, getMe } from "@/lib/api";
 import { canSubmitPasswordChange, validatePassword } from "@/lib/passwordValidation";
 import { ME_QUERY_KEY, setAuthSession } from "@/lib/authSession";
+import { ownerFirstLoginPath } from "@/lib/ownerFirstLoginPath";
 
 export function OwnerChangePasswordPage() {
   const navigate = useNavigate();
@@ -41,7 +42,7 @@ export function OwnerChangePasswordPage() {
       const me = await getMe();
       qc.setQueryData(ME_QUERY_KEY, me);
       toast.success("Password updated successfully");
-      navigate(me.setup_completed_at ? "/owner/dashboard" : "/owner/setup-wizard");
+      navigate(ownerFirstLoginPath(me));
     } catch {
       toast.error("Failed to update password. Check your current password.");
     } finally {
@@ -60,7 +61,7 @@ export function OwnerChangePasswordPage() {
       <main className="flex min-h-screen items-center justify-center px-5 py-8 sm:px-8 lg:px-12">
         <div className="w-full max-w-md">
           <div className="mb-8">
-            <div className="mb-5 inline-flex items-center gap-2 rounded-full bg-[#EAF2FB] px-4 py-2 text-xs font-medium text-[#1E3A5F]">
+            <div className="mb-5 inline-flex items-center gap-2 rounded-full bg-[var(--owner-well)] px-4 py-2 text-xs font-medium text-[var(--owner-navy)]">
               <ShieldCheck className="h-4 w-4" />
               Security update
             </div>
@@ -104,7 +105,7 @@ export function OwnerChangePasswordPage() {
               />
               <Button
                 type="submit"
-                className="h-12 w-full rounded-xl bg-[#1E3A5F] text-white shadow-sm hover:bg-[#284B73]"
+                className="h-12 w-full rounded-xl bg-[var(--owner-button)] text-white shadow-sm hover:bg-[var(--owner-navy-soft)]"
                 disabled={loading || !canSubmit}
               >
                 {loading ? "Updating..." : "Update Password"}

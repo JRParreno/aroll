@@ -7,10 +7,10 @@ export const wizardInputClass =
   "h-11 w-full min-w-0 rounded-xl border-slate-200 bg-white";
 
 export const wizardSelectClass =
-  "flex h-11 w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-[#1F2937] outline-none transition focus-visible:ring-2 focus-visible:ring-[#1E3A5F]/25";
+  "flex h-11 w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-[#1F2937] outline-none transition focus-visible:ring-2 focus-visible:ring-[color-mix(in_srgb,var(--owner-accent)_35%,transparent)]";
 
 export const wizardPrimaryBtnClass =
-  "h-10 rounded-xl bg-[#1E3A5F] hover:bg-[#284B73]";
+  "h-10 rounded-xl bg-[var(--owner-button)] hover:bg-[var(--owner-navy-soft)]";
 
 export const wizardOutlineBtnClass = "h-10 rounded-xl border-slate-200";
 
@@ -111,8 +111,8 @@ export function WizardToggle({
       disabled={disabled}
       onClick={() => onChange(!checked)}
       className={cn(
-        "relative h-6 w-11 shrink-0 rounded-full transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1E3A5F]/40 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50",
-        checked ? "bg-[#1E3A5F]" : "bg-slate-300"
+        "relative h-6 w-11 shrink-0 rounded-full transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color-mix(in_srgb,var(--owner-accent)_40%,transparent)] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50",
+        checked ? "bg-[var(--owner-button)]" : "bg-slate-300"
       )}
     >
       <span
@@ -150,7 +150,7 @@ export function WizardSettingRow({
         <span
           className={cn(
             "text-[11px] font-medium uppercase tracking-wide",
-            checked ? "text-[#1E3A5F]" : "text-[#9CA3AF]"
+            checked ? "text-[var(--owner-accent)]" : "text-[#9CA3AF]"
           )}
         >
           {checked ? "On" : "Off"}
@@ -195,14 +195,21 @@ export function WizardStepTrack({
   labels,
   complete,
   onSelect,
+  className,
 }: {
   current: number;
   labels: readonly string[];
   complete: boolean[];
   onSelect?: (index: number) => void;
+  className?: string;
 }) {
   return (
-    <ol className="mt-3 hidden min-w-0 sm:flex sm:items-center">
+    <ol
+      className={cn(
+        "mt-3 hidden min-w-0 sm:flex sm:items-center",
+        className
+      )}
+    >
       {labels.map((label, index) => {
         const done = complete[index] === true;
         const active = index === current;
@@ -212,7 +219,7 @@ export function WizardStepTrack({
               <div
                 className={cn(
                   "mx-1 h-px min-w-2 flex-1",
-                  index <= current || done ? "bg-[#1E3A5F]/35" : "bg-slate-200"
+                  index <= current || done ? "bg-[color-mix(in_srgb,var(--owner-button)_35%,transparent)]" : "bg-slate-200"
                 )}
               />
             ) : null}
@@ -222,9 +229,9 @@ export function WizardStepTrack({
               onClick={() => onSelect?.(index)}
               className={cn(
                 "flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-medium transition",
-                active && "bg-[#1E3A5F] text-white shadow-sm",
+                active && "bg-[var(--owner-button)] text-white shadow-sm",
                 !active && done && "bg-emerald-100 text-emerald-700",
-                !active && !done && "bg-[#EEF3F8] text-[#6B7280] hover:bg-[#E4EBF3]"
+                !active && !done && "bg-[var(--owner-well)] text-[#6B7280] hover:bg-[color-mix(in_srgb,var(--owner-accent)_16%,white)]"
               )}
             >
               {done && !active ? <Check className="h-3.5 w-3.5" strokeWidth={2.5} /> : index + 1}

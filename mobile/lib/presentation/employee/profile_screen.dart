@@ -7,6 +7,8 @@ import 'package:aroll_mobile/core/utils/profile_image_errors.dart';
 import 'package:aroll_mobile/domain/entities/employee_portal.dart';
 import 'package:aroll_mobile/domain/repositories/employee_repository.dart';
 import 'package:aroll_mobile/presentation/employee/employee_ui.dart';
+import 'package:aroll_mobile/presentation/shared/app_ui.dart';
+import 'package:aroll_mobile/presentation/shared/confirm_action_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
@@ -103,21 +105,14 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
   Future<void> _confirmRemoveProfileImage() async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Remove profile picture?'),
-        content: const Text(
-          'Your profile picture will be removed from all devices.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Remove'),
-          ),
-        ],
+      builder: (context) => const ConfirmActionDialog(
+        icon: Icons.person_remove_rounded,
+        title: 'Remove profile picture?',
+        message: 'Your profile picture will be removed from all devices.',
+        confirmLabel: 'Remove',
+        iconColor: AppColors.danger,
+        iconBackground: Color(0xFFFEE2E2),
+        confirmColor: Color(0xFFB91C1C),
       ),
     );
     if (confirmed != true) return;
@@ -322,10 +317,6 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
                         value: profile.username ?? 'Not available',
                       ),
                       EmployeeDetailField(
-                        label: 'Phone Number',
-                        value: profile.phone ?? 'Not set',
-                      ),
-                      EmployeeDetailField(
                         label: 'Position',
                         value: position,
                       ),
@@ -333,39 +324,56 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
                         label: 'Employee Status',
                         value: titleCase(profile.status),
                       ),
+                      if ((profile.recoveryEmail ?? '').isNotEmpty)
+                        EmployeeDetailField(
+                          label: 'Recovery email',
+                          value: profile.recoveryEmail!,
+                        )
+                      else
+                        Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: TextButton(
+                              style: TextButton.styleFrom(
+                                padding: EdgeInsets.zero,
+                                minimumSize: const Size(48, 40),
+                                tapTargetSize: MaterialTapTargetSize.padded,
+                              ),
+                              onPressed: () =>
+                                  context.push('/profile/recovery-email'),
+                              child: const Text('Register recovery email'),
+                            ),
+                          ),
+                        ),
                     ],
                   ),
-                  const SizedBox(height: 14),
-                  OutlinedButton(
+                  const SizedBox(height: 12),
+                  _ProfileActionButton(
+                    label: 'View consents',
+                    color: brand.primary,
                     onPressed: () => context.push('/consents?view=1'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: brand.primary,
-                      side: BorderSide(color: brand.primary.withValues(alpha: 0.45)),
-                      minimumSize: const Size.fromHeight(48),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                    ),
-                    child: const Text(
-                      'View consents',
-                      style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 8),
+                  _ProfileActionButton(
+                    label: 'Attendance & Payroll Policies',
+                    color: brand.primary,
+                    onPressed: () => context.push(
+                      '/profile/attendance-payroll-policies',
                     ),
                   ),
-                  const SizedBox(height: 14),
-                  OutlinedButton(
+                  const SizedBox(height: 8),
+                  _ProfileActionButton(
+                    label: 'Change Password',
+                    color: brand.primary,
+                    onPressed: () =>
+                        context.push('/profile/change-password'),
+                  ),
+                  const SizedBox(height: 8),
+                  _ProfileActionButton(
+                    label: 'Sign Out',
+                    color: brand.primary,
                     onPressed: () => confirmEmployeeSignOut(context),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: brand.primary,
-                      side: BorderSide(color: brand.primary.withValues(alpha: 0.45)),
-                      minimumSize: const Size.fromHeight(48),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                    ),
-                    child: const Text(
-                      'Sign Out',
-                      style: TextStyle(fontWeight: FontWeight.w700),
-                    ),
                   ),
                 ],
               );
@@ -412,6 +420,40 @@ class _Section extends StatelessWidget {
           ...children,
         ],
       ),
+    );
+  }
+}
+
+class _ProfileActionButton extends StatelessWidget {
+  const _ProfileActionButton({
+    required this.label,
+    required this.color,
+    required this.onPressed,
+  });
+
+  final String label;
+  final Color color;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return OutlinedButton(
+      onPressed: onPressed,
+      style: OutlinedButton.styleFrom(
+        foregroundColor: color,
+        side: BorderSide(color: color.withValues(alpha: 0.45)),
+        minimumSize: const Size(AppSizes.minTap, 40),
+        tapTargetSize: MaterialTapTargetSize.padded,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+        textStyle: const TextStyle(
+          fontSize: 13,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+      child: Text(label),
     );
   }
 }

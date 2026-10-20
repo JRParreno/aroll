@@ -34,6 +34,9 @@ class LeaveRequest(Base):
     end_date: Mapped[date] = mapped_column(Date, nullable=False)
     leave_days: Mapped[int] = mapped_column(Integer, nullable=False)
     reason: Mapped[str] = mapped_column(Text, nullable=False)
+    other_leave_specification: Mapped[str | None] = mapped_column(
+        String(200), nullable=True
+    )
     supporting_document: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Snapshot of company Leave Policy at create/edit; payroll uses is_paid.
     policy_is_paid: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
@@ -52,6 +55,9 @@ class LeaveRequest(Base):
     previous_start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     previous_end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     previous_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    previous_other_leave_specification: Mapped[str | None] = mapped_column(
+        String(200), nullable=True
+    )
     previous_supporting_document: Mapped[str | None] = mapped_column(
         Text, nullable=True
     )

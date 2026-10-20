@@ -8,7 +8,7 @@ const STEP_ORDER = [
   "payroll",
   "attendance_policy",
   "holidays",
-  "rest_day",
+  "leave_policy",
   "location",
 ];
 
@@ -33,14 +33,14 @@ export function SetupProgressCard({ status }: Props) {
 
   return (
     <section className="owner-card relative overflow-hidden px-4 py-4 sm:px-5">
-      <div className="pointer-events-none absolute inset-y-0 right-0 w-40 bg-gradient-to-l from-[#1E3A5F]/[0.04] to-transparent" />
+      <div className="pointer-events-none absolute inset-y-0 right-0 w-40 bg-gradient-to-l from-[color-mix(in_srgb,var(--owner-navy)_4%,transparent)] to-transparent" />
       <div className="relative flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2.5">
             <h2 className="owner-section-title">
               Business Setup Progress
             </h2>
-            <span className="rounded-full bg-[#EEF3F8] px-2.5 py-1 text-xs font-medium text-[#1E3A5F]">
+            <span className="rounded-full bg-[var(--owner-well)] px-2.5 py-1 text-xs font-medium text-[var(--owner-navy)]">
               {status.completion_percent}%
             </span>
           </div>
@@ -52,7 +52,7 @@ export function SetupProgressCard({ status }: Props) {
         <div className="flex items-center gap-3 sm:min-w-[280px]">
           <div className="h-2 flex-1 overflow-hidden rounded-full bg-[#E5E7EB]">
             <div
-              className="h-full rounded-full bg-gradient-to-r from-[#1E3A5F] to-[#284B73] transition-all"
+              className="h-full rounded-full bg-gradient-to-r from-[var(--owner-button)] to-[var(--owner-navy-soft)] transition-all"
               style={{ width: `${status.completion_percent}%` }}
             />
           </div>

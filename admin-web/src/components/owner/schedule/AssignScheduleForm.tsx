@@ -112,7 +112,7 @@ export function AssignScheduleForm({
             </p>
           ) : (
             <div className="max-h-48 space-y-2 overflow-y-auto rounded-md border p-3">
-              {employees.map((employee) => (
+                  {employees.map((employee) => (
                 <label
                   key={employee.id}
                   className="flex items-center gap-2 text-sm"
@@ -122,6 +122,22 @@ export function AssignScheduleForm({
                     checked={selectedEmployeeIds.includes(employee.id)}
                     onChange={() => onToggleEmployee(employee.id)}
                   />
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-slate-100 text-[11px] font-semibold text-[#374151]">
+                    {employee.profile_image_url ? (
+                      <img
+                        alt={employee.full_name}
+                        className="h-full w-full object-cover"
+                        src={employee.profile_image_url}
+                      />
+                    ) : (
+                      employee.full_name
+                        .split(" ")
+                        .filter(Boolean)
+                        .slice(0, 2)
+                        .map((part) => part[0]?.toUpperCase())
+                        .join("")
+                    )}
+                  </span>
                   <span>{employee.full_name}</span>
                   <span className="text-muted-foreground">
                     {employee.position_title ?? "—"}

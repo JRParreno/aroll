@@ -1,4 +1,7 @@
+import 'package:aroll_mobile/core/app_state.dart';
 import 'package:aroll_mobile/core/di/injection.dart';
+import 'package:aroll_mobile/core/utils/business_time.dart';
+import 'package:aroll_mobile/core/theme/business_brand_theme.dart';
 import 'package:aroll_mobile/core/utils/data_uri_image.dart';
 import 'package:aroll_mobile/data/repositories/owner_repository.dart';
 import 'package:aroll_mobile/domain/entities/user_session.dart';
@@ -20,6 +23,7 @@ class OwnerDashboardScreen extends StatefulWidget {
 
 class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
   late Future<List<Map<String, dynamic>>> _future;
+  String _period = 'week';
 
   @override
   void initState() {
@@ -30,7 +34,7 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
   void _load() {
     final repo = sl<OwnerRepository>();
     _future = Future.wait([
-      repo.performance(),
+      repo.performance(period: _period),
       repo.setupStatus(),
       repo.accountSettings(),
     ]);
@@ -41,11 +45,252 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
     await _future;
   }
 
+  void _setPeriod(String period) {
+    if (_period == period) return;
+    setState(() {
+      _period = period;
+      _load();
+    });
+  }
+
+  void _showStatusEvents({
+    required String category,
+    required String label,
+    required List<Map<String, dynamic>> events,
+  }) {
+    final filtered = events
+        .where((event) => '${event['category']}' == category)
+        .toList();
+    final timeZone = sl<AppState>().session?.timezone;
+    final statusColor = _statusAccent(category);
+
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      barrierColor: Colors.black.withValues(alpha: 0.35),
+      builder: (context) {
+        return DraggableScrollableSheet(
+          initialChildSize: filtered.isEmpty ? 0.38 : 0.52,
+          minChildSize: 0.32,
+          maxChildSize: 0.88,
+          expand: false,
+          builder: (context, scrollController) {
+            return Container(
+              decoration: BoxDecoration(
+                color: AppColors.white,
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(22),
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.12),
+                    blurRadius: 24,
+                    offset: const Offset(0, -4),
+                  ),
+                ],
+              ),
+              child: Column(
+                children: [
+                  const SizedBox(height: 10),
+                  Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFD1D5DB),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(18, 14, 10, 12),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          width: 10,
+                          height: 10,
+                          margin: const EdgeInsets.only(top: 5),
+                          decoration: BoxDecoration(
+                            color: statusColor,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                '$label Employees',
+                                style: appSectionTitleStyle().copyWith(
+                                  fontSize: 17,
+                                ),
+                              ),
+                              const SizedBox(height: 3),
+                              Text(
+                                filtered.isEmpty
+                                    ? 'No employees for this period'
+                                    : '${filtered.length} record${filtered.length == 1 ? '' : 's'} · exact Time In / Time Out',
+                                style: appMutedStyle().copyWith(fontSize: 12),
+                              ),
+                            ],
+                          ),
+                        ),
+                        IconButton(
+                          onPressed: () => Navigator.pop(context),
+                          tooltip: 'Close',
+                          icon: const Icon(
+                            Icons.close_rounded,
+                            color: AppColors.textMuted,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Divider(height: 1, color: AppColors.border),
+                  Expanded(
+                    child: filtered.isEmpty
+                        ? Center(
+                            child: Padding(
+                              padding: const EdgeInsets.fromLTRB(28, 20, 28, 28),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Container(
+                                    width: 52,
+                                    height: 52,
+                                    decoration: BoxDecoration(
+                                      color: AppColors.chipFill,
+                                      borderRadius: BorderRadius.circular(16),
+                                    ),
+                                    child: const Icon(
+                                      Icons.person_off_outlined,
+                                      color: AppColors.textMuted,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 12),
+                                  Text(
+                                    'No employees found for this period.',
+                                    textAlign: TextAlign.center,
+                                    style: appMutedStyle().copyWith(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          )
+                        : ListView.separated(
+                            controller: scrollController,
+                            padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
+                            itemCount: filtered.length,
+                            separatorBuilder: (_, __) =>
+                                const SizedBox(height: 10),
+                            itemBuilder: (context, index) {
+                              final event = filtered[index];
+                              final name =
+                                  '${event['full_name'] ?? 'Employee'}';
+                              final workDate = '${event['work_date'] ?? ''}';
+                              final timeIn = formatBusinessAttendanceTimeIso(
+                                event['time_in'] as String?,
+                                timeZone: timeZone,
+                                fallback: '—',
+                              );
+                              final timeOut = formatBusinessAttendanceTimeIso(
+                                event['time_out'] as String?,
+                                timeZone: timeZone,
+                                fallback: '—',
+                              );
+                              return Container(
+                                padding: const EdgeInsets.fromLTRB(
+                                  14,
+                                  12,
+                                  14,
+                                  12,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFF8FAFC),
+                                  borderRadius: BorderRadius.circular(14),
+                                  border: Border.all(color: AppColors.border),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      name,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: 14,
+                                        color: AppColors.textPrimary,
+                                      ),
+                                    ),
+                                    if (workDate.isNotEmpty) ...[
+                                      const SizedBox(height: 3),
+                                      Text(
+                                        workDate,
+                                        style: appMutedStyle().copyWith(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ],
+                                    const SizedBox(height: 10),
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: _TimeDetail(
+                                            label: 'Time In',
+                                            value: timeIn,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 10),
+                                        Expanded(
+                                          child: _TimeDetail(
+                                            label: 'Time Out',
+                                            value: timeOut,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Color _statusAccent(String category) {
+    switch (category) {
+      case 'on_time':
+        return AppColors.success;
+      case 'late':
+        return AppColors.warning;
+      case 'undertime':
+        return const Color(0xFFEA580C);
+      case 'overtime':
+        return AppColors.primary;
+      case 'absent':
+        return AppColors.danger;
+      default:
+        return AppColors.textMuted;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return OwnerShell(
       selectedIndex: 0,
       title: '',
+      showLogoutButton: true,
       child: FutureBuilder<List<Map<String, dynamic>>>(
         future: _future,
         builder: (context, snapshot) {
@@ -60,6 +305,10 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
           final account = snapshot.data![2];
           final summary =
               performance['summary'] as Map<String, dynamic>? ?? const {};
+          final events = (performance['events'] as List<dynamic>? ?? const [])
+              .whereType<Map>()
+              .map((row) => Map<String, dynamic>.from(row))
+              .toList();
           final ownerName = _ownerDisplayName(
             session: widget.session,
             account: account,
@@ -69,7 +318,7 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
             account: account,
           );
           return RefreshIndicator(
-            color: AppColors.primaryDark,
+            color: BrandColors.of(context).tonePrimary,
             onRefresh: _refresh,
             child: ListView(
               padding: const EdgeInsets.fromLTRB(16, 4, 16, 28),
@@ -94,10 +343,22 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
                       : 'Performance overview',
                   subtitle: widget.session.isDemo
                       ? 'Demo records only — not a real employee performance evaluation'
-                      : 'Attendance breakdown across recent shifts',
+                      : 'Tap a bar to view employees for the selected period',
+                ),
+                const SizedBox(height: 10),
+                _PeriodSelector(
+                  period: _period,
+                  onChanged: _setPeriod,
                 ),
                 const SizedBox(height: 12),
-                _PerformanceOverviewCard(summary: summary),
+                _PerformanceOverviewCard(
+                  summary: summary,
+                  onBarTap: (category, label) => _showStatusEvents(
+                    category: category,
+                    label: label,
+                    events: events,
+                  ),
+                ),
                 const SizedBox(height: 20),
                 const _SectionLabel(
                   title: 'Team insights',
@@ -115,9 +376,9 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
                   title: 'Set Schedule',
                   subtitle: 'Assign shifts and plan the coming week',
                   icon: Icons.event_available_rounded,
-                  gradient: const [
-                    AppColors.primary,
-                    AppColors.primaryDark,
+                  gradient: [
+                    BrandColors.of(context).tonePrimary,
+                    BrandColors.of(context).toneSecondary,
                   ],
                   onTap: () => context.push('/owner/schedule'),
                 ),
@@ -126,9 +387,9 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
                   title: 'Leave Management',
                   subtitle: 'Review pending leave requests',
                   icon: Icons.event_busy_rounded,
-                  gradient: const [
-                    Color(0xFF3B6D96),
-                    Color(0xFF2A5680),
+                  gradient: [
+                    BrandColors.of(context).toneButton,
+                    BrandColors.of(context).toneSidebar,
                   ],
                   onTap: () => context.push('/owner/leave'),
                 ),
@@ -262,21 +523,15 @@ class _DashboardHeader extends StatelessWidget {
         : null;
     final hasLogo = logoBytes != null || networkLogo != null;
 
+    final brand = BrandColors.of(context);
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 16, 10, 16),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            AppColors.primary,
-            AppColors.primaryDark,
-          ],
-        ),
+        gradient: brand.headerGradient,
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: AppColors.primaryDark.withValues(alpha: 0.22),
+            color: brand.tonePrimary.withValues(alpha: 0.22),
             blurRadius: 18,
             offset: const Offset(0, 8),
           ),
@@ -284,43 +539,41 @@ class _DashboardHeader extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Container(
-            width: 56,
-            height: 56,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: Colors.white.withValues(alpha: 0.35),
-                width: 2,
-              ),
+          ClipOval(
+            child: SizedBox(
+              width: 56,
+              height: 56,
+              child: hasLogo
+                  ? (logoBytes != null
+                      ? Image.memory(
+                          logoBytes,
+                          width: 56,
+                          height: 56,
+                          fit: BoxFit.cover,
+                        )
+                      : Image.network(
+                          networkLogo!,
+                          width: 56,
+                          height: 56,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => ColoredBox(
+                            color: brand.toneWell,
+                            child: Icon(
+                              Icons.storefront_rounded,
+                              size: 26,
+                              color: brand.tonePrimary,
+                            ),
+                          ),
+                        ))
+                  : ColoredBox(
+                      color: brand.toneWell,
+                      child: Icon(
+                        Icons.storefront_rounded,
+                        size: 26,
+                        color: brand.tonePrimary,
+                      ),
+                    ),
             ),
-            clipBehavior: Clip.antiAlias,
-            alignment: Alignment.center,
-            child: hasLogo
-                ? (logoBytes != null
-                    ? Image.memory(
-                        logoBytes,
-                        width: 56,
-                        height: 56,
-                        fit: BoxFit.cover,
-                      )
-                    : Image.network(
-                        networkLogo!,
-                        width: 56,
-                        height: 56,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => const Icon(
-                          Icons.storefront_rounded,
-                          size: 26,
-                          color: AppColors.primary,
-                        ),
-                      ))
-                : const Icon(
-                    Icons.storefront_rounded,
-                    size: 26,
-                    color: AppColors.primary,
-                  ),
           ),
           const SizedBox(width: 14),
           Expanded(
@@ -479,10 +732,105 @@ class _InsightCard extends StatelessWidget {
   }
 }
 
+class _TimeDetail extends StatelessWidget {
+  const _TimeDetail({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: appMutedStyle().copyWith(
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 3),
+        Text(
+          value,
+          style: const TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+            color: AppColors.textPrimary,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _PeriodSelector extends StatelessWidget {
+  const _PeriodSelector({
+    required this.period,
+    required this.onChanged,
+  });
+
+  final String period;
+  final ValueChanged<String> onChanged;
+
+  static const _options = [
+    ('week', 'Weekly'),
+    ('month', 'Monthly'),
+    ('year', 'Yearly'),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: AppColors.chipFill,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Row(
+        children: [
+          for (final option in _options)
+            Expanded(
+              child: Material(
+                color: period == option.$1
+                    ? AppColors.white
+                    : Colors.transparent,
+                borderRadius: BorderRadius.circular(10),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(10),
+                  onTap: () => onChanged(option.$1),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    child: Text(
+                      option.$2,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: period == option.$1
+                            ? BrandColors.of(context).tonePrimary
+                            : AppColors.textMuted,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
 class _PerformanceOverviewCard extends StatelessWidget {
-  const _PerformanceOverviewCard({required this.summary});
+  const _PerformanceOverviewCard({
+    required this.summary,
+    this.onBarTap,
+  });
 
   final Map<String, dynamic> summary;
+  final void Function(String category, String label)? onBarTap;
 
   @override
   Widget build(BuildContext context) {
@@ -492,6 +840,7 @@ class _PerformanceOverviewCard extends StatelessWidget {
       undertime: ownerParseInt(summary['undertime_shifts']),
       overtime: ownerParseInt(summary['overtime_shifts']),
       absent: ownerParseInt(summary['absent_shifts']),
+      onBarTap: onBarTap,
     );
   }
 }
@@ -611,10 +960,14 @@ class _QuickActionTile extends StatelessWidget {
               width: 44,
               height: 44,
               decoration: BoxDecoration(
-                color: AppColors.iconWell,
+                color: BrandColors.of(context).toneWell,
                 borderRadius: BorderRadius.circular(14),
               ),
-              child: Icon(icon, color: AppColors.primary, size: 22),
+              child: Icon(
+                icon,
+                color: BrandColors.of(context).tonePrimary,
+                size: 22,
+              ),
             ),
             const SizedBox(height: 10),
             Text(

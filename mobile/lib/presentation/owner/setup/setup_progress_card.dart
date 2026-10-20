@@ -36,13 +36,13 @@ class SetupProgressCard extends StatelessWidget {
                 width: 40,
                 height: 40,
                 decoration: BoxDecoration(
-                  color: AppColors.iconWell,
+                  color: SetupUi.wellOf(context),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: const Icon(
+                child: Icon(
                   Icons.checklist_rounded,
                   size: 20,
-                  color: SetupUi.navy,
+                  color: SetupUi.navyOf(context),
                 ),
               ),
               const SizedBox(width: 12),
@@ -75,10 +75,10 @@ class SetupProgressCard extends StatelessWidget {
                 ),
                 child: Text(
                   '$percent%',
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w700,
-                    color: SetupUi.navy,
+                    color: SetupUi.navyOf(context),
                   ),
                 ),
               ),
@@ -91,7 +91,7 @@ class SetupProgressCard extends StatelessWidget {
               value: percent / 100,
               minHeight: 8,
               backgroundColor: const Color(0xFFE8EEF4),
-              color: SetupUi.navy,
+              color: SetupUi.navyOf(context),
             ),
           ),
           if (showContinueButton) ...[
@@ -99,7 +99,7 @@ class SetupProgressCard extends StatelessWidget {
             SizedBox(
               width: double.infinity,
               child: FilledButton(
-                style: SetupUi.primaryButton,
+                style: SetupUi.primaryButtonOf(context),
                 onPressed: () => context.push(
                   '/owner/setup-wizard?step=$continueStep',
                 ),
