@@ -57,7 +57,9 @@ def _assignment_response(
 
 
 def _week_bounds(week_start: date) -> tuple[date, date]:
-    return week_start, week_start + timedelta(days=6)
+    """Return the Monday–Sunday week that contains ``week_start``."""
+    monday = week_start - timedelta(days=week_start.weekday())
+    return monday, monday + timedelta(days=6)
 
 
 def _times_overlap(first: Shift, second: Shift) -> bool:
@@ -109,7 +111,6 @@ def get_weekly_schedule(
         .filter(
             Shift.business_id == user.business_id,
             Employee.business_id == user.business_id,
-            Employee.is_active.is_(True),
             ShiftAssignment.work_date >= week_start_date,
             ShiftAssignment.work_date <= week_end_date,
         )
@@ -291,6 +292,17 @@ def assign_schedule(
 
     for assignment in created_assignments:
         db.refresh(assignment)
+        try:
+            from app.services.activity_notifications import notify_schedule_assigned
+
+            notify_schedule_assigned(
+                db,
+                assignment=assignment,
+                shift=shift,
+                employee=employee_map[assignment.employee_id],
+            )
+        except Exception:
+            pass
 
     return ScheduleAssignResponse(
         created=len(created_assignments),
@@ -381,12 +393,29 @@ def update_schedule_assignment(
             f"Shift capacity exceeded. Maximum {shift.employee_capacity} employees allowed.",
         )
 
+    previous_shift_id = assignment.shift_id
+    previous_date = assignment.work_date
+    previous_rest = bool(assignment.is_rest_day_work)
     assignment.shift_id = shift.id
     assignment.work_date = body.work_date
     if body.is_rest_day_work is not None:
         assignment.is_rest_day_work = body.is_rest_day_work
     db.commit()
     db.refresh(assignment)
+    material = (
+        previous_shift_id != assignment.shift_id
+        or previous_date != assignment.work_date
+        or previous_rest != bool(assignment.is_rest_day_work)
+    )
+    if material:
+        try:
+            from app.services.activity_notifications import notify_schedule_changed
+
+            notify_schedule_changed(
+                db, assignment=assignment, shift=shift, employee=employee
+            )
+        except Exception:
+            pass
 
     return _assignment_response(
         assignment,
@@ -420,7 +449,21 @@ def delete_schedule_assignment(
     if row is None:
         raise HTTPException(404, "Schedule assignment not found")
 
-    assignment, _employee, _shift = row
+    assignment, employee, shift = row
+    assignment_id = assignment.id
+    work_date = assignment.work_date
     db.delete(assignment)
     db.commit()
+    try:
+        from app.services.activity_notifications import notify_schedule_cancelled
+
+        notify_schedule_cancelled(
+            db,
+            employee=employee,
+            work_date=work_date,
+            shift=shift,
+            assignment_id=assignment_id,
+        )
+    except Exception:
+        pass
     return {"status": "ok"}

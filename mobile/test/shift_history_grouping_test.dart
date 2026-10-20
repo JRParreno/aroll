@@ -700,6 +700,112 @@ void main() {
       expect(historyDayTotalFromMaps(siblings).total, 520);
     });
   });
+
+  group('late overtime and rest-day summary lines', () {
+    Map<String, dynamic> daily({
+      double late = 0,
+      double lateMinutes = 0,
+      double overtime = 0,
+      double overtimeMinutes = 0,
+      double dayRest = 0,
+      double shiftNet = 350,
+    }) {
+      return {
+        'pay_basis_used': 'daily',
+        'status': late > 0 ? 'late' : 'complete',
+        'expected_salary_pay': 350.0,
+        'earned': 315.99,
+        'rest_day_premium_pay': null,
+        'holiday_pay': 0.0,
+        'day_rest_day_pay': dayRest,
+        'late_deduction': late,
+        'late_minutes': lateMinutes,
+        'overtime_pay': overtime,
+        'overtime_minutes': overtimeMinutes,
+        'shift_net': shiftNet,
+        'reconciled_shift_total': shiftNet,
+      };
+    }
+
+    test('late only', () {
+      final row = daily(late: 20, lateMinutes: 20, shiftNet: 330);
+      expect(buildDeductionLines(lateDeduction: row['late_deduction'], lateMinutes: row['late_minutes']).single.key, 'late');
+      expect(buildAdditionalPayLines(overtimePay: row['overtime_pay']), isEmpty);
+    });
+
+    test('overtime only', () {
+      final row = daily(overtime: 60, overtimeMinutes: 60, shiftNet: 410);
+      expect(buildAdditionalPayLines(overtimePay: row['overtime_pay'], overtimeMinutes: row['overtime_minutes']).single.key, 'overtime');
+      expect(buildDeductionLines(lateDeduction: row['late_deduction']), isEmpty);
+    });
+
+    test('late and overtime together', () {
+      final row = daily(late: 20, lateMinutes: 20, overtime: 60, overtimeMinutes: 60, shiftNet: 390);
+      expect(buildAdditionalPayLines(overtimePay: row['overtime_pay']).single.key, 'overtime');
+      expect(buildDeductionLines(lateDeduction: row['late_deduction']).single.key, 'late');
+    });
+
+    test('rest-day premium only', () {
+      final row = daily(dayRest: 35);
+      final face = presentShiftPayFromMap(row, [row]);
+      expect(face.restPay, 35);
+      expect(face.shiftTotal, 385);
+      expect(buildAdditionalPayLines(restDayPremiumPay: face.restPay).single.key, 'rest_day');
+    });
+
+    test('late overtime and rest-day coexist without duplicating rest', () {
+      final row = daily(
+        late: 20,
+        lateMinutes: 20,
+        overtime: 60,
+        overtimeMinutes: 60,
+        dayRest: 35,
+        shiftNet: 390,
+      );
+      final face = presentShiftPayFromMap(row, [row]);
+      final additional = buildAdditionalPayLines(
+        overtimePay: row['overtime_pay'],
+        restDayPremiumPay: face.restPay,
+      );
+      expect(additional.map((l) => l.key).toList(), ['overtime', 'rest_day']);
+      expect(additional.where((l) => l.key == 'rest_day').length, 1);
+      expect(buildDeductionLines(lateDeduction: row['late_deduction']).single.amount, 20);
+      expect(face.restPay, 35);
+      expect(face.shiftTotal, 425);
+    });
+
+    test('grace period omits late line', () {
+      expect(
+        buildDeductionLines(lateDeduction: 0, lateMinutes: 0),
+        isEmpty,
+      );
+    });
+
+    test('ineligible overtime omits overtime line', () {
+      expect(buildAdditionalPayLines(overtimePay: 0, overtimeMinutes: 0), isEmpty);
+    });
+
+    test('rest-day premium amount is unchanged when late and overtime exist', () {
+      final restOnly = presentShiftPayFromMap(daily(dayRest: 35), [daily(dayRest: 35)]);
+      final mixed = presentShiftPayFromMap(
+        daily(late: 20, overtime: 60, dayRest: 35, shiftNet: 390),
+        [daily(late: 20, overtime: 60, dayRest: 35, shiftNet: 390)],
+      );
+      expect(restOnly.restPay, 35);
+      expect(mixed.restPay, 35);
+    });
+
+    test('shift total matches entitlement plus extras minus deductions', () {
+      final row = daily(
+        late: 20,
+        overtime: 60,
+        dayRest: 35,
+        shiftNet: 390,
+      );
+      final face = presentShiftPayFromMap(row, [row]);
+      expect(face.shiftTotal, 350 + 60 + 35 - 20);
+    });
+  });
 }
 
 class _Item {

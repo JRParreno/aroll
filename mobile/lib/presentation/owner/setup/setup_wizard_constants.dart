@@ -6,11 +6,15 @@ const setupWizardStepLabels = [
   'Set Up Employee Pay',
   'How Employees Time In & Out',
   'Holiday Management',
+  'Leave Policy',
   'Work Location',
   'Review Your Setup',
 ];
 
-const setupWizardBusinessInfoStep = 7;
+const setupWizardLeavePolicyStep = 5;
+const setupWizardLocationStep = 6;
+const setupWizardReviewStep = 7;
+const setupWizardBusinessInfoStep = 8;
 
 const setupWizardStepKeys = [
   'shifts',
@@ -18,6 +22,7 @@ const setupWizardStepKeys = [
   'payroll',
   'attendance_policy',
   'holidays',
+  'leave_policy',
   'location',
   'review',
 ];
@@ -43,6 +48,8 @@ const setupStepHelp = {
       'Set the time rules for being on time, late, absent, and overtime.',
   'Holiday Management':
       'Holiday calendar, holiday rules, and how holiday pay works in Aroll+.',
+  'Leave Policy':
+      'Set paid or unpaid leave types and how far ahead leave must be requested.',
   'Work Location':
       'Set your workplace so employees can only time in when they are nearby.',
   'Review Your Setup':
@@ -104,10 +111,18 @@ const setupMenuEntries = [
     icon: Icons.event_outlined,
   ),
   SetupMenuEntry(
+    label: 'Leave Policy',
+    subtitle:
+        'Set paid or unpaid leave types and how far ahead leave must be requested.',
+    stepIndex: setupWizardLeavePolicyStep,
+    statusKey: 'leave_policy',
+    icon: Icons.event_busy_outlined,
+  ),
+  SetupMenuEntry(
     label: 'Work Location',
     subtitle:
         'Set your workplace so employees can only time in when they are nearby.',
-    stepIndex: 5,
+    stepIndex: setupWizardLocationStep,
     statusKey: 'location',
     icon: Icons.location_on_outlined,
   ),
@@ -116,19 +131,26 @@ const setupMenuEntries = [
 String setupWizardScreenTitle(int step) {
   if (step < 0) return 'Set Up Your Business';
   if (step == setupWizardBusinessInfoStep) return 'Business Information';
-  return setupWizardStepLabels[step];
+  if (step >= 0 && step < setupWizardStepLabels.length) {
+    return setupWizardStepLabels[step];
+  }
+  return 'Set Up Your Business';
 }
 
 String setupWizardStepHelp(int step) {
   if (step == setupWizardBusinessInfoStep) {
-    return setupStepHelp['Business Information']!;
+    return setupStepHelp['Business Information'] ??
+        'Your business details from registration.';
   }
-  return setupStepHelp[setupWizardStepLabels[step]] ?? '';
+  if (step >= 0 && step < setupWizardStepLabels.length) {
+    return setupStepHelp[setupWizardStepLabels[step]] ?? '';
+  }
+  return '';
 }
 
 int clampSetupStep(int step) => step.clamp(0, setupWizardStepLabels.length - 1);
 
-/// `-1` opens the setup menu; `0..6` opens a specific step.
+/// `-1` opens the setup menu; `0..7` opens a specific step.
 int parseSetupWizardInitialStep(String? stepParam) {
   if (stepParam == null || stepParam == 'menu') return -1;
   final parsed = int.tryParse(stepParam);
@@ -139,11 +161,11 @@ int parseSetupWizardInitialStep(String? stepParam) {
 int firstIncompleteSetupStepIndex(Map<String, dynamic> setupStatus) {
   final steps = (setupStatus['steps'] as List<dynamic>? ?? const [])
       .whereType<Map<String, dynamic>>();
-  for (var i = 0; i < setupWizardStepOrder.length; i++) {
-    final key = setupWizardStepOrder[i];
+  for (final key in setupWizardStepOrder) {
     final match = steps.where((step) => step['key'] == key);
     if (match.isEmpty || match.first['complete'] != true) {
-      return i;
+      final index = setupWizardStepKeys.indexOf(key);
+      return index >= 0 ? index : 0;
     }
   }
   return 0;
@@ -209,4 +231,13 @@ TimeOfDay? parseApiTime(String? value) {
   final minute = int.tryParse(parts[1]);
   if (hour == null || minute == null) return null;
   return TimeOfDay(hour: hour, minute: minute);
+}
+
+String ownerLandingRoute({
+  required bool setupCompleted,
+  required bool needsBrandingOnboarding,
+}) {
+  if (setupCompleted) return '/owner/home';
+  if (needsBrandingOnboarding) return '/owner/branding-setup';
+  return '/owner/setup-wizard';
 }

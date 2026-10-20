@@ -1,6 +1,6 @@
 import { useLayoutEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Navigate } from "react-router-dom";
+import { Navigate, useLocation } from "react-router-dom";
 import { getMe } from "@/lib/api";
 import {
   clearAuthSession,
@@ -10,6 +10,7 @@ import {
   ME_QUERY_KEY,
 } from "@/lib/authSession";
 import { applyOwnerBrandCss, clearOwnerBrandCss } from "@/lib/ownerBrandCss";
+import { ownerFirstLoginPath } from "@/lib/ownerFirstLoginPath";
 
 export function RequireOwnerAuth({
   children,
@@ -19,6 +20,7 @@ export function RequireOwnerAuth({
   passwordChangeOnly?: boolean;
 }) {
   const token = getAuthToken();
+  const location = useLocation();
 
   const { data: me, isLoading, isError } = useQuery({
     queryKey: ME_QUERY_KEY,
@@ -68,18 +70,20 @@ export function RequireOwnerAuth({
 
   if (passwordChangeOnly) {
     if (!mustChange) {
-      return (
-        <Navigate
-          to={me.setup_completed_at ? "/owner/dashboard" : "/owner/setup-wizard"}
-          replace
-        />
-      );
+      return <Navigate to={ownerFirstLoginPath(me)} replace />;
     }
     return <>{children}</>;
   }
 
   if (mustChange) {
     return <Navigate to="/owner/change-password" replace />;
+  }
+
+  if (
+    me.needs_branding_onboarding &&
+    !location.pathname.startsWith("/owner/branding-setup")
+  ) {
+    return <Navigate to="/owner/branding-setup" replace />;
   }
 
   return <>{children}</>;

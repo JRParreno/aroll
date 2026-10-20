@@ -57,6 +57,8 @@ def _run(
     rest_day_ot: float = 25.0,
     overtime_enabled: bool = True,
     overtime_per_minute: float = 1.0,
+    overtime_calculation_method: str | None = None,
+    overtime_approval_required: bool = False,
     late_deduction_per_minute: float = 1.0,
     late_deduction_enabled: bool = True,
     employment_type: EmploymentType = EmploymentType.full_time,
@@ -96,6 +98,8 @@ def _run(
     )
     config = SimpleNamespace(
         overtime_per_minute=overtime_per_minute,
+        overtime_calculation_method=overtime_calculation_method,
+        overtime_approval_required=overtime_approval_required,
         late_deduction_per_minute=late_deduction_per_minute,
         late_deduction_enabled=late_deduction_enabled,
         overtime_enabled=overtime_enabled,
@@ -653,8 +657,11 @@ def test_hourly_pdf_uses_regular_pay_not_daily_times_days():
     )
     assert b"Basic salary: PHP 900.00" in pdf
     assert b"Leave pay: PHP 0.00" in pdf
-    assert b"Hourly rate: PHP 100.00" in pdf
+    assert b"Hourly Rate: PHP 100.00" in pdf
+    assert b"Daily Rate:" in pdf
+    assert b"Daily Rate: PHP" not in pdf
     assert b"1,300.00" not in pdf
+    assert b"650.00" not in pdf
     assert b"Hours worked: 9.0" in pdf
 
 
@@ -1858,7 +1865,7 @@ def test_balancing_20_late_50_raw_ot_pays_30_and_clears_late():
         ordinary_ot=25.0,
     )
     assert slip["overtime_minutes"] == 30.0
-    assert abs(slip["overtime_pay"] - 30.0) < 0.01
+    assert abs(slip["overtime_pay"] - overtime_pay_amount(30, 1.0, 0.0)) < 0.01
     assert slip["late_deductions"] == 0.0
 
 
@@ -2262,7 +2269,7 @@ def test_ot_exactly_threshold_after_balancing_pays_ot_clears_late():
     )
     assert slip["overtime_minutes"] == 30.0
     assert abs(slip["overtime_hours"] - 0.5) < 0.01
-    assert abs(slip["overtime_pay"] - 30.0) < 0.01
+    assert abs(slip["overtime_pay"] - overtime_pay_amount(30, 1.0, 0.0)) < 0.01
     assert slip["late_deductions"] == 0.0
 
 
@@ -2384,8 +2391,8 @@ def test_holiday_ot_premium_unchanged_when_late_is_balanced():
         overtime_per_minute=1.0,
         late_deduction_per_minute=1.0,
     )
-    expected_ot = overtime_pay_amount(40, 1.0, 30.0)
     assert abs(slip["overtime_minutes"] - 40.0) < 0.01
+    expected_ot = overtime_pay_amount(40, 1.0, 30.0)
     assert abs(slip["overtime_pay"] - expected_ot) < 0.01
     assert slip["late_deductions"] == 0.0
     assert overtime_premium_percent(None, holiday, False) == 30.0

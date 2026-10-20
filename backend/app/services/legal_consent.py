@@ -326,6 +326,8 @@ def public_legal_payload(db: Session, business: Business) -> dict:
 
 
 def render_legal_html_page(db: Session, business: Business) -> HTMLResponse:
+    from app.services.consent_catalog import LEGAL_DOCUMENT_CSS, format_plain_body_html
+
     payload = public_legal_payload(db, business)
     title = html.escape(f"{business.name} — Workplace legal documents")
     name = html.escape(business.name)
@@ -341,17 +343,18 @@ def render_legal_html_page(db: Session, business: Business) -> HTMLResponse:
         )
         if not section["published"]:
             if source == CONTENT_SOURCE_ADMIN:
-                body = html.escape(
+                unpublished = (
                     f"Aroll+ has not published {section['title']} yet."
                 )
             else:
-                body = html.escape(
+                unpublished = (
                     f"{business.name} has not published {section['title']} yet. "
                     "Contact your employer before using face enrollment or live attendance."
                 )
+            body = format_plain_body_html(unpublished)
             version = ""
         else:
-            body = html.escape(section["content"] or "").replace("\n", "<br>\n")
+            body = format_plain_body_html(section["content"] or "")
             version = html.escape(section["version"] or "")
         version_html = (
             f'<p class="meta">Version {version} · {html.escape(source_label)}</p>'
@@ -375,16 +378,7 @@ def render_legal_html_page(db: Session, business: Business) -> HTMLResponse:
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>{title}</title>
-  <style>
-    body {{ margin: 0; font-family: system-ui, sans-serif; background: #F4F6F8; color: #111827; }}
-    main {{ max-width: 42rem; margin: 0 auto; padding: 1.5rem 1.25rem 3rem; }}
-    .card {{ background: #fff; border: 1px solid #E5E7EB; border-radius: 1.25rem; padding: 1.5rem; margin-bottom: 1rem; }}
-    .kicker {{ font-size: 0.75rem; letter-spacing: 0.14em; text-transform: uppercase; color: #6B7280; font-weight: 600; }}
-    h1 {{ margin: 0.5rem 0 0.25rem; font-size: 1.5rem; }}
-    h2 {{ margin: 0 0 0.5rem; font-size: 1.15rem; }}
-    .meta {{ margin: 0 0 1rem; color: #6B7280; font-size: 0.875rem; }}
-    .body {{ font-size: 0.95rem; line-height: 1.7; }}
-  </style>
+  <style>{LEGAL_DOCUMENT_CSS}</style>
 </head>
 <body>
   <main>
@@ -660,33 +654,119 @@ def default_legal_content(business_name: str, consent_type: str) -> str:
     if consent_type == CONSENT_TERMS:
         return (
             f"{name} Terms and Conditions\n\n"
-            "This workplace uses Aroll+ for attendance, scheduling, and payroll "
-            "during the academic / pilot deployment.\n\n"
-            "By agreeing, you confirm that you are authorized to use this account, "
-            "will not clock in for another person, and will not spoof location or "
-            "face verification.\n\n"
-            "Face enrollment requires a separate biometric consent. Full template "
-            "text is in the project docs/legal folder for owner review."
+            "These terms explain how you may use Aroll+ at this workplace for "
+            "attendance, schedules, leave, overtime, and payroll.\n\n"
+            "## Who may use Aroll+\n\n"
+            "- Owners and managers look after employees, schedules, attendance, "
+            "and payroll for this workplace.\n"
+            "- Employees use an account created by the owner or manager. Employees "
+            "cannot create their own account.\n"
+            "- Platform administrators review new businesses and run the service.\n"
+            "- You may use only the account given to you.\n\n"
+            "## Your responsibilities\n\n"
+            "- Keep your login private. Do not share your account.\n"
+            "- Give accurate information when your employer asks you to update it.\n"
+            "- Clock in and out only for yourself. Do not record time for someone "
+            "else.\n"
+            "- Do not fake your location, face check, or the check that you are a "
+            "real person (not a photo).\n"
+            "- Use overtime, leave, and attendance corrections only for your own "
+            "records. Your employer still approves those requests.\n"
+            "- Use Aroll+ only for work attendance and related HR or payroll tasks "
+            "at this workplace.\n\n"
+            "## Attendance, leave, and pay\n\n"
+            "Aroll+ stores your shifts, time in and time out, leave, overtime, and "
+            "payslips using the rules this workplace set. Your employer is still "
+            "responsible for workplace rules, labor rules, and checking payroll "
+            "before paying you. Using your face to enroll or to Time In / Time Out "
+            "needs a separate biometric consent.\n\n"
+            "## Phone permissions\n\n"
+            "The app may ask your phone for camera, location (only while you use "
+            "the app), and notifications. Saying yes on those phone prompts is not "
+            "the same as agreeing to these terms. Camera and location are used for "
+            "face attendance and to check that you are at work. Notifications are "
+            "used for attendance and account alerts. You can change or turn these "
+            "off later in your phone settings. If you turn one off, only the "
+            "feature that needs it stops working. That does not accept or reject "
+            "these terms.\n\n"
+            "If you do not agree, do not continue into the app."
         )
     if consent_type == CONSENT_PRIVACY:
         return (
             f"{name} Privacy Policy\n\n"
-            "Aroll+ processes account, attendance, location (for geofence checks), "
-            "and face embedding data to provide workplace timekeeping.\n\n"
-            "Face images are processed to create numeric templates and are not "
-            "kept as a long-term photo album. Data is isolated to this business "
-            "and is not used for marketing.\n\n"
-            "You may request access, correction, or deletion of biometric templates "
-            "through your employer. Aroll+ is intended for adult employees (18+)."
+            "This notice explains what personal information Aroll+ uses to run "
+            "attendance and payroll for this workplace. When Philippine law "
+            "applies, this use of information is meant to follow the Data Privacy "
+            "Act of 2012 (Republic Act No. 10173).\n\n"
+            "## Information Aroll+ uses\n\n"
+            "- Account details such as your name, email, phone (if given), role, "
+            "and a password stored in a protected form that cannot be read back "
+            "as your password.\n"
+            "- Work details such as your employee code, job title, pay settings, "
+            "and schedule.\n"
+            "- Attendance records, including time in and time out, status, "
+            "correction requests, leave, overtime, and the location used to check "
+            "you are at the workplace.\n"
+            "- Payroll and payslip data for this business.\n"
+            "- Face photos taken when you enroll or use face attendance. These "
+            "are turned into number codes of your face (templates) used to match "
+            "you later. Aroll+ is not designed to keep a long-term photo album of "
+            "faces.\n"
+            "- Results of the live-person check and face match, linked to "
+            "attendance.\n"
+            "- Business sign-up details and uploaded documents when a business "
+            "applies to use Aroll+.\n"
+            "- Technical details needed to run and protect the app, such as when "
+            "a request was made and basic device or app information.\n\n"
+            "## How the information is used\n\n"
+            "Aroll+ uses this information to sign you in, keep each business's "
+            "data separate, record attendance, prepare payslips, review business "
+            "sign-ups, and protect accounts. Data is not sold and is not used for "
+            "marketing. Face templates stay with this business and are not shared "
+            "with other workplaces on Aroll+.\n\n"
+            "## Phone access\n\n"
+            "On your phone, Aroll+ may ask for camera access for face enrollment "
+            "and face Time In / Time Out, location while the app is open to check "
+            "the workplace area at clock-in or clock-out, and notifications for "
+            "attendance or account alerts. Aroll+ does not keep tracking your "
+            "location in the background, does not use the camera in the "
+            "background, and does not ask for your contacts.\n\n"
+            "## Access and requests\n\n"
+            "You may ask your employer to review or correct work records they "
+            "control. You may withdraw biometric consent in the app. Face "
+            "attendance is then blocked, and stored face templates for your "
+            "account are cleared. Aroll+ is meant for adult employees and "
+            "business users (18+).\n\n"
+            "This notice does not replace your employer's own privacy duties."
         )
     return (
         f"{name} Biometric Consent\n\n"
-        "Before face enrollment, you consent to Aroll+ capturing face samples, "
-        "storing face embeddings for matching, and using liveness plus workplace "
-        "location checks when you Time In or Time Out.\n\n"
-        "This is not Apple Face ID. Templates are stored in the Aroll+ database "
-        "for this business only. You may withdraw consent; face clock-in will "
-        "then be unavailable and templates will be deleted."
+        "Give this consent before you enroll your face. It covers only face "
+        "checks used for workplace attendance at this business.\n\n"
+        "## What you are asked to allow\n\n"
+        "- Taking face photos when you enroll and when you Time In or Time Out "
+        "with face attendance.\n"
+        "- Saving number codes of your face (templates) used to confirm it is "
+        "you. This is not a photo gallery.\n"
+        "- A check that you are a real person, and a workplace location check, "
+        "at Time In / Time Out when this business has those features turned on.\n\n"
+        "## What this is used for\n\n"
+        "Face data is used only to enroll your face, confirm it is you at "
+        "attendance, and support the attendance record your employer uses for "
+        "timekeeping and payroll. It is not used for marketing and is not shared "
+        "with other businesses on Aroll+.\n\n"
+        "## Important limits\n\n"
+        "This is not Apple Face ID or a lock stored only on your phone. "
+        "Templates are stored in the Aroll+ database for this business and "
+        "protected by normal app security (sign-in, access control, and HTTPS "
+        "in deployed environments). Face matching can fail in poor light or at "
+        "unusual angles and may need a retry.\n\n"
+        "## If you decline or withdraw\n\n"
+        "You may decline or later withdraw this consent in the app. Face "
+        "enrollment and face Time In / Time Out will be unavailable, and stored "
+        "face templates for your account are cleared. Other workplace features "
+        "that do not need face recognition stay available. The phone's camera "
+        "or location permission is separate from this consent."
     )
 
 

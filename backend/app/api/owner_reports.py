@@ -84,6 +84,9 @@ from app.services.payroll_engine import (
     remaining_monetary_late_minutes,
     overtime_pay_amount,
     overtime_premium_percent,
+    resolve_overtime_calculation_method,
+    scheduled_premium_amounts,
+    statutory_overtime_pay_amount,
     qualifying_overtime_minutes,
     scheduled_paid_minutes,
     scheduled_shift_end_at,
@@ -508,6 +511,7 @@ def _calculate_employee_payslip(
         getattr(config, "late_deduction_enabled", True)
     )
     ot_rate = float(config.overtime_per_minute) if config else 0.0
+    ot_method = resolve_overtime_calculation_method(config)
     is_hourly = resolved_pay.pay_basis == PayBasis.hourly
     overtime_pay = 0.0
     payable_minutes_total = 0.0
@@ -651,6 +655,7 @@ def _calculate_employee_payslip(
     # Dates already credited via AttendanceRecord(status=on_leave).
     leave_dates_from_attendance: set[date] = set()
     paid_leave_dates: set[date] = set()
+    unpaid_leave_dates: set[date] = set()
     dates_with_worked_regular_pay: set[date] = set()
 
     def _leave_pay_value(scheduled_minutes: float) -> float:
@@ -759,6 +764,7 @@ def _calculate_employee_payslip(
                         day_rate_factor = 0.0
             else:
                 unpaid_leave_days += 1
+                unpaid_leave_dates.add(work_date)
         elif record.status == AttendanceStatus.absent:
             absent_policy = resolve_holiday_policy(
                 holiday=holiday, mode=holiday_rules_mode
@@ -821,9 +827,11 @@ def _calculate_employee_payslip(
                 shift_end = _shift_end_at(work_date, shift)
                 time_in_local = _to_business_naive(record.time_in, tz_name)
                 time_out_local = _to_business_naive(record.time_out, tz_name)
-                assignment_scheduled = _paid_shift_minutes(work_date, shift)
-                if assignment_scheduled <= 0:
-                    assignment_scheduled = DEFAULT_SCHEDULED_MINUTES
+                raw_scheduled = _paid_shift_minutes(work_date, shift)
+                schedule_known = raw_scheduled > 0
+                assignment_scheduled = (
+                    raw_scheduled if schedule_known else DEFAULT_SCHEDULED_MINUTES
+                )
                 day_resolved = resolve_attendance_pay(
                     record, employee, position=position
                 )
@@ -831,12 +839,19 @@ def _calculate_employee_payslip(
                 day_is_hourly = day_resolved.pay_basis == PayBasis.hourly
                 # Hourly stamps use this shift's minutes; Daily stamps use the
                 # calendar work_date scheduled total (one Daily entitlement).
+                # A missing or zero schedule must not invent an hourly OT rate.
                 if day_is_hourly:
                     ctx_minutes = assignment_scheduled
+                    # Hourly overtime uses the stamped hourly rate, not a
+                    # divisor. A missing schedule must not replace that rate.
+                    hourly_basis_known = True
                 else:
+                    day_minutes = float(
+                        scheduled_minutes_by_date.get(work_date) or 0.0
+                    )
+                    hourly_basis_known = day_minutes > 0
                     ctx_minutes = (
-                        scheduled_minutes_by_date.get(work_date)
-                        or assignment_scheduled
+                        day_minutes if hourly_basis_known else assignment_scheduled
                     )
                 pay_ctx = resolve_employee_pay_context(
                     employee,
@@ -889,11 +904,24 @@ def _calculate_employee_payslip(
                 )
                 day_ot_pay = 0.0
                 if overtime_enabled and day_payable_ot > 0:
-                    day_ot_pay = overtime_pay_amount(
-                        day_payable_ot,
-                        ot_rate,
-                        holiday_ot_premium,
-                    )
+                    if ot_method == "hourly_statutory":
+                        statutory_hourly = (
+                            float(hourly_rate or 0.0) if hourly_basis_known else 0.0
+                        )
+                        day_ot_pay = statutory_overtime_pay_amount(
+                            day_payable_ot,
+                            statutory_hourly,
+                            holiday=holiday,
+                            is_rest_day=is_rest,
+                            rest_premium_percent=premium_percent,
+                            rules_mode=holiday_rules_mode,
+                        )
+                    else:
+                        day_ot_pay = overtime_pay_amount(
+                            day_payable_ot,
+                            ot_rate,
+                            holiday_ot_premium,
+                        )
                     overtime_pay += day_ot_pay
                 worked_overtime_minutes += ot_mins
                 payable_overtime_minutes += day_payable_ot
@@ -1110,10 +1138,15 @@ def _calculate_employee_payslip(
                 AttendanceStatus.on_leave,
             )
         ):
-            row_premium = max(
-                float(day_earned) * (worked_holiday_policy.worked_multiplier - 1),
-                0,
+            holiday_above, _rest_above = scheduled_premium_amounts(
+                float(day_earned),
+                holiday=holiday,
+                is_rest_day=is_rest,
+                rest_premium_percent=premium_percent,
+                rules_mode=holiday_rules_mode,
+                worked_multiplier=worked_holiday_policy.worked_multiplier,
             )
+            row_premium = holiday_above
             holiday_pay += row_premium
             row_holiday_pay += row_premium
 
@@ -1136,24 +1169,38 @@ def _calculate_employee_payslip(
             and day_earned is not None
             and float(day_earned) > 0
         ):
-            day_rest_premium = float(day_earned) * (premium_percent / 100.0)
-            rest_day_pay += day_rest_premium
-            rest_day_days += 1
-            rest_day_records.append(
-                {
-                    "date": work_date.isoformat(),
-                    "weekday": _weekday_for_date(work_date).value,
-                    "status": record.status.value,
-                    "time_in": record.time_in.isoformat() if record.time_in else None,
-                    "time_out": (
-                        record.time_out.isoformat() if record.time_out else None
-                    ),
-                    "shift_name": shift.name if shift else None,
-                    "premium_percent": premium_percent,
-                    "premium_pay": round(day_rest_premium, 2),
-                    "authorized": rest_day_work_allowed,
-                }
+            _holiday_above, day_rest_premium = scheduled_premium_amounts(
+                float(day_earned),
+                holiday=holiday,
+                is_rest_day=True,
+                rest_premium_percent=premium_percent,
+                rules_mode=holiday_rules_mode,
+                worked_multiplier=(
+                    worked_holiday_policy.worked_multiplier
+                    if worked_holiday_policy is not None
+                    else None
+                ),
             )
+            if day_rest_premium <= 0.0 and holiday is not None:
+                day_rest_premium = 0.0
+            else:
+                rest_day_pay += day_rest_premium
+                rest_day_days += 1
+                rest_day_records.append(
+                    {
+                        "date": work_date.isoformat(),
+                        "weekday": _weekday_for_date(work_date).value,
+                        "status": record.status.value,
+                        "time_in": record.time_in.isoformat() if record.time_in else None,
+                        "time_out": (
+                            record.time_out.isoformat() if record.time_out else None
+                        ),
+                        "shift_name": shift.name if shift else None,
+                        "premium_percent": premium_percent,
+                        "premium_pay": round(day_rest_premium, 2),
+                        "authorized": rest_day_work_allowed,
+                    }
+                )
 
         row_status = record.status.value
         if (
@@ -1366,18 +1413,29 @@ def _calculate_employee_payslip(
         )
         if not is_hourly:
             day_level_entitlement[work_date] = float(day_value)
+        holiday_above, rest_above = scheduled_premium_amounts(
+            day_earned,
+            holiday=holiday if worked_holiday_policy is not None else None,
+            is_rest_day=bool(bucket.get("is_rest")),
+            rest_premium_percent=premium_percent,
+            rules_mode=holiday_rules_mode,
+            worked_multiplier=(
+                worked_holiday_policy.worked_multiplier
+                if worked_holiday_policy is not None
+                else None
+            ),
+        )
         if worked_holiday_policy is not None:
-            bucket_premium = max(
-                day_earned * (worked_holiday_policy.worked_multiplier - 1),
-                0,
-            )
+            bucket_premium = holiday_above
             holiday_pay += bucket_premium
             if bucket_premium:
                 day_level_holiday[work_date] = (
                     day_level_holiday.get(work_date, 0.0) + bucket_premium
                 )
-        if bucket.get("is_rest") and day_earned > 0:
-            day_rest_premium = day_earned * (premium_percent / 100.0)
+        if bucket.get("is_rest") and day_earned > 0 and (
+            rest_above > 0 or holiday is None
+        ):
+            day_rest_premium = rest_above
             rest_day_pay += day_rest_premium
             day_level_rest[work_date] = (
                 day_level_rest.get(work_date, 0.0) + day_rest_premium
@@ -1461,6 +1519,7 @@ def _calculate_employee_payslip(
                 paid_work_dates.add(leave_date)
         else:
             unpaid_leave_days += 1
+            unpaid_leave_dates.add(leave_date)
         leave_dates_from_attendance.add(leave_date)
         attendance_records.append(
             _leave_day_payslip_row(
@@ -1487,6 +1546,11 @@ def _calculate_employee_payslip(
         if employee_on_approved_leave(
             db, employee_id=employee.id, work_date=assignment.work_date
         ):
+            continue
+        # Leave reconciliation may already mark unpaid leave without a DB row
+        # for payroll-active leave; do not treat that shift as a paid holiday
+        # no-show or as a plain absent day.
+        if assignment.work_date in unpaid_leave_dates:
             continue
         if assignment.work_date > today:
             continue
@@ -1622,6 +1686,7 @@ def _calculate_employee_payslip(
         "late_deduction_per_minute": round(late_rate if late_money_enabled else 0.0, 2),
         "undertime_deductions": round(undertime_deductions_amount, 2),
         "remaining_unpaid_deductions": round(remaining_unpaid_deductions, 2),
+        "overtime_calculation_method": ot_method,
         "overtime_per_minute": round(ot_rate, 2),
         "absent_days": absent_days,
         "paid_leave_days": paid_leave_days,

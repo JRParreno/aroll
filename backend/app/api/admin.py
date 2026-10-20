@@ -1,13 +1,13 @@
 import secrets
 import uuid
 from calendar import month_abbr
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from typing import Annotated
-from app.core.timezone import manila_now
+from app.core.timezone import get_manila_tz, manila_now
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
-from sqlalchemy import extract, func
+from sqlalchemy import extract, func, or_
 from sqlalchemy.orm import Session
 
 from app.core.deps import require_roles
@@ -40,8 +40,10 @@ from app.schemas.admin_dashboard import (
     RecentActivityItem,
 )
 from app.schemas.registration import (
+    RegistrationApprovalEmailResponse,
     RegistrationApproveResponse,
     RegistrationReject,
+    RegistrationRejectResponse,
     RegistrationResponse,
 )
 from app.schemas.legal_consent import (
@@ -56,6 +58,14 @@ from app.schemas.consent_catalog import (
     ConsentDocumentUpdate,
 )
 from app.services.activity_logger import create_log
+from app.services.approval_email import (
+    EMAIL_FAILED,
+    EMAIL_NOT_SENT,
+    EMAIL_SENT,
+    ApprovalEmailConfigError,
+    send_approved_registration_email,
+    send_rejection_message,
+)
 from app.services.consent_catalog import (
     SCOPE_PLATFORM,
     catalog_item_payload,
@@ -63,6 +73,7 @@ from app.services.consent_catalog import (
     delete_document,
     ensure_platform_consent_documents,
     get_document,
+    legal_ui_catalog_payloads,
     list_catalog_documents,
     reorder_documents,
     save_document_file,
@@ -73,6 +84,10 @@ from app.services.legal_consent import (
     platform_legal_payload,
 )
 from app.services.registration_documents import get_document_file_path
+from app.services.registration_rejection import (
+    format_rejection_reasons,
+    validate_rejection_reasons,
+)
 from app.services.registration_service import document_response, registration_response
 
 
@@ -87,7 +102,11 @@ def _registration_response(reg: BusinessRegistration) -> RegistrationResponse:
     return registration_response(reg)
 
 
-def _business_list_response(db: Session, business: Business) -> BusinessListResponse:
+def _business_list_response(
+    db: Session,
+    business: Business,
+    registration: BusinessRegistration | None = None,
+) -> BusinessListResponse:
     employee_count = (
         db.query(Employee)
         .filter(Employee.business_id == business.id, Employee.is_active.is_(True))
@@ -98,6 +117,18 @@ def _business_list_response(db: Session, business: Business) -> BusinessListResp
         .filter(BusinessLocation.business_id == business.id)
         .count()
     )
+    if registration is None and business.registration_id:
+        registration = db.get(BusinessRegistration, business.registration_id)
+    approved_at = None
+    owner_email = None
+    approval_email_status = None
+    registration_id = None
+    if registration is not None:
+        registration_id = str(registration.id)
+        owner_email = registration.owner_email
+        if registration.application_status == ApplicationStatus.approved:
+            approved_at = registration.reviewed_at
+        approval_email_status = registration.approval_email_status
     return BusinessListResponse(
         id=str(business.id),
         business_code=business.business_code,
@@ -109,7 +140,28 @@ def _business_list_response(db: Session, business: Business) -> BusinessListResp
         location_count=location_count,
         is_demo=bool(business.is_demo),
         is_internal_test=bool(business.is_internal_test),
+        registration_id=registration_id,
+        owner_email=owner_email,
+        approved_at=approved_at,
+        approval_email_status=approval_email_status,
     )
+
+
+def _approval_range_utc(
+    approved_from: date | None, approved_to: date | None
+) -> tuple[datetime | None, datetime | None]:
+    tz = get_manila_tz()
+    start = None
+    end = None
+    if approved_from is not None:
+        start = datetime.combine(approved_from, time.min, tzinfo=tz).astimezone(
+            timezone.utc
+        )
+    if approved_to is not None:
+        end = datetime.combine(
+            approved_to + timedelta(days=1), time.min, tzinfo=tz
+        ).astimezone(timezone.utc)
+    return start, end
 
 
 def _business_detail_response(db: Session, business: Business) -> BusinessDetailResponse:
@@ -329,9 +381,63 @@ def dashboard_stats(
 def list_businesses(
     db: Session = Depends(get_db),
     _: User = Depends(require_roles(UserRole.platform_admin)),
+    approved_from: date | None = Query(None),
+    approved_to: date | None = Query(None),
+    email_status: str | None = Query(None),
 ):
-    businesses = db.query(Business).order_by(Business.created_at.desc()).all()
-    return [_business_list_response(db, b) for b in businesses]
+    if approved_from and approved_to and approved_to < approved_from:
+        raise HTTPException(400, "End date cannot be earlier than start date")
+
+    allowed_email = {None, "pending", "sent", "failed", "not_sent"}
+    if email_status not in allowed_email:
+        raise HTTPException(400, "Invalid email status filter")
+
+    start, end = _approval_range_utc(approved_from, approved_to)
+    needs_registration = bool(start or end or email_status)
+    q = db.query(Business, BusinessRegistration).outerjoin(
+        BusinessRegistration,
+        Business.registration_id == BusinessRegistration.id,
+    )
+    if needs_registration:
+        q = q.filter(Business.registration_id.isnot(None))
+    if start is not None or end is not None:
+        q = q.filter(
+            BusinessRegistration.application_status == ApplicationStatus.approved,
+            BusinessRegistration.reviewed_at.isnot(None),
+        )
+        if start is not None:
+            q = q.filter(BusinessRegistration.reviewed_at >= start)
+        if end is not None:
+            q = q.filter(BusinessRegistration.reviewed_at < end)
+    if email_status == "pending":
+        q = q.filter(
+            or_(
+                BusinessRegistration.approval_email_status.is_(None),
+                BusinessRegistration.approval_email_status != EMAIL_SENT,
+            )
+        )
+    elif email_status == "sent":
+        q = q.filter(BusinessRegistration.approval_email_status == EMAIL_SENT)
+    elif email_status == "failed":
+        q = q.filter(BusinessRegistration.approval_email_status == EMAIL_FAILED)
+    elif email_status == "not_sent":
+        q = q.filter(
+            or_(
+                BusinessRegistration.approval_email_status.is_(None),
+                BusinessRegistration.approval_email_status == EMAIL_NOT_SENT,
+            )
+        )
+
+    if start is not None or end is not None:
+        q = q.order_by(
+            BusinessRegistration.reviewed_at.desc().nullslast(),
+            Business.created_at.desc(),
+        )
+    else:
+        q = q.order_by(Business.created_at.desc())
+
+    rows = q.all()
+    return [_business_list_response(db, business, registration) for business, registration in rows]
 
 
 @router.get("/businesses/{business_id}", response_model=BusinessDetailResponse)
@@ -394,16 +500,22 @@ def approve_registration(
     reg.application_status = ApplicationStatus.approved
     reg.reviewed_by = admin.id
     reg.reviewed_at = datetime.now(timezone.utc)
+    if not (reg.approval_email_status or "").strip():
+        reg.approval_email_status = EMAIL_NOT_SENT
 
     db.commit()
 
-    # ✅ ACTIVITY LOG (CORRECT PLACE)
-    create_log(
-        db=db,
-        user_id=admin.id,
-        action="APPROVE_REGISTRATION",
-        description=f"Approved registration for {reg.business_name}",
-    )
+    # Approval is already committed. A log failure must not fail this response
+    # or cause a retry that looks like an unapproved registration.
+    try:
+        create_log(
+            db=db,
+            user_id=admin.id,
+            action="APPROVE_REGISTRATION",
+            description=f"Approved registration for {reg.business_name}",
+        )
+    except Exception:
+        pass
 
     return RegistrationApproveResponse(
         business_id=str(business.id),
@@ -412,7 +524,25 @@ def approve_registration(
     )
 
 
-@router.post("/registrations/{registration_id}/reject")
+@router.post(
+    "/registrations/{registration_id}/send-approval-email",
+    response_model=RegistrationApprovalEmailResponse,
+)
+def send_registration_approval_email(
+    registration_id: uuid.UUID,
+    db: Annotated[Session, Depends(get_db)],
+    admin: Annotated[User, Depends(require_roles(UserRole.platform_admin))],
+):
+    result = send_approved_registration_email(
+        db, registration_id, admin_id=admin.id
+    )
+    return RegistrationApprovalEmailResponse(**result)
+
+
+@router.post(
+    "/registrations/{registration_id}/reject",
+    response_model=RegistrationRejectResponse,
+)
 def reject_registration(
     registration_id: uuid.UUID,
     body: RegistrationReject,
@@ -426,22 +556,49 @@ def reject_registration(
     if reg.application_status != ApplicationStatus.pending:
         raise HTTPException(400, "Registration is not pending")
 
+    reason_ids = validate_rejection_reasons(body.reasons, body.other_explanation)
+    explanation = (body.other_explanation or "").strip() or None
+
     reg.status = RegistrationStatus.rejected
     reg.application_status = ApplicationStatus.rejected
-    reg.rejection_reason = body.rejection_reason
+    reg.rejection_reason = format_rejection_reasons(reason_ids, explanation)
     reg.reviewed_by = admin.id
     reg.reviewed_at = datetime.now(timezone.utc)
 
     db.commit()
 
-    create_log(
-        db=db,
-        user_id=admin.id,
-        action="REJECT_REGISTRATION",
-        description=f"Rejected registration for {reg.business_name}",
-    )
+    try:
+        create_log(
+            db=db,
+            user_id=admin.id,
+            action="REJECT_REGISTRATION",
+            description=f"Rejected registration for {reg.business_name}",
+        )
+    except Exception:
+        pass
 
-    return {"status": "rejected"}
+    email_status = EMAIL_NOT_SENT
+    email_error = None
+    recipient = None
+    try:
+        recipient = send_rejection_message(reg)
+        email_status = EMAIL_SENT
+    except ApprovalEmailConfigError:
+        email_status = EMAIL_NOT_SENT
+        email_error = (
+            "Email delivery is not configured. Set SMTP_HOST, SMTP_FROM_EMAIL, "
+            "and SMTP credentials."
+        )
+    except Exception:
+        email_status = EMAIL_FAILED
+        email_error = "The email provider could not accept the message."
+
+    return RegistrationRejectResponse(
+        status="rejected",
+        email_status=email_status,
+        email_error=email_error,
+        recipient=recipient,
+    )
 
 @router.get("/activity-logs")
 def get_activity_logs(
@@ -506,7 +663,10 @@ def list_platform_consents(
     return ConsentCatalogResponse(
         use_custom_consents=False,
         can_edit=True,
-        documents=[ConsentDocumentPayload(**catalog_item_payload(doc)) for doc in documents],
+        documents=[
+            ConsentDocumentPayload(**item)
+            for item in legal_ui_catalog_payloads(documents)
+        ],
     )
 
 
@@ -591,7 +751,10 @@ def reorder_platform_consents(
     return ConsentCatalogResponse(
         use_custom_consents=False,
         can_edit=True,
-        documents=[ConsentDocumentPayload(**catalog_item_payload(doc)) for doc in documents],
+        documents=[
+            ConsentDocumentPayload(**item)
+            for item in legal_ui_catalog_payloads(documents)
+        ],
     )
 
 

@@ -12,6 +12,9 @@ import { ScheduleReusePanel } from "@/components/owner/schedule/ScheduleReusePan
 import {
   buildScheduleMatrix,
   formatShiftTime,
+  assignmentsOnDate,
+  restDayPremiumInitialValue,
+  employeesWithScheduleAssignments,
   formatWeekRange,
   getWeekDays,
   getWeekStart,
@@ -196,7 +199,7 @@ export function OwnerSchedulePage() {
   const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<string[]>([]);
   const [employeeModalOpen, setEmployeeModalOpen] = useState(false);
   const [editingAssignmentId, setEditingAssignmentId] = useState<string | null>(null);
-  const [isRestDayWork, setIsRestDayWork] = useState(false);
+  const [isRestDayWork, setIsRestDayWork] = useState(restDayPremiumInitialValue);
   const [search, setSearch] = useState("");
   const [positionFilter, setPositionFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
@@ -238,7 +241,7 @@ export function OwnerSchedulePage() {
     queryKey: ["holidays"],
     queryFn: listHolidays,
   });
-  const { data: weeklySchedule, isLoading } = useQuery({
+  const { data: weeklySchedule, isLoading, isFetching } = useQuery({
     queryKey: ["weekly-schedule", weekStartKey],
     queryFn: () => getWeeklySchedule(weekStartKey),
   });
@@ -275,6 +278,12 @@ export function OwnerSchedulePage() {
   }, [leaveAvailability]);
 
   const assignments = weeklySchedule?.assignments ?? [];
+  const waitingForAssignments =
+    isLoading || (isFetching && assignments.length === 0);
+  const displayEmployees = employeesWithScheduleAssignments(
+    employees,
+    assignments
+  );
   const businessName =
     me?.business_name ?? localStorage.getItem("aroll_business_name") ?? "Aroll+";
   const selectedShift = shifts.find((shift) => shift.id === selectedShiftId);
@@ -290,19 +299,41 @@ export function OwnerSchedulePage() {
     [employees]
   );
 
-  const assignmentsForDate = assignments.filter(
-    (assignment) => assignment.work_date === workDate
-  );
+  const assignmentsForDate = assignmentsOnDate(assignments, workDate);
   const assignmentsByShift = useMemo(() => {
     const map = new Map<string, ScheduleAssignment[]>();
     for (const assignment of assignmentsForDate) {
-      map.set(assignment.shift_id, [
-        ...(map.get(assignment.shift_id) ?? []),
-        assignment,
-      ]);
+      const shiftId = String(assignment.shift_id);
+      map.set(shiftId, [...(map.get(shiftId) ?? []), assignment]);
     }
     return map;
   }, [assignmentsForDate]);
+  const assignShifts = useMemo(() => {
+    const listed = new Map(shifts.map((shift) => [String(shift.id), shift]));
+    const cards = [...shifts];
+    for (const assignment of assignmentsForDate) {
+      const shiftId = String(assignment.shift_id);
+      if (listed.has(shiftId)) continue;
+      const synthetic: Shift = {
+        id: shiftId,
+        name: assignment.shift_name,
+        shift_type: "",
+        start_time: assignment.shift_start_time,
+        end_time: assignment.shift_end_time,
+        break_minutes: 0,
+        employee_capacity: 0,
+        color: assignment.shift_color,
+        is_active: true,
+      };
+      listed.set(shiftId, synthetic);
+      cards.push(synthetic);
+    }
+    return cards;
+  }, [shifts, assignmentsForDate]);
+  const listedShiftIds = useMemo(
+    () => new Set(shifts.map((shift) => String(shift.id))),
+    [shifts]
+  );
 
   function availabilityFor(employee: Employee): EmployeeAvailability {
     if (!isEmployeeFullyActivated(employee)) return "activationRequired";
@@ -344,7 +375,7 @@ export function OwnerSchedulePage() {
     );
   });
 
-  const viewerEmployees = employees.filter((employee) => {
+  const viewerEmployees = displayEmployees.filter((employee) => {
     const matchesSearch = [employee.full_name, employee.position_title ?? ""]
       .join(" ")
       .toLowerCase()
@@ -411,7 +442,7 @@ export function OwnerSchedulePage() {
         result.created > 0 ? `Assigned ${result.created} employee(s)` : "No new assignments"
       );
       setSelectedEmployeeIds([]);
-      setIsRestDayWork(false);
+      setIsRestDayWork(restDayPremiumInitialValue());
       setEmployeeModalOpen(false);
       qc.invalidateQueries({ queryKey: ["weekly-schedule"] });
       qc.invalidateQueries({ queryKey: ["owner-performance"] });
@@ -452,7 +483,7 @@ export function OwnerSchedulePage() {
     onSuccess: () => {
       toast.success("Schedule updated");
       setEditingAssignmentId(null);
-      setIsRestDayWork(false);
+      setIsRestDayWork(restDayPremiumInitialValue());
       qc.invalidateQueries({ queryKey: ["weekly-schedule"] });
       qc.invalidateQueries({ queryKey: ["owner-performance"] });
       qc.invalidateQueries({ queryKey: ["schedule-leave-availability"] });
@@ -568,7 +599,7 @@ export function OwnerSchedulePage() {
     setSelectedShiftId(shiftId);
     setSelectedEmployeeIds([]);
     setEditingAssignmentId(null);
-    setIsRestDayWork(false);
+    setIsRestDayWork(restDayPremiumInitialValue());
     setEmployeeModalOpen(true);
   }
 
@@ -579,17 +610,6 @@ export function OwnerSchedulePage() {
         description="Assign shifts and review the weekly roster for your team."
         actions={
           <>
-            <Button
-              variant="outline"
-              className="h-10 gap-2 rounded-xl"
-              onClick={() => {
-                setMode("assign");
-                setShowNewShift(true);
-              }}
-            >
-              <Plus className="h-4 w-4" />
-              New Shift
-            </Button>
             <Button
               variant={mode === "assign" ? "default" : "outline"}
               className={
@@ -645,8 +665,15 @@ export function OwnerSchedulePage() {
                     />
                     <ScheduleReusePanel
                       weekStartKey={weekStartKey}
-                      weekLabel={formatWeekRange(weekStart)}
+                      selectedDate={workDate}
                       assignmentCount={assignments.length}
+                      onApplied={(firstAssignedDate) => {
+                        if (!firstAssignedDate) return;
+                        setWorkDate(firstAssignedDate);
+                        setWeekStart(
+                          getWeekStart(new Date(`${firstAssignedDate}T00:00:00`))
+                        );
+                      }}
                     />
                   </div>
                 </div>
@@ -741,8 +768,12 @@ export function OwnerSchedulePage() {
             )}
 
             <section className="space-y-4">
-              {shifts.map((shift) => {
-                const shiftAssignments = assignmentsByShift.get(shift.id) ?? [];
+              {waitingForAssignments ? (
+                <p className="owner-panel py-8 text-center text-sm text-[#6B7280]">
+                  Loading schedule...
+                </p>
+              ) : assignShifts.map((shift) => {
+                const shiftAssignments = assignmentsByShift.get(String(shift.id)) ?? [];
                 return (
                   <div
                     className="owner-panel"
@@ -759,6 +790,7 @@ export function OwnerSchedulePage() {
                           {shift.employee_capacity}
                         </p>
                       </div>
+                      {listedShiftIds.has(String(shift.id)) && (
                       <div className="flex flex-wrap gap-2">
                         <Button
                           variant="outline"
@@ -786,6 +818,7 @@ export function OwnerSchedulePage() {
                           Add Employee
                         </Button>
                       </div>
+                      )}
                     </div>
 
                     <div className="mt-5 overflow-x-auto rounded-xl border border-slate-100">
@@ -807,8 +840,9 @@ export function OwnerSchedulePage() {
                             </tr>
                           ) : (
                             shiftAssignments.map((assignment) => {
-                              const employee = employees.find(
-                                (item) => item.id === assignment.employee_id
+                              const employee = displayEmployees.find(
+                                (item) =>
+                                  String(item.id) === String(assignment.employee_id)
                               );
                               return (
                                 <tr className="border-t border-slate-100" key={assignment.id}>
@@ -849,21 +883,7 @@ export function OwnerSchedulePage() {
                                     </div>
                                   </td>
                                   <td className="px-4 py-3 align-middle">
-                                    <div className="flex justify-end gap-2">
-                                      <Button
-                                        variant="outline"
-                                        size="sm"
-                                        onClick={() => {
-                                          setEditingAssignmentId(assignment.id);
-                                          setSelectedShiftId(shift.id);
-                                          setIsRestDayWork(
-                                            Boolean(assignment.is_rest_day_work)
-                                          );
-                                          setEmployeeModalOpen(false);
-                                        }}
-                                      >
-                                        <Pencil className="h-4 w-4" />
-                                      </Button>
+                                    <div className="flex justify-end">
                                       <Button
                                         variant="outline"
                                         size="sm"
@@ -926,7 +946,7 @@ export function OwnerSchedulePage() {
                     variant="outline"
                     onClick={() => {
                       setEditingAssignmentId(null);
-                      setIsRestDayWork(false);
+                      setIsRestDayWork(restDayPremiumInitialValue());
                     }}
                   >
                     Cancel
@@ -1039,7 +1059,7 @@ export function OwnerSchedulePage() {
             </div>
 
             <div className="mt-5">
-              {isLoading ? (
+              {waitingForAssignments ? (
                 <p className="py-8 text-center text-sm text-[#6B7280]">
                   Loading schedule...
                 </p>
@@ -1166,7 +1186,7 @@ export function OwnerSchedulePage() {
       </Dialog>
 
       <Dialog open={employeeModalOpen} onOpenChange={setEmployeeModalOpen}>
-        <DialogContent className="max-w-4xl">
+        <DialogContent className="flex max-h-[90vh] max-w-4xl flex-col overflow-hidden">
           <DialogHeader>
             <DialogTitle>Select Employees</DialogTitle>
           </DialogHeader>
@@ -1204,7 +1224,7 @@ export function OwnerSchedulePage() {
             </select>
           </div>
 
-          <div className="mt-4 max-h-[420px] overflow-auto rounded-xl border border-slate-100">
+          <div className="mt-4 min-h-0 flex-1 overflow-auto rounded-xl border border-slate-100">
             <p className="sticky top-0 z-10 border-b border-slate-100 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-wide text-[#6B7280]">
               Available
             </p>
@@ -1366,11 +1386,15 @@ export function OwnerSchedulePage() {
             ) : null}
           </div>
 
-          <DialogFooter className="flex-col items-stretch gap-3 sm:flex-col">
-            <label className="flex items-center gap-2 rounded-xl border border-slate-200 bg-[#FAFBFC] px-4 py-3 text-sm text-[#1F2937]">
+          <DialogFooter className="shrink-0 flex-col items-stretch gap-3 sm:flex-col">
+            <label
+              data-testid="rest-day-premium"
+              className="flex items-center gap-2 rounded-xl border border-slate-200 bg-[#FAFBFC] px-4 py-3 text-sm text-[#1F2937]"
+            >
               <input
                 type="checkbox"
                 checked={isRestDayWork}
+                disabled={false}
                 onChange={(event) => setIsRestDayWork(event.target.checked)}
               />
               Mark as approved rest day work (premium applies)

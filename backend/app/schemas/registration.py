@@ -44,10 +44,24 @@ class RegistrationResponse(BaseModel):
 
 
 class RegistrationReject(BaseModel):
-    rejection_reason: str = Field(min_length=3)
+    reasons: list[str] = Field(min_length=1)
+    other_explanation: str | None = None
+
+
+class RegistrationRejectResponse(BaseModel):
+    status: str
+    email_status: str
+    email_error: str | None = None
+    recipient: str | None = None
 
 
 class RegistrationApproveResponse(BaseModel):
     business_id: str
     business_code: str
     owner_email: str
+
+
+class RegistrationApprovalEmailResponse(BaseModel):
+    status: str
+    recipient: str
+    previously_sent: bool = False

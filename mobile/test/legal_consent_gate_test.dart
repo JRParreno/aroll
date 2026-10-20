@@ -122,10 +122,12 @@ void main() {
       'version': 'v2',
       'accepted_version': 'v2',
       'accepted_at': '2026-09-18T10:15:00Z',
+      'body_text': '## Who may use Aroll+\n\nA readable paragraph.\n\n- First item',
     });
     expect(item.acceptedVersion, 'v2');
     expect(item.acceptedAt, isNotNull);
     expect(item.acceptedAt!.toUtc().year, 2026);
+    expect(item.bodyText, contains('Who may use Aroll+'));
   });
 
   test('consent sync soft-fails without wiping known-good completed state', () async {
@@ -321,7 +323,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Step 1 of 1'), findsOneWidget);
-    expect(find.text('I have read and agree to these Terms.'), findsOneWidget);
+    expect(find.text('I have read and agree to this document.'), findsOneWidget);
     expect(find.text('I Agree & Continue'), findsOneWidget);
     expect(find.text("I Don't Agree"), findsOneWidget);
     expect(find.byKey(const Key('consent-preview-url')), findsOneWidget);
@@ -370,6 +372,40 @@ void main() {
     expect(find.textContaining('Agreed'), findsOneWidget);
     expect(find.textContaining('Required'), findsOneWidget);
     expect(find.textContaining('Version'), findsOneWidget);
+  });
+
+  testWidgets('employee consent shows published body headings, lists, and scroll',
+      (tester) async {
+    await sl.reset();
+    final appState = AppState()
+      ..setSession(employee(consentsCompleted: false), mustChange: false);
+    sl.registerSingleton(appState);
+    final repo = _FakeConsentRepository()..seedBody();
+    sl.registerSingleton<EmployeeRepository>(repo);
+
+    tester.view.physicalSize = const Size(320, 568);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: EmployeeConsentFlowScreen(repository: repo),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Terms and Conditions'), findsWidgets);
+    expect(find.text('Who may use Aroll+'), findsOneWidget);
+    expect(find.textContaining('A readable paragraph.'), findsOneWidget);
+    expect(find.text('Owners manage this workplace.'), findsOneWidget);
+    expect(find.byType(SingleChildScrollView), findsWidgets);
+
+    await tester.scrollUntilVisible(
+      find.text('Owners manage this workplace.'),
+      80,
+    );
+    expect(find.text('Owners manage this workplace.'), findsOneWidget);
   });
 }
 
@@ -421,6 +457,25 @@ class _FakeConsentRepository extends Fake implements EmployeeRepository {
       ),
     ],
   );
+
+  void seedBody() {
+    _payload = const EmployeeConsents(
+      consentsCompleted: false,
+      items: [
+        ConsentDocumentItem(
+          id: 'doc-1',
+          title: 'Terms and Conditions',
+          position: 1,
+          url: '/api/v1/public/consents/doc-1/page',
+          required: true,
+          accepted: false,
+          version: 'v1',
+          bodyText:
+              'Terms and Conditions\n\n## Who may use Aroll+\n\nA readable paragraph.\n\n- Owners manage this workplace.',
+        ),
+      ],
+    );
+  }
 
   void seedAccepted() {
     _payload = EmployeeConsents(

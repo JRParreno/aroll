@@ -1269,7 +1269,7 @@ class _HistoryCardState extends State<_HistoryCard> {
                           const SizedBox(height: 2),
                           Text(
                             item.shiftName?.trim().isNotEmpty == true
-                                ? '${item.shiftName} Â· $_shiftRange'
+                                ? '${item.shiftName} · $_shiftRange'
                                 : _shiftRange,
                             style: const TextStyle(
                               fontSize: 11.5,

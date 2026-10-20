@@ -27,19 +27,25 @@ class _PermissionsOnboardingScreenState
     _PermissionSpec(
       permission: Permission.camera,
       title: 'Camera',
-      why: 'Use your camera for face attendance.',
+      why:
+          'Needed when you enroll your face or use face Time In / Time Out. '
+          'Aroll+ does not use the camera in the background.',
       actionLabel: 'Allow Camera',
     ),
     _PermissionSpec(
       permission: Permission.locationWhenInUse,
       title: 'Location',
-      why: 'Use your location for attendance and geofence verification.',
+      why:
+          'Used at Time In / Time Out to check you are inside the workplace '
+          'geofence. Aroll+ does not continuously track your location.',
       actionLabel: 'Allow Location',
     ),
     _PermissionSpec(
       permission: Permission.notification,
       title: 'Notifications',
-      why: 'Receive important attendance and account updates.',
+      why:
+          'Used for attendance and account alerts. You can skip this and still '
+          'use the rest of the app.',
       actionLabel: 'Allow Notifications',
     ),
   ];
@@ -141,8 +147,10 @@ class _PermissionsOnboardingScreenState
                     ),
                     const SizedBox(height: 8),
                     const Text(
-                      'Aroll+ needs a few permissions for attendance to work '
-                      'on this device. You can allow or skip each one.',
+                      'These are operating-system permissions, not acceptance '
+                      'of Terms or privacy notices. Allow a permission only if '
+                      'you want that feature on this device. You can change or '
+                      'revoke access later in device Settings.',
                       style: TextStyle(
                         height: 1.45,
                         color: EmployeeColors.textMuted,

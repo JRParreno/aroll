@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:aroll_mobile/domain/entities/employee_portal.dart';
+import 'package:aroll_mobile/domain/entities/employee_workplace_policies.dart';
 import 'package:aroll_mobile/domain/entities/face_liveness.dart';
 import 'package:aroll_mobile/domain/entities/leave_request.dart';
 import 'package:aroll_mobile/domain/entities/legal_consent.dart';
@@ -9,6 +10,8 @@ abstract class EmployeeRepository {
   Future<EmployeeDashboard> getDashboard();
 
   Future<EmployeeProfile> getProfile();
+
+  Future<void> registerRecoveryEmail(String email);
 
   Future<List<EmployeeScheduleItem>> getSchedule({
     DateTime? startDate,
@@ -70,6 +73,8 @@ abstract class EmployeeRepository {
 
   Future<EmployeeWorksite> getWorksite();
 
+  Future<EmployeeWorkplacePolicies> getWorkplacePolicies();
+
   Future<AttendanceClockResult> clockInWithFace({
     required double latitude,
     required double longitude,
@@ -121,9 +126,14 @@ abstract class EmployeeRepository {
     int limit = 50,
   });
 
-  Future<int> unreadNotificationCount();
+  Future<int> unreadNotificationCount({String? createdAfter});
 
   Future<void> markNotificationRead(String notificationId);
 
-  Future<void> markAllNotificationsRead();
+  Future<int> markAllNotificationsRead({String? createdThrough});
+
+  Future<void> registerDeviceToken({
+    required String token,
+    required String platform,
+  });
 }

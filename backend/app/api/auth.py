@@ -25,6 +25,8 @@ from app.schemas.auth import (
     TokenResponse,
     UserMeResponse,
 )
+from app.services.employee_password_reset import needs_recovery_email
+from app.services.setup_status import needs_branding_onboarding
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -121,9 +123,17 @@ def _token_response(user: User, db: Session) -> TokenResponse:
         permissions_onboarding_completed=_permissions_onboarding_completed_for_user(
             user, db
         ),
+        needs_recovery_email=_needs_recovery_email_for_user(user, db),
         timezone=business.timezone if business is not None else None,
         **_employee_auth_context(user, db),
     )
+
+
+def _needs_recovery_email_for_user(user: User, db: Session) -> bool:
+    if user.role != UserRole.employee:
+        return False
+    employee = db.query(Employee).filter(Employee.user_id == user.id).first()
+    return needs_recovery_email(employee)
 
 
 def _resolve_login_user(db: Session, login_id: str) -> User | None:
@@ -321,6 +331,11 @@ def me(
         business_name=ctx["business_name"],
         business_code=business_code,
         setup_completed_at=setup_completed_at,
+        needs_branding_onboarding=(
+            needs_branding_onboarding(db, business)
+            if business is not None and user.role == UserRole.owner
+            else False
+        ),
         branding=_business_branding_response(business),
         profile_image_url=ctx["profile_image_url"],
         is_demo=is_demo,
@@ -329,5 +344,6 @@ def me(
         permissions_onboarding_completed=_permissions_onboarding_completed_for_user(
             user, db
         ),
+        needs_recovery_email=_needs_recovery_email_for_user(user, db),
         timezone=business.timezone if business is not None else None,
     )

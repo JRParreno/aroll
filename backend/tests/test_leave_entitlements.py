@@ -1200,6 +1200,40 @@ def test_schedule_reuse_skips_protected_leave_dates():
         world.close()
 
 
+def test_updating_leave_policy_does_not_reset_allowances():
+    world = World()
+    client = TestClient(app)
+    try:
+        world.set_allowance(LeaveType.vacation, 2026, 15)
+        world.set_allowance(LeaveType.sick, 2026, 10)
+        owner_headers = _headers(world.owner)
+
+        updated = client.put(
+            "/api/v1/businesses/me/leave-policy",
+            json={
+                "treatments": {"vacation": False, "sick": True},
+                "minimum_advance_notice_days": 3,
+            },
+            headers=owner_headers,
+        )
+        assert updated.status_code == 200
+        assert updated.json()["treatments"]["vacation"] is False
+        assert updated.json()["minimum_advance_notice_days"] == 3
+
+        listed = client.get(
+            "/api/v1/businesses/me/leave-policy/allowances",
+            params={"year": 2026},
+            headers=owner_headers,
+        )
+        assert listed.status_code == 200
+        assert _item(listed.json()["items"], "vacation")["allowance_days"] == 15
+        assert _item(listed.json()["items"], "vacation")["enabled"] is True
+        assert _item(listed.json()["items"], "sick")["allowance_days"] == 10
+        assert _item(listed.json()["items"], "sick")["enabled"] is True
+    finally:
+        world.close()
+
+
 def test_entitlement_layer_does_not_change_payroll_calculation():
     source = inspect.getsource(_calculate_employee_payslip)
     assert "leave_entitlement" not in source

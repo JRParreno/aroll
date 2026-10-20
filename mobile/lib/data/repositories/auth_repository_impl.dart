@@ -1,5 +1,6 @@
 import 'package:aroll_mobile/core/error/failures.dart';
 import 'package:aroll_mobile/core/network/api_client.dart';
+import 'package:aroll_mobile/core/utils/resend_countdown.dart';
 import 'package:aroll_mobile/domain/entities/user_session.dart';
 import 'package:aroll_mobile/domain/repositories/auth_repository.dart';
 import 'package:dio/dio.dart';
@@ -52,6 +53,7 @@ class AuthRepositoryImpl implements AuthRepository {
       email: m['email'] as String?,
       businessCode: businessCode ?? m['business_code'] as String?,
       setupCompletedAt: _parseDateTime(m['setup_completed_at'] as String?),
+      needsBrandingOnboarding: m['needs_branding_onboarding'] == true,
       mustChangePassword: mustChangePassword,
       branding: _brandingFromJson(m),
       profileImageUrl: m['profile_image_url'] as String?,
@@ -60,6 +62,7 @@ class AuthRepositoryImpl implements AuthRepository {
       consentsCompleted: m['consents_completed'] as bool?,
       permissionsOnboardingCompleted:
           m['permissions_onboarding_completed'] as bool?,
+      needsRecoveryEmail: m['needs_recovery_email'] == true,
       timezone: m['timezone'] as String?,
     );
   }
@@ -232,6 +235,248 @@ class AuthRepositoryImpl implements AuthRepository {
       debugPrint('[auth] restoreSession unexpected error: $e\n$st');
       return null;
     }
+  }
+
+  @override
+  Future<AuthResult<PasswordResetTicket>> requestEmployeeResetCode({
+    required String username,
+    required String email,
+  }) {
+    return _resetTicket(
+      '/auth/employee/password-reset/request',
+      username: username,
+      email: email,
+    );
+  }
+
+  @override
+  Future<AuthResult<PasswordResetTicket>> employeeResetStatus({
+    required String username,
+    required String email,
+  }) {
+    return _resetTicket(
+      '/auth/employee/password-reset/status',
+      username: username,
+      email: email,
+    );
+  }
+
+  Future<AuthResult<PasswordResetTicket>> _resetTicket(
+    String path, {
+    required String username,
+    required String email,
+  }) async {
+    try {
+      final res = await _api.dio.post<Map<String, dynamic>>(
+        path,
+        data: {
+          'username': username.trim(),
+          'email': email.trim(),
+        },
+      );
+      return (data: _ticketFromMap(res.data ?? {}, accepted: true), failure: null);
+    } on DioException catch (error) {
+      final status = error.response?.statusCode;
+      final detail = error.response?.data;
+      if (status == 429 && detail is Map && detail['detail'] is Map) {
+        return (
+          data: _ticketFromMap(
+            Map<String, dynamic>.from(detail['detail'] as Map),
+            accepted: false,
+          ),
+          failure: null,
+        );
+      }
+      return (
+        data: null,
+        failure: AuthFailure(_resetErrorMessage(detail)),
+      );
+    }
+  }
+
+  PasswordResetTicket _ticketFromMap(
+    Map<String, dynamic> data, {
+    required bool accepted,
+  }) {
+    final retry = (data['retry_after_seconds'] as num?)?.toInt() ?? 0;
+    return PasswordResetTicket(
+      accepted: accepted,
+      message: data['message'] as String? ??
+          'If the username and recovery email match an employee account, a verification code has been sent.',
+      retryAfterSeconds: retry,
+      resendAvailableAt: resendAvailableAtFrom(
+        isoTimestamp: data['resend_available_at'] as String?,
+        retryAfterSeconds: retry,
+      ),
+    );
+  }
+
+  @override
+  Future<AuthResult<String>> verifyEmployeeResetCode({
+    required String username,
+    required String email,
+    required String code,
+  }) async {
+    try {
+      final res = await _api.dio.post<Map<String, dynamic>>(
+        '/auth/employee/password-reset/verify',
+        data: {
+          'username': username.trim(),
+          'email': email.trim(),
+          'code': code.trim(),
+        },
+      );
+      final token = res.data?['reset_token'] as String?;
+      if (token == null || token.isEmpty) {
+        return (
+          data: null,
+          failure: const AuthFailure('That code could not be verified.'),
+        );
+      }
+      return (data: token, failure: null);
+    } on DioException catch (error) {
+      return (
+        data: null,
+        failure: AuthFailure(_resetErrorMessage(error.response?.data)),
+      );
+    }
+  }
+
+  @override
+  Future<Failure?> completeEmployeePasswordReset({
+    required String resetToken,
+    required String newPassword,
+  }) async {
+    try {
+      await _api.dio.post<Map<String, dynamic>>(
+        '/auth/employee/password-reset/complete',
+        data: {
+          'reset_token': resetToken,
+          'new_password': newPassword,
+        },
+      );
+      return null;
+    } on DioException catch (error) {
+      return AuthFailure(_resetErrorMessage(error.response?.data));
+    }
+  }
+
+  @override
+  Future<AuthResult<PasswordResetTicket>> requestOwnerResetCode({
+    required String email,
+    required String businessCode,
+  }) {
+    return _ownerResetTicket(
+      '/auth/owner/password-reset/request',
+      email: email,
+      businessCode: businessCode,
+    );
+  }
+
+  @override
+  Future<AuthResult<PasswordResetTicket>> ownerResetStatus({
+    required String email,
+    required String businessCode,
+  }) {
+    return _ownerResetTicket(
+      '/auth/owner/password-reset/status',
+      email: email,
+      businessCode: businessCode,
+    );
+  }
+
+  Future<AuthResult<PasswordResetTicket>> _ownerResetTicket(
+    String path, {
+    required String email,
+    required String businessCode,
+  }) async {
+    try {
+      final res = await _api.dio.post<Map<String, dynamic>>(
+        path,
+        data: {
+          'email': email.trim(),
+          'business_code': businessCode.trim(),
+        },
+      );
+      return (data: _ticketFromMap(res.data ?? {}, accepted: true), failure: null);
+    } on DioException catch (error) {
+      final status = error.response?.statusCode;
+      final detail = error.response?.data;
+      if (status == 429 && detail is Map && detail['detail'] is Map) {
+        return (
+          data: _ticketFromMap(
+            Map<String, dynamic>.from(detail['detail'] as Map),
+            accepted: false,
+          ),
+          failure: null,
+        );
+      }
+      return (
+        data: null,
+        failure: AuthFailure(_resetErrorMessage(detail)),
+      );
+    }
+  }
+
+  @override
+  Future<AuthResult<String>> verifyOwnerResetCode({
+    required String email,
+    required String businessCode,
+    required String code,
+  }) async {
+    try {
+      final res = await _api.dio.post<Map<String, dynamic>>(
+        '/auth/owner/password-reset/verify',
+        data: {
+          'email': email.trim(),
+          'business_code': businessCode.trim(),
+          'code': code.trim(),
+        },
+      );
+      final token = res.data?['reset_token'] as String?;
+      if (token == null || token.isEmpty) {
+        return (
+          data: null,
+          failure: const AuthFailure('That code could not be verified.'),
+        );
+      }
+      return (data: token, failure: null);
+    } on DioException catch (error) {
+      return (
+        data: null,
+        failure: AuthFailure(_resetErrorMessage(error.response?.data)),
+      );
+    }
+  }
+
+  @override
+  Future<Failure?> completeOwnerPasswordReset({
+    required String resetToken,
+    required String newPassword,
+  }) async {
+    try {
+      await _api.dio.post<Map<String, dynamic>>(
+        '/auth/owner/password-reset/complete',
+        data: {
+          'reset_token': resetToken,
+          'new_password': newPassword,
+        },
+      );
+      return null;
+    } on DioException catch (error) {
+      return AuthFailure(_resetErrorMessage(error.response?.data));
+    }
+  }
+
+  String _resetErrorMessage(Object? data) {
+    if (data is Map) {
+      final detail = data['detail'];
+      if (detail is String && detail.trim().isNotEmpty) return detail;
+      if (detail is Map && detail['message'] is String) {
+        return detail['message'] as String;
+      }
+    }
+    return 'Something went wrong. Please try again.';
   }
 
   Future<Map<String, dynamic>> _fetchMe(String token) async {

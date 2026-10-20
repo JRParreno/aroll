@@ -4,6 +4,7 @@ import 'package:aroll_mobile/core/location/business_location_defaults.dart';
 import 'package:aroll_mobile/core/location/business_location_geocoding.dart';
 import 'package:aroll_mobile/core/location/employee_location_service.dart';
 import 'package:aroll_mobile/data/repositories/owner_repository.dart';
+import 'package:aroll_mobile/presentation/owner/owner_leave_allowances_section.dart';
 import 'package:aroll_mobile/presentation/owner/owner_shell.dart';
 import 'package:aroll_mobile/presentation/owner/setup/holiday_setup_section.dart';
 import 'package:aroll_mobile/presentation/owner/setup/setup_ui.dart';
@@ -62,6 +63,7 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
   bool _payrollLateDeductionEnabled = true;
   final _payrollLateDeductionRate = TextEditingController(text: '1');
   bool _payrollOvertimeEnabled = true;
+  String _payrollOvertimeMethod = 'flat_per_minute';
   final _payrollOvertimeRate = TextEditingController(text: '1');
   bool _payrollLateOtBalancing = false;
   bool _payrollOtApprovalRequired = false;
@@ -82,6 +84,11 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
   bool _breaktimeIsPaid = false;
 
   final _restPremiumPercent = TextEditingController(text: '30');
+  final _leaveNotice = TextEditingController(text: '0');
+  List<Map<String, dynamic>> _leaveItems = const [];
+  Map<String, bool> _leaveDraft = {};
+  Map<String, bool> _leaveSaved = {};
+  int _leaveSavedNotice = 0;
 
   final _locationLabel = TextEditingController(text: 'Main');
   final _locationAddress = TextEditingController();
@@ -121,6 +128,7 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
     _attOvertimeMinimum.dispose();
     _attMaximumOvertime.dispose();
     _restPremiumPercent.dispose();
+    _leaveNotice.dispose();
     _locationLabel.dispose();
     _locationAddress.dispose();
     _locationLatitude.dispose();
@@ -134,39 +142,41 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
       _loadError = null;
     });
     try {
-      final results = await Future.wait([
+      final required = await Future.wait([
         _repo.setupStatus(),
         _repo.shifts(),
         _repo.positions(),
-        _repo.payrollConfig(),
-        _repo.attendancePolicy(),
-        _repo.location(),
-        _repo.restDayPolicy(),
-        _repo.businessSettings(),
       ]);
+      final payroll = await _tryLoad(_repo.payrollConfig);
+      final attendance = await _tryLoad(_repo.attendancePolicy);
+      final location = await _tryLoad(_repo.location);
+      final restDay = await _tryLoad(_repo.restDayPolicy);
+      final settings = await _tryLoad(_repo.businessSettings);
+      final leave = await _tryLoad(_repo.leavePolicy);
       if (!mounted) return;
-      final payroll = results[3] as Map<String, dynamic>;
-      final attendance = results[4] as Map<String, dynamic>;
-      final location = results[5] as Map<String, dynamic>;
-      final restDay = results[6] as Map<String, dynamic>;
-
-      _applyPayroll(payroll);
-      _applyAttendance(attendance);
-      _applyLocation(location);
-      _applyRestDay(restDay);
+      if (payroll != null) _applyPayroll(payroll);
+      if (attendance != null) _applyAttendance(attendance);
+      if (location != null) _applyLocation(location);
+      if (restDay != null) _applyRestDay(restDay);
+      if (leave != null) _applyLeavePolicy(leave);
 
       setState(() {
-        _setupStatus = results[0] as Map<String, dynamic>;
-        _shifts = results[1] as List<Map<String, dynamic>>;
-        _positions = results[2] as List<Map<String, dynamic>>;
-        _businessSettings = results[7] as Map<String, dynamic>;
+        _setupStatus = required[0] as Map<String, dynamic>;
+        _shifts = required[1] as List<Map<String, dynamic>>;
+        _positions = required[2] as List<Map<String, dynamic>>;
+        _businessSettings = settings;
         _loading = false;
       });
-    } catch (_) {
+    } catch (error) {
       if (!mounted) return;
       setState(() {
         _loading = false;
-        _loadError = 'Unable to load setup. Please try again.';
+        _loadError = error is DioException
+            ? _errorMessageFromDio(
+                error,
+                fallback: 'Unable to load setup. Please try again.',
+              )
+            : 'Unable to load setup. Please try again.';
       });
     }
   }
@@ -185,6 +195,10 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
     _payrollLateDeductionRate.text =
         '${payroll['late_deduction_per_minute'] ?? 1}';
     _payrollOvertimeEnabled = payroll['overtime_enabled'] != false;
+    _payrollOvertimeMethod =
+        payroll['overtime_calculation_method'] == 'hourly_statutory'
+            ? 'hourly_statutory'
+            : 'flat_per_minute';
     _payrollOvertimeRate.text = '${payroll['overtime_per_minute'] ?? 1}';
     _payrollLateOtBalancing =
         payroll['enable_late_overtime_balancing'] == true;
@@ -228,6 +242,31 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
 
   void _applyRestDay(Map<String, dynamic> restDay) {
     _restPremiumPercent.text = '${restDay['rest_day_premium_percent'] ?? 30}';
+  }
+
+  Future<T?> _tryLoad<T>(Future<T> Function() load) async {
+    try {
+      return await load();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  void _applyLeavePolicy(Map<String, dynamic> data) {
+    final items = (data['items'] as List? ?? const [])
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .toList();
+    final next = <String, bool>{};
+    for (final item in items) {
+      next['${item['leave_type']}'] = item['is_paid'] == true;
+    }
+    _leaveItems = items;
+    _leaveDraft = Map<String, bool>.from(next);
+    _leaveSaved = Map<String, bool>.from(next);
+    final notice = data['minimum_advance_notice_days'] as int? ?? 0;
+    _leaveSavedNotice = notice;
+    _leaveNotice.text = '$notice';
   }
 
   Future<void> _refreshSetupStatus() async {
@@ -305,7 +344,9 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
         return isSetupStepComplete(_setupStatus, 'attendance_policy');
       case 4:
         return isSetupStepComplete(_setupStatus, 'holidays');
-      case 5:
+      case setupWizardLeavePolicyStep:
+        return true;
+      case setupWizardLocationStep:
         return isSetupStepComplete(_setupStatus, 'location') ||
             _locationCanSave;
       default:
@@ -574,6 +615,10 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
       _positions = await _repo.positions();
       _showSnack('Pay configurations updated');
       await _refreshSetupStatus();
+    } on DioException catch (e) {
+      _showSnack(
+        _errorMessageFromDio(e, fallback: 'Could not update pay configurations'),
+      );
     } catch (_) {
       _showSnack('Could not update pay configurations');
     } finally {
@@ -591,6 +636,8 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
       _positions = await _repo.positions();
       _showSnack('Job role classified');
       await _refreshSetupStatus();
+    } on DioException catch (e) {
+      _showSnack(_errorMessageFromDio(e, fallback: 'Could not update job role'));
     } catch (_) {
       _showSnack('Could not update job role');
     } finally {
@@ -626,6 +673,7 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
             double.parse(_payrollLateDeductionRate.text),
         'overtime_enabled': _payrollOvertimeEnabled,
         'overtime_per_minute': double.parse(_payrollOvertimeRate.text),
+        'overtime_calculation_method': _payrollOvertimeMethod,
         'enable_late_overtime_balancing': _payrollLateOtBalancing,
         'overtime_approval_required': _payrollOtApprovalRequired,
       });
@@ -637,6 +685,46 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
       return true;
     } catch (_) {
       _showSnack('Could not save pay settings');
+      return false;
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  bool get _leavePolicyDirty {
+    if (_leaveDraft.length != _leaveSaved.length) return true;
+    for (final entry in _leaveDraft.entries) {
+      if (_leaveSaved[entry.key] != entry.value) return true;
+    }
+    return int.tryParse(_leaveNotice.text.trim()) != _leaveSavedNotice;
+  }
+
+  Future<bool> _saveLeavePolicy() async {
+    final notice = int.tryParse(_leaveNotice.text.trim());
+    if (notice == null || notice < 0 || notice > 365) {
+      _showSnack('Advance notice must be a whole number from 0 to 365.');
+      return false;
+    }
+    setState(() => _busy = true);
+    try {
+      final data = await _repo.updateLeavePolicy({
+        'treatments': {
+          for (final entry in _leaveDraft.entries)
+            if (entry.key != 'unpaid') entry.key: entry.value,
+        },
+        'minimum_advance_notice_days': notice,
+      });
+      _applyLeavePolicy(data);
+      _showSnack('Leave Policy saved');
+      await _refreshSetupStatus();
+      return true;
+    } on DioException catch (e) {
+      _showSnack(
+        _errorMessageFromDio(e, fallback: 'Could not save Leave Policy'),
+      );
+      return false;
+    } catch (_) {
+      _showSnack('Could not save Leave Policy');
       return false;
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -747,10 +835,16 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
       context.go('/owner/home');
     } on DioException catch (e) {
       final missing = _missingItemsFromError(e);
-      _showSnack(missing ?? 'Please finish the required setup steps first');
+      _showSnack(
+        missing ??
+            _errorMessageFromDio(
+              e,
+              fallback: 'Please finish the required setup steps first',
+            ),
+      );
       await _refreshSetupStatus();
     } catch (_) {
-      _showSnack('Please finish the required setup steps first');
+      _showSnack('Could not finish setup. Please try again.');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -808,10 +902,12 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
           !isSetupStepComplete(_setupStatus, 'payroll') &&
           _payrollFormValid) {
         saved = await _savePayroll();
-      } else if (_step == 5 &&
+      } else if (_step == setupWizardLocationStep &&
           !isSetupStepComplete(_setupStatus, 'location') &&
           _locationCanSave) {
         saved = await _saveLocation();
+      } else if (_step == setupWizardLeavePolicyStep && _leavePolicyDirty) {
+        saved = await _saveLeavePolicy();
       }
       if (!mounted || !saved) {
         if (!saved) _showSnack('Please save this step before continuing.');
@@ -956,7 +1052,7 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
               label: 'Review Your Setup',
               subtitle:
                   'Check the required steps and finish setting up your business.',
-              stepIndex: 7,
+              stepIndex: setupWizardReviewStep,
               statusKey: 'review',
               icon: Icons.task_alt_outlined,
             ),
@@ -984,33 +1080,22 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
   }
 
   Widget _buildStepCard() {
-    final icon = switch (_step) {
-      setupWizardBusinessInfoStep => Icons.business_rounded,
-      0 => Icons.schedule_rounded,
-      1 => Icons.badge_outlined,
-      2 => Icons.payments_outlined,
-      3 => Icons.fact_check_outlined,
-      4 => Icons.event_outlined,
-      5 => Icons.location_on_outlined,
-      6 => Icons.task_alt_outlined,
-      _ => Icons.settings_outlined,
-    };
-
+    final help = setupWizardStepHelp(_step);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        SetupSurfaceCard(
-          child: SetupSectionHeader(
-            icon: icon,
-            title: setupWizardScreenTitle(_step),
-            subtitle: setupWizardStepHelp(_step),
-          ),
-        ),
-        const SizedBox(height: 12),
+        if (help.isNotEmpty) ...[
+          SetupWizardStepIntro(help),
+          const SizedBox(height: 12),
+        ],
         SetupSurfaceCard(
           padding: const EdgeInsets.all(_cardPadding),
           child: _buildStepContent(),
         ),
+        if (_step == setupWizardLeavePolicyStep) ...[
+          const SizedBox(height: 12),
+          const BusinessLeaveAllowancesSection(),
+        ],
       ],
     );
   }
@@ -1029,9 +1114,11 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
         return _buildAttendanceStep();
       case 4:
         return HolidaySetupSection(onChanged: _refreshSetupStatus);
-      case 5:
+      case setupWizardLeavePolicyStep:
+        return _buildLeavePolicyStep();
+      case setupWizardLocationStep:
         return _buildLocationStep();
-      case 6:
+      case setupWizardReviewStep:
         return _buildReviewStep();
       default:
         return const SizedBox.shrink();
@@ -1350,29 +1437,26 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
                   leadingIcon: Icons.badge_outlined,
                   title: '${position['title']}',
                   subtitle: _positionRateSubtitle(position),
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      TextButton(
-                        onPressed: _busy
-                            ? null
-                            : () => _classifyPosition(
-                                  '${position['id']}',
-                                  'full_time',
-                                ),
-                        child: const Text('Full-time'),
-                      ),
-                      TextButton(
-                        onPressed: _busy
-                            ? null
-                            : () => _classifyPosition(
-                                  '${position['id']}',
-                                  'part_time',
-                                ),
-                        child: const Text('Part-time'),
-                      ),
-                    ],
-                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: _busy
+                          ? null
+                          : () => _classifyPosition(
+                                '${position['id']}',
+                                'full_time',
+                              ),
+                      child: const Text('Full-time'),
+                    ),
+                    TextButton(
+                      onPressed: _busy
+                          ? null
+                          : () => _classifyPosition(
+                                '${position['id']}',
+                                'part_time',
+                              ),
+                      child: const Text('Part-time'),
+                    ),
+                  ],
                 ),
             ],
           ),
@@ -1386,27 +1470,24 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
                 leadingIcon: Icons.badge_outlined,
                 title: '${position['title']}',
                 subtitle: _positionRateSubtitle(position),
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    TextButton(
-                      onPressed: _busy
-                          ? null
-                          : () => _editPositionPayConfigs(position),
-                      child: const Text('Edit rates'),
+                actions: [
+                  TextButton(
+                    onPressed: _busy
+                        ? null
+                        : () => _editPositionPayConfigs(position),
+                    child: const Text('Edit rates'),
+                  ),
+                  TextButton(
+                    style: SetupUi.ghostButtonOf(context).copyWith(
+                      foregroundColor:
+                          const WidgetStatePropertyAll(AppColors.danger),
                     ),
-                    TextButton(
-                      style: SetupUi.ghostButtonOf(context).copyWith(
-                        foregroundColor:
-                            const WidgetStatePropertyAll(AppColors.danger),
-                      ),
-                      onPressed: _busy
-                          ? null
-                          : () => _removePosition('${position['id']}'),
-                      child: const Text('Remove'),
-                    ),
-                  ],
-                ),
+                    onPressed: _busy
+                        ? null
+                        : () => _removePosition('${position['id']}'),
+                    child: const Text('Remove'),
+                  ),
+                ],
               ),
             ),
           ],
@@ -1417,27 +1498,24 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
                 leadingIcon: Icons.badge_outlined,
                 title: '${position['title']}',
                 subtitle: _positionRateSubtitle(position),
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    TextButton(
-                      onPressed: _busy
-                          ? null
-                          : () => _editPositionPayConfigs(position),
-                      child: const Text('Edit rates'),
+                actions: [
+                  TextButton(
+                    onPressed: _busy
+                        ? null
+                        : () => _editPositionPayConfigs(position),
+                    child: const Text('Edit rates'),
+                  ),
+                  TextButton(
+                    style: SetupUi.ghostButtonOf(context).copyWith(
+                      foregroundColor:
+                          const WidgetStatePropertyAll(AppColors.danger),
                     ),
-                    TextButton(
-                      style: SetupUi.ghostButtonOf(context).copyWith(
-                        foregroundColor:
-                            const WidgetStatePropertyAll(AppColors.danger),
-                      ),
-                      onPressed: _busy
-                          ? null
-                          : () => _removePosition('${position['id']}'),
-                      child: const Text('Remove'),
-                    ),
-                  ],
-                ),
+                    onPressed: _busy
+                        ? null
+                        : () => _removePosition('${position['id']}'),
+                    child: const Text('Remove'),
+                  ),
+                ],
               ),
             ),
           ],
@@ -1549,14 +1627,31 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
               onChanged: (value) =>
                   setState(() => _payrollOvertimeEnabled = value),
             ),
-            TextField(
-              controller: _payrollOvertimeRate,
+            OvertimeCalculationMethodField(
+              value: _payrollOvertimeMethod,
               enabled: _payrollOvertimeEnabled,
-              style: const TextStyle(fontSize: 14),
-              decoration: _compactInput('Extra Pay per Overtime Minute (₱)'),
-              keyboardType:
-                  const TextInputType.numberWithOptions(decimal: true),
+              decoration: _compactInput('How overtime is calculated'),
+              onChanged: (value) =>
+                  setState(() => _payrollOvertimeMethod = value),
             ),
+            Text(
+              _payrollOvertimeMethod == 'hourly_statutory'
+                  ? 'Uses the basic hourly rate, or the daily rate divided by that shift\'s scheduled hours, then the day factor. This is not proof of Labor Code coverage.'
+                  : 'Uses the saved peso amount per overtime minute. A flat amount can be below what a covered employee is entitled to, and saving it does not make the rate compliant.',
+              softWrap: true,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: const Color(0xFF6B7280),
+                  ),
+            ),
+            if (_payrollOvertimeMethod == 'flat_per_minute')
+              TextField(
+                controller: _payrollOvertimeRate,
+                enabled: _payrollOvertimeEnabled,
+                style: const TextStyle(fontSize: 14),
+                decoration: _compactInput('Extra Pay per Overtime Minute (₱)'),
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+              ),
             const SizedBox(height: 4),
             _compactSwitch(
               title: 'Late–OT Balancing',
@@ -1680,8 +1775,9 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
           'Minimum Worked Shift (%) and half-day cutoffs use percent of each '
           'scheduled shift. '
           'Maximum overtime duration is an attendance cutoff only. '
-          'Overtime pay uses ₱${_payrollOvertimeRate.text} per minute '
-          '(${_payrollOvertimeEnabled ? 'turned on' : 'turned off'} in pay settings).',
+          'Overtime pay follows the method in pay settings '
+          '(${_payrollOvertimeEnabled ? 'turned on' : 'turned off'}'
+          '${_payrollOvertimeMethod == 'hourly_statutory' ? ', hourly-based' : ', ₱${_payrollOvertimeRate.text} per minute'}).',
         ),
         const SizedBox(height: 10),
         SizedBox(
@@ -1709,6 +1805,73 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
           decoration: _compactInput('Extra pay (%)'),
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
         ),
+      ],
+    );
+  }
+
+  Widget _buildLeavePolicyStep() {
+    final items = _leaveItems
+        .where((item) => item['leave_type'] != 'unpaid')
+        .toList(growable: false);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SetupInfoBanner(
+          'Set which leave types are paid or unpaid. You can skip this and '
+          'change it later in settings. Skipping does not overwrite a saved policy.',
+        ),
+        const SizedBox(height: 12),
+        if (items.isEmpty)
+          const SetupInfoBanner(
+            'Leave policy will load after the business is ready. You can skip for now.',
+            tone: SetupBannerTone.warning,
+          )
+        else
+          SetupPanel(
+            title: 'Leave types',
+            icon: Icons.event_busy_outlined,
+            subtitle: 'Employees pick the leave type. Payroll uses this policy.',
+            children: [
+              for (final item in items)
+                SwitchListTile.adaptive(
+                  contentPadding: EdgeInsets.zero,
+                  title: Text('${item['leave_type_label']}'),
+                  subtitle: Text(
+                    _leaveDraft['${item['leave_type']}'] == true
+                        ? 'Counts as paid leave'
+                        : 'Counts as unpaid leave',
+                  ),
+                  value: _leaveDraft['${item['leave_type']}'] == true,
+                  onChanged: (value) => setState(() {
+                    _leaveDraft['${item['leave_type']}'] = value;
+                  }),
+                ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _leaveNotice,
+                keyboardType: TextInputType.number,
+                style: const TextStyle(fontSize: 14),
+                decoration: _compactInput(
+                  'Minimum advance notice (days)',
+                  hint: '0 means no minimum',
+                ),
+                onChanged: (_) => setState(() {}),
+              ),
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  onPressed: _busy || !_leavePolicyDirty
+                      ? null
+                      : () {
+                          _saveLeavePolicy();
+                        },
+                  style: _primaryButtonStyle,
+                  child: const Text('Save Leave Policy'),
+                ),
+              ),
+            ],
+          ),
       ],
     );
   }

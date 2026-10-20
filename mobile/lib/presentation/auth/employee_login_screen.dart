@@ -108,6 +108,15 @@ class _EmployeeLoginScreenState extends State<EmployeeLoginScreen> {
                     icon: Icons.arrow_forward_rounded,
                     onPressed: loading ? null : () => _submit(context, false),
                   ),
+                  Align(
+                    alignment: Alignment.center,
+                    child: TextButton(
+                      onPressed: loading
+                          ? null
+                          : () => context.push('/login/employee/forgot-password'),
+                      child: const Text('Forgot password'),
+                    ),
+                  ),
                 ],
               ),
             ),

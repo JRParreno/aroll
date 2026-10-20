@@ -16,6 +16,7 @@ from app.models.payroll import BusinessPayrollConfig
 from app.models.registration_document import RegistrationDocument
 from app.models.rest_day_policy import BusinessRestDayPolicy
 from app.models.user import User
+from app.services.payroll_engine import resolve_overtime_calculation_method
 from app.schemas.business import (
     AccountSettingsResponse,
     AccountSettingsUpdate,
@@ -23,6 +24,7 @@ from app.schemas.business import (
     BusinessThemeSettings,
     BusinessSettingsResponse,
     BusinessSettingsUpdate,
+    BrandingOnboardingComplete,
     LocationResponse,
     LocationUpdate,
 )
@@ -65,6 +67,7 @@ from app.services.consent_catalog import (
     create_document,
     delete_document,
     get_document,
+    legal_ui_catalog_payloads,
     list_catalog_documents,
     reorder_documents,
     require_business_custom,
@@ -82,6 +85,8 @@ from app.services.setup_status import (
     SetupIncompleteError,
     complete_setup,
     get_setup_status,
+    mark_branding_onboarding_done,
+    preserve_branding_onboarding_flag,
 )
 from app.services.legal_consent import (
     apply_legal_settings_update,
@@ -205,6 +210,31 @@ def mark_setup_complete(
     return {"status": "ok"}
 
 
+@router.post("/me/branding-onboarding/complete")
+def complete_branding_onboarding(
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(require_roles(UserRole.owner))],
+    body: BrandingOnboardingComplete | None = None,
+):
+    """Complete or skip first-login branding without touching business profile fields.
+
+    Omit branding to skip. When branding is sent, logo and colors are saved, then
+    the onboarding flag is set so the step is not shown again.
+    """
+    if user.business_id is None:
+        raise HTTPException(400, "No business context")
+    business = db.get(Business, user.business_id)
+    if business is None:
+        raise HTTPException(404, "Business not found")
+    if body is not None and body.branding is not None:
+        business.logo_url = body.branding.logo_url
+        business.theme_settings = body.branding.theme.model_dump()
+        business.display_image_url = body.branding.logo_url
+    mark_branding_onboarding_done(business)
+    db.commit()
+    return {"status": "ok", "needs_branding_onboarding": False}
+
+
 @router.get("/me/payroll-config", response_model=PayrollConfigResponse)
 def get_payroll_config(
     db: Annotated[Session, Depends(get_db)],
@@ -226,6 +256,7 @@ def get_payroll_config(
         late_deduction_per_minute=float(cfg.late_deduction_per_minute),
         overtime_enabled=cfg.overtime_enabled,
         overtime_per_minute=float(cfg.overtime_per_minute),
+        overtime_calculation_method=resolve_overtime_calculation_method(cfg),
         enable_late_overtime_balancing=bool(
             getattr(cfg, "enable_late_overtime_balancing", False)
         ),
@@ -275,6 +306,8 @@ def update_payroll_config(
     cfg.late_deduction_per_minute = body.late_deduction_per_minute
     cfg.overtime_enabled = body.overtime_enabled
     cfg.overtime_per_minute = body.overtime_per_minute
+    if body.overtime_calculation_method is not None:
+        cfg.overtime_calculation_method = body.overtime_calculation_method
     if body.enable_late_overtime_balancing is not None:
         cfg.enable_late_overtime_balancing = body.enable_late_overtime_balancing
     if body.overtime_approval_required is not None:
@@ -599,7 +632,10 @@ def update_business_settings(
 
     if body.branding is not None:
         business.logo_url = body.branding.logo_url
-        business.theme_settings = body.branding.theme.model_dump()
+        business.theme_settings = preserve_branding_onboarding_flag(
+            business.theme_settings,
+            body.branding.theme.model_dump(),
+        )
         # Keep display_image in sync with logo for legacy mobile surfaces.
         business.display_image_url = body.branding.logo_url
 
@@ -682,7 +718,10 @@ def list_owner_consents(
     return ConsentCatalogResponse(
         use_custom_consents=custom,
         can_edit=custom,
-        documents=[ConsentDocumentPayload(**catalog_item_payload(doc)) for doc in documents],
+        documents=[
+            ConsentDocumentPayload(**item)
+            for item in legal_ui_catalog_payloads(documents)
+        ],
     )
 
 
@@ -775,7 +814,10 @@ def reorder_owner_consents(
     return ConsentCatalogResponse(
         use_custom_consents=True,
         can_edit=True,
-        documents=[ConsentDocumentPayload(**catalog_item_payload(doc)) for doc in documents],
+        documents=[
+            ConsentDocumentPayload(**item)
+            for item in legal_ui_catalog_payloads(documents)
+        ],
     )
 
 

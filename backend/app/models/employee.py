@@ -49,6 +49,12 @@ class Employee(Base):
     hourly_rate: Mapped[float | None] = mapped_column(Numeric(10, 2), nullable=True)
     monthly_salary: Mapped[float | None] = mapped_column(Numeric(10, 2), nullable=True)
     phone: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    recovery_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # True only for employees created after recovery email was introduced.
+    # Existing rows stay false so they are not forced through first-login setup.
+    recovery_email_required: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false", nullable=False
+    )
     profile_image_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     hire_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     status: Mapped[EmployeeStatus] = mapped_column(

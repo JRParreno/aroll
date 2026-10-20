@@ -3,6 +3,9 @@ import 'package:aroll_mobile/core/app_state.dart';
 import 'package:aroll_mobile/core/router/app_nav_observer.dart';
 import 'package:aroll_mobile/presentation/auth/change_password_screen.dart';
 import 'package:aroll_mobile/presentation/auth/employee_login_screen.dart';
+import 'package:aroll_mobile/presentation/auth/employee_forgot_password_screen.dart';
+import 'package:aroll_mobile/presentation/auth/employee_recovery_email_screen.dart';
+import 'package:aroll_mobile/presentation/auth/owner_forgot_password_screen.dart';
 import 'package:aroll_mobile/presentation/auth/owner_login_screen.dart';
 import 'package:aroll_mobile/presentation/auth/role_landing_screen.dart';
 import 'package:aroll_mobile/presentation/employee/attendance_correction_screen.dart';
@@ -14,6 +17,7 @@ import 'package:aroll_mobile/presentation/employee/payroll_history_screen.dart';
 import 'package:aroll_mobile/presentation/employee/payroll_screen.dart';
 import 'package:aroll_mobile/presentation/employee/payslip_screen.dart';
 import 'package:aroll_mobile/presentation/employee/profile_screen.dart';
+import 'package:aroll_mobile/presentation/employee/employee_workplace_policies_screen.dart';
 import 'package:aroll_mobile/presentation/employee/employee_business_details_screen.dart';
 import 'package:aroll_mobile/presentation/employee/request_leave_screen.dart';
 import 'package:aroll_mobile/presentation/employee/schedule_screen.dart';
@@ -43,6 +47,7 @@ import 'package:aroll_mobile/presentation/owner/owner_registration.dart';
 import 'package:aroll_mobile/presentation/owner/owner_set_schedule_screen.dart';
 import 'package:aroll_mobile/presentation/owner/payroll/owner_payroll_detail_screen.dart';
 import 'package:aroll_mobile/presentation/owner/payroll/owner_payroll_list_screen.dart';
+import 'package:aroll_mobile/presentation/owner/setup/owner_branding_onboarding_screen.dart';
 import 'package:aroll_mobile/presentation/owner/setup/owner_setup_wizard_screen.dart';
 import 'package:aroll_mobile/presentation/owner/setup/setup_wizard_constants.dart';
 import 'package:aroll_mobile/presentation/shared/app_ui.dart';
@@ -70,10 +75,14 @@ String resolveAuthenticatedRoute(AppState appState) {
   if (appState.mustChangePassword) {
     return '/change-password';
   }
+  if (session.isEmployee && appState.needsRecoveryEmail) {
+    return '/recovery-email';
+  }
   if (session.isOwner) {
-    return session.setupCompletedAt == null
-        ? '/owner/setup-wizard'
-        : '/owner/home';
+    return ownerLandingRoute(
+      setupCompleted: session.setupCompletedAt != null,
+      needsBrandingOnboarding: session.needsBrandingOnboarding,
+    );
   }
   if (session.isDemo) {
     return '/home';
@@ -107,6 +116,15 @@ GoRouter createAppRouter(AppState appState) {
         redirect = '/change-password';
       } else if (!appState.mustChangePassword && loc == '/change-password') {
         redirect = resolveAuthenticatedRoute(appState);
+      } else if (session?.isEmployee == true &&
+          appState.needsRecoveryEmail &&
+          loc != '/recovery-email' &&
+          loc != '/change-password') {
+        redirect = '/recovery-email';
+      } else if (session?.isEmployee == true &&
+          !appState.needsRecoveryEmail &&
+          loc == '/recovery-email') {
+        redirect = resolveAuthenticatedRoute(appState);
       } else if (loc == '/login' ||
           loc.startsWith('/login/') ||
           loc == '/register-business' ||
@@ -115,14 +133,21 @@ GoRouter createAppRouter(AppState appState) {
       } else if (session?.isOwner == true &&
           !loc.startsWith('/owner/') &&
           loc != '/change-password') {
-        redirect = session?.setupCompletedAt == null
-            ? '/owner/setup-wizard'
-            : '/owner/home';
+        redirect = ownerLandingRoute(
+          setupCompleted: session?.setupCompletedAt != null,
+          needsBrandingOnboarding: session?.needsBrandingOnboarding == true,
+        );
+      } else if (session?.isOwner == true &&
+          session?.needsBrandingOnboarding == true &&
+          loc != '/owner/branding-setup' &&
+          loc != '/change-password') {
+        redirect = '/owner/branding-setup';
       } else if (session?.isEmployee == true && loc.startsWith('/owner/')) {
         redirect = resolveAuthenticatedRoute(appState);
       } else if (session?.isEmployee == true &&
           session?.isDemo != true &&
           !appState.mustChangePassword &&
+          !appState.needsRecoveryEmail &&
           appState.consentsCompleted != true &&
           loc != '/consents' &&
           loc != '/change-password') {
@@ -130,6 +155,7 @@ GoRouter createAppRouter(AppState appState) {
       } else if (session?.isEmployee == true &&
           session?.isDemo != true &&
           !appState.mustChangePassword &&
+          !appState.needsRecoveryEmail &&
           appState.consentsCompleted == true &&
           !appState.permissionsIntroSeen &&
           loc != '/permissions' &&
@@ -139,6 +165,7 @@ GoRouter createAppRouter(AppState appState) {
       } else if (session?.isEmployee == true &&
           session?.isDemo != true &&
           !appState.mustChangePassword &&
+          !appState.needsRecoveryEmail &&
           appState.faceEnrolled != true &&
           loc != '/face-registration' &&
           loc != '/consents' &&
@@ -176,6 +203,11 @@ GoRouter createAppRouter(AppState appState) {
             _fadePage(state, const EmployeeLoginScreen()),
       ),
       GoRoute(
+        path: '/login/employee/forgot-password',
+        pageBuilder: (context, state) =>
+            _fadePage(state, const EmployeeForgotPasswordScreen()),
+      ),
+      GoRoute(
         path: '/login/owner-options',
         pageBuilder: (context, state) =>
             _fadePage(state, const OwnerOptionsScreen()),
@@ -184,6 +216,11 @@ GoRouter createAppRouter(AppState appState) {
         path: '/login/owner',
         pageBuilder: (context, state) =>
             _fadePage(state, const OwnerLoginScreen()),
+      ),
+      GoRoute(
+        path: '/login/owner/forgot-password',
+        pageBuilder: (context, state) =>
+            _fadePage(state, const OwnerForgotPasswordScreen()),
       ),
       GoRoute(
         path: '/register-business',
@@ -203,6 +240,11 @@ GoRouter createAppRouter(AppState appState) {
         path: '/change-password',
         pageBuilder: (context, state) =>
             _fadePage(state, const ChangePasswordScreen()),
+      ),
+      GoRoute(
+        path: '/recovery-email',
+        pageBuilder: (context, state) =>
+            _fadePage(state, const EmployeeRecoveryEmailScreen()),
       ),
       GoRoute(
         path: '/consents',
@@ -276,6 +318,20 @@ GoRouter createAppRouter(AppState appState) {
             pageBuilder: (context, state) => _fadePage(
               state,
               const ChangePasswordScreen(voluntary: true),
+            ),
+          ),
+          GoRoute(
+            path: 'recovery-email',
+            pageBuilder: (context, state) => _fadePage(
+              state,
+              const EmployeeRecoveryEmailScreen(voluntary: true),
+            ),
+          ),
+          GoRoute(
+            path: 'attendance-payroll-policies',
+            pageBuilder: (context, state) => _fadePage(
+              state,
+              const EmployeeWorkplacePoliciesScreen(),
             ),
           ),
         ],
@@ -503,6 +559,13 @@ GoRouter createAppRouter(AppState appState) {
                 _fadePage(state, const OwnerLeavePolicyScreen()),
           ),
           GoRoute(
+            path: 'branding',
+            pageBuilder: (context, state) => _fadePage(
+              state,
+              const OwnerBrandingOnboardingScreen(asSettings: true),
+            ),
+          ),
+          GoRoute(
             path: 'consents',
             pageBuilder: (context, state) =>
                 _fadePage(state, const OwnerConsentConfigurationScreen()),
@@ -513,6 +576,11 @@ GoRouter createAppRouter(AppState appState) {
                 _fadePage(state, const OwnerAuditHistoryScreen()),
           ),
         ],
+      ),
+      GoRoute(
+        path: '/owner/branding-setup',
+        pageBuilder: (context, state) =>
+            _fadePage(state, const OwnerBrandingOnboardingScreen()),
       ),
       GoRoute(
         path: '/owner/setup-wizard',

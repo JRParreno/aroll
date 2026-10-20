@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { changePassword, getMe } from "@/lib/api";
 import { canSubmitPasswordChange, validatePassword } from "@/lib/passwordValidation";
 import { ME_QUERY_KEY, setAuthSession } from "@/lib/authSession";
+import { ownerFirstLoginPath } from "@/lib/ownerFirstLoginPath";
 
 export function OwnerChangePasswordPage() {
   const navigate = useNavigate();
@@ -41,7 +42,7 @@ export function OwnerChangePasswordPage() {
       const me = await getMe();
       qc.setQueryData(ME_QUERY_KEY, me);
       toast.success("Password updated successfully");
-      navigate(me.setup_completed_at ? "/owner/dashboard" : "/owner/setup-wizard");
+      navigate(ownerFirstLoginPath(me));
     } catch {
       toast.error("Failed to update password. Check your current password.");
     } finally {

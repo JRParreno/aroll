@@ -92,6 +92,8 @@ class _OwnerRegistrationScreenState extends State<OwnerRegistrationScreen> {
         return;
       }
 
+      // draft: resume. approved: start another business on the same email.
+      // pending is already handled above.
       final registrationId = existing?.status == 'draft'
           ? existing!.id
           : await _createRegistration(repo, email);
@@ -396,6 +398,10 @@ String? _detail(DioException error) {
         return first['msg']?.toString();
       }
     }
+  }
+  if (error.type == DioExceptionType.connectionError ||
+      error.type == DioExceptionType.connectionTimeout) {
+    return 'Cannot reach the Aroll+ server. Confirm the backend is running.';
   }
   return error.message;
 }

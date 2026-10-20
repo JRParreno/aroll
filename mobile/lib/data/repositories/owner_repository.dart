@@ -87,7 +87,7 @@ class OwnerRepository {
           if (positionId != null && positionId.isNotEmpty)
             'position_id': positionId,
           'employment_type': employmentType,
-          'phone': phone,
+          if (phone != null) 'phone': phone,
           'pay_basis': payBasis,
           if (dailyRate != null) 'daily_rate': dailyRate,
           if (hourlyRate != null) 'hourly_rate': hourlyRate,
@@ -310,6 +310,17 @@ class OwnerRepository {
 
   Future<void> markAllRead() => markAllNotificationsRead();
 
+  Future<void> registerDeviceToken({
+    required String token,
+    required String platform,
+  }) async {
+    await _api.dio.post(
+      '/owner/notifications/device-token',
+      data: {'token': token, 'platform': platform},
+      options: Options(headers: _mobileHeaders),
+    );
+  }
+
   Future<Map<String, dynamic>> completeAttendance({
     required String recordId,
     required DateTime timeOut,
@@ -477,6 +488,15 @@ class OwnerRepository {
               .get<Map<String, dynamic>>('/businesses/me/business-settings'))
           .data!;
 
+  Future<Map<String, dynamic>> completeBrandingOnboarding({
+    Map<String, dynamic>? branding,
+  }) async =>
+      (await _api.dio.post<Map<String, dynamic>>(
+        '/businesses/me/branding-onboarding/complete',
+        data: branding == null ? <String, dynamic>{} : {'branding': branding},
+      ))
+          .data!;
+
   Future<List<Map<String, dynamic>>> shifts() async =>
       _list(await _api.dio.get<List<dynamic>>('/shifts'));
 
@@ -543,6 +563,8 @@ class OwnerRepository {
     required DateTime targetWeekStart,
     DateTime? sourceWeekStart,
     String? templateId,
+    DateTime? startDate,
+    DateTime? endDate,
   }) async =>
       (await _api.dio.post<Map<String, dynamic>>(
         '/schedules/reuse/preview',
@@ -552,6 +574,8 @@ class OwnerRepository {
           if (sourceWeekStart != null)
             'source_week_start': _date(sourceWeekStart),
           if (templateId != null) 'template_id': templateId,
+          if (startDate != null) 'start_date': _date(startDate),
+          if (endDate != null) 'end_date': _date(endDate),
         },
       ))
           .data!;
@@ -562,6 +586,8 @@ class OwnerRepository {
     required String conflictMode,
     DateTime? sourceWeekStart,
     String? templateId,
+    DateTime? startDate,
+    DateTime? endDate,
   }) async =>
       (await _api.dio.post<Map<String, dynamic>>(
         '/schedules/reuse/apply',
@@ -572,6 +598,8 @@ class OwnerRepository {
           if (sourceWeekStart != null)
             'source_week_start': _date(sourceWeekStart),
           if (templateId != null) 'template_id': templateId,
+          if (startDate != null) 'start_date': _date(startDate),
+          if (endDate != null) 'end_date': _date(endDate),
         },
       ))
           .data!;
@@ -916,13 +944,21 @@ class OwnerRepository {
     XFile file,
   ) async {
     final filename = _registrationFilename(file);
-    final bytes = await file.readAsBytes();
+    final MultipartFile part;
+    if (file.path.isNotEmpty) {
+      part = await MultipartFile.fromFile(
+        file.path,
+        filename: filename,
+      );
+    } else {
+      part = MultipartFile.fromBytes(
+        await file.readAsBytes(),
+        filename: filename,
+      );
+    }
     final formData = FormData.fromMap({
       'document_type': documentType,
-      'file': MultipartFile.fromBytes(
-        bytes,
-        filename: filename,
-      ),
+      'file': part,
     });
     await _api.dio.post(
       '/registrations/$registrationId/documents',

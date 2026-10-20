@@ -5,6 +5,8 @@ import 'package:aroll_mobile/data/repositories/owner_repository.dart';
 import 'package:aroll_mobile/presentation/auth/sign_out_dialog.dart';
 import 'package:aroll_mobile/core/theme/business_brand_theme.dart';
 import 'package:aroll_mobile/presentation/shared/app_ui.dart';
+import 'package:aroll_mobile/presentation/shared/in_app_notification_listener.dart';
+import 'package:aroll_mobile/presentation/shared/notification_routing.dart';
 import 'package:aroll_mobile/presentation/shared/tenant_mode_banner.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -111,7 +113,19 @@ class _OwnerShellState extends State<OwnerShell> with WidgetsBindingObserver {
         ),
     ];
 
-    return Scaffold(
+    return InAppNotificationListener(
+      fetchLatest: () => sl<OwnerRepository>().notifications(),
+      onOpen: (item) async {
+        final destination = notificationDestination(
+          type: '${item['type'] ?? ''}',
+          deepLink: '${item['deep_link'] ?? ''}',
+          entityId: '${item['entity_id'] ?? ''}',
+          owner: true,
+        );
+        if (!context.mounted) return;
+        context.push(destination);
+      },
+      child: Scaffold(
       backgroundColor: widget.backgroundColor ?? AppColors.scaffold,
       appBar: widget.showAppBar
           ? AppBar(
@@ -214,6 +228,7 @@ class _OwnerShellState extends State<OwnerShell> with WidgetsBindingObserver {
           ),
         ],
       ),
+    ),
     );
   }
 }

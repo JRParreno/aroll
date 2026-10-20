@@ -63,6 +63,7 @@ class EmployeeConsentItem(BaseModel):
     url: str
     required: bool
     accepted: bool
+    body_text: str | None = None
     file_url: str | None = None
     web_path: str | None = None
     consent_type: str | None = None

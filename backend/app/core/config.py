@@ -1,8 +1,16 @@
+from pathlib import Path
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_BACKEND_DIR = Path(__file__).resolve().parents[2]
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+    model_config = SettingsConfigDict(
+        env_file=str(_BACKEND_DIR / ".env"),
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
     database_url: str = "postgresql://aroll:aroll@localhost:5432/aroll"
     jwt_secret: str = "dev-secret-change-in-production"
@@ -19,6 +27,21 @@ class Settings(BaseSettings):
     cors_allow_localhost_regex: bool = True
     registration_upload_dir: str = "uploads/registrations"
     consent_upload_dir: str = "uploads/consents"
+    # SMTP for post-approval Business Code email. Leave host empty to disable send.
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_username: str = ""
+    smtp_password: str = ""
+    smtp_from_email: str = ""
+    smtp_use_tls: bool = True
+    smtp_use_ssl: bool = False
+    # Existing Business Owner login page. Override in deployment; do not invent a URL.
+    owner_login_url: str = "http://localhost:5173/owner-login"
+    # Optional Firebase Cloud Messaging. Inbox works without these.
+    fcm_project_id: str = ""
+    fcm_service_account_json: str = ""
+    schedule_reminder_loop_enabled: bool = True
+    schedule_reminder_interval_seconds: int = 900
     # Attendance identity is 1:1 (logged-in employee gallery only).
     # Decision: mean + min (+ centroid) cosine vs that gallery.
     #

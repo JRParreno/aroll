@@ -270,7 +270,7 @@ class _EmployeeConsentFlowScreenState extends State<EmployeeConsentFlowScreen> {
     return PopScope(
       canPop: !_blocking,
       child: Scaffold(
-        backgroundColor: Colors.white,
+        backgroundColor: const Color(0xFFF7F8FA),
         body: SafeArea(
           child: _loading
               ? const Center(child: CircularProgressIndicator())
@@ -322,7 +322,24 @@ class _EmployeeConsentFlowScreenState extends State<EmployeeConsentFlowScreen> {
                               child: Padding(
                                 padding:
                                     const EdgeInsets.symmetric(horizontal: 24),
-                                child: _buildDocument(current),
+                                child: DecoratedBox(
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    borderRadius: BorderRadius.circular(16),
+                                    border: Border.all(
+                                      color: const Color(0xFFE5E7EB),
+                                    ),
+                                  ),
+                                  child: Padding(
+                                    padding: const EdgeInsets.fromLTRB(
+                                      16,
+                                      12,
+                                      16,
+                                      8,
+                                    ),
+                                    child: _buildDocument(current),
+                                  ),
+                                ),
                               ),
                             ),
                             Padding(
@@ -373,6 +390,10 @@ class _EmployeeConsentFlowScreenState extends State<EmployeeConsentFlowScreen> {
   }
 
   Widget _buildDocument(ConsentDocumentItem item) {
+    final body = item.bodyText?.trim() ?? '';
+    if (body.isNotEmpty) {
+      return _LegalBodyView(text: body);
+    }
     final url = _documentUrl(item);
     if (_inWidgetTest) {
       return ColoredBox(
@@ -385,10 +406,169 @@ class _EmployeeConsentFlowScreenState extends State<EmployeeConsentFlowScreen> {
         ),
       );
     }
-    return InAppWebView(
-      initialUrlRequest: URLRequest(url: WebUri(url)),
+    if ((item.fileUrl ?? '').trim().isNotEmpty) {
+      return InAppWebView(
+        initialUrlRequest: URLRequest(url: WebUri(url)),
+      );
+    }
+    return const Center(
+      child: Text(
+        'This document has no published content yet.',
+        textAlign: TextAlign.center,
+      ),
     );
   }
+}
+
+class _LegalBodyView extends StatelessWidget {
+  const _LegalBodyView({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: _parseLegalBody(text),
+      ),
+    );
+  }
+}
+
+List<Widget> _parseLegalBody(String text) {
+  final widgets = <Widget>[];
+  final paragraph = <String>[];
+  final bullets = <String>[];
+  final ordered = <String>[];
+
+  const bodyStyle = TextStyle(
+    fontSize: 15,
+    height: 1.55,
+    color: EmployeeColors.textBody,
+  );
+  const headingStyle = TextStyle(
+    fontSize: 16,
+    fontWeight: FontWeight.w700,
+    height: 1.35,
+    color: EmployeeColors.textPrimary,
+  );
+
+  void flushParagraph() {
+    if (paragraph.isEmpty) return;
+    widgets.add(
+      Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: Text(paragraph.join('\n'), style: bodyStyle),
+      ),
+    );
+    paragraph.clear();
+  }
+
+  void flushList({required bool numbered}) {
+    final items = numbered ? ordered : bullets;
+    if (items.isEmpty) return;
+    widgets.add(
+      Padding(
+        padding: const EdgeInsets.only(bottom: 12, left: 2),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            for (var i = 0; i < items.length; i++)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SizedBox(
+                      width: 22,
+                      child: Text(
+                        numbered ? '${i + 1}.' : '•',
+                        style: bodyStyle,
+                      ),
+                    ),
+                    Expanded(child: Text(items[i], style: bodyStyle)),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+    items.clear();
+  }
+
+  void flushAll() {
+    flushParagraph();
+    flushList(numbered: false);
+    flushList(numbered: true);
+  }
+
+  for (final raw in text.replaceAll('\r\n', '\n').split('\n')) {
+    final stripped = raw.trim();
+    if (stripped.isEmpty) {
+      flushAll();
+      continue;
+    }
+    if (stripped == '---' || stripped == '***') {
+      flushAll();
+      widgets.add(const Padding(
+        padding: EdgeInsets.only(bottom: 12),
+        child: Divider(height: 1, color: Color(0xFFE5E7EB)),
+      ));
+      continue;
+    }
+    if (stripped.startsWith('### ')) {
+      flushAll();
+      widgets.add(
+        Padding(
+          padding: const EdgeInsets.only(top: 4, bottom: 8),
+          child: Text(stripped.substring(4).trim(), style: headingStyle),
+        ),
+      );
+      continue;
+    }
+    if (stripped.startsWith('## ')) {
+      flushAll();
+      widgets.add(
+        Padding(
+          padding: const EdgeInsets.only(top: 4, bottom: 8),
+          child: Text(stripped.substring(3).trim(), style: headingStyle),
+        ),
+      );
+      continue;
+    }
+    if (stripped.startsWith('# ')) {
+      flushAll();
+      widgets.add(
+        Padding(
+          padding: const EdgeInsets.only(top: 4, bottom: 8),
+          child: Text(stripped.substring(2).trim(), style: headingStyle),
+        ),
+      );
+      continue;
+    }
+    if (stripped.startsWith('• ') ||
+        stripped.startsWith('- ') ||
+        stripped.startsWith('* ')) {
+      flushParagraph();
+      flushList(numbered: true);
+      bullets.add(stripped.substring(2).trim());
+      continue;
+    }
+    final orderedMatch = RegExp(r'^(\d+)[.)]\s+(.*)$').firstMatch(stripped);
+    if (orderedMatch != null) {
+      flushParagraph();
+      flushList(numbered: false);
+      ordered.add(orderedMatch.group(2)!);
+      continue;
+    }
+    flushList(numbered: false);
+    flushList(numbered: true);
+    paragraph.add(stripped);
+  }
+  flushAll();
+  return widgets;
 }
 
 enum _DeclineChoice { returnToTerms, signOut }
@@ -557,9 +737,11 @@ class _OnboardingActions extends StatelessWidget {
           controlAffinity: ListTileControlAffinity.leading,
           contentPadding: EdgeInsets.zero,
           activeColor: primary,
-          title: const Text(
-            'I have read and agree to these Terms.',
-            style: TextStyle(
+          title: Text(
+            item.isBiometric
+                ? 'I have read this biometric consent and agree to facial verification for attendance.'
+                : 'I have read and agree to this document.',
+            style: const TextStyle(
               fontSize: 14,
               fontWeight: FontWeight.w500,
               height: 1.35,
@@ -580,31 +762,34 @@ class _OnboardingActions extends StatelessWidget {
             else
               TextButton(
                 onPressed: submitting ? null : onDecline,
-                child: Text(
-                  item.isBiometric ? "I Don't Agree" : "I Don't Agree",
-                  style: const TextStyle(
+                child: const Text(
+                  "I Don't Agree",
+                  style: TextStyle(
                     fontWeight: FontWeight.w600,
                     color: EmployeeColors.textMuted,
                   ),
                 ),
               ),
-            const Spacer(),
-            FilledButton(
-              onPressed: canContinue ? onContinue : null,
-              style: FilledButton.styleFrom(
-                backgroundColor: primary,
-                disabledBackgroundColor: primary.withValues(alpha: 0.28),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 22, vertical: 12),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
+            const SizedBox(width: 8),
+            Expanded(
+              child: FilledButton(
+                onPressed: canContinue ? onContinue : null,
+                style: FilledButton.styleFrom(
+                  backgroundColor: primary,
+                  disabledBackgroundColor: primary.withValues(alpha: 0.28),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                 ),
-              ),
-              child: Text(
-                submitting
-                    ? 'Saving…'
-                    : (isLast ? 'I Agree & Continue' : 'Next'),
-                style: const TextStyle(fontWeight: FontWeight.w700),
+                child: Text(
+                  submitting
+                      ? 'Saving…'
+                      : (isLast ? 'I Agree & Continue' : 'Next'),
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
               ),
             ),
           ],

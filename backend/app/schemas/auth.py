@@ -51,6 +51,7 @@ class TokenResponse(BaseModel):
     is_internal_test: bool = False
     consents_completed: bool = True
     permissions_onboarding_completed: bool = False
+    needs_recovery_email: bool = False
     timezone: str | None = None
 
 
@@ -66,10 +67,12 @@ class UserMeResponse(BaseModel):
     business_name: str | None = None
     business_code: str | None = None
     setup_completed_at: datetime | None = None
+    needs_branding_onboarding: bool = False
     branding: BusinessBrandingSettings | None = None
     profile_image_url: str | None = None
     is_demo: bool = False
     is_internal_test: bool = False
     consents_completed: bool = True
     permissions_onboarding_completed: bool = False
+    needs_recovery_email: bool = False
     timezone: str | None = None

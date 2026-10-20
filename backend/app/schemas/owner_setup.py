@@ -9,6 +9,7 @@ from app.models.enums import (
     HolidayType,
     LeaveType,
     MissingClockOutPolicy,
+    OvertimeCalculationMethod,
     PayBasis,
     PayPeriodType,
     ShiftType,
@@ -162,6 +163,7 @@ class PayrollConfigResponse(BaseModel):
     late_deduction_per_minute: float
     overtime_enabled: bool
     overtime_per_minute: float
+    overtime_calculation_method: str
     enable_late_overtime_balancing: bool
     overtime_approval_required: bool
     # Stored for API compatibility. Active payroll OT premium does not read these.
@@ -182,6 +184,8 @@ class PayrollConfigUpdate(BaseModel):
     late_deduction_per_minute: float = 1.0
     overtime_enabled: bool = True
     overtime_per_minute: float = 1.0
+    # None = leave the stored method unchanged. Unknown values are rejected.
+    overtime_calculation_method: OvertimeCalculationMethod | None = None
     # Optional so older clients do not reset an existing setting.
     enable_late_overtime_balancing: bool | None = None
     overtime_approval_required: bool | None = None

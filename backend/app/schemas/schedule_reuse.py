@@ -56,6 +56,8 @@ class ScheduleReusePreviewRequest(BaseModel):
     target_week_start: date
     source_week_start: date | None = None
     template_id: str | None = None
+    start_date: date | None = None
+    end_date: date | None = None
 
 
 class ScheduleReuseApplyRequest(BaseModel):
@@ -64,6 +66,8 @@ class ScheduleReuseApplyRequest(BaseModel):
     conflict_mode: ScheduleConflictMode
     source_week_start: date | None = None
     template_id: str | None = None
+    start_date: date | None = None
+    end_date: date | None = None
 
 
 class ScheduleReuseApplyResponse(BaseModel):

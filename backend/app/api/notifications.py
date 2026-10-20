@@ -3,16 +3,18 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.core.deps import get_current_user, require_roles
 from app.db.session import get_db
 from app.models.enums import UserRole
 from app.models.user import User
+from pydantic import BaseModel, Field
+
 from app.services.notifications import (
     list_notifications,
     mark_all_read,
@@ -20,6 +22,7 @@ from app.services.notifications import (
     serialize_notification,
     unread_count,
 )
+from app.services.push_delivery import register_device_token, unregister_device_token
 
 router = APIRouter(prefix="/notifications", tags=["notifications"])
 
@@ -44,6 +47,43 @@ class UnreadCountResponse(BaseModel):
     count: int
 
 
+class DeviceTokenRequest(BaseModel):
+    token: str = Field(min_length=8, max_length=512)
+    platform: str = Field(min_length=2, max_length=16)
+
+
+def _normalized_platform(value: str) -> str:
+    platform = value.strip().lower()
+    if platform not in {"android", "ios", "web"}:
+        raise HTTPException(400, "platform must be android, ios, or web")
+    return platform
+
+
+@router.post("/device-token")
+def upsert_device_token(
+    body: DeviceTokenRequest,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+):
+    row = register_device_token(
+        db,
+        user=user,
+        token=body.token,
+        platform=_normalized_platform(body.platform),
+    )
+    return {"id": str(row.id), "platform": row.platform}
+
+
+@router.delete("/device-token")
+def delete_device_token(
+    body: DeviceTokenRequest,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+):
+    removed = unregister_device_token(db, user_id=user.id, token=body.token)
+    return {"removed": removed}
+
+
 @router.get("", response_model=list[NotificationResponse])
 def get_notifications(
     db: Annotated[Session, Depends(get_db)],
@@ -64,8 +104,15 @@ def get_notifications(
 def get_unread_count(
     db: Annotated[Session, Depends(get_db)],
     user: Annotated[User, Depends(get_current_user)],
+    created_after: Annotated[datetime | None, Query()] = None,
 ):
-    return {"count": unread_count(db, recipient_user_id=user.id)}
+    return {
+        "count": unread_count(
+            db,
+            recipient_user_id=user.id,
+            created_after=created_after,
+        )
+    }
 
 
 @router.post("/{notification_id}/read", response_model=NotificationResponse)
@@ -86,8 +133,13 @@ def read_notification(
 def read_all_notifications(
     db: Annotated[Session, Depends(get_db)],
     user: Annotated[User, Depends(get_current_user)],
+    created_through: Annotated[datetime | None, Query()] = None,
 ):
-    count = mark_all_read(db, recipient_user_id=user.id)
+    count = mark_all_read(
+        db,
+        recipient_user_id=user.id,
+        created_through=created_through,
+    )
     return {"marked_read": count}
 
 
@@ -132,3 +184,21 @@ def owner_read_all_notifications(
     user: Annotated[User, Depends(require_roles(UserRole.owner, UserRole.manager))],
 ):
     return read_all_notifications(db=db, user=user)
+
+
+@owner_router.post("/device-token")
+def owner_upsert_device_token(
+    body: DeviceTokenRequest,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(require_roles(UserRole.owner, UserRole.manager))],
+):
+    return upsert_device_token(body=body, db=db, user=user)
+
+
+@owner_router.delete("/device-token")
+def owner_delete_device_token(
+    body: DeviceTokenRequest,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(require_roles(UserRole.owner, UserRole.manager))],
+):
+    return delete_device_token(body=body, db=db, user=user)

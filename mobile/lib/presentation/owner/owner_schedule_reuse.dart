@@ -1,12 +1,12 @@
 import 'package:aroll_mobile/core/theme/business_brand_theme.dart';
 import 'package:aroll_mobile/data/repositories/owner_repository.dart';
+import 'package:aroll_mobile/presentation/owner/owner_schedule_utils.dart';
 import 'package:aroll_mobile/presentation/shared/app_ui.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
-/// Blue selected-date banner with a minimal Schedule Library icon on the right.
-/// Tapping the icon opens a floating panel over the schedule page.
+/// Selected-date banner with a labeled Schedule Library control.
 class OwnerScheduleDateBanner extends StatefulWidget {
   const OwnerScheduleDateBanner({
     super.key,
@@ -34,10 +34,14 @@ class _OwnerScheduleDateBannerState extends State<OwnerScheduleDateBanner> {
 
   Map<String, dynamic>? _suggestions;
   bool _busy = false;
+  late DateTime _rangeStart;
+  late DateTime _rangeEnd;
 
   @override
   void initState() {
     super.initState();
+    _rangeStart = DateTime(widget.date.year, widget.date.month, widget.date.day);
+    _rangeEnd = _rangeStart;
     _loadSuggestions();
   }
 
@@ -88,17 +92,49 @@ class _OwnerScheduleDateBannerState extends State<OwnerScheduleDateBanner> {
         .showSnackBar(SnackBar(content: Text(message)));
   }
 
+  Future<void> _pickRangeDate({required bool isStart}) async {
+    final initial = isStart ? _rangeStart : _rangeEnd;
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2100),
+    );
+    if (picked == null || !mounted) return;
+    setState(() {
+      final next = DateTime(picked.year, picked.month, picked.day);
+      if (isStart) {
+        _rangeStart = next;
+        if (_rangeEnd.isBefore(_rangeStart)) _rangeEnd = _rangeStart;
+      } else {
+        _rangeEnd = next;
+      }
+    });
+  }
+
   Future<void> _previewAndApply({
     required String source,
     String? templateId,
   }) async {
+    final rangeError = source == 'template'
+        ? ownerScheduleRangeError(_rangeStart, _rangeEnd)
+        : null;
+    if (rangeError != null) {
+      _toast(rangeError);
+      return;
+    }
     _closeLibrary();
     setState(() => _busy = true);
+    final lockedRange = ownerTemplateApplyRange(_rangeStart, _rangeEnd);
+    final lockedStart = lockedRange.start;
+    final lockedEnd = lockedRange.end;
     try {
       final preview = await widget.repo.previewScheduleReuse(
         source: source,
         targetWeekStart: widget.weekStart,
         templateId: templateId,
+        startDate: source == 'template' ? lockedStart : null,
+        endDate: source == 'template' ? lockedEnd : null,
       );
       if (!mounted) return;
       final confirmed = await showDialog<Map<String, dynamic>>(
@@ -112,6 +148,8 @@ class _OwnerScheduleDateBannerState extends State<OwnerScheduleDateBanner> {
         targetWeekStart: widget.weekStart,
         conflictMode: confirmed['conflict_mode'] as String,
         templateId: templateId,
+        startDate: source == 'template' ? lockedStart : null,
+        endDate: source == 'template' ? lockedEnd : null,
       );
       final created = result['created'] as int? ?? 0;
       final removed = result['removed'] as int? ?? 0;
@@ -258,7 +296,14 @@ class _OwnerScheduleDateBannerState extends State<OwnerScheduleDateBanner> {
     return OverlayPortal(
       controller: _portal,
       overlayChildBuilder: (context) {
-        final width = MediaQuery.sizeOf(context).width;
+        final media = MediaQuery.of(context);
+        final width = media.size.width;
+        final maxHeight = ownerScheduleLibraryMaxHeight(
+          screenHeight: media.size.height,
+          paddingTop: media.padding.top,
+          paddingBottom: media.padding.bottom,
+          viewInsetBottom: media.viewInsets.bottom,
+        );
         return Stack(
           children: [
             Positioned.fill(
@@ -276,18 +321,25 @@ class _OwnerScheduleDateBannerState extends State<OwnerScheduleDateBanner> {
               offset: const Offset(0, 10),
               child: Material(
                 color: Colors.transparent,
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(
-                    maxWidth: (width - 32).clamp(260.0, 340.0),
-                    maxHeight: MediaQuery.sizeOf(context).height * 0.62,
-                  ),
-                  child: _LibraryFloatCard(
+                child: Align(
+                  alignment: Alignment.topRight,
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxWidth: (width - 32).clamp(260.0, 340.0),
+                      maxHeight: maxHeight,
+                    ),
+                    child: _LibraryFloatCard(
                     busy: _busy,
                     suggestions: suggestions,
                     templates: templates,
                     canSave: widget.assignmentCount > 0,
                     suggestPrevious: suggestions?['suggest_previous'] == true &&
                         widget.assignmentCount == 0,
+                    startDate: _rangeStart,
+                    endDate: _rangeEnd,
+                    rangeError: ownerScheduleRangeError(_rangeStart, _rangeEnd),
+                    onPickStart: () => _pickRangeDate(isStart: true),
+                    onPickEnd: () => _pickRangeDate(isStart: false),
                     onCopyPreviousWeek: () =>
                         _previewAndApply(source: 'previous_week'),
                     onUseLastSchedule: () =>
@@ -297,6 +349,7 @@ class _OwnerScheduleDateBannerState extends State<OwnerScheduleDateBanner> {
                         _previewAndApply(source: 'template', templateId: id),
                     onRenameTemplate: _renameTemplate,
                     onDeleteTemplate: _deleteTemplate,
+                    ),
                   ),
                 ),
               ),
@@ -354,22 +407,32 @@ class _OwnerScheduleDateBannerState extends State<OwnerScheduleDateBanner> {
             ),
             CompositedTransformTarget(
               link: _link,
-              child: Tooltip(
-                message: 'Schedule Library',
-                child: Material(
-                  color: Colors.white.withValues(alpha: open ? 0.28 : 0.16),
+              child: Material(
+                color: Colors.white.withValues(alpha: open ? 0.32 : 0.16),
+                borderRadius: BorderRadius.circular(12),
+                child: InkWell(
                   borderRadius: BorderRadius.circular(12),
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(12),
-                    onTap: _busy ? null : _toggleLibrary,
-                    child: const SizedBox(
-                      width: 40,
-                      height: 40,
-                      child: Icon(
-                        Icons.folder_copy_outlined,
-                        color: Colors.white,
-                        size: 20,
-                      ),
+                  onTap: _busy ? null : _toggleLibrary,
+                  child: const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.folder_copy_outlined,
+                          color: Colors.white,
+                          size: 18,
+                        ),
+                        SizedBox(width: 6),
+                        Text(
+                          'Schedule Library',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
@@ -389,6 +452,11 @@ class _LibraryFloatCard extends StatelessWidget {
     required this.templates,
     required this.canSave,
     required this.suggestPrevious,
+    required this.startDate,
+    required this.endDate,
+    required this.rangeError,
+    required this.onPickStart,
+    required this.onPickEnd,
     required this.onCopyPreviousWeek,
     required this.onUseLastSchedule,
     required this.onSaveTemplate,
@@ -402,6 +470,11 @@ class _LibraryFloatCard extends StatelessWidget {
   final List<Map<String, dynamic>> templates;
   final bool canSave;
   final bool suggestPrevious;
+  final DateTime startDate;
+  final DateTime endDate;
+  final String? rangeError;
+  final VoidCallback onPickStart;
+  final VoidCallback onPickEnd;
   final VoidCallback onCopyPreviousWeek;
   final VoidCallback onUseLastSchedule;
   final VoidCallback onSaveTemplate;
@@ -427,9 +500,8 @@ class _LibraryFloatCard extends StatelessWidget {
           ),
         ],
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+      child: ListView(
+        padding: const EdgeInsets.only(bottom: 8),
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(14, 14, 14, 8),
@@ -455,12 +527,54 @@ class _LibraryFloatCard extends StatelessWidget {
                     children: [
                       Text('Schedule Library', style: appSectionTitleStyle()),
                       Text(
-                        'Reuse a past week or a saved template',
-                        style: appMutedStyle().copyWith(fontSize: 12),
+                        'Save reusable weekly schedules and apply them to '
+                        'selected dates. Review the range before applying.',
+                        style: appMutedStyle().copyWith(fontSize: 12, height: 1.35),
                       ),
                     ],
                   ),
                 ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 0, 14, 8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _DateField(
+                  label: 'Start date',
+                  value: startDate,
+                  onTap: onPickStart,
+                ),
+                const SizedBox(height: 8),
+                _DateField(
+                  label: 'End date',
+                  value: endDate,
+                  onTap: onPickEnd,
+                ),
+                if (rangeError != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Text(
+                      rangeError!,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Color(0xFFB91C1C),
+                      ),
+                    ),
+                  )
+                else
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Text(
+                      ownerDateKey(startDate) == ownerDateKey(endDate)
+                          ? 'Templates apply ${DateFormat.yMMMd().format(startDate)}.'
+                          : 'Templates apply ${DateFormat.yMMMd().format(startDate)}'
+                              ' – ${DateFormat.yMMMd().format(endDate)}.',
+                      style: appMutedStyle().copyWith(fontSize: 12),
+                    ),
+                  ),
               ],
             ),
           ),
@@ -483,17 +597,22 @@ class _LibraryFloatCard extends StatelessWidget {
               ),
             ),
           const Divider(height: 1),
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxHeight: 320),
-            child: ListView(
-              shrinkWrap: true,
-              padding: const EdgeInsets.symmetric(vertical: 6),
-              children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 2),
+            child: Text(
+              'APPLY TO THIS WEEK',
+              style: appMutedStyle().copyWith(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.3,
+              ),
+            ),
+          ),
                 _LibraryAction(
                   icon: Icons.copy_all_rounded,
                   title: 'Copy previous week',
                   subtitle: hasPrevious
-                      ? '${suggestions?['previous_week_assignment_count']} assignments'
+                      ? '${suggestions?['previous_week_assignment_count']} assignments from last week'
                       : 'Nothing to copy',
                   enabled: !busy && hasPrevious,
                   onTap: onCopyPreviousWeek,
@@ -509,7 +628,7 @@ class _LibraryFloatCard extends StatelessWidget {
                 ),
                 _LibraryAction(
                   icon: Icons.save_outlined,
-                  title: 'Save this week',
+                  title: 'Save this week to the library',
                   subtitle: canSave
                       ? 'Save as a reusable template'
                       : 'Assign someone first',
@@ -519,7 +638,7 @@ class _LibraryFloatCard extends StatelessWidget {
                 Padding(
                   padding: const EdgeInsets.fromLTRB(14, 10, 14, 4),
                   child: Text(
-                    'Saved templates',
+                    'SAVED TEMPLATES — TAP TO APPLY',
                     style: appMutedStyle().copyWith(
                       fontSize: 11,
                       fontWeight: FontWeight.w700,
@@ -544,7 +663,7 @@ class _LibraryFloatCard extends StatelessWidget {
                       subtitle:
                           '${template['entry_count']} assignments · '
                           '${template['employee_count']} employees',
-                      enabled: !busy,
+                      enabled: !busy && rangeError == null,
                       onTap: () => onApplyTemplate(id),
                       trailing: PopupMenuButton<String>(
                         icon: const Icon(
@@ -571,11 +690,63 @@ class _LibraryFloatCard extends StatelessWidget {
                       ),
                     );
                   }),
-              ],
-            ),
-          ),
         ],
       ),
+    );
+  }
+}
+
+class _DateField extends StatelessWidget {
+  const _DateField({
+    required this.label,
+    required this.value,
+    required this.onTap,
+  });
+
+  final String label;
+  final DateTime value;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+            color: AppColors.textPrimary,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Material(
+          color: AppColors.fieldFill,
+          borderRadius: BorderRadius.circular(12),
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(12),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+              child: Row(
+                children: [
+                  const Icon(Icons.event_outlined, size: 18, color: AppColors.textMuted),
+                  const SizedBox(width: 8),
+                  Text(
+                    DateFormat.yMMMd().format(value),
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -677,11 +848,18 @@ class _PreviewDialogState extends State<_PreviewDialog> {
     final creatable = conflicts['creatable_count'] as int? ?? 0;
     final hasConflicts = existing > 0 || conflictCount > 0 || duplicates > 0;
 
+    final media = MediaQuery.of(context);
+    final previewMaxHeight = (
+            media.size.height -
+            media.padding.vertical -
+            media.viewInsets.bottom -
+            48)
+        .clamp(280.0, 560.0);
     return Dialog(
       insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 420, maxHeight: 560),
+        constraints: BoxConstraints(maxWidth: 420, maxHeight: previewMaxHeight),
         child: Column(
           children: [
             Padding(
@@ -689,12 +867,17 @@ class _PreviewDialogState extends State<_PreviewDialog> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Preview before applying', style: appSectionTitleStyle()),
+                  Text(
+                    'Review selected dates before applying',
+                    style: appSectionTitleStyle(),
+                  ),
                   const SizedBox(height: 6),
                   Text(
-                    '${preview['source_label']} → '
-                    '${preview['target_week_start']} to '
-                    '${preview['target_week_end']}',
+                    preview['target_week_start'] == preview['target_week_end']
+                        ? '${preview['source_label']} → ${preview['target_week_start']}'
+                        : '${preview['source_label']} → '
+                            '${preview['target_week_start']} to '
+                            '${preview['target_week_end']}',
                     style: appMutedStyle().copyWith(fontSize: 12),
                   ),
                   const SizedBox(height: 4),
@@ -717,7 +900,7 @@ class _PreviewDialogState extends State<_PreviewDialog> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'This week already has schedules. '
+                            '${preview['target_week_start'] == preview['target_week_end'] ? preview['target_week_start'] : '${preview['target_week_start']} to ${preview['target_week_end']}'} already has schedules. '
                             'Existing $existing · conflicts $conflictCount · '
                             'can add $creatable',
                             style: const TextStyle(
@@ -737,7 +920,7 @@ class _PreviewDialogState extends State<_PreviewDialog> {
                                     setState(() => _conflictMode = 'merge'),
                               ),
                               ChoiceChip(
-                                label: const Text('Replace week'),
+                                label: const Text('Replace selected dates'),
                                 selected: _conflictMode == 'replace',
                                 onSelected: (_) =>
                                     setState(() => _conflictMode = 'replace'),
@@ -804,7 +987,7 @@ class _PreviewDialogState extends State<_PreviewDialog> {
                       onPressed: () => Navigator.pop(context, {
                         'conflict_mode': _conflictMode,
                       }),
-                      child: const Text('Apply'),
+                      child: const Text('Apply to selected dates'),
                     ),
                   ),
                 ],
@@ -815,4 +998,31 @@ class _PreviewDialogState extends State<_PreviewDialog> {
       ),
     );
   }
+}
+
+@visibleForTesting
+Widget ownerScheduleLibraryCardForTest({
+  required DateTime startDate,
+  required DateTime endDate,
+  List<Map<String, dynamic>> templates = const [],
+  Map<String, dynamic>? suggestions,
+}) {
+  return _LibraryFloatCard(
+    busy: false,
+    suggestions: suggestions,
+    templates: templates,
+    canSave: true,
+    suggestPrevious: false,
+    startDate: startDate,
+    endDate: endDate,
+    rangeError: ownerScheduleRangeError(startDate, endDate),
+    onPickStart: () {},
+    onPickEnd: () {},
+    onCopyPreviousWeek: () {},
+    onUseLastSchedule: () {},
+    onSaveTemplate: () {},
+    onApplyTemplate: (_) {},
+    onRenameTemplate: (_, __) async {},
+    onDeleteTemplate: (_) async {},
+  );
 }

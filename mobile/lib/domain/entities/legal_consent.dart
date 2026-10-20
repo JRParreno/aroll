@@ -151,6 +151,7 @@ class ConsentDocumentItem {
     required this.url,
     required this.required,
     required this.accepted,
+    this.bodyText,
     this.fileUrl,
     this.webPath,
     this.consentType,
@@ -165,6 +166,7 @@ class ConsentDocumentItem {
   final String url;
   final bool required;
   final bool accepted;
+  final String? bodyText;
   final String? fileUrl;
   final String? webPath;
   final String? consentType;
@@ -183,6 +185,7 @@ class ConsentDocumentItem {
       url: json['url'] as String? ?? '',
       required: json['required'] == true,
       accepted: json['accepted'] == true,
+      bodyText: json['body_text'] as String?,
       fileUrl: json['file_url'] as String?,
       webPath: json['web_path'] as String?,
       consentType: json['consent_type'] as String?,

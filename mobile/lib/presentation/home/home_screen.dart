@@ -5,6 +5,7 @@ import 'package:aroll_mobile/core/utils/business_time.dart';
 import 'package:aroll_mobile/domain/entities/employee_portal.dart';
 import 'package:aroll_mobile/domain/entities/user_session.dart';
 import 'package:aroll_mobile/domain/repositories/employee_repository.dart';
+import 'package:aroll_mobile/presentation/employee/employee_notification_badge.dart';
 import 'package:aroll_mobile/presentation/employee/employee_ui.dart';
 import 'package:aroll_mobile/presentation/shared/tenant_mode_banner.dart';
 import 'package:flutter/material.dart';
@@ -64,9 +65,50 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   Future<void> _refreshUnread() async {
     try {
-      final count = await sl<EmployeeRepository>().unreadNotificationCount();
-      if (mounted) setState(() => _unread = count);
+      final userId = sl<AppState>().session?.userId;
+      final seenThrough = userId == null
+          ? null
+          : await sl<EmployeeNotificationBadgeStore>().seenThrough(userId);
+      final filtered = seenThrough == null
+          ? null
+          : await sl<EmployeeRepository>().unreadNotificationCount(
+              createdAfter: seenThrough,
+            );
+      final raw = seenThrough == null
+          ? await sl<EmployeeRepository>().unreadNotificationCount()
+          : null;
+      if (!mounted) return;
+      setState(() {
+        _unread = resolveEmployeeNotificationBadge(
+          seenThroughCreatedAt: seenThrough,
+          unreadCount: raw,
+          unreadCountAfterSeenThrough: filtered,
+        );
+      });
     } catch (_) {}
+  }
+
+  Future<void> _openNotifications() async {
+    final previous = _unread;
+    setState(() => _unread = 0);
+    final userId = sl<AppState>().session?.userId;
+    var acknowledged = false;
+    if (userId != null) {
+      try {
+        final items = await sl<EmployeeRepository>().notifications();
+        final store = sl<EmployeeNotificationBadgeStore>();
+        final seen = await store.acknowledge(userId, items);
+        final saved = items.isEmpty || (seen != null && seen.isNotEmpty);
+        if (saved) {
+          store.rememberPrepared(items);
+          acknowledged = true;
+        }
+      } catch (_) {}
+    }
+    if (!mounted) return;
+    setState(() => _unread = acknowledged ? 0 : previous);
+    await context.push('/notifications');
+    if (mounted) await _refreshUnread();
   }
 
   Future<void> _confirmLogout(BuildContext context) async {
@@ -96,10 +138,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           actions: [
             IconButton(
               tooltip: 'Notifications',
-              onPressed: () async {
-                await context.push('/notifications');
-                if (mounted) await _refreshUnread();
-              },
+              onPressed: _openNotifications,
               icon: Badge(
                 isLabelVisible: _unread > 0,
                 label: Text(_unread > 99 ? '99+' : '$_unread'),

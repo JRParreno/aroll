@@ -154,6 +154,7 @@ def _employee_response(
         position_title=emp.position_title,
         position_id=str(emp.position_id) if emp.position_id else None,
         phone=emp.phone,
+        recovery_email=emp.recovery_email,
         profile_image_url=emp.profile_image_url,
         employment_type=emp.employment_type.value,
         pay_basis=pay_basis.value if hasattr(pay_basis, "value") else str(pay_basis),
@@ -348,6 +349,7 @@ def create_employee(
         hourly_rate=hourly_rate,
         monthly_salary=monthly_salary,
         phone=body.phone.strip() if body.phone else None,
+        recovery_email_required=True,
         status=EmployeeStatus.invited,
     )
     db.add(employee)

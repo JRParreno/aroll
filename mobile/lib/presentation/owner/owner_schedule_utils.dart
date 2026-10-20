@@ -9,6 +9,82 @@ DateTime ownerWeekStart(DateTime date) {
 
 String ownerDateKey(DateTime date) => DateFormat('yyyy-MM-dd').format(date);
 
+final _calendarDate = RegExp(r'^(\d{4}-\d{2}-\d{2})');
+
+({DateTime start, DateTime end}) ownerTemplateApplyRange(
+  DateTime start,
+  DateTime end,
+) =>
+    (start: start, end: end);
+
+bool ownerRestDayPremiumInitialValue() => false;
+
+double ownerScheduleLibraryMaxHeight({
+  required double screenHeight,
+  required double paddingTop,
+  required double paddingBottom,
+  required double viewInsetBottom,
+}) {
+  final reserved = paddingTop + paddingBottom + viewInsetBottom + 168;
+  final available = screenHeight - reserved;
+  return available.clamp(220.0, screenHeight * 0.72);
+}
+
+String? ownerScheduleRangeError(DateTime start, DateTime end) {
+  final startKey = ownerDateKey(start);
+  final endKey = ownerDateKey(end);
+  if (startKey.isEmpty || endKey.isEmpty) {
+    return 'Choose a start date and an end date.';
+  }
+  if (endKey.compareTo(startKey) < 0) {
+    return 'End date must be the same as or later than the start date.';
+  }
+  return null;
+}
+
+String ownerAssignmentDateKey(dynamic value) {
+  if (value == null) return '';
+  if (value is DateTime) return ownerDateKey(value);
+  final raw = value.toString().trim();
+  final match = _calendarDate.firstMatch(raw);
+  if (match != null) return match.group(1)!;
+  final parsed = DateTime.tryParse(raw);
+  return parsed == null ? raw : ownerDateKey(parsed);
+}
+
+List<Map<String, dynamic>> ownerAssignmentsOnDate(
+  List<Map<String, dynamic>> assignments,
+  String dateKey,
+) =>
+    assignments
+        .where(
+          (assignment) =>
+              ownerAssignmentDateKey(assignment['work_date']) == dateKey,
+        )
+        .toList(growable: false);
+
+List<Map<String, dynamic>> ownerEmployeesWithAssignments(
+  List<Map<String, dynamic>> employees,
+  List<Map<String, dynamic>> assignments,
+) {
+  final listedIds = {
+    for (final employee in employees) '${employee['id']}',
+  };
+  final extras = <Map<String, dynamic>>[];
+  for (final assignment in assignments) {
+    final id = '${assignment['employee_id']}';
+    if (listedIds.contains(id)) continue;
+    listedIds.add(id);
+    extras.add({
+      'id': id,
+      'full_name': assignment['employee_name'] ?? 'Employee',
+      'status': 'active',
+    });
+  }
+  if (extras.isEmpty) return employees;
+  return [...employees, ...extras];
+}
+
 List<DateTime> ownerWeekDays(DateTime weekStart) =>
     List.generate(7, (index) => weekStart.add(Duration(days: index)));
 
@@ -101,14 +177,15 @@ List<Map<String, dynamic>> ownerBuildScheduleMatrix({
   required DateTime weekStart,
 }) {
   final dateKeys = ownerWeekDays(weekStart).map(ownerDateKey).toList();
-  return employees.map((employee) {
+  final visibleEmployees = ownerEmployeesWithAssignments(employees, assignments);
+  return visibleEmployees.map((employee) {
     final employeeId = '${employee['id']}';
     final cells = dateKeys.map((dateKey) {
       return assignments
           .where(
             (assignment) =>
-                assignment['employee_id'] == employeeId &&
-                assignment['work_date'] == dateKey,
+                '${assignment['employee_id']}' == employeeId &&
+                ownerAssignmentDateKey(assignment['work_date']) == dateKey,
           )
           .toList(growable: false);
     }).toList(growable: false);

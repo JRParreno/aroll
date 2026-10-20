@@ -7,6 +7,7 @@ from app.api import (
     businesses,
     consents,
     employee_mobile,
+    employee_password_reset,
     employees,
     face,
     holidays,
@@ -27,6 +28,8 @@ from app.api import (
 
 api_router = APIRouter(prefix="/api/v1")
 api_router.include_router(auth.router)
+api_router.include_router(employee_password_reset.router)
+api_router.include_router(employee_password_reset.owner_router)
 api_router.include_router(public_legal.router)
 api_router.include_router(public_consents.router)
 api_router.include_router(consents.router)

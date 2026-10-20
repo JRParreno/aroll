@@ -20,11 +20,12 @@ import {
   type ConsentDocumentWrite,
 } from "@/lib/api";
 
+const CORE_LEGAL_TYPES = ["terms", "privacy", "biometric"] as const;
+
 const TYPES = [
-  { value: "terms", label: "Terms" },
-  { value: "privacy", label: "Privacy" },
-  { value: "biometric", label: "Biometric" },
-  { value: "custom", label: "Custom" },
+  { value: "terms", label: "Terms and Conditions" },
+  { value: "privacy", label: "Privacy Policy" },
+  { value: "biometric", label: "Biometric Consent" },
 ] as const;
 
 type EditorState = {
@@ -40,7 +41,7 @@ type EditorState = {
 const EMPTY_EDITOR: EditorState = {
   title: "",
   body_text: "",
-  consent_type: "custom",
+  consent_type: "terms",
   is_active: true,
   is_required: true,
   file: null,
@@ -65,7 +66,14 @@ export function ConsentDocumentManager({
   const [saving, setSaving] = useState(false);
   const [editor, setEditor] = useState<EditorState>(EMPTY_EDITOR);
   const ordered = useMemo(
-    () => [...documents].sort((a, b) => a.position - b.position),
+    () =>
+      [...documents]
+        .filter((doc) =>
+          CORE_LEGAL_TYPES.includes(
+            doc.consent_type as (typeof CORE_LEGAL_TYPES)[number]
+          )
+        )
+        .sort((a, b) => a.position - b.position),
     [documents]
   );
 

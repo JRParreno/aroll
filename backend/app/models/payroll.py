@@ -21,6 +21,7 @@ from app.db.base import Base
 from app.models.enums import (
     EmploymentType,
     HolidayRulesMode,
+    OvertimeCalculationMethod,
     PayBasis,
     PayPeriodType,
     PayrollRunStatus,
@@ -111,6 +112,13 @@ class BusinessPayrollConfig(Base):
     overtime_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     # Owner-configured OT pesos per qualifying overtime minute (before premium).
     overtime_per_minute: Mapped[float] = mapped_column(Numeric(10, 2), default=1.0)
+    # flat_per_minute uses overtime_per_minute. hourly_statutory is opt-in.
+    overtime_calculation_method: Mapped[OvertimeCalculationMethod] = mapped_column(
+        Enum(OvertimeCalculationMethod),
+        default=OvertimeCalculationMethod.flat_per_minute,
+        server_default=OvertimeCalculationMethod.flat_per_minute.value,
+        nullable=False,
+    )
     # When True, minutes past shift end first recover late-from-start before
     # accruing payable OT. Default False preserves existing payslip behavior.
     enable_late_overtime_balancing: Mapped[bool] = mapped_column(

@@ -43,6 +43,16 @@ import {
 } from "@/lib/salaryRate";
 import { downloadStandardPayslipPdf } from "@/lib/standardPayslipPdf";
 
+/** Unicode punctuation — avoids mojibake when source files are not UTF-8. */
+const PAYSLIP_SEP = "\u00B7";
+const EM_DASH = "\u2014";
+const ELLIPSIS = "\u2026";
+const MINUS_SIGN = "\u2212";
+
+function sep(...parts: (string | false | null | undefined)[]) {
+  return parts.filter(Boolean).join(` ${PAYSLIP_SEP} `);
+}
+
 function money(value: number) {
   return new Intl.NumberFormat("en-PH", {
     style: "currency",
@@ -58,11 +68,11 @@ function isUnfinalizedPending(item: {
 }
 
 function moneyOrPending(value: number, pending: boolean) {
-  return pending ? "â€”" : money(value);
+  return pending ? EM_DASH : money(value);
 }
 
 function hoursLabel(value: number | undefined, pending: boolean) {
-  if (pending) return "â€”";
+  if (pending) return EM_DASH;
   return `${Number(value ?? 0).toFixed(2)} hrs`;
 }
 
@@ -71,7 +81,7 @@ function overtimeHoursLabel(item: {
   overtime_minutes?: number;
   pending?: boolean;
 }) {
-  if (item.pending) return "â€”";
+  if (item.pending) return EM_DASH;
   const hours =
     item.overtime_hours != null
       ? Number(item.overtime_hours)
@@ -301,7 +311,7 @@ export function OwnerPayrollPage() {
               }}
             >
               {finalizeMutation.isPending
-                ? "Finalizingâ€¦"
+                ? `Finalizing${ELLIPSIS}`
                 : isFinalized
                   ? isDemo
                     ? "Sample finalized"
@@ -318,7 +328,7 @@ export function OwnerPayrollPage() {
                 onClick={() => setUnfinalizeOpen(true)}
               >
                 {unfinalizeMutation.isPending
-                  ? "Reopeningâ€¦"
+                  ? `Reopening${ELLIPSIS}`
                   : "Unfinalize Payroll"}
               </Button>
             ) : null}
@@ -327,8 +337,8 @@ export function OwnerPayrollPage() {
             <div className="mt-3 inline-flex items-center gap-2 rounded-xl bg-[var(--owner-well)] px-3 py-2 text-xs font-medium text-[var(--owner-navy)]">
               <span>
                 Period {data.period_start} to {data.period_end}
-                {data.payroll_status ? ` Â· ${data.payroll_status}` : ""}
-                {isFinalized ? " Â· finalized" : ""}
+                {data.payroll_status ? ` ${PAYSLIP_SEP} ${data.payroll_status}` : ""}
+                {isFinalized ? ` ${PAYSLIP_SEP} finalized` : ""}
               </span>
             </div>
           ) : null}
@@ -536,15 +546,17 @@ export function OwnerPayrollPage() {
           <DialogHeader>
             <DialogTitle>
               {payslip
-                ? `${isDemo ? "Sample payslip" : "Payslip"} Â· ${payslip.employee_name}`
+                ? sep(isDemo ? "Sample payslip" : "Payslip", payslip.employee_name)
                 : isDemo
                   ? "Sample payslip"
                   : "Payslip"}
             </DialogTitle>
             {payslip ? (
               <p className="text-sm text-[#6B7280]">
-                {payslip.period_start} to {payslip.period_end} Â·{" "}
-                {payslip.position_title ?? "Employee"}
+                {sep(
+                  `${payslip.period_start} to ${payslip.period_end}`,
+                  payslip.position_title ?? "Employee"
+                )}
               </p>
             ) : null}
           </DialogHeader>
@@ -661,7 +673,7 @@ export function OwnerPayrollPage() {
               onClick={() => unfinalizeMutation.mutate()}
             >
               {unfinalizeMutation.isPending
-                ? "Reopeningâ€¦"
+                ? `Reopening${ELLIPSIS}`
                 : "Unfinalize Payroll"}
             </Button>
           </DialogFooter>
@@ -714,8 +726,14 @@ function PayslipPreview({
   settings: PayslipSettings;
   sample?: boolean;
 }) {
+  const adjustmentAllowance = payslip.payroll_adjustments_allowance_total ?? 0;
+  const adjustmentDeduction = payslip.payroll_adjustments_deduction_total ?? 0;
+  const adjustmentNet =
+    payslip.payroll_adjustments_total ??
+    adjustmentAllowance - adjustmentDeduction;
+
   return (
-    <div className="mx-auto max-w-md rounded-2xl border border-slate-200 bg-white p-6 text-sm shadow-sm">
+    <div className="mx-auto max-w-md rounded-2xl border border-slate-200 bg-white p-5 text-sm shadow-sm">
       {sample ? (
         <div className="mb-4 rounded-xl border border-orange-200 bg-orange-50 px-3 py-2 text-center">
           <p className="text-xs font-bold tracking-wide text-orange-900">
@@ -727,7 +745,7 @@ function PayslipPreview({
         </div>
       ) : null}
       <div
-        className="mx-auto mb-4 w-44 rounded-full py-2 text-center text-sm font-semibold text-[#374151]"
+        className="mx-auto mb-3 w-44 rounded-full py-2 text-center text-sm font-semibold text-[#374151]"
         style={{ backgroundColor: settings.headerColor }}
       >
         {settings.title}
@@ -739,18 +757,24 @@ function PayslipPreview({
           alt={`${businessName} logo`}
         />
       )}
-      <h2 className="border-b border-slate-400 pb-1 text-center text-sm font-semibold">
+      <h2 className="text-center text-sm font-semibold text-[#1F2937]">
         {businessName}
       </h2>
-      <p className="mt-1 text-center text-xs text-[#6B7280]">Business Name</p>
 
-      <Section title={settings.employeeSection}>
-        <Row label="Employee Name" value={payslip.employee_name} />
-        <Row label="No. of Working Days" value={`${payslip.worked_days}`} />
-        <Row label="Period Date" value={`${payslip.period_start} to ${payslip.period_end}`} />
-        <Row label="Position" value={payslip.position_title ?? "Employee"} />
-        <Row label="Employment Type" value={payslip.employment_type.replace("_", "-")} />
-      </Section>
+      <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50/80 px-4 py-3">
+        <p className="text-base font-bold text-[#111827]">{payslip.employee_name}</p>
+        <p className="mt-1 text-xs text-[#6B7280]">
+          {sep(
+            `${payslip.period_start} to ${payslip.period_end}`,
+            payslip.position_title ?? "Employee"
+          )}
+        </p>
+        <p className="mt-0.5 text-xs text-[#9CA3AF]">
+          {payslip.employment_type.replace("_", " ")}
+          {PAYSLIP_SEP} {payslip.worked_days} working day
+          {payslip.worked_days === 1 ? "" : "s"}
+        </p>
+      </div>
 
       {(payslip.pending_attendance_count ?? 0) > 0 ? (
         <p className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
@@ -802,13 +826,19 @@ function PayslipPreview({
         <Row
           label={
             payslip.overtime_minutes || payslip.worked_overtime_minutes
-              ? `Overtime (${Number(
-                  payslip.payable_overtime_minutes ??
-                    payslip.overtime_minutes ??
-                    0
-                ).toFixed(0)} min × ₱${Number(
-                  payslip.overtime_per_minute ?? 0
-                ).toFixed(2)})`
+              ? payslip.overtime_calculation_method === "hourly_statutory"
+                ? `Overtime (${Number(
+                    payslip.payable_overtime_minutes ??
+                      payslip.overtime_minutes ??
+                      0
+                  ).toFixed(0)} min, hourly rate for that day)`
+                : `Overtime (${Number(
+                    payslip.payable_overtime_minutes ??
+                      payslip.overtime_minutes ??
+                      0
+                  ).toFixed(0)} min × ₱${Number(
+                    payslip.overtime_per_minute ?? 0
+                  ).toFixed(2)})`
               : "Overtime"
           }
           value={moneyOrPending(
@@ -885,11 +915,6 @@ function PayslipPreview({
           }`}
           value={money(payslip.rest_day_pay ?? 0)}
         />
-        <Row
-          label="Total Earnings"
-          value={moneyOrPending(payslip.gross_pay, isUnfinalizedPending(payslip))}
-          strong
-        />
       </Section>
 
       {(payslip.rest_day_records?.length ?? 0) > 0 && (
@@ -913,7 +938,7 @@ function PayslipPreview({
                 <span className="font-medium">
                   {record.date}
                   {record.weekday
-                    ? ` Â· ${record.weekday.charAt(0).toUpperCase()}${record.weekday.slice(1)}`
+                    ? ` ${PAYSLIP_SEP} ${record.weekday.charAt(0).toUpperCase()}${record.weekday.slice(1)}`
                     : ""}
                   {record.authorized === false && (
                     <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800">
@@ -933,14 +958,14 @@ function PayslipPreview({
                       minute: "2-digit",
                     })
                   : "--:--"}{" "}
-                Â· Out{" "}
+                {PAYSLIP_SEP} Out{" "}
                 {record.time_out
                   ? new Date(record.time_out).toLocaleTimeString([], {
                       hour: "numeric",
                       minute: "2-digit",
                     })
                   : "--:--"}
-                {record.shift_name ? ` Â· ${record.shift_name}` : ""}
+                {record.shift_name ? ` ${PAYSLIP_SEP} ${record.shift_name}` : ""}
               </p>
             </div>
           ))}
@@ -980,19 +1005,7 @@ function PayslipPreview({
         <Row
           label="Attendance Deduction Total"
           value={moneyOrPending(payslip.deductions, isUnfinalizedPending(payslip))}
-        />
-        <Row label="Absent Days" value={`${payslip.absent_days}`} />
-        <Row
-          label="Paid Leave"
-          value={`${payslip.paid_leave_days ?? 0} day${
-            (payslip.paid_leave_days ?? 0) === 1 ? "" : "s"
-          }`}
-        />
-        <Row
-          label="Unpaid Leave"
-          value={`${payslip.unpaid_leave_days ?? 0} day${
-            (payslip.unpaid_leave_days ?? 0) === 1 ? "" : "s"
-          }`}
+          strong
         />
       </Section>
 
@@ -1003,7 +1016,7 @@ function PayslipPreview({
           payslip.payroll_adjustments!.map((item) => (
             <div key={item.id} className="space-y-1 border-b border-slate-100 pb-2 last:border-b-0">
               <Row
-                label={`${item.display_name}${item.kind === "allowance" ? " (+)" : " (âˆ’)"}`}
+                label={`${item.display_name}${item.kind === "allowance" ? " (+)" : ` (${MINUS_SIGN})`}`}
                 value={money(item.amount)}
               />
               {item.description ? (
@@ -1019,7 +1032,29 @@ function PayslipPreview({
         )}
       </Section>
 
-      <Section title={settings.netPaySection} color={settings.netColor}>
+      <Section title="Payroll Summary" color={settings.netColor}>
+        <Row
+          label="Total Earnings (Gross Pay)"
+          value={moneyOrPending(payslip.gross_pay, isUnfinalizedPending(payslip))}
+        />
+        <Row
+          label="Attendance Deductions"
+          value={moneyOrPending(payslip.deductions, isUnfinalizedPending(payslip))}
+        />
+        {(adjustmentAllowance > 0 || adjustmentDeduction > 0) && (
+          <>
+            {adjustmentAllowance > 0 ? (
+              <Row label="Adjustment Allowances" value={money(adjustmentAllowance)} />
+            ) : null}
+            {adjustmentDeduction > 0 ? (
+              <Row label="Adjustment Deductions" value={money(adjustmentDeduction)} />
+            ) : null}
+            <Row
+              label="Net Adjustments"
+              value={money(adjustmentNet)}
+            />
+          </>
+        )}
         <Row
           label="Base Net Pay"
           value={moneyOrPending(
@@ -1027,14 +1062,42 @@ function PayslipPreview({
             isUnfinalizedPending(payslip)
           )}
         />
+        <div className="rounded-lg border border-emerald-200 bg-emerald-50/90 px-3 py-2">
+          <Row
+            label="Final Net Pay"
+            value={moneyOrPending(
+              payslip.final_net_pay ?? payslip.net_pay,
+              isUnfinalizedPending(payslip)
+            )}
+            strong
+          />
+        </div>
+      </Section>
+
+      <Section title="Payment & Status" color="#E0E7FF">
+        <Row label="Pay Rate" value={formatSalaryRate(payslip)} />
+        <Row label="Employment Type" value={payslip.employment_type.replace("_", "-")} />
+        <Row label="Absent Days" value={`${payslip.absent_days}`} />
         <Row
-          label="Final Net Pay"
-          value={moneyOrPending(
-            payslip.final_net_pay ?? payslip.net_pay,
-            isUnfinalizedPending(payslip)
-          )}
-          strong
+          label="Paid Leave"
+          value={`${payslip.paid_leave_days ?? 0} day${
+            (payslip.paid_leave_days ?? 0) === 1 ? "" : "s"
+          }`}
         />
+        <Row
+          label="Unpaid Leave"
+          value={`${payslip.unpaid_leave_days ?? 0} day${
+            (payslip.unpaid_leave_days ?? 0) === 1 ? "" : "s"
+          }`}
+        />
+        {(payslip.pending_attendance_count ?? 0) > 0 ? (
+          <p className="text-xs text-amber-800">
+            Payroll status: Pending attendance ({payslip.pending_attendance_count}{" "}
+            open)
+          </p>
+        ) : (
+          <p className="text-xs text-[#6B7280]">Payroll status: Current</p>
+        )}
       </Section>
       {settings.notes && (
         <p className="mt-3 text-xs italic text-[#6B7280]">{settings.notes}</p>
@@ -1316,14 +1379,14 @@ function Section({
   color?: string;
 }) {
   return (
-    <div className="mt-4">
+    <div className="mt-4 overflow-hidden rounded-xl border border-slate-100">
       <div
-        className="px-2 py-1 text-xs font-semibold text-[#1F2937]"
+        className="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-[#1F2937]"
         style={{ backgroundColor: color ?? "#E5E7EB" }}
       >
         {title}
       </div>
-      <div className="mt-2 space-y-2">{children}</div>
+      <div className="space-y-0 bg-white px-3 py-2">{children}</div>
     </div>
   );
 }

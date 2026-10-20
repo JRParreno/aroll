@@ -8,7 +8,7 @@ const STEP_ORDER = [
   "payroll",
   "attendance_policy",
   "holidays",
-  "rest_day",
+  "leave_policy",
   "location",
 ];
 

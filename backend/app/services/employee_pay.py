@@ -146,7 +146,8 @@ def resolve_employee_pay_context(
       minute_rate = hourly_rate / 60  (undertime only)
       scheduled_day_value = hourly_rate × scheduled_hours
 
-    Late pesos and overtime pesos do not use minute_rate.
+    Late pesos use the owner late rate. Overtime uses hourly_rate.
+    Undertime uses minute_rate.
 
     Monthly has no conversion divisor. It uses the daily-rate path when a
     daily_rate exists; otherwise regular pay is 0. Do not invent a monthly

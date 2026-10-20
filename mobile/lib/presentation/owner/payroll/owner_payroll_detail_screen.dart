@@ -213,7 +213,6 @@ class _OwnerPayrollDetailScreenState extends State<OwnerPayrollDetailScreen> {
   Widget build(BuildContext context) {
     final payslip = _payslip;
     final dailyRate = parsePayrollAmount(payslip?['daily_rate']);
-    final workedDays = parsePayrollAmount(payslip?['worked_days']).toInt();
     final basicSalary = parsePayrollAmount(payslip?['regular_pay']);
 
     return OwnerShell(
@@ -366,12 +365,16 @@ class _OwnerPayrollDetailScreenState extends State<OwnerPayrollDetailScreen> {
                         ),
                         const SizedBox(height: 12),
                         _SectionCard(
-                          title: 'Payroll Breakdown',
-                          icon: Icons.receipt_long_outlined,
+                          title: 'Earnings',
+                          icon: Icons.payments_outlined,
                           children: [
                             _DetailRow(
                               ownerSalaryRateLabel(),
                               ownerSalaryRate(payslip),
+                            ),
+                            _DetailRow(
+                              'Hours Worked',
+                              '${parsePayrollAmount(payslip['hours_worked']).toStringAsFixed(2)} hrs',
                             ),
                             _DetailRow(
                               'Basic Salary',
@@ -393,6 +396,10 @@ class _OwnerPayrollDetailScreenState extends State<OwnerPayrollDetailScreen> {
                                   payslip['overtime_per_minute'],
                                 );
                                 if (mins <= 0) return 'Overtime Pay';
+                                if (payslip['overtime_calculation_method'] ==
+                                    'hourly_statutory') {
+                                  return 'Overtime Pay (${mins.toStringAsFixed(0)} min, hourly rate for that day)';
+                                }
                                 return 'Overtime Pay (${mins.toStringAsFixed(0)} min × ₱${rate.toStringAsFixed(2)})';
                               }(),
                               ownerPayrollMoney(
@@ -416,7 +423,7 @@ class _OwnerPayrollDetailScreenState extends State<OwnerPayrollDetailScreen> {
                                 '${parsePayrollAmount(payslip['rejected_overtime_minutes']).toStringAsFixed(0)} min (worked, not paid)',
                               ),
                             _DetailRow(
-                              'Holiday Pay',
+                              'Holiday Premium',
                               ownerPayrollMoney(
                                 parsePayrollAmount(payslip['holiday_pay']),
                               ),
@@ -433,12 +440,13 @@ class _OwnerPayrollDetailScreenState extends State<OwnerPayrollDetailScreen> {
                                 parsePayrollAmount(payslip['rest_day_pay']),
                               ),
                             ),
-                            _DetailRow(
-                              'Gross Salary',
-                              ownerPayrollMoney(
-                                parsePayrollAmount(payslip['gross_pay']),
-                              ),
-                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        _SectionCard(
+                          title: 'Deductions',
+                          icon: Icons.remove_circle_outline,
+                          children: [
                             _DetailRow(
                               () {
                                 final mins = parsePayrollAmount(
@@ -463,7 +471,7 @@ class _OwnerPayrollDetailScreenState extends State<OwnerPayrollDetailScreen> {
                                   payslip['undertime_deductions'],
                                 );
                                 if (mins <= 0) return 'Undertime Deduction';
-                                final rate = amt / mins;
+                                final rate = mins > 0 ? amt / mins : 0.0;
                                 return 'Undertime (${mins.toStringAsFixed(0)} min × ₱${rate.toStringAsFixed(2)})';
                               }(),
                               ownerPayrollMoney(
@@ -477,7 +485,39 @@ class _OwnerPayrollDetailScreenState extends State<OwnerPayrollDetailScreen> {
                               ownerPayrollMoney(
                                 parsePayrollAmount(payslip['deductions']),
                               ),
+                              highlight: true,
                             ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        _SectionCard(
+                          title: 'Payroll Summary',
+                          icon: Icons.summarize_outlined,
+                          children: [
+                            _DetailRow(
+                              'Total Earnings (Gross Pay)',
+                              ownerPayrollMoney(
+                                parsePayrollAmount(payslip['gross_pay']),
+                              ),
+                            ),
+                            _DetailRow(
+                              'Attendance Deductions',
+                              ownerPayrollMoney(
+                                parsePayrollAmount(payslip['deductions']),
+                              ),
+                            ),
+                            if (parsePayrollAmount(
+                                  payslip['payroll_adjustments_total'],
+                                ) !=
+                                0)
+                              _DetailRow(
+                                'Net Adjustments',
+                                ownerPayrollMoney(
+                                  parsePayrollAmount(
+                                    payslip['payroll_adjustments_total'],
+                                  ),
+                                ),
+                              ),
                             _DetailRow(
                               'Base Net Pay',
                               ownerPayrollMoney(
@@ -486,6 +526,52 @@ class _OwnerPayrollDetailScreenState extends State<OwnerPayrollDetailScreen> {
                                 ),
                               ),
                             ),
+                            _DetailRow(
+                              'Final Net Pay',
+                              ownerPayrollMoney(
+                                parsePayrollAmount(
+                                  payslip['final_net_pay'] ??
+                                      payslip['net_pay'],
+                                ),
+                              ),
+                              highlight: true,
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        _SectionCard(
+                          title: 'Payment & Status',
+                          icon: Icons.info_outline,
+                          children: [
+                            _DetailRow(
+                              'Pay Rate',
+                              ownerSalaryRate(payslip),
+                            ),
+                            _DetailRow(
+                              'Employment Type',
+                              ownerEmploymentLabel(
+                                '${payslip['employment_type']}',
+                              ),
+                            ),
+                            if (parsePayrollAmount(
+                                  payslip['pending_attendance_count'],
+                                ) >
+                                0)
+                              const _DetailRow(
+                                'Payroll Status',
+                                'Pending — open attendance not finalized',
+                              )
+                            else if (payslip['has_unresolved_historical_rate'] ==
+                                true)
+                              const _DetailRow(
+                                'Payroll Status',
+                                'Historical rate required',
+                              )
+                            else
+                              const _DetailRow(
+                                'Payroll Status',
+                                'Current',
+                              ),
                           ],
                         ),
                         const SizedBox(height: 12),

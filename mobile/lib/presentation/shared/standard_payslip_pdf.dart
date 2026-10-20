@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:aroll_mobile/core/utils/format.dart';
 import 'package:aroll_mobile/domain/entities/employee_portal.dart';
 import 'package:aroll_mobile/presentation/employee/employee_ui.dart';
 import 'package:aroll_mobile/presentation/owner/payroll/owner_payroll_format.dart';
@@ -8,6 +9,15 @@ import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
+
+/// Narrow receipt width in points (~4.17 in). Height grows with content.
+const double payslipReceiptWidthPt = 300;
+
+num? _optionalPayslipRate(Object? value) {
+  if (value == null) return null;
+  final amount = parsePayrollAmount(value);
+  return amount > 0 ? amount : null;
+}
 
 /// Shared Aroll+ payslip PDF — mirrors Employee Mobile payslip layout.
 class StandardPayslipPdfData {
@@ -21,8 +31,8 @@ class StandardPayslipPdfData {
     required this.positionTitle,
     required this.employmentType,
     required this.hoursWorkedLabel,
-    required this.salaryRateLabel,
-    required this.salaryRateValue,
+    required this.dailyRateValue,
+    required this.hourlyRateValue,
     required this.basicSalary,
     required this.leavePay,
     required this.overtimePay,
@@ -36,9 +46,6 @@ class StandardPayslipPdfData {
     required this.deductionsTotal,
     required this.baseNetPay,
     required this.finalNetPay,
-    this.restDayName,
-    this.restDayDays = 0,
-    this.restDayRecords = const [],
     this.adjustments = const [],
   });
 
@@ -51,8 +58,8 @@ class StandardPayslipPdfData {
   final String positionTitle;
   final String employmentType;
   final String hoursWorkedLabel;
-  final String salaryRateLabel;
-  final String salaryRateValue;
+  final String dailyRateValue;
+  final String hourlyRateValue;
   final String basicSalary;
   final String leavePay;
   final String overtimePay;
@@ -66,9 +73,6 @@ class StandardPayslipPdfData {
   final String deductionsTotal;
   final String baseNetPay;
   final String finalNetPay;
-  final String? restDayName;
-  final int restDayDays;
-  final List<StandardPayslipRestDayRow> restDayRecords;
   final List<StandardPayslipAdjustmentRow> adjustments;
 
   factory StandardPayslipPdfData.fromEmployee(EmployeePayslip payslip) {
@@ -83,8 +87,16 @@ class StandardPayslipPdfData {
       positionTitle: payslip.positionTitle ?? 'Employee',
       employmentType: titleCase(payslip.employmentType),
       hoursWorkedLabel: payslip.hoursWorked.toStringAsFixed(1),
-      salaryRateLabel: salaryRateRowLabel(),
-      salaryRateValue: salaryRateDisplayFromPayslip(payslip),
+      dailyRateValue: payslipRateFieldValues(
+        payBasis: payslip.payBasis,
+        dailyRate: payslip.dailyRate,
+        hourlyRate: payslip.hourlyRate,
+      ).daily,
+      hourlyRateValue: payslipRateFieldValues(
+        payBasis: payslip.payBasis,
+        dailyRate: payslip.dailyRate,
+        hourlyRate: payslip.hourlyRate,
+      ).hourly,
       basicSalary: money(payslip.regularPay),
       leavePay: money(payslip.leavePay),
       overtimePay: money(payslip.overtimePay),
@@ -100,19 +112,6 @@ class StandardPayslipPdfData {
       deductionsTotal: money(payslip.deductions),
       baseNetPay: money(payslip.baseNetPay ?? payslip.netPay),
       finalNetPay: money(payslip.displayNetPay),
-      restDayName: payslip.restDayName,
-      restDayDays: payslip.restDayDays,
-      restDayRecords: payslip.restDayRecords
-          .map(
-            (r) => StandardPayslipRestDayRow(
-              dateLabel:
-                  '${shortDate(r.date)}${r.weekday.isEmpty ? '' : ' · ${titleCase(r.weekday)}'}',
-              timeLabel:
-                  'In ${_hhmm(r.timeIn)} · Out ${_hhmm(r.timeOut)}${r.shiftName == null ? '' : ' · ${r.shiftName}'}',
-              premium: money(r.premiumPay),
-            ),
-          )
-          .toList(),
       adjustments: payslip.payrollAdjustments
           .map(
             (a) => StandardPayslipAdjustmentRow(
@@ -134,11 +133,6 @@ class StandardPayslipPdfData {
     final periodEnd = '${payslip['period_end'] ?? ''}';
     final payDate = '${payslip['pay_date'] ?? periodEnd}';
     final restPct = parsePayrollAmount(payslip['rest_day_premium_percent']);
-    final restRecords =
-        (payslip['rest_day_records'] as List<dynamic>? ?? const [])
-            .whereType<Map>()
-            .map((e) => Map<String, dynamic>.from(e))
-            .toList();
     final adjustments =
         (payslip['payroll_adjustments'] as List<dynamic>? ?? const [])
             .whereType<Map>()
@@ -157,8 +151,20 @@ class StandardPayslipPdfData {
       employmentType: ownerEmploymentLabel('${payslip['employment_type']}'),
       hoursWorkedLabel:
           parsePayrollAmount(payslip['hours_worked']).toStringAsFixed(1),
-      salaryRateLabel: ownerSalaryRateLabel(),
-      salaryRateValue: ownerSalaryRate(payslip),
+      dailyRateValue: payslipRateFieldValues(
+        payBasis: '${payslip['pay_basis'] ?? 'daily'}',
+        dailyRate: _optionalPayslipRate(payslip['daily_rate']),
+        hourlyRate: _optionalPayslipRate(
+          payslip['hourly_rate'] ?? payslip['hourly_rate_configured'],
+        ),
+      ).daily,
+      hourlyRateValue: payslipRateFieldValues(
+        payBasis: '${payslip['pay_basis'] ?? 'daily'}',
+        dailyRate: _optionalPayslipRate(payslip['daily_rate']),
+        hourlyRate: _optionalPayslipRate(
+          payslip['hourly_rate'] ?? payslip['hourly_rate_configured'],
+        ),
+      ).hourly,
       basicSalary: ownerPayrollMoney(parsePayrollAmount(payslip['regular_pay'])),
       leavePay: ownerPayrollMoney(parsePayrollAmount(payslip['leave_pay'])),
       overtimePay:
@@ -185,24 +191,6 @@ class StandardPayslipPdfData {
       finalNetPay: ownerPayrollMoney(
         parsePayrollAmount(payslip['final_net_pay'] ?? payslip['net_pay']),
       ),
-      restDayName: payslip['rest_day_name'] as String?,
-      restDayDays: parsePayrollAmount(payslip['rest_day_days']).toInt(),
-      restDayRecords: restRecords
-          .map(
-            (r) {
-              final weekday = '${r['weekday'] ?? ''}';
-              return StandardPayslipRestDayRow(
-                dateLabel:
-                    '${_fmtDate('${r['date']}')}${weekday.isEmpty ? '' : ' · ${titleCase(weekday)}'}',
-                timeLabel:
-                    'In ${_hhmmIso('${r['time_in'] ?? ''}')} · Out ${_hhmmIso('${r['time_out'] ?? ''}')}${r['shift_name'] == null || '${r['shift_name']}'.isEmpty ? '' : ' · ${r['shift_name']}'}',
-                premium: ownerPayrollMoney(
-                  parsePayrollAmount(r['premium_pay']),
-                ),
-              );
-            },
-          )
-          .toList(),
       adjustments: adjustments
           .map(
             (a) => StandardPayslipAdjustmentRow(
@@ -215,18 +203,6 @@ class StandardPayslipPdfData {
           .toList(),
     );
   }
-}
-
-class StandardPayslipRestDayRow {
-  const StandardPayslipRestDayRow({
-    required this.dateLabel,
-    required this.timeLabel,
-    required this.premium,
-  });
-
-  final String dateLabel;
-  final String timeLabel;
-  final String premium;
 }
 
 class StandardPayslipAdjustmentRow {
@@ -264,29 +240,29 @@ Future<List<int>> buildStandardPayslipPdfBytes(
 
   final sectionGray = PdfColor.fromInt(0xFFE5E7EB);
   final earningsColor = PdfColor.fromInt(0xFFFFE681);
-  final restDayColor = PdfColor.fromInt(0xFFDBEAFE);
   final deductionsColor = PdfColor.fromInt(0xFFFFC5C5);
   final adjustmentsColor = PdfColor.fromInt(0xFFFDE68A);
   final netColor = PdfColor.fromInt(0xFFC8F7CE);
   final headerPill = PdfColor.fromInt(0xFF8D8D8D);
   final muted = PdfColor.fromInt(0xFF6B7280);
   final divider = PdfColor.fromInt(0xFFD1D5DB);
-  final restCardBg = PdfColor.fromInt(0xFFF0F9FF);
-  final restCardBorder = PdfColor.fromInt(0xFFBAE6FD);
-  final restAccent = PdfColor.fromInt(0xFF075985);
 
   final doc = pw.Document(
     theme: pw.ThemeData.withFont(base: regular, bold: bold),
   );
 
-  // Avoid MultiPage + large rounded border containers (causes gray artifacts).
   doc.addPage(
-    pw.MultiPage(
-      pageFormat: PdfPageFormat.a4,
-      margin: const pw.EdgeInsets.fromLTRB(40, 36, 40, 36),
+    pw.Page(
+      pageFormat: const PdfPageFormat(
+        payslipReceiptWidthPt,
+        double.infinity,
+        marginAll: 14,
+      ),
       theme: pw.ThemeData.withFont(base: regular, bold: bold),
       build: (context) {
-        return [
+        return pw.Column(
+          crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+          children: [
           pw.Center(
             child: pw.Container(
               padding: const pw.EdgeInsets.symmetric(
@@ -362,7 +338,8 @@ Future<List<int>> buildStandardPayslipPdfBytes(
           _dataRow('Hours Worked', data.hoursWorkedLabel, regular, bold),
           pw.SizedBox(height: 10),
           _sectionHeader('Earnings/Income', earningsColor, bold),
-          _dataRow(data.salaryRateLabel, data.salaryRateValue, regular, bold),
+          _dataRow('Daily Rate', data.dailyRateValue, regular, bold),
+          _dataRow('Hourly Rate', data.hourlyRateValue, regular, bold),
           _dataRow('Basic Salary', data.basicSalary, regular, bold),
           _dataRow('Leave Pay', data.leavePay, regular, bold),
           _dataRow('Overtime', data.overtimePay, regular, bold),
@@ -374,66 +351,6 @@ Future<List<int>> buildStandardPayslipPdfBytes(
             bold,
           ),
           _dataRow('Gross Pay', data.grossPay, regular, bold, strong: true),
-          if (data.restDayRecords.isNotEmpty) ...[
-            pw.SizedBox(height: 10),
-            _sectionHeader('Rest Day Work', restDayColor, bold),
-            _dataRow(
-              'Rest day',
-              data.restDayName == null || data.restDayName!.isEmpty
-                  ? 'Owner-approved rest day work'
-                  : titleCase(data.restDayName!),
-              regular,
-              bold,
-            ),
-            _dataRow('Days worked', '${data.restDayDays}', regular, bold),
-            ...data.restDayRecords.map(
-              (r) => pw.Padding(
-                padding: const pw.EdgeInsets.only(top: 8),
-                child: pw.Container(
-                  width: double.infinity,
-                  padding: const pw.EdgeInsets.all(10),
-                  decoration: pw.BoxDecoration(
-                    color: restCardBg,
-                    borderRadius: pw.BorderRadius.circular(8),
-                    border: pw.Border.all(color: restCardBorder),
-                  ),
-                  child: pw.Column(
-                    crossAxisAlignment: pw.CrossAxisAlignment.start,
-                    children: [
-                      pw.Row(
-                        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                        children: [
-                          pw.Expanded(
-                            child: pw.Text(
-                              r.dateLabel,
-                              style: pw.TextStyle(font: bold, fontSize: 10),
-                            ),
-                          ),
-                          pw.Text(
-                            r.premium,
-                            style: pw.TextStyle(
-                              font: bold,
-                              fontSize: 10,
-                              color: restAccent,
-                            ),
-                          ),
-                        ],
-                      ),
-                      pw.SizedBox(height: 4),
-                      pw.Text(
-                        r.timeLabel,
-                        style: pw.TextStyle(
-                          font: regular,
-                          fontSize: 9,
-                          color: muted,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ],
           pw.SizedBox(height: 10),
           _sectionHeader('Deductions', deductionsColor, bold),
           _dataRow('Late Deduction', data.lateDeductions, regular, bold),
@@ -492,7 +409,8 @@ Future<List<int>> buildStandardPayslipPdfBytes(
             bold,
             strong: true,
           ),
-        ];
+          ],
+        );
       },
     ),
   );
@@ -525,7 +443,7 @@ pw.Widget _sectionHeader(String title, PdfColor color, pw.Font bold) {
     color: color,
     child: pw.Text(
       title,
-      style: pw.TextStyle(font: bold, fontSize: 11),
+      style: pw.TextStyle(font: bold, fontSize: 9),
     ),
   );
 }
@@ -554,7 +472,7 @@ pw.Widget _dataRow(
           flex: 5,
           child: pw.Text(
             label,
-            style: pw.TextStyle(font: regular, fontSize: 11),
+            style: pw.TextStyle(font: regular, fontSize: 9),
           ),
         ),
         pw.SizedBox(width: 12),
@@ -565,25 +483,13 @@ pw.Widget _dataRow(
             textAlign: pw.TextAlign.right,
             style: pw.TextStyle(
               font: strong ? bold : regular,
-              fontSize: 11,
+              fontSize: 9,
             ),
           ),
         ),
       ],
     ),
   );
-}
-
-String _hhmm(DateTime? value) {
-  if (value == null) return '--:--';
-  return '${value.hour.toString().padLeft(2, '0')}:'
-      '${value.minute.toString().padLeft(2, '0')}';
-}
-
-String _hhmmIso(String iso) {
-  if (iso.isEmpty) return '--:--';
-  final parsed = DateTime.tryParse(iso);
-  return _hhmm(parsed);
 }
 
 String _fmtDate(String iso) {

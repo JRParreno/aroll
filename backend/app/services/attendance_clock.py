@@ -946,6 +946,12 @@ def clock_out_employee(
 
     db.commit()
     db.refresh(record)
+    try:
+        from app.services.activity_notifications import notify_overtime_pending_if_needed
+
+        notify_overtime_pending_if_needed(db, record)
+    except Exception:
+        pass
 
     attendance_log.info(
         "ATTENDANCE_AUDIT action=clock_out employee_id=%s result=OK "

@@ -610,3 +610,137 @@ def test_old_snapshot_without_holiday_field_is_not_rewritten():
         )
     assert overlaid[0]["shift_net"] == 200.0
     assert "holiday_pay" not in overlaid[0]
+
+
+def test_scenario_1_ordinary_day_hourly_double_shift_on_time():
+    """Kim: 2026-09-28, ₱100/hr, two evening shifts on time, no holiday or rest."""
+    evening, evening_asg = _shift(time(17, 0), time(19, 0), "Evening")
+    morning, morning_asg = _shift(time(19, 30), time(21, 0), "Morning")
+    slip = _payslip(
+        pay_basis=PayBasis.hourly,
+        daily_rate=None,
+        hourly_rate=100.0,
+        holidays=[],
+        rows=[
+            (_punch(evening_asg, _utc(17, 0), _utc(19, 0)), evening_asg, evening),
+            (_punch(morning_asg, _utc(19, 30), _utc(21, 0)), morning_asg, morning),
+        ],
+        scheduled=[(evening_asg, evening), (morning_asg, morning)],
+    )
+    rows = _rows(slip)
+    assert len(rows) == 2
+    assert {row["shift_assignment_id"] for row in rows} == {
+        str(evening_asg.id),
+        str(morning_asg.id),
+    }
+    assert slip["regular_pay"] == 350.0
+    assert slip["overtime_pay"] == 0.0
+    assert slip["holiday_pay"] == 0.0
+    assert slip["rest_day_pay"] == 0.0
+    assert slip["gross_pay"] == 350.0
+
+
+def test_scenario_2_rest_day_daily_double_shift_on_time():
+    """Ali: ₱350/day, both evening shifts on rest day, 30% rest premium."""
+    evening, evening_asg = _shift(time(17, 0), time(19, 0), "Evening")
+    morning, morning_asg = _shift(time(19, 30), time(21, 0), "Morning")
+    evening_asg.is_rest_day_work = True
+    morning_asg.is_rest_day_work = True
+    slip = _payslip(
+        pay_basis=PayBasis.daily,
+        daily_rate=350.0,
+        hourly_rate=None,
+        rest_premium=30.0,
+        holidays=[],
+        rows=[
+            (_punch(evening_asg, _utc(17, 0), _utc(19, 0)), evening_asg, evening),
+            (_punch(morning_asg, _utc(19, 30), _utc(21, 0)), morning_asg, morning),
+        ],
+        scheduled=[(evening_asg, evening), (morning_asg, morning)],
+    )
+    assert slip["regular_pay"] == 350.0
+    assert slip["rest_day_pay"] == 105.0
+    assert slip["overtime_pay"] == 0.0
+    assert slip["gross_pay"] == 455.0
+
+
+def test_scenario_6_company_holiday_hourly_double_shift_on_time():
+    """Kim: company holiday mult 2, paid scheduled day, on-time hourly double shift."""
+    evening, evening_asg = _shift(time(17, 0), time(19, 0), "Evening")
+    morning, morning_asg = _shift(time(19, 30), time(21, 0), "Morning")
+    slip = _payslip(
+        pay_basis=PayBasis.hourly,
+        daily_rate=None,
+        hourly_rate=100.0,
+        holidays=[_holiday()],
+        rows=[
+            (_punch(evening_asg, _utc(17, 0), _utc(19, 0)), evening_asg, evening),
+            (_punch(morning_asg, _utc(19, 30), _utc(21, 0)), morning_asg, morning),
+        ],
+        scheduled=[(evening_asg, evening), (morning_asg, morning)],
+    )
+    assert slip["regular_pay"] == 350.0
+    assert slip["holiday_pay"] == 350.0
+    assert slip["overtime_pay"] == 0.0
+    assert slip["gross_pay"] == 700.0
+
+
+def test_scenario_3_mixed_rates_undertime_only_reduces_hourly_shift():
+    """Daily shift 1 keeps ₱350; shift 2 hourly undertime does not touch shift 1."""
+    evening, evening_asg = _shift(time(17, 0), time(19, 0), "Shift 1")
+    late, late_asg = _shift(time(19, 30), time(21, 0), "Shift 2")
+    late_asg.is_rest_day_work = True
+    daily_punch = _punch(evening_asg, _utc(17, 0), _utc(19, 0))
+    daily_punch.pay_basis_at_completion = PayBasis.daily
+    daily_punch.daily_rate_at_completion = 350.0
+    daily_punch.hourly_rate_at_completion = None
+    hourly_punch = _punch(late_asg, _utc(19, 30), _utc(20, 0))
+    hourly_punch.pay_basis_at_completion = PayBasis.hourly
+    hourly_punch.hourly_rate_at_completion = 100.0
+    hourly_punch.daily_rate_at_completion = None
+    slip = _payslip(
+        pay_basis=PayBasis.hourly,
+        daily_rate=None,
+        hourly_rate=100.0,
+        rest_premium=30.0,
+        rows=[
+            (daily_punch, evening_asg, evening),
+            (hourly_punch, late_asg, late),
+        ],
+        scheduled=[(evening_asg, evening), (late_asg, late)],
+    )
+    rows = _rows(slip)
+    assert len(rows) == 2
+    daily_row = next(r for r in rows if r.get("pay_basis_used") == "daily")
+    hourly_row = next(r for r in rows if r.get("pay_basis_used") == "hourly")
+    assert slip["regular_pay"] == 500.0
+    assert daily_row["shift_net"] == 350.0
+    assert hourly_row["undertime_minutes"] == 60.0
+    assert hourly_row["shift_net"] == 65.0
+    assert slip["deductions"] == 100.0
+    assert slip["net_pay"] == 415.0
+    assert slip["rest_day_pay"] == 15.0
+
+
+def test_scenario_8_company_holiday_and_rest_day_additive_premiums():
+    """Two evening shifts: regular ₱350 + holiday ₱350 + rest ₱105 = ₱805 gross."""
+    first, first_asg = _shift(time(17, 0), time(19, 0), "Shift 1")
+    second, second_asg = _shift(time(19, 30), time(21, 0), "Shift 2")
+    first_asg.is_rest_day_work = True
+    second_asg.is_rest_day_work = True
+    slip = _payslip(
+        pay_basis=PayBasis.hourly,
+        daily_rate=None,
+        hourly_rate=100.0,
+        holidays=[_holiday()],
+        rest_premium=30.0,
+        rows=[
+            (_punch(first_asg, _utc(17, 0), _utc(19, 0)), first_asg, first),
+            (_punch(second_asg, _utc(19, 30), _utc(21, 0)), second_asg, second),
+        ],
+        scheduled=[(first_asg, first), (second_asg, second)],
+    )
+    assert slip["regular_pay"] == 350.0
+    assert slip["holiday_pay"] == 350.0
+    assert slip["rest_day_pay"] == 105.0
+    assert slip["gross_pay"] == 805.0

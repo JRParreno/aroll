@@ -11,6 +11,7 @@ import 'package:aroll_mobile/domain/entities/employee_portal.dart';
 import 'package:aroll_mobile/domain/entities/user_session.dart';
 import 'package:aroll_mobile/presentation/auth/sign_out_dialog.dart';
 import 'package:aroll_mobile/presentation/shared/app_ui.dart';
+import 'package:aroll_mobile/presentation/employee/employee_in_app_banner.dart';
 import 'package:aroll_mobile/presentation/shared/tenant_mode_banner.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -165,7 +166,8 @@ class EmployeeScaffold extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return EmployeeInAppNotificationHost(
+      child: Scaffold(
       backgroundColor: EmployeeColors.scaffold,
       appBar: AppBar(
         backgroundColor: EmployeeColors.scaffold,
@@ -197,6 +199,7 @@ class EmployeeScaffold extends StatelessWidget {
         ),
       ),
       bottomNavigationBar: EmployeeBottomNav(selectedIndex: selectedIndex),
+    ),
     );
   }
 }

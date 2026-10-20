@@ -18,6 +18,7 @@ class EmployeeProfile extends Equatable {
     required this.businessType,
     required this.ownerName,
     this.ownerEmail,
+    this.recoveryEmail,
     required this.faceRegistrationStatus,
     required this.branding,
     this.timezone,
@@ -39,6 +40,7 @@ class EmployeeProfile extends Equatable {
   final String? ownerName;
   /// Registered owner email from business registration (not Business.email).
   final String? ownerEmail;
+  final String? recoveryEmail;
   final String faceRegistrationStatus;
   final BusinessBrandingSettings? branding;
   final String? timezone;
@@ -62,6 +64,7 @@ class EmployeeProfile extends Equatable {
         businessType,
         ownerName,
         ownerEmail,
+        recoveryEmail,
         faceRegistrationStatus,
         branding,
         timezone,

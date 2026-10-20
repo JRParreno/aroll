@@ -222,6 +222,12 @@ def review_ot_approval(
     db.add(record)
     db.commit()
     db.refresh(record)
+    try:
+        from app.services.activity_notifications import notify_overtime_reviewed
+
+        notify_overtime_reviewed(db, record, approved=approve)
+    except Exception:
+        pass
     return record
 
 

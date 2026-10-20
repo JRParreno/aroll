@@ -352,6 +352,7 @@ class SetupListTileCard extends StatelessWidget {
     this.iconColor,
     this.iconBackground,
     this.trailing,
+    this.actions,
     this.onTap,
   });
 
@@ -361,6 +362,7 @@ class SetupListTileCard extends StatelessWidget {
   final Color? iconColor;
   final Color? iconBackground;
   final Widget? trailing;
+  final List<Widget>? actions;
   final VoidCallback? onTap;
 
   @override
@@ -369,35 +371,109 @@ class SetupListTileCard extends StatelessWidget {
     return SetupSurfaceCard(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-      child: ListTile(
-        contentPadding: EdgeInsets.zero,
-        dense: true,
-        onTap: onTap,
-        leading: Container(
-          width: 36,
-          height: 36,
-          decoration: BoxDecoration(
-            color: iconBackground ?? SetupUi.wellOf(context),
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Icon(leadingIcon, size: 18, color: resolvedIconColor),
-        ),
-        title: Text(
-          title,
-          style: const TextStyle(
-            fontSize: 13.5,
-            fontWeight: FontWeight.w600,
-            color: AppColors.textPrimary,
-          ),
-        ),
-        subtitle: subtitle == null
-            ? null
-            : Text(
-                subtitle!,
-                style: appMutedStyle().copyWith(fontSize: 11.5),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            dense: true,
+            onTap: onTap,
+            leading: Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: iconBackground ?? SetupUi.wellOf(context),
+                borderRadius: BorderRadius.circular(10),
               ),
-        trailing: trailing,
+              child: Icon(leadingIcon, size: 18, color: resolvedIconColor),
+            ),
+            title: Text(
+              title,
+              style: const TextStyle(
+                fontSize: 13.5,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            subtitle: subtitle == null
+                ? null
+                : Text(
+                    subtitle!,
+                    style: appMutedStyle().copyWith(fontSize: 11.5),
+                  ),
+            trailing: trailing,
+          ),
+          if (actions != null && actions!.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(left: 52, bottom: 6),
+              child: Wrap(
+                spacing: 4,
+                runSpacing: 0,
+                alignment: WrapAlignment.end,
+                children: actions!,
+              ),
+            ),
+        ],
       ),
+    );
+  }
+}
+
+class OvertimeCalculationMethodField extends StatelessWidget {
+  const OvertimeCalculationMethodField({
+    super.key,
+    required this.value,
+    required this.enabled,
+    required this.onChanged,
+    this.decoration,
+  });
+
+  static const options = <(String, String)>[
+    ('flat_per_minute', 'Flat rate per overtime minute'),
+    ('hourly_statutory', 'Hourly-based overtime calculation'),
+  ];
+
+  final String value;
+  final bool enabled;
+  final ValueChanged<String> onChanged;
+  final InputDecoration? decoration;
+
+  @override
+  Widget build(BuildContext context) {
+    return DropdownButtonFormField<String>(
+      initialValue: value,
+      isExpanded: true,
+      isDense: true,
+      decoration: decoration,
+      items: [
+        for (final option in options)
+          DropdownMenuItem(
+            value: option.$1,
+            child: Text(
+              option.$2,
+              maxLines: 2,
+              softWrap: true,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+      ],
+      selectedItemBuilder: (context) => [
+        for (final option in options)
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              option.$2,
+              maxLines: 2,
+              softWrap: true,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+      ],
+      onChanged: enabled
+          ? (next) {
+              if (next != null) onChanged(next);
+            }
+          : null,
     );
   }
 }
@@ -543,6 +619,21 @@ class SetupMenuCard extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Plain setup-step help text. Not a banner.
+class SetupWizardStepIntro extends StatelessWidget {
+  const SetupWizardStepIntro(this.text, {super.key});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      text,
+      style: appMutedStyle().copyWith(fontSize: 13, height: 1.4),
     );
   }
 }

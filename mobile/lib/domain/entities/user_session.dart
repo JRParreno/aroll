@@ -12,6 +12,7 @@ class UserSession extends Equatable {
     this.email,
     this.businessCode,
     this.setupCompletedAt,
+    this.needsBrandingOnboarding = false,
     this.mustChangePassword = false,
     this.branding,
     this.profileImageUrl,
@@ -19,6 +20,7 @@ class UserSession extends Equatable {
     this.isInternalTest = false,
     this.consentsCompleted,
     this.permissionsOnboardingCompleted,
+    this.needsRecoveryEmail = false,
     this.timezone,
   });
 
@@ -32,6 +34,7 @@ class UserSession extends Equatable {
   final String? email;
   final String? businessCode;
   final DateTime? setupCompletedAt;
+  final bool needsBrandingOnboarding;
   final bool mustChangePassword;
   final BusinessBrandingSettings? branding;
   final String? profileImageUrl;
@@ -40,6 +43,7 @@ class UserSession extends Equatable {
   final bool? consentsCompleted;
   /// Server account-level permissions onboarding completion (not OS grants).
   final bool? permissionsOnboardingCompleted;
+  final bool needsRecoveryEmail;
   final String? timezone;
 
   bool get isOwner => role == 'owner' || role == 'manager';
@@ -48,12 +52,14 @@ class UserSession extends Equatable {
   UserSession copyWith({
     bool? mustChangePassword,
     DateTime? setupCompletedAt,
+    bool? needsBrandingOnboarding,
     BusinessBrandingSettings? branding,
     String? profileImageUrl,
     bool? isDemo,
     bool? isInternalTest,
     bool? consentsCompleted,
     bool? permissionsOnboardingCompleted,
+    bool? needsRecoveryEmail,
     String? timezone,
   }) {
     return UserSession(
@@ -67,6 +73,8 @@ class UserSession extends Equatable {
       email: email,
       businessCode: businessCode,
       setupCompletedAt: setupCompletedAt ?? this.setupCompletedAt,
+      needsBrandingOnboarding:
+          needsBrandingOnboarding ?? this.needsBrandingOnboarding,
       mustChangePassword: mustChangePassword ?? this.mustChangePassword,
       branding: branding ?? this.branding,
       profileImageUrl: profileImageUrl ?? this.profileImageUrl,
@@ -75,6 +83,7 @@ class UserSession extends Equatable {
       consentsCompleted: consentsCompleted ?? this.consentsCompleted,
       permissionsOnboardingCompleted: permissionsOnboardingCompleted ??
           this.permissionsOnboardingCompleted,
+      needsRecoveryEmail: needsRecoveryEmail ?? this.needsRecoveryEmail,
       timezone: timezone ?? this.timezone,
     );
   }
@@ -91,6 +100,7 @@ class UserSession extends Equatable {
         email,
         businessCode,
         setupCompletedAt,
+        needsBrandingOnboarding,
         mustChangePassword,
         branding,
         profileImageUrl,
@@ -98,6 +108,7 @@ class UserSession extends Equatable {
         isInternalTest,
         consentsCompleted,
         permissionsOnboardingCompleted,
+        needsRecoveryEmail,
         timezone,
       ];
 }

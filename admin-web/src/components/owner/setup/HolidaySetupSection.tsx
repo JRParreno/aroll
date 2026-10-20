@@ -250,6 +250,7 @@ export function HolidaySetupSection() {
         late_deduction_per_minute: payroll.late_deduction_per_minute,
         overtime_enabled: payroll.overtime_enabled,
         overtime_per_minute: payroll.overtime_per_minute,
+        overtime_calculation_method: payroll.overtime_calculation_method,
         enable_late_overtime_balancing: payroll.enable_late_overtime_balancing,
         overtime_approval_required: payroll.overtime_approval_required,
         holiday_rules_mode: mode,

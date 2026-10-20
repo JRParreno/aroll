@@ -1,9 +1,5 @@
 import jsPDF from "jspdf";
-import {
-  salaryRateAmount,
-  salaryRateLabel,
-  salaryRateUnit,
-} from "@/lib/salaryRate";
+import { payslipRateFieldAmounts } from "@/lib/salaryRate";
 import type { EmployeePayslip } from "@/lib/api";
 import {
   PAYSLIP_SAMPLE_LINE_1,
@@ -20,10 +16,37 @@ function money(value: number) {
   return `₱${amount}`;
 }
 
-function salaryRateValue(payslip: EmployeePayslip): string {
-  const amount = salaryRateAmount(payslip);
-  if (amount == null) return "Not set";
-  return `${money(amount)}${salaryRateUnit(payslip.pay_basis)}`;
+/** Narrow receipt width in points (~4.17 in). Height is fitted to content. */
+export const PAYSLIP_RECEIPT_WIDTH_PT = 300;
+
+export type PayslipReceiptRow = { label: string; value: string };
+
+/** Authoritative downloaded-payslip rows used by the receipt renderer. */
+export function payslipReceiptEarningsRows(
+  payslip: EmployeePayslip
+): PayslipReceiptRow[] {
+  const restPct = Number(payslip.rest_day_premium_percent ?? 0);
+  const rates = payslipRateFieldAmounts(payslip);
+  return [
+    { label: "Daily Rate", value: rateOrBlank(rates.daily) },
+    { label: "Hourly Rate", value: rateOrBlank(rates.hourly) },
+    { label: "Basic Salary", value: money(payslip.regular_pay ?? 0) },
+    { label: "Leave Pay", value: money(payslip.leave_pay ?? 0) },
+    { label: "Overtime", value: money(payslip.overtime_pay) },
+    { label: "Holiday Pay", value: money(payslip.holiday_pay) },
+    {
+      label:
+        restPct > 0
+          ? `Rest Day Premium (${restPct}%)`
+          : "Rest Day Premium",
+      value: money(payslip.rest_day_pay ?? 0),
+    },
+    { label: "Gross Pay", value: money(payslip.gross_pay) },
+  ];
+}
+
+function rateOrBlank(amount: number | null): string {
+  return amount == null ? "" : money(amount);
 }
 
 function titleCase(value: string) {
@@ -104,62 +127,65 @@ export type StandardPayslipPdfOptions = {
  * Downloads the standard Employee-format payslip PDF.
  * Used by Owner Web (and any Employee Web caller).
  */
-export async function downloadStandardPayslipPdf({
-  payslip,
-  businessName,
-  sample = false,
-}: StandardPayslipPdfOptions): Promise<void> {
-  const doc = new jsPDF({ unit: "pt", format: "a4" });
-  await ensureNotoFonts(doc);
-
+function renderStandardPayslip(
+  doc: jsPDF,
+  {
+    payslip,
+    businessName,
+    sample = false,
+  }: StandardPayslipPdfOptions
+): number {
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
-  const marginX = 40;
+  const marginX = 16;
   const contentWidth = pageWidth - marginX * 2;
-  let y = 36;
+  let y = 16;
 
   const ensureSpace = (needed: number) => {
-    if (y + needed > pageHeight - 36) {
-      doc.addPage();
-      y = 36;
-      doc.setFont("NotoSans", "normal");
+    if (y + needed > pageHeight - 16) {
+      y += needed;
     }
   };
 
-  const setFont = (bold = false, size = 11) => {
+  const setFont = (bold = false, size = 9) => {
     doc.setFont("NotoSans", bold ? "bold" : "normal");
     doc.setFontSize(size);
   };
 
   const sectionHeader = (title: string, color: string) => {
-    ensureSpace(28);
-    y += 8;
+    ensureSpace(22);
+    y += 6;
     const [r, g, b] = hexToRgb(color);
     doc.setFillColor(r, g, b);
-    doc.rect(marginX, y, contentWidth, 18, "F");
-    setFont(true, 11);
+    doc.rect(marginX, y, contentWidth, 15, "F");
+    setFont(true, 9);
     doc.setTextColor(31, 41, 55);
-    doc.text(title, marginX + 8, y + 12);
-    y += 24;
+    doc.text(title, marginX + 6, y + 10);
+    y += 18;
   };
 
   const dataRow = (label: string, value: string, strong = false) => {
-    ensureSpace(22);
-    setFont(false, 11);
+    ensureSpace(16);
+    setFont(false, 9);
     doc.setTextColor(31, 41, 55);
-    const labelLines = doc.splitTextToSize(label, contentWidth * 0.48);
-    const valueLines = doc.splitTextToSize(value, contentWidth * 0.48);
+    const labelLines = doc.splitTextToSize(label, contentWidth * 0.52);
+    const valueLines =
+      value === ""
+        ? [""]
+        : doc.splitTextToSize(value, contentWidth * 0.44);
     const lines = Math.max(labelLines.length, valueLines.length);
-    const rowH = Math.max(18, lines * 13 + 4);
+    const rowH = Math.max(15, lines * 11 + 3);
 
-    setFont(false, 11);
-    doc.text(labelLines, marginX + 2, y + 11);
-    setFont(strong, 11);
-    doc.text(valueLines, marginX + contentWidth - 2, y + 11, {
-      align: "right",
-    });
+    setFont(false, 9);
+    doc.text(labelLines, marginX + 2, y + 10);
+    setFont(strong, 9);
+    if (value !== "") {
+      doc.text(valueLines, marginX + contentWidth - 2, y + 10, {
+        align: "right",
+      });
+    }
     doc.setDrawColor(229, 231, 235);
-    doc.setLineWidth(0.6);
+    doc.setLineWidth(0.5);
     doc.line(marginX, y + rowH - 2, marginX + contentWidth, y + rowH - 2);
     y += rowH;
   };
@@ -168,11 +194,11 @@ export async function downloadStandardPayslipPdf({
   {
     ensureSpace(28);
     const [r, g, b] = hexToRgb("#8D8D8D");
-    const pillW = 150;
+    const pillW = 120;
     const pillX = (pageWidth - pillW) / 2;
     doc.setFillColor(r, g, b);
-    doc.roundedRect(pillX, y, pillW, 22, 11, 11, "F");
-    setFont(true, 12);
+    doc.roundedRect(pillX, y, pillW, 18, 9, 9, "F");
+    setFont(true, 10);
     doc.setTextColor(255, 255, 255);
     doc.text(sample ? "SAMPLE PAYSLIP" : "PAYSLIP", pageWidth / 2, y + 15, {
       align: "center",
@@ -193,7 +219,7 @@ export async function downloadStandardPayslipPdf({
     y += 46;
   }
 
-  setFont(true, 13);
+  setFont(true, 11);
   doc.setTextColor(31, 41, 55);
   doc.text(businessName, pageWidth / 2, y, { align: "center" });
   y += 10;
@@ -203,7 +229,6 @@ export async function downloadStandardPayslipPdf({
   y += 8;
 
   const payDate = payslip.period_end;
-  const restPct = Number(payslip.rest_day_premium_percent ?? 0);
 
   sectionHeader("Employee Information", "#E5E7EB");
   dataRow("Employee Name", payslip.employee_name);
@@ -233,68 +258,8 @@ export async function downloadStandardPayslipPdf({
   }
 
   sectionHeader("Earnings/Income", "#FFE681");
-  dataRow(salaryRateLabel(), salaryRateValue(payslip));
-  dataRow("Basic Salary", money(payslip.regular_pay ?? 0));
-  dataRow("Leave Pay", money(payslip.leave_pay ?? 0));
-  dataRow("Overtime", money(payslip.overtime_pay));
-  dataRow("Holiday Pay", money(payslip.holiday_pay));
-  dataRow(
-    restPct > 0
-      ? `Rest Day Premium (${restPct}%)`
-      : "Rest Day Premium",
-    money(payslip.rest_day_pay ?? 0)
-  );
-  dataRow("Gross Pay", money(payslip.gross_pay), true);
-
-  if ((payslip.rest_day_records?.length ?? 0) > 0) {
-    sectionHeader("Rest Day Work", "#DBEAFE");
-    dataRow(
-      "Rest day",
-      payslip.rest_day_name
-        ? titleCase(payslip.rest_day_name)
-        : "Owner-approved rest day work"
-    );
-    dataRow("Days worked", `${payslip.rest_day_days ?? 0}`);
-    for (const record of payslip.rest_day_records ?? []) {
-      ensureSpace(44);
-      doc.setFillColor(240, 249, 255);
-      doc.setDrawColor(186, 230, 253);
-      doc.roundedRect(marginX, y, contentWidth, 38, 6, 6, "FD");
-      setFont(true, 10);
-      doc.setTextColor(31, 41, 55);
-      const dateLabel = `${formatPeriodDate(record.date)}${
-        record.weekday ? ` · ${titleCase(record.weekday)}` : ""
-      }`;
-      doc.text(dateLabel, marginX + 8, y + 14);
-      doc.setTextColor(7, 89, 133);
-      doc.text(money(record.premium_pay), marginX + contentWidth - 8, y + 14, {
-        align: "right",
-      });
-      setFont(false, 9);
-      doc.setTextColor(107, 114, 128);
-      const inLabel = record.time_in
-        ? new Date(record.time_in).toLocaleTimeString([], {
-            hour: "2-digit",
-            minute: "2-digit",
-            hour12: false,
-          })
-        : "--:--";
-      const outLabel = record.time_out
-        ? new Date(record.time_out).toLocaleTimeString([], {
-            hour: "2-digit",
-            minute: "2-digit",
-            hour12: false,
-          })
-        : "--:--";
-      doc.text(
-        `In ${inLabel} · Out ${outLabel}${
-          record.shift_name ? ` · ${record.shift_name}` : ""
-        }`,
-        marginX + 8,
-        y + 28
-      );
-      y += 46;
-    }
+  for (const row of payslipReceiptEarningsRows(payslip)) {
+    dataRow(row.label, row.value, row.label === "Gross Pay");
   }
 
   sectionHeader("Deductions", "#FFC5C5");
@@ -334,7 +299,47 @@ export async function downloadStandardPayslipPdf({
     true
   );
 
+  return y;
+}
+
+function createReceiptDoc(height: number): jsPDF {
+  return new jsPDF({
+    unit: "pt",
+    format: [PAYSLIP_RECEIPT_WIDTH_PT, height],
+  });
+}
+
+export async function downloadStandardPayslipPdf({
+  payslip,
+  businessName,
+  sample = false,
+}: StandardPayslipPdfOptions): Promise<void> {
+  const probe = createReceiptDoc(4000);
+  await ensureNotoFonts(probe);
+  const contentBottom = renderStandardPayslip(probe, {
+    payslip,
+    businessName,
+    sample,
+  });
+  const height = Math.max(contentBottom + 18, 360);
+  const doc = createReceiptDoc(height);
+  await ensureNotoFonts(doc);
+  renderStandardPayslip(doc, { payslip, businessName, sample });
   doc.save(
     `${payslip.employee_name.replace(/\s+/g, "-").toLowerCase()}-payslip.pdf`
   );
+}
+
+/** Builds receipt-style payslip PDF bytes for tests. */
+export async function buildStandardPayslipPdfBytes(
+  options: StandardPayslipPdfOptions
+): Promise<Uint8Array> {
+  const probe = createReceiptDoc(4000);
+  await ensureNotoFonts(probe);
+  const contentBottom = renderStandardPayslip(probe, options);
+  const height = Math.max(contentBottom + 18, 360);
+  const doc = createReceiptDoc(height);
+  await ensureNotoFonts(doc);
+  renderStandardPayslip(doc, options);
+  return doc.output("arraybuffer") as unknown as Uint8Array;
 }

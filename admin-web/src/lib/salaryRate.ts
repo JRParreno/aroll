@@ -62,3 +62,22 @@ export function formatSalaryRate(fields: SalaryRateFields): string {
 export function salaryRateLabel(): string {
   return "Salary Rate";
 }
+
+/**
+ * Downloaded payslip Daily Rate / Hourly Rate amounts.
+ * Unused field is null so the PDF can leave it completely blank.
+ * Does not derive one rate from the other. Hourly basis ignores daily fallback.
+ */
+export function payslipRateFieldAmounts(fields: SalaryRateFields): {
+  daily: number | null;
+  hourly: number | null;
+} {
+  const basis = (fields.pay_basis ?? "daily").toLowerCase();
+  const daily = asNumber(fields.daily_rate);
+  const hourly =
+    asNumber(fields.hourly_rate) ?? asNumber(fields.hourly_rate_configured);
+  if (basis === "hourly") return { daily: null, hourly };
+  if (basis === "daily") return { daily, hourly: null };
+  if (basis === "monthly") return { daily: null, hourly: null };
+  return { daily, hourly };
+}

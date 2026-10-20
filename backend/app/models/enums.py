@@ -143,6 +143,13 @@ class HolidayRulesMode(str, enum.Enum):
     custom_company = "custom_company"
 
 
+class OvertimeCalculationMethod(str, enum.Enum):
+    """How qualifying overtime minutes are priced. Not a holiday-rule setting."""
+
+    flat_per_minute = "flat_per_minute"
+    hourly_statutory = "hourly_statutory"
+
+
 class MissingClockOutPolicy(str, enum.Enum):
     auto_clock_out = "auto_clock_out"
     require_manager_approval = "require_manager_approval"

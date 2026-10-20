@@ -87,6 +87,7 @@ class EmployeeResponse(BaseModel):
     position_title: str | None
     position_id: str | None = None
     phone: str | None = None
+    recovery_email: str | None = None
     profile_image_url: str | None = None
     employment_type: str
     pay_basis: str

@@ -31,7 +31,10 @@ from app.services.payroll_adjustments import (
     list_active_adjustments,
     list_active_adjustments_for_employees,
 )
-from app.services.payroll_engine import hours_worked_from_slip
+from app.services.payroll_engine import (
+    hours_worked_from_slip,
+    resolve_overtime_calculation_method,
+)
 
 PAYSLIP_SNAPSHOT_VERSION = 1
 
@@ -132,6 +135,7 @@ def build_calculation_config_json(db: Session, business_id: uuid.UUID) -> dict:
         "overtime_per_minute": _optional_float(
             getattr(config, "overtime_per_minute", None) if config is not None else None
         ),
+        "overtime_calculation_method": resolve_overtime_calculation_method(config),
         "overtime_approval_required": bool(
             config is not None
             and getattr(config, "overtime_approval_required", False)

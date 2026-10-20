@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import flag_modified
 
 from app.models.attendance_policy import BusinessAttendancePolicy
 from app.models.business import Business, BusinessLocation
@@ -10,6 +11,9 @@ from app.models.payroll import BusinessPayrollConfig, Position
 from app.models.rest_day_policy import BusinessRestDayPolicy
 from app.models.scheduling import Shift
 from app.schemas.owner_setup import SetupStatusResponse, SetupStepStatus
+
+# Stored on the existing theme_settings JSONB. Not a branding color.
+BRANDING_ONBOARDING_DONE_KEY = "onboarding_branding_done"
 
 SETUP_STEPS = [
     ("shifts", "Work Shifts"),
@@ -120,3 +124,41 @@ def complete_setup(db: Session, business: Business) -> None:
     business.setup_completed_at = datetime.now(timezone.utc)
     business.status = BusinessStatus.active
     db.commit()
+
+
+def branding_onboarding_done(business: Business) -> bool:
+    theme = business.theme_settings or {}
+    return bool(theme.get(BRANDING_ONBOARDING_DONE_KEY))
+
+
+def needs_branding_onboarding(db: Session, business: Business) -> bool:
+    """True only for new owners who have not completed or skipped branding.
+
+    Existing completed businesses and mid-setup businesses are excluded so
+    they are not redirected into first-login branding.
+    """
+    if business.setup_completed_at is not None:
+        return False
+    if branding_onboarding_done(business):
+        return False
+    status = get_setup_status(db, business)
+    if any(
+        step.complete and step.key in REQUIRED_SETUP_KEYS for step in status.steps
+    ):
+        return False
+    return True
+
+
+def mark_branding_onboarding_done(business: Business) -> None:
+    theme = dict(business.theme_settings or {})
+    theme[BRANDING_ONBOARDING_DONE_KEY] = True
+    business.theme_settings = theme
+    flag_modified(business, "theme_settings")
+
+
+def preserve_branding_onboarding_flag(
+    existing_theme: dict | None, new_theme: dict
+) -> dict:
+    if (existing_theme or {}).get(BRANDING_ONBOARDING_DONE_KEY):
+        new_theme[BRANDING_ONBOARDING_DONE_KEY] = True
+    return new_theme

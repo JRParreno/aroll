@@ -17,18 +17,26 @@ import {
   createScheduleTemplate,
   deleteScheduleTemplate,
   getScheduleReuseSuggestions,
+  getWeeklySchedule,
   previewScheduleReuse,
   renameScheduleTemplate,
   type ScheduleConflictMode,
   type ScheduleReusePreview,
   type ScheduleReuseSource,
 } from "@/lib/api";
-import { formatShiftTime } from "@/components/owner/schedule/scheduleUtils";
+import {
+  formatShiftTime,
+  getWeekStart,
+  scheduleRangeError,
+  templateApplyRange,
+  toDateKey,
+} from "@/components/owner/schedule/scheduleUtils";
 
 type Props = {
   weekStartKey: string;
-  weekLabel: string;
+  selectedDate: string;
   assignmentCount: number;
+  onApplied?: (firstAssignedDate: string | null) => void;
 };
 
 function apiError(error: unknown, fallback: string) {
@@ -48,21 +56,29 @@ function apiError(error: unknown, fallback: string) {
   return fallback;
 }
 
-/** Minimal Schedule Library trigger — icon opens a floating panel on the page. */
+const LIBRARY_HELP =
+  "Save reusable weekly schedules and apply them to selected dates. Review the range before applying.";
+
+/** Labeled Schedule Library control — opens the reuse panel on the page. */
 export function ScheduleReusePanel({
   weekStartKey,
-  weekLabel,
+  selectedDate,
   assignmentCount,
+  onApplied,
 }: Props) {
   const qc = useQueryClient();
   const rootRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
+  const [startDate, setStartDate] = useState(selectedDate);
+  const [endDate, setEndDate] = useState(selectedDate);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [saveOpen, setSaveOpen] = useState(false);
   const [preview, setPreview] = useState<ScheduleReusePreview | null>(null);
   const [pendingSource, setPendingSource] = useState<{
     source: ScheduleReuseSource;
     template_id?: string;
+    start_date?: string;
+    end_date?: string;
   } | null>(null);
   const [conflictMode, setConflictMode] =
     useState<ScheduleConflictMode>("merge");
@@ -80,7 +96,7 @@ export function ScheduleReusePanel({
 
   useEffect(() => {
     setOpen(false);
-  }, [weekStartKey]);
+  }, [weekStartKey, selectedDate]);
 
   useEffect(() => {
     if (!open) return;
@@ -107,18 +123,27 @@ export function ScheduleReusePanel({
 
   const applyMutation = useMutation({
     mutationFn: applyScheduleReuse,
-    onSuccess: (result) => {
+    onSuccess: async (result) => {
       toast.success(
         `Applied schedule: ${result.created} added` +
           (result.removed > 0 ? `, ${result.removed} replaced` : "") +
           (result.skipped > 0 ? `, ${result.skipped} skipped` : "")
       );
+      const appliedStart = pendingSource?.start_date ?? startDate;
+      const refreshWeekKey = appliedStart
+        ? toDateKey(getWeekStart(new Date(`${appliedStart}T00:00:00`)))
+        : weekStartKey;
       setPreviewOpen(false);
       setPreview(null);
       setPendingSource(null);
-      qc.invalidateQueries({ queryKey: ["weekly-schedule"] });
-      qc.invalidateQueries({ queryKey: ["schedule-reuse-suggestions"] });
-      qc.invalidateQueries({ queryKey: ["owner-performance"] });
+      await qc.invalidateQueries({ queryKey: ["weekly-schedule"] });
+      await qc.fetchQuery({
+        queryKey: ["weekly-schedule", refreshWeekKey],
+        queryFn: () => getWeeklySchedule(refreshWeekKey),
+      });
+      onApplied?.(appliedStart || null);
+      void qc.invalidateQueries({ queryKey: ["schedule-reuse-suggestions"] });
+      void qc.invalidateQueries({ queryKey: ["owner-performance"] });
     },
     onError: (error) => toast.error(apiError(error, "Unable to apply schedule")),
   });
@@ -157,14 +182,25 @@ export function ScheduleReusePanel({
     onError: (error) => toast.error(apiError(error, "Unable to delete template")),
   });
 
+  const rangeError = scheduleRangeError(startDate, endDate);
+
   function startPreview(payload: {
     source: ScheduleReuseSource;
     template_id?: string;
   }) {
-    setPendingSource(payload);
+    if (payload.source === "template" && rangeError) {
+      toast.error(rangeError);
+      return;
+    }
+    const lockedRange =
+      payload.source === "template"
+        ? templateApplyRange(startDate, endDate)
+        : {};
+    setPendingSource({ ...payload, ...lockedRange });
     previewMutation.mutate({
       ...payload,
       target_week_start: weekStartKey,
+      ...lockedRange,
     });
   }
 
@@ -175,35 +211,72 @@ export function ScheduleReusePanel({
   return (
     <>
       <div className="relative" ref={rootRef}>
-        <button
+        <Button
           type="button"
-          title="Schedule Library"
-          aria-label="Schedule Library"
+          variant="outline"
           aria-expanded={open}
           onClick={() => setOpen((value) => !value)}
-          className={`inline-flex h-10 w-10 items-center justify-center rounded-xl border transition ${
+          className={`h-10 gap-2 rounded-xl ${
             open
-              ? "border-[var(--owner-navy)] bg-[var(--owner-button)] text-white"
-              : "border-slate-200 bg-white text-[var(--owner-navy)] hover:bg-[#F3F6F9]"
+              ? "border-[var(--owner-navy)] bg-[var(--owner-button)] text-white hover:bg-[var(--owner-navy-soft)]"
+              : ""
           }`}
         >
           <Library className="h-4 w-4" />
-        </button>
+          Schedule Library
+        </Button>
 
         {open && (
-          <div className="absolute right-0 top-[calc(100%+0.5rem)] z-40 w-[min(20rem,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl">
-            <div className="flex items-start gap-3 border-b border-slate-100 px-4 py-3">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[var(--owner-well)] text-[var(--owner-navy)]">
-                <Library className="h-4 w-4" />
+          <div className="absolute right-0 top-[calc(100%+0.5rem)] z-40 w-[min(22rem,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl">
+            <div className="border-b border-slate-100 px-4 py-3">
+              <div className="flex items-start gap-3">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[var(--owner-well)] text-[var(--owner-navy)]">
+                  <Library className="h-4 w-4" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-[#1F2937]">
+                    Schedule Library
+                  </p>
+                  <p className="mt-1 text-xs leading-5 text-[#6B7280]">
+                    {LIBRARY_HELP}
+                  </p>
+                </div>
               </div>
-              <div>
-                <p className="text-sm font-semibold text-[#1F2937]">
-                  Schedule Library
-                </p>
-                <p className="text-xs text-[#6B7280]">
-                  Reuse a past week or template for {weekLabel}
-                </p>
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                <label className="space-y-1">
+                  <span className="text-[11px] font-medium text-[#374151]">
+                    Start date
+                  </span>
+                  <Input
+                    type="date"
+                    value={startDate}
+                    onChange={(event) => {
+                      const next = event.target.value;
+                      setStartDate(next);
+                      if (endDate && next && endDate < next) setEndDate(next);
+                    }}
+                    className="h-9"
+                  />
+                </label>
+                <label className="space-y-1">
+                  <span className="text-[11px] font-medium text-[#374151]">
+                    End date
+                  </span>
+                  <Input
+                    type="date"
+                    value={endDate}
+                    onChange={(event) => setEndDate(event.target.value)}
+                    className="h-9"
+                  />
+                </label>
               </div>
+              {rangeError ? (
+                <p className="mt-2 text-xs text-rose-600">{rangeError}</p>
+              ) : (
+                <p className="mt-2 text-xs text-[#6B7280]">
+                  Templates apply {startDate === endDate ? startDate : `${startDate} – ${endDate}`}.
+                </p>
+              )}
             </div>
 
             {suggestPrevious && (
@@ -213,11 +286,14 @@ export function ScheduleReusePanel({
             )}
 
             <div className="py-1">
+              <p className="px-4 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wide text-[#6B7280]">
+                Apply to this week
+              </p>
               <LibraryRow
                 title="Copy previous week"
                 subtitle={
                   suggestions?.previous_week_start
-                    ? `${suggestions.previous_week_assignment_count} assignments`
+                    ? `${suggestions.previous_week_assignment_count} assignments from last week`
                     : "Nothing to copy"
                 }
                 disabled={!suggestions?.previous_week_start || previewMutation.isPending}
@@ -236,7 +312,7 @@ export function ScheduleReusePanel({
                 onClick={() => startPreview({ source: "last_schedule" })}
               />
               <LibraryRow
-                title="Save this week"
+                title="Save this week to the library"
                 subtitle={
                   assignmentCount > 0
                     ? "Save as a reusable template"
@@ -253,7 +329,7 @@ export function ScheduleReusePanel({
 
             <div className="border-t border-slate-100 px-4 pb-3 pt-2">
               <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-[#6B7280]">
-                Saved templates
+                Saved templates — tap to apply
               </p>
               {(suggestions?.templates ?? []).length === 0 ? (
                 <p className="py-2 text-sm text-[#6B7280]">No templates yet.</p>
@@ -399,7 +475,7 @@ export function ScheduleReusePanel({
       >
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Preview before applying</DialogTitle>
+            <DialogTitle>Review selected dates before applying</DialogTitle>
           </DialogHeader>
           {preview && (
             <div className="space-y-4">
@@ -424,7 +500,12 @@ export function ScheduleReusePanel({
                 </div>
               </div>
               <p className="text-sm text-[#6B7280]">
-                Date range: {preview.target_week_start} to {preview.target_week_end}.
+                These shifts and employee assignments will be applied to{" "}
+                {preview.target_week_start}
+                {preview.target_week_end !== preview.target_week_start
+                  ? ` through ${preview.target_week_end}`
+                  : ""}
+                .
               </p>
 
               {conflictSummary &&
@@ -432,7 +513,11 @@ export function ScheduleReusePanel({
                   conflictSummary.conflict_count > 0 ||
                   conflictSummary.duplicate_count > 0) && (
                   <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-950">
-                    <p className="font-medium">This week already has schedules</p>
+                    <p className="font-medium">
+                      {preview.target_week_start === preview.target_week_end
+                        ? `${preview.target_week_start} already has schedules`
+                        : `${preview.target_week_start} to ${preview.target_week_end} already have schedules`}
+                    </p>
                     <p className="mt-1 text-amber-900/90">
                       Existing: {conflictSummary.existing_assignment_count} ·
                       Conflicts: {conflictSummary.conflict_count} · Can add:{" "}
@@ -461,7 +546,7 @@ export function ScheduleReusePanel({
                         }
                         onClick={() => setConflictMode("replace")}
                       >
-                        Replace week
+                        Replace selected dates
                       </Button>
                     </div>
                   </div>
@@ -531,13 +616,20 @@ export function ScheduleReusePanel({
               onClick={() => {
                 if (!pendingSource) return;
                 applyMutation.mutate({
-                  ...pendingSource,
+                  source: pendingSource.source,
+                  template_id: pendingSource.template_id,
                   target_week_start: weekStartKey,
                   conflict_mode: conflictMode,
+                  ...(pendingSource.source === "template"
+                    ? templateApplyRange(
+                        pendingSource.start_date ?? startDate,
+                        pendingSource.end_date ?? endDate
+                      )
+                    : {}),
                 });
               }}
             >
-              Apply
+              {applyMutation.isPending ? "Applying…" : "Apply to selected dates"}
             </Button>
           </DialogFooter>
         </DialogContent>

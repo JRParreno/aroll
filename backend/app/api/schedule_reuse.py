@@ -56,6 +56,8 @@ def preview_schedule_reuse(
         body.target_week_start,
         body.source_week_start,
         body.template_id,
+        start_date=body.start_date,
+        end_date=body.end_date,
     )
 
 
@@ -73,6 +75,8 @@ def apply_schedule_reuse(
         body.conflict_mode,
         body.source_week_start,
         body.template_id,
+        start_date=body.start_date,
+        end_date=body.end_date,
     )
 
 

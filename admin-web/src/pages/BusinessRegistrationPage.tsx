@@ -220,6 +220,7 @@ export function BusinessRegistrationPage() {
           setStep(1);
           return;
         }
+        // approved: allow another business on the same owner email
       } catch {
         // No existing registration - create a new draft.
       }

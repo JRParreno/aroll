@@ -107,7 +107,6 @@ class _OwnerEmployeesScreenState extends State<OwnerEmployeesScreen> {
       if (search.isEmpty) return true;
       final haystack = [
         employee['full_name'],
-        employee['phone'] ?? '',
         employee['position_title'] ?? '',
         employee['employment_type'],
         employee['username'],
@@ -135,7 +134,6 @@ class _OwnerEmployeesScreenState extends State<OwnerEmployeesScreen> {
             positionTitle: form.positionTitle,
             positionId: form.positionId,
             employmentType: form.employmentType,
-            phone: form.phone,
             payBasis: form.payBasis,
             dailyRate: form.dailyRate,
             hourlyRate: form.hourlyRate,
@@ -166,7 +164,6 @@ class _OwnerEmployeesScreenState extends State<OwnerEmployeesScreen> {
             positionTitle: form.positionTitle,
             positionId: form.positionId,
             employmentType: form.employmentType,
-            phone: form.phone.isEmpty ? null : form.phone,
             payBasis: form.payBasis,
             dailyRate: form.dailyRate,
             hourlyRate: form.hourlyRate,
@@ -661,15 +658,17 @@ class _EmployeeCard extends StatelessWidget {
                             const SizedBox(height: 6),
                             const SimulatedChip(label: 'Demo Employee'),
                           ],
+                          if ((employee['recovery_email'] as String?)
+                                  ?.trim()
+                                  .isNotEmpty ==
+                              true) ...[
+                            const SizedBox(height: 8),
+                            _InfoRow(
+                              icon: Icons.mail_outline_rounded,
+                              text: '${employee['recovery_email']}',
+                            ),
+                          ],
                           const SizedBox(height: 8),
-                          _InfoRow(
-                            icon: Icons.phone_outlined,
-                            text: (employee['phone'] as String?)?.isNotEmpty ==
-                                    true
-                                ? '${employee['phone']}'
-                                : 'No contact number',
-                          ),
-                          const SizedBox(height: 4),
                           _InfoRow(
                             icon: Icons.calendar_today_outlined,
                             text: workdays,
@@ -761,7 +760,6 @@ class _EmployeeForm {
     required this.positionTitle,
     required this.positionId,
     required this.employmentType,
-    required this.phone,
     required this.payBasis,
     this.dailyRate,
     this.hourlyRate,
@@ -772,7 +770,6 @@ class _EmployeeForm {
   final String positionTitle;
   final String positionId;
   final String employmentType;
-  final String phone;
   final String payBasis;
   final double? dailyRate;
   final double? hourlyRate;
@@ -790,7 +787,6 @@ class _EmployeeForm {
       positionTitle: '${employee['position_title'] ?? ''}',
       positionId: '${employee['position_id'] ?? ''}',
       employmentType: '${employee['employment_type'] ?? 'full_time'}',
-      phone: '${employee['phone'] ?? ''}',
       payBasis: '${employee['pay_basis'] ?? 'daily'}',
       dailyRate: asDouble(employee['daily_rate']),
       hourlyRate: asDouble(employee['hourly_rate']),
@@ -822,7 +818,6 @@ class _EmployeeFormSheetState extends State<_EmployeeFormSheet> {
   static const _softBlue = Color(0xFFB9D8EE);
 
   late final TextEditingController _fullName;
-  late final TextEditingController _phone;
   late final TextEditingController _positionTitle;
   late final TextEditingController _dailyRate;
   late final TextEditingController _hourlyRate;
@@ -867,11 +862,9 @@ class _EmployeeFormSheetState extends State<_EmployeeFormSheet> {
           positionTitle: '',
           positionId: '',
           employmentType: 'full_time',
-          phone: '',
           payBasis: 'daily',
         );
     _fullName = TextEditingController(text: initial.fullName);
-    _phone = TextEditingController(text: initial.phone);
     _positionTitle = TextEditingController(text: initial.positionTitle);
     _dailyRate = TextEditingController(
       text: initial.dailyRate?.toString() ?? '',
@@ -1057,7 +1050,6 @@ class _EmployeeFormSheetState extends State<_EmployeeFormSheet> {
   @override
   void dispose() {
     _fullName.dispose();
-    _phone.dispose();
     _positionTitle.dispose();
     _dailyRate.dispose();
     _hourlyRate.dispose();
@@ -1104,7 +1096,6 @@ class _EmployeeFormSheetState extends State<_EmployeeFormSheet> {
               _positionTitle.text.trim(),
           positionId: _positionId,
           employmentType: _employmentType,
-          phone: _phone.text.trim(),
           payBasis: _payBasis,
           dailyRate: _payBasis == 'daily'
               ? double.tryParse(_dailyRate.text.trim())
@@ -1175,12 +1166,6 @@ class _EmployeeFormSheetState extends State<_EmployeeFormSheet> {
           controller: _fullName,
           textCapitalization: TextCapitalization.words,
           decoration: _fieldDecoration('Full Name'),
-        ),
-        const SizedBox(height: 12),
-        TextField(
-          controller: _phone,
-          keyboardType: TextInputType.phone,
-          decoration: _fieldDecoration('Contact Number'),
         ),
         const SizedBox(height: 12),
         DropdownButtonFormField<String>(
@@ -1719,13 +1704,6 @@ class _EmployeeDetailsSheetState extends State<_EmployeeDetailsSheet> {
                     child: Column(
                       children: [
                         _DetailInfoRow(
-                          icon: Icons.phone_outlined,
-                          label: 'Contact',
-                          value:
-                              '${employee['phone'] ?? 'No contact number'}',
-                        ),
-                        const Divider(height: 1, color: Color(0xFFF3F4F6)),
-                        _DetailInfoRow(
                           icon: Icons.work_outline_rounded,
                           label: 'Role',
                           value:
@@ -1748,6 +1726,17 @@ class _EmployeeDetailsSheetState extends State<_EmployeeDetailsSheet> {
                           icon: Icons.key_outlined,
                           label: 'Username',
                           value: '${employee['username']}',
+                        ),
+                        const Divider(height: 1, color: Color(0xFFF3F4F6)),
+                        _DetailInfoRow(
+                          icon: Icons.mail_outline_rounded,
+                          label: 'Recovery email',
+                          value: (employee['recovery_email'] as String?)
+                                      ?.trim()
+                                      .isNotEmpty ==
+                                  true
+                              ? '${employee['recovery_email']}'
+                              : 'Not registered yet',
                         ),
                       ],
                     ),

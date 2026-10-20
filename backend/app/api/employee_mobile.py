@@ -63,7 +63,11 @@ from app.services.missing_clock_out import (
     list_incomplete_for_employee,
 )
 from app.services.face_enrollment import enroll_face_sample_bytes, face_status_for_employee
-from app.models.payroll import BusinessPayrollConfig
+from app.models.attendance_policy import BusinessAttendancePolicy
+from app.models.payroll import BusinessPayrollConfig, Position
+from app.models.rest_day_policy import BusinessRestDayPolicy
+from app.services.employee_pay import resolve_employee_pay
+from app.services.payroll_engine import resolve_overtime_calculation_method
 from app.schemas.face import FaceEnrollResponse, FaceStatusResponse
 from app.schemas.legal_consent import (
     LegalConsentAcceptRequest,
@@ -88,6 +92,8 @@ class FaceRegistrationRequest(BaseModel):
 def _current_employee(
     db: Session,
     user: User,
+    *,
+    require_recovery_email: bool = True,
 ) -> tuple[Employee, Business]:
     if user.role != UserRole.employee:
         raise HTTPException(403, "Only employees can access this endpoint")
@@ -130,6 +136,16 @@ def _current_employee(
                     "This workplace isn’t active right now. "
                     "Please contact your employer."
                 ),
+            },
+        )
+    from app.services.employee_password_reset import needs_recovery_email
+
+    if require_recovery_email and needs_recovery_email(employee):
+        raise HTTPException(
+            403,
+            detail={
+                "code": "recovery_email_required",
+                "message": "Register a recovery email to finish account setup.",
             },
         )
     return employee, business
@@ -214,6 +230,7 @@ def _employee_profile_response(
         "position": employee.position_title,
         "employment_type": employee.employment_type.value,
         "phone": employee.phone,
+        "recovery_email": employee.recovery_email,
         "profile_image_url": employee.profile_image_url,
         "hire_date": employee.hire_date.isoformat() if employee.hire_date else None,
         "status": employee.status.value,
@@ -229,6 +246,76 @@ def _employee_profile_response(
         ),
         "branding": _branding_response(business),
         "timezone": business.timezone,
+    }
+
+
+def _employee_attendance_policy_payload(policy: BusinessAttendancePolicy | None) -> dict | None:
+    if policy is None:
+        return None
+    return {
+        "early_clock_in_minutes": policy.early_clock_in_minutes,
+        "on_time_grace_minutes": policy.on_time_grace_minutes,
+        "half_day_threshold_minutes": policy.half_day_threshold_minutes,
+        "absent_threshold_minutes": policy.absent_threshold_minutes,
+        "absent_threshold_percent": getattr(policy, "absent_threshold_percent", None),
+        "half_day_threshold_percent": getattr(policy, "half_day_threshold_percent", None),
+        "early_out_deduction_enabled": bool(policy.early_out_deduction_enabled),
+        "early_out_deduction_per_minute": (
+            float(policy.early_out_deduction_per_minute)
+            if policy.early_out_deduction_enabled
+            else None
+        ),
+        "overtime_minimum_minutes": policy.overtime_minimum_minutes,
+        "maximum_overtime_minutes": getattr(policy, "maximum_overtime_minutes", None),
+        "missing_clock_out_policy": policy.missing_clock_out_policy.value,
+        "attendance_based_salary_enabled": bool(policy.attendance_based_salary_enabled),
+        "breaktime_is_paid": bool(getattr(policy, "breaktime_is_paid", False)),
+    }
+
+
+def _employee_payroll_policy_payload(config: BusinessPayrollConfig | None) -> dict | None:
+    if config is None:
+        return None
+    overtime_enabled = bool(config.overtime_enabled)
+    method = resolve_overtime_calculation_method(config)
+    late_enabled = bool(config.late_deduction_enabled)
+    return {
+        "late_deduction_enabled": late_enabled,
+        "late_deduction_per_minute": (
+            float(config.late_deduction_per_minute) if late_enabled else None
+        ),
+        "overtime_enabled": overtime_enabled,
+        "overtime_calculation_method": method if overtime_enabled else None,
+        "overtime_per_minute": (
+            float(config.overtime_per_minute)
+            if overtime_enabled and method == "flat_per_minute"
+            else None
+        ),
+        "enable_late_overtime_balancing": bool(
+            overtime_enabled and getattr(config, "enable_late_overtime_balancing", False)
+        ),
+        "overtime_approval_required": bool(
+            overtime_enabled and getattr(config, "overtime_approval_required", False)
+        ),
+    }
+
+
+def _employee_rest_day_policy_payload(policy: BusinessRestDayPolicy | None) -> dict | None:
+    if policy is None:
+        return None
+    return {
+        "rest_day_premium_percent": float(policy.rest_day_premium_percent),
+    }
+
+
+def _employee_pay_policy_payload(employee: Employee, position: Position | None) -> dict:
+    resolved = resolve_employee_pay(employee, position=position)
+    basis = resolved.pay_basis.value if resolved.pay_basis is not None else None
+    return {
+        "pay_basis": basis,
+        "daily_rate": resolved.daily_rate,
+        "hourly_rate": resolved.hourly_rate,
+        "monthly_salary": resolved.monthly_salary,
     }
 
 
@@ -1227,6 +1314,37 @@ def _payroll_response(
     return payload
 
 
+class RecoveryEmailRequest(BaseModel):
+    email: str
+
+
+@router.post("/recovery-email")
+def register_recovery_email(
+    body: RecoveryEmailRequest,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+):
+    """Save this employee's own recovery email. Does not change the password."""
+    from app.services.employee_password_reset import (
+        needs_recovery_email,
+        save_recovery_email,
+    )
+
+    employee, business = _current_employee(
+        db, user, require_recovery_email=False
+    )
+    try:
+        saved = save_recovery_email(employee, body.email)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    db.commit()
+    db.refresh(employee)
+    return {
+        "recovery_email": saved,
+        "needs_recovery_email": needs_recovery_email(employee),
+    }
+
+
 @router.get("/profile")
 def profile(
     db: Annotated[Session, Depends(get_db)],
@@ -1234,6 +1352,28 @@ def profile(
 ):
     employee, business = _current_employee(db, user)
     return _employee_profile_response(db, employee, business)
+
+
+@router.get("/workplace-policies")
+def workplace_policies(
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+):
+    """Read-only owner-configured attendance and payroll rules for this employee."""
+    employee, business = _current_employee(db, user)
+    attendance = db.get(BusinessAttendancePolicy, business.id)
+    payroll = db.get(BusinessPayrollConfig, business.id)
+    rest_day = db.get(BusinessRestDayPolicy, business.id)
+    position = (
+        db.get(Position, employee.position_id) if employee.position_id is not None else None
+    )
+    return {
+        "business_name": business.name,
+        "attendance": _employee_attendance_policy_payload(attendance),
+        "payroll": _employee_payroll_policy_payload(payroll),
+        "rest_day": _employee_rest_day_policy_payload(rest_day),
+        "your_pay": _employee_pay_policy_payload(employee, position),
+    }
 
 
 @router.post("/profile/image")
@@ -1786,6 +1926,35 @@ def _pdf_escape(value: object) -> str:
     return str(value).replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
 
 
+PAYSLIP_RECEIPT_WIDTH = 300
+
+
+def _positive_payslip_rate(value: object) -> float | None:
+    amount = _money(value)
+    if amount <= 0:
+        return None
+    return amount
+
+
+def _payslip_display_rates(data: dict) -> tuple[float | None, float | None]:
+    """Daily and hourly amounts for the downloaded payslip. Unused is None."""
+    raw_basis = data.get("pay_basis")
+    basis = str(raw_basis).lower() if raw_basis not in (None, "") else ""
+    daily = _positive_payslip_rate(data.get("daily_rate"))
+    hourly = _positive_payslip_rate(
+        data.get("hourly_rate")
+        if data.get("hourly_rate") is not None
+        else data.get("hourly_rate_configured")
+    )
+    if basis == "hourly":
+        return None, hourly
+    if basis == "daily":
+        return daily, None
+    if basis == "monthly":
+        return None, None
+    return daily, hourly
+
+
 def _simple_payslip_pdf(data: dict, *, sample: bool = False) -> bytes:
     lines = []
     if sample:
@@ -1795,13 +1964,17 @@ def _simple_payslip_pdf(data: dict, *, sample: bool = False) -> bytes:
                 "NOT FOR ACTUAL SALARY PAYMENT",
             ]
         )
-    pay_basis = str(data.get("pay_basis") or "daily")
-    if pay_basis == "hourly":
-        rate_line = f"Hourly rate: PHP {_money(data.get('hourly_rate')):,.2f}"
-    elif pay_basis == "monthly":
-        rate_line = f"Monthly salary: PHP {_money(data.get('monthly_salary')):,.2f}"
-    else:
-        rate_line = f"Daily rate: PHP {_money(data.get('daily_rate')):,.2f}"
+    daily_rate, hourly_rate = _payslip_display_rates(data)
+    daily_line = (
+        f"Daily Rate: PHP {daily_rate:,.2f}" if daily_rate is not None else "Daily Rate:"
+    )
+    hourly_line = (
+        f"Hourly Rate: PHP {hourly_rate:,.2f}"
+        if hourly_rate is not None
+        else "Hourly Rate:"
+    )
+    pay_basis = str(data.get("pay_basis") or "daily").lower()
+    monthly = _positive_payslip_rate(data.get("monthly_salary"))
     basic_salary = _money(data.get("regular_pay"))
     unresolved_note = None
     if data.get("has_unresolved_historical_rate"):
@@ -1818,7 +1991,14 @@ def _simple_payslip_pdf(data: dict, *, sample: bool = False) -> bytes:
             f"Period: {data['period_start']} to {data['period_end']}",
             f"Worked days: {data['worked_days']}",
             f"Hours worked: {data.get('hours_worked', 0)}",
-            rate_line,
+            daily_line,
+            hourly_line,
+        ]
+    )
+    if pay_basis == "monthly" and monthly is not None:
+        lines.append(f"Monthly salary: PHP {monthly:,.2f}")
+    lines.extend(
+        [
             f"Basic salary: PHP {basic_salary:,.2f}",
             f"Leave pay: PHP {_money(data.get('leave_pay')):,.2f}",
             f"Overtime pay: PHP {_money(data['overtime_pay']):,.2f}",
@@ -1839,11 +2019,16 @@ def _simple_payslip_pdf(data: dict, *, sample: bool = False) -> bytes:
     lines.append(
         f"Final net pay: PHP {_money(data.get('final_net_pay', data['net_pay'])):,.2f}"
     )
-    # Keep stream builder expecting a flat list.
-    stream_lines = ["BT", "/F1 12 Tf", "72 760 Td"]
+    # Rest-day attendance dates stay off the downloaded receipt. The rest-day
+    # premium amount is already in the earnings lines above.
+    line_h = 13
+    top = 20
+    height = max(top + 16 + len(lines) * line_h + 20, 360)
+    start_y = height - top
+    stream_lines = ["BT", "/F1 9 Tf", f"16 {start_y} Td"]
     for index, line in enumerate(lines):
         if index:
-            stream_lines.append("0 -22 Td")
+            stream_lines.append(f"0 -{line_h} Td")
         stream_lines.append(f"({_pdf_escape(line)}) Tj")
     stream_lines.append("ET")
     stream = "\n".join(stream_lines).encode("latin-1", errors="replace")
@@ -1851,8 +2036,10 @@ def _simple_payslip_pdf(data: dict, *, sample: bool = False) -> bytes:
     objects = [
         b"<< /Type /Catalog /Pages 2 0 R >>",
         b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
-        b"/Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
+        (
+            f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {PAYSLIP_RECEIPT_WIDTH} {height}] "
+            "/Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>"
+        ).encode("ascii"),
         b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
         b"<< /Length " + str(len(stream)).encode("ascii") + b" >>\nstream\n" + stream + b"\nendstream",
     ]

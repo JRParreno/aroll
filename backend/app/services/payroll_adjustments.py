@@ -305,6 +305,12 @@ def create_adjustment(
     db.add(row)
     db.commit()
     db.refresh(row)
+    try:
+        from app.services.activity_notifications import notify_payroll_adjustment_event
+
+        notify_payroll_adjustment_event(db, row, action="added")
+    except Exception:
+        pass
     return row
 
 
@@ -356,6 +362,18 @@ def update_adjustment(
     if abs(float(row.amount) - amount_value) > 0.0001:
         row.previous_amount = float(row.amount)
 
+    previous_description = row.description
+    next_description = (
+        description.strip() or None if description is not None else previous_description
+    )
+    changed = (
+        row.kind != kind_norm
+        or row.type_key != type_norm
+        or (row.custom_name or None) != (custom or None)
+        or abs(float(row.amount) - amount_value) > 0.0001
+        or (previous_description or None) != (next_description or None)
+    )
+
     row.kind = kind_norm
     row.type_key = type_norm
     row.custom_name = custom
@@ -366,6 +384,15 @@ def update_adjustment(
     row.updated_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(row)
+    if changed:
+        try:
+            from app.services.activity_notifications import (
+                notify_payroll_adjustment_event,
+            )
+
+            notify_payroll_adjustment_event(db, row, action="changed")
+        except Exception:
+            pass
     return row
 
 
@@ -400,6 +427,12 @@ def soft_delete_adjustment(
     row.deleted_at = datetime.now(timezone.utc)
     row.deleted_by = actor_id
     db.commit()
+    try:
+        from app.services.activity_notifications import notify_payroll_adjustment_event
+
+        notify_payroll_adjustment_event(db, row, action="removed")
+    except Exception:
+        pass
 
 
 def preset_catalog() -> dict:

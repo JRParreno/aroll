@@ -48,6 +48,16 @@ class BusinessRegistration(Base):
     submitted_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # Post-approval Business Code email: not_sent | sending | sent | failed
+    approval_email_status: Mapped[str | None] = mapped_column(
+        String(20), nullable=True
+    )
+    approval_email_sent_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    approval_email_last_error: Mapped[str | None] = mapped_column(
+        String(200), nullable=True
+    )
 
     documents = relationship(
         "RegistrationDocument",

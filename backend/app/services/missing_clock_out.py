@@ -447,6 +447,12 @@ def complete_incomplete_attendance(
     # Persist attendance first, then audit (create_log commits).
     db.commit()
     db.refresh(record)
+    try:
+        from app.services.activity_notifications import notify_overtime_pending_if_needed
+
+        notify_overtime_pending_if_needed(db, record)
+    except Exception:
+        pass
     create_log(
         db,
         user_id=reviewer.id,

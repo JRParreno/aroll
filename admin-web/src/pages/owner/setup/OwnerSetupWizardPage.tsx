@@ -6,6 +6,7 @@ import {
   BadgeDollarSign,
   BriefcaseBusiness,
   CalendarDays,
+  CalendarOff,
   CheckCircle2,
   Circle,
   ClipboardCheck,
@@ -28,6 +29,7 @@ import { Input } from "@/components/ui/input";
 import { OwnerNotificationBell } from "@/components/owner/OwnerNotificationBell";
 import { BusinessLocationSetup } from "@/components/owner/location/BusinessLocationSetup";
 import { HolidaySetupSection } from "@/components/owner/setup/HolidaySetupSection";
+import { LeavePolicySetupSection } from "@/components/owner/setup/LeavePolicySetupSection";
 import {
   WizardField,
   WizardNotice,
@@ -68,26 +70,15 @@ import {
   type Shift,
 } from "@/lib/api";
 import { ME_QUERY_KEY } from "@/lib/authSession";
+import {
+  SETUP_WIZARD_LOCATION_STEP,
+  SETUP_WIZARD_STATUS_KEYS,
+  SETUP_WIZARD_STEPS,
+} from "@/lib/ownerFirstLoginPath";
 
-const STEPS = [
-  "Work Shifts",
-  "Employee Job Roles",
-  "Set Up Employee Pay",
-  "How Employees Time In & Out",
-  "Holiday Management",
-  "Work Location",
-  "Review Your Setup",
-];
+const STEPS = [...SETUP_WIZARD_STEPS];
 
-const STEP_STATUS_KEYS = [
-  "shifts",
-  "positions",
-  "payroll",
-  "attendance_policy",
-  "holidays",
-  "location",
-  "review",
-] as const;
+const STEP_STATUS_KEYS = SETUP_WIZARD_STATUS_KEYS;
 
 function toTimeInputValue(value: string) {
   const [hour = "00", minute = "00"] = value.split(":");
@@ -132,8 +123,12 @@ const STEP_HELP: Record<string, string> = {
     "Choose how often employees get paid and how pay is calculated.",
   "How Employees Time In & Out":
     "Set the time rules for being on time, late, absent, and overtime.",
+  "Holiday Management":
+    "Add holidays your business follows so schedules and pay stay accurate.",
   "Holidays Employees Will Be Paid For":
     "Add holidays your business follows so schedules and pay stay accurate.",
+  "Leave Policy":
+    "Set paid or unpaid leave types and how far ahead leave must be requested.",
   "Work Location":
     "Set your workplace so employees can only time in when they are nearby.",
   "Review Your Setup":
@@ -148,6 +143,7 @@ const STEP_ICONS = [
   BadgeDollarSign,
   ShieldCheck,
   CalendarDays,
+  CalendarOff,
   MapPin,
   ClipboardCheck,
 ] as const;
@@ -321,6 +317,9 @@ export function OwnerSetupWizardPage() {
     late_deduction_per_minute: "1",
     overtime_enabled: true,
     overtime_per_minute: "1",
+    overtime_calculation_method: "flat_per_minute" as
+      | "flat_per_minute"
+      | "hourly_statutory",
     enable_late_overtime_balancing: false,
     overtime_approval_required: false,
     weekly_payday_weekday: "friday",
@@ -361,6 +360,10 @@ export function OwnerSetupWizardPage() {
       late_deduction_per_minute: String(payroll.late_deduction_per_minute),
       overtime_enabled: payroll.overtime_enabled,
       overtime_per_minute: String(payroll.overtime_per_minute),
+      overtime_calculation_method:
+        payroll.overtime_calculation_method === "hourly_statutory"
+          ? "hourly_statutory"
+          : "flat_per_minute",
       enable_late_overtime_balancing:
         payroll.enable_late_overtime_balancing === true,
       overtime_approval_required:
@@ -530,6 +533,8 @@ export function OwnerSetupWizardPage() {
       case 4:
         return isStepComplete("holidays");
       case 5:
+        return true;
+      case 6:
         return isStepComplete("location");
       default:
         return false;
@@ -702,6 +707,8 @@ export function OwnerSetupWizardPage() {
           ),
           overtime_enabled: payrollForm.overtime_enabled,
           overtime_per_minute: Number(payrollForm.overtime_per_minute),
+          overtime_calculation_method:
+            payrollForm.overtime_calculation_method,
           enable_late_overtime_balancing:
             payrollForm.enable_late_overtime_balancing,
           overtime_approval_required:
@@ -815,7 +822,7 @@ export function OwnerSetupWizardPage() {
 
   async function handleContinue() {
     if (!currentStepCanContinue) {
-      if (step === 5 && !isStepComplete("location")) {
+      if (step === SETUP_WIZARD_LOCATION_STEP && !isStepComplete("location")) {
         toast.error("Save your workplace location before continuing.");
       }
       return;
@@ -1619,22 +1626,55 @@ export function OwnerSetupWizardPage() {
                       })
                     }
                   />
-                  <WizardField label="Extra Pay per Overtime Minute (₱)">
-                    <Input
-                      className={wizardInputClass}
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      value={payrollForm.overtime_per_minute}
+                  <WizardField
+                    label="How overtime is calculated"
+                    hint={
+                      payrollForm.overtime_calculation_method ===
+                      "hourly_statutory"
+                        ? "Uses each employee's basic hourly rate, or the daily rate divided by that shift's scheduled hours, then the day-specific overtime factor. This is not proof that every employee is covered by the Labor Code."
+                        : "Uses the peso amount per overtime minute saved below. A flat amount can be below the overtime pay a covered employee is entitled to. Saving it does not make the rate legally compliant."
+                    }
+                  >
+                    <WizardSelect
+                      value={payrollForm.overtime_calculation_method}
+                      disabled={!payrollForm.overtime_enabled}
                       onChange={(e) =>
                         setPayrollForm({
                           ...payrollForm,
-                          overtime_per_minute: e.target.value,
+                          overtime_calculation_method:
+                            e.target.value === "hourly_statutory"
+                              ? "hourly_statutory"
+                              : "flat_per_minute",
                         })
                       }
-                      disabled={!payrollForm.overtime_enabled}
-                    />
+                    >
+                      <option value="flat_per_minute">
+                        Flat rate per overtime minute
+                      </option>
+                      <option value="hourly_statutory">
+                        Hourly-based overtime calculation
+                      </option>
+                    </WizardSelect>
                   </WizardField>
+                  {payrollForm.overtime_calculation_method ===
+                    "flat_per_minute" && (
+                    <WizardField label="Extra Pay per Overtime Minute (₱)">
+                      <Input
+                        className={wizardInputClass}
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={payrollForm.overtime_per_minute}
+                        onChange={(e) =>
+                          setPayrollForm({
+                            ...payrollForm,
+                            overtime_per_minute: e.target.value,
+                          })
+                        }
+                        disabled={!payrollForm.overtime_enabled}
+                      />
+                    </WizardField>
+                  )}
                   <WizardSettingRow
                     title="Late–OT Balancing"
                     description="Employees who arrive late may offset the late time by working beyond their scheduled end time."
@@ -1804,9 +1844,12 @@ export function OwnerSetupWizardPage() {
                   Minimum Worked Shift (%) and half-day cutoffs use percent of
                   each employee&apos;s scheduled shift. Maximum overtime
                   duration is an attendance cutoff only — overtime pay still
-                  uses ₱{payrollForm.overtime_per_minute} per minute (
-                  {payrollForm.overtime_enabled ? "turned on" : "turned off"} in
-                  pay settings).
+                  follows the method in pay settings (
+                  {payrollForm.overtime_enabled ? "turned on" : "turned off"}
+                  {payrollForm.overtime_calculation_method === "hourly_statutory"
+                    ? ", hourly-based"
+                    : `, ₱${payrollForm.overtime_per_minute} per minute`}
+                  ).
                 </WizardNotice>
                 <Button
                   className={wizardPrimaryBtnClass}
@@ -1819,7 +1862,9 @@ export function OwnerSetupWizardPage() {
             )}
             {step === 4 && <HolidaySetupSection />}
 
-            {step === 5 && (
+            {step === 5 && <LeavePolicySetupSection />}
+
+            {step === 6 && (
               <BusinessLocationSetup
                 description=""
                 mapHeightClassName="h-[240px] sm:h-[300px]"
@@ -1827,7 +1872,7 @@ export function OwnerSetupWizardPage() {
               />
             )}
 
-            {step === 6 && (
+            {step === 7 && (
               <>
                 <WizardNotice>
                   Review your setup and finish when the required steps are done.

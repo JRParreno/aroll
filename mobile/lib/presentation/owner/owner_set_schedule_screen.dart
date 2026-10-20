@@ -37,7 +37,8 @@ class _OwnerScheduleScreenState extends State<OwnerScheduleScreen> {
   String? _expandedShiftId;
   String? _editingAssignmentId;
   final Set<String> _selectedEmployeeIds = {};
-  bool _isRestDayWork = false;
+  bool _isRestDayWork = ownerRestDayPremiumInitialValue();
+  String? _updatingRestDayId;
   bool _loading = true;
   bool _saving = false;
   bool _downloading = false;
@@ -123,9 +124,26 @@ class _OwnerScheduleScreenState extends State<OwnerScheduleScreen> {
 
   String get _workDate => ownerDateKey(_selectedDate);
 
-  List<Map<String, dynamic>> get _assignmentsForDate => _assignments
-      .where((assignment) => assignment['work_date'] == _workDate)
-      .toList(growable: false);
+  List<Map<String, dynamic>> get _assignmentsForDate =>
+      ownerAssignmentsOnDate(_assignments, _workDate);
+
+  List<Map<String, dynamic>> get _assignShifts {
+    final listedIds = {for (final shift in _shifts) '${shift['id']}'};
+    final cards = [..._shifts];
+    for (final assignment in _assignmentsForDate) {
+      final shiftId = '${assignment['shift_id']}';
+      if (listedIds.contains(shiftId)) continue;
+      listedIds.add(shiftId);
+      cards.add({
+        'id': shiftId,
+        'name': assignment['shift_name'] ?? 'Shift',
+        'start_time': assignment['shift_start_time'] ?? '00:00:00',
+        'end_time': assignment['shift_end_time'] ?? '00:00:00',
+        'employee_capacity': '—',
+      });
+    }
+    return cards;
+  }
 
   Map<String, List<Map<String, dynamic>>> get _assignmentsByShift {
     final map = <String, List<Map<String, dynamic>>>{};
@@ -185,11 +203,29 @@ class _OwnerScheduleScreenState extends State<OwnerScheduleScreen> {
         _expandedShiftId = null;
         _selectedEmployeeIds.clear();
         _editingAssignmentId = null;
-        _isRestDayWork = false;
+        _isRestDayWork = ownerRestDayPremiumInitialValue();
       });
     }
     // Reloads assignments + leave-availability for the selected date.
     _loadData();
+  }
+
+  Set<String> get _scheduledDateKeys => {
+        for (final assignment in _assignments)
+          ownerAssignmentDateKey(assignment['work_date']),
+      }..removeWhere((key) => key.length != 10);
+
+  Future<void> _applyLibraryAndShowAssignments() async {
+    await _loadData();
+    if (!mounted) return;
+    final dates = _scheduledDateKeys.toList()..sort();
+    if (dates.isEmpty || dates.contains(_workDate)) return;
+    final next = DateTime.parse(dates.first);
+    setState(() {
+      _selectedDate = DateTime(next.year, next.month, next.day);
+      _weekStart = ownerWeekStart(_selectedDate);
+      _focusedMonth = DateTime(next.year, next.month);
+    });
   }
 
   Future<void> _openShiftAssignSheet(String shiftId) async {
@@ -199,7 +235,7 @@ class _OwnerScheduleScreenState extends State<OwnerScheduleScreen> {
       _expandedShiftId = shiftId;
       _selectedEmployeeIds.clear();
       _editingAssignmentId = null;
-      _isRestDayWork = false;
+      _isRestDayWork = ownerRestDayPremiumInitialValue();
       _assignSheetOpen = true;
     });
 
@@ -246,7 +282,7 @@ class _OwnerScheduleScreenState extends State<OwnerScheduleScreen> {
       _expandedShiftId = null;
       _selectedEmployeeIds.clear();
       _editingAssignmentId = null;
-      _isRestDayWork = false;
+      _isRestDayWork = ownerRestDayPremiumInitialValue();
     });
   }
 
@@ -300,7 +336,7 @@ class _OwnerScheduleScreenState extends State<OwnerScheduleScreen> {
       _refreshAssignUi(() {
         _selectedEmployeeIds.clear();
         _editingAssignmentId = null;
-        _isRestDayWork = false;
+        _isRestDayWork = ownerRestDayPremiumInitialValue();
       });
       await _loadData();
     } on DioException catch (error) {
@@ -326,6 +362,43 @@ class _OwnerScheduleScreenState extends State<OwnerScheduleScreen> {
     }
   }
 
+  Future<void> _updateAssignedRestDay({
+    required Map<String, dynamic> assignment,
+    required bool isRestDayWork,
+  }) async {
+    final assignmentId = '${assignment['id']}';
+    final shiftId = '${assignment['shift_id']}';
+    final workDate = ownerAssignmentDateKey(assignment['work_date']);
+    final employeeName = '${assignment['employee_name'] ?? 'Employee'}';
+    _refreshAssignUi(() {
+      _updatingRestDayId = assignmentId;
+    });
+    try {
+      await _repo.updateScheduleAssignment(
+        assignmentId: assignmentId,
+        shiftId: shiftId,
+        workDate: workDate.isEmpty ? _workDate : workDate,
+        isRestDayWork: isRestDayWork,
+      );
+      _showMessage(
+        isRestDayWork
+            ? 'Marked $employeeName as approved rest day'
+            : 'Cleared approved rest day for $employeeName',
+      );
+      await _loadData();
+    } on DioException catch (error) {
+      _showMessage(
+        _dioMessage(error) ?? 'Unable to update approved rest day status',
+      );
+    } finally {
+      if (mounted) {
+        _refreshAssignUi(() {
+          _updatingRestDayId = null;
+        });
+      }
+    }
+  }
+
   Future<void> _removeAssignment(String assignmentId) async {
     _refreshAssignUi(() {
       _saving = true;
@@ -343,20 +416,6 @@ class _OwnerScheduleScreenState extends State<OwnerScheduleScreen> {
         });
       }
     }
-  }
-
-  void _startReassignment(String assignmentId, String shiftId) {
-    final assignment = _assignments.cast<Map<String, dynamic>?>().firstWhere(
-          (item) => '${item?['id']}' == assignmentId,
-          orElse: () => null,
-        );
-    _refreshAssignUi(() {
-      _editingAssignmentId = assignmentId;
-      _expandedShiftId = shiftId;
-      _selectedEmployeeIds.clear();
-      _isRestDayWork = assignment?['is_rest_day_work'] == true;
-    });
-    _showMessage('Choose a new date or shift, then tap Set Schedule.');
   }
 
   void _showMessage(String message) {
@@ -386,17 +445,6 @@ class _OwnerScheduleScreenState extends State<OwnerScheduleScreen> {
       selectedIndex: 0,
       showBackButton: true,
       title: 'Schedule',
-      actions: [
-        TextButton.icon(
-          onPressed: () => context.push('/owner/setup-wizard?step=0'),
-          icon: const Icon(Icons.add_rounded, size: 18),
-          label: const Text('New Shift'),
-          style: TextButton.styleFrom(
-            foregroundColor: BrandColors.of(context).toneButton,
-            textStyle: const TextStyle(fontWeight: FontWeight.w600),
-          ),
-        ),
-      ],
       child: Column(
         children: [
           Expanded(
@@ -429,7 +477,7 @@ class _OwnerScheduleScreenState extends State<OwnerScheduleScreen> {
   }
 
   Widget _buildAssignView() {
-    if (_shifts.isEmpty) {
+    if (_shifts.isEmpty && _assignments.isEmpty) {
       return ListView(
         padding: const EdgeInsets.all(24),
         children: [
@@ -457,7 +505,7 @@ class _OwnerScheduleScreenState extends State<OwnerScheduleScreen> {
           weekStart: _weekStart,
           repo: _repo,
           assignmentCount: _assignments.length,
-          onApplied: _loadData,
+          onApplied: _applyLibraryAndShowAssignments,
         ),
         const SizedBox(height: 14),
         Text('Select a date', style: appSectionTitleStyle()),
@@ -470,6 +518,7 @@ class _OwnerScheduleScreenState extends State<OwnerScheduleScreen> {
         _ScheduleCalendar(
           selectedDate: _selectedDate,
           focusedMonth: _focusedMonth,
+          scheduledDates: _scheduledDateKeys,
           onDateSelected: _selectDate,
           onMonthChanged: (month) => setState(() => _focusedMonth = month),
         ),
@@ -496,14 +545,34 @@ class _OwnerScheduleScreenState extends State<OwnerScheduleScreen> {
           ),
         ],
         const SizedBox(height: 18),
-        Text('Work shifts', style: appSectionTitleStyle()),
-        const SizedBox(height: 4),
-        Text(
-          'Tap a shift to assign or manage employees.',
-          style: appMutedStyle().copyWith(fontSize: 12),
+        Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Work shifts', style: appSectionTitleStyle()),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Tap a shift to assign or manage employees.',
+                    style: appMutedStyle().copyWith(fontSize: 12),
+                  ),
+                ],
+              ),
+            ),
+            TextButton.icon(
+              onPressed: () => context.push('/owner/setup-wizard?step=0'),
+              icon: const Icon(Icons.add_rounded, size: 18),
+              label: const Text('New Shift'),
+              style: TextButton.styleFrom(
+                foregroundColor: BrandColors.of(context).toneButton,
+                textStyle: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+            ),
+          ],
         ),
         const SizedBox(height: 10),
-        ..._shifts.map(_buildShiftCard),
+        ..._assignShifts.map(_buildShiftCard),
       ],
     );
   }
@@ -595,71 +664,106 @@ class _OwnerScheduleScreenState extends State<OwnerScheduleScreen> {
           onTap: () => _openShiftAssignSheet(shiftId),
           child: Padding(
             padding: const EdgeInsets.all(14),
-            child: Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Container(
-                  width: 42,
-                  height: 42,
-                  decoration: BoxDecoration(
-                    color: BrandColors.of(context).toneWell,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Icon(
-                    Icons.schedule_rounded,
-                    color: BrandColors.of(context).tonePrimary,
-                    size: 22,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '${shift['name']}',
-                        style: const TextStyle(
+                Row(
+                  children: [
+                    Container(
+                      width: 42,
+                      height: 42,
+                      decoration: BoxDecoration(
+                        color: BrandColors.of(context).toneWell,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(
+                        Icons.schedule_rounded,
+                        color: BrandColors.of(context).tonePrimary,
+                        size: 22,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '${shift['name']}',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 15,
+                              color: AppColors.textPrimary,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            '$start – $end · Capacity $capacity',
+                            style: appMutedStyle().copyWith(fontSize: 12),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (_shiftById('${shift['id']}') != null &&
+                        _shifts.any((item) => '${item['id']}' == '${shift['id']}'))
+                      IconButton(
+                        tooltip: 'Edit shift',
+                        onPressed: _saving ? null : () => _editShift(shift),
+                        icon: const Icon(Icons.edit_outlined, size: 20),
+                        color: BrandColors.of(context).tonePrimary,
+                      ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppColors.chipFill,
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text(
+                        '${assignments.length}',
+                        style: TextStyle(
+                          fontSize: 12,
                           fontWeight: FontWeight.w700,
-                          fontSize: 15,
-                          color: AppColors.textPrimary,
+                          color: BrandColors.of(context).toneButton,
                         ),
                       ),
-                      const SizedBox(height: 2),
-                      Text(
-                        '$start – $end · Capacity $capacity',
-                        style: appMutedStyle().copyWith(fontSize: 12),
-                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    const Icon(
+                      Icons.chevron_right_rounded,
+                      color: AppColors.textMuted,
+                    ),
+                  ],
+                ),
+                if (assignments.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: [
+                      for (final assignment in assignments)
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: BrandColors.of(context).toneWell,
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: Text(
+                            '${assignment['employee_name'] ?? 'Employee'}',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: BrandColors.of(context).toneButton,
+                            ),
+                          ),
+                        ),
                     ],
                   ),
-                ),
-                IconButton(
-                  tooltip: 'Edit shift',
-                  onPressed: _saving ? null : () => _editShift(shift),
-                  icon: const Icon(Icons.edit_outlined, size: 20),
-                  color: BrandColors.of(context).tonePrimary,
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: AppColors.chipFill,
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Text(
-                    '${assignments.length}',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                      color: BrandColors.of(context).toneButton,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 4),
-                const Icon(
-                  Icons.chevron_right_rounded,
-                  color: AppColors.textMuted,
-                ),
+                ],
               ],
             ),
           ),
@@ -757,12 +861,15 @@ class _OwnerScheduleScreenState extends State<OwnerScheduleScreen> {
                       final employee = _employees
                           .cast<Map<String, dynamic>?>()
                           .firstWhere(
-                            (item) => item?['id'] == assignment['employee_id'],
+                            (item) =>
+                                '${item?['id']}' ==
+                                '${assignment['employee_id']}',
                             orElse: () => null,
                           );
                       return Padding(
                         padding: const EdgeInsets.fromLTRB(12, 4, 8, 4),
                         child: _AssignedEmployeeRow(
+                          assignmentId: '${assignment['id']}',
                           name:
                               '${assignment['employee_name'] ?? 'Employee'}',
                           position: employee?['position_title'] as String?,
@@ -774,10 +881,11 @@ class _OwnerScheduleScreenState extends State<OwnerScheduleScreen> {
                           assignedDuringLeave:
                               assignment['assigned_during_leave'] == true,
                           leavePending: assignment['leave_pending'] == true,
-                          saving: _saving,
-                          onReassign: () => _startReassignment(
-                            '${assignment['id']}',
-                            shiftId,
+                          saving: _saving ||
+                              _updatingRestDayId == '${assignment['id']}',
+                          onRestDayChanged: (value) => _updateAssignedRestDay(
+                            assignment: assignment,
+                            isRestDayWork: value,
                           ),
                           onRemove: () => _removeAssignment(
                             '${assignment['id']}',
@@ -786,71 +894,72 @@ class _OwnerScheduleScreenState extends State<OwnerScheduleScreen> {
                       );
                     }),
                   ..._buildEmployeePickerSections(),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 4, 12, 14),
-                    child: Column(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 2,
-                          ),
-                          decoration: BoxDecoration(
-                            color: AppColors.fieldFill,
-                            borderRadius: BorderRadius.circular(14),
-                            border: Border.all(color: AppColors.border),
-                          ),
-                          child: SwitchListTile.adaptive(
-                            contentPadding: EdgeInsets.zero,
-                            dense: true,
-                            activeThumbColor: BrandColors.of(context).tonePrimary,
-                            title: const Text(
-                              'Approved rest day work',
-                              style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            subtitle: Text(
-                              'Premium applies when the employee times in',
-                              style: appMutedStyle().copyWith(fontSize: 11),
-                            ),
-                            value: _isRestDayWork,
-                            onChanged: _saving
-                                ? null
-                                : (value) => _refreshAssignUi(() {
-                                      _isRestDayWork = value;
-                                    }),
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                        SizedBox(
-                          width: double.infinity,
-                          child: FilledButton(
-                            onPressed: _saving ||
-                                    (_selectedEmployeeIds.isEmpty &&
-                                        _editingAssignmentId == null)
-                                ? null
-                                : _saveSchedule,
-                            style: appBrandedPrimaryButtonStyle(context).copyWith(
-                              minimumSize: const WidgetStatePropertyAll(
-                                Size(0, 44),
-                              ),
-                            ),
-                            child: Text(
-                              _saving
-                                  ? 'Saving...'
-                                  : _editingAssignmentId != null
-                                      ? 'Update Schedule'
-                                      : 'Set Schedule',
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
                 ],
               ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 14),
+            child: Column(
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.fieldFill,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: AppColors.border),
+                  ),
+                  child: SwitchListTile.adaptive(
+                    key: const Key('rest-day-premium'),
+                    contentPadding: EdgeInsets.zero,
+                    dense: true,
+                    activeThumbColor: BrandColors.of(context).tonePrimary,
+                    title: const Text(
+                      'Approved rest day work',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    subtitle: Text(
+                      'Premium applies when the employee times in',
+                      style: appMutedStyle().copyWith(fontSize: 11),
+                    ),
+                    value: _isRestDayWork,
+                    onChanged: _saving
+                        ? null
+                        : (value) => _refreshAssignUi(() {
+                              _isRestDayWork = value;
+                            }),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton(
+                    onPressed: _saving ||
+                            (_selectedEmployeeIds.isEmpty &&
+                                _editingAssignmentId == null)
+                        ? null
+                        : _saveSchedule,
+                    style: appBrandedPrimaryButtonStyle(context).copyWith(
+                      minimumSize: const WidgetStatePropertyAll(
+                        Size(0, 44),
+                      ),
+                    ),
+                    child: Text(
+                      _saving
+                          ? 'Saving...'
+                          : _editingAssignmentId != null
+                              ? 'Update Schedule'
+                              : 'Set Schedule',
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -1170,12 +1279,14 @@ class _ScheduleCalendar extends StatelessWidget {
   const _ScheduleCalendar({
     required this.selectedDate,
     required this.focusedMonth,
+    required this.scheduledDates,
     required this.onDateSelected,
     required this.onMonthChanged,
   });
 
   final DateTime selectedDate;
   final DateTime focusedMonth;
+  final Set<String> scheduledDates;
   final ValueChanged<DateTime> onDateSelected;
   final ValueChanged<DateTime> onMonthChanged;
 
@@ -1204,6 +1315,9 @@ class _ScheduleCalendar extends StatelessWidget {
           selected: _sameDay(
             DateTime(focusedMonth.year, focusedMonth.month, day),
             selectedDate,
+          ),
+          hasAssignments: scheduledDates.contains(
+            ownerDateKey(DateTime(focusedMonth.year, focusedMonth.month, day)),
           ),
           onTap: onDateSelected,
         ),
@@ -1267,7 +1381,7 @@ class _ScheduleCalendar extends StatelessWidget {
             physics: const NeverScrollableScrollPhysics(),
             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: 7,
-              mainAxisExtent: 28,
+              mainAxisExtent: 34,
             ),
             itemBuilder: (context, index) => cells[index],
           ),
@@ -1284,11 +1398,13 @@ class _CalendarDay extends StatelessWidget {
   const _CalendarDay({
     required this.date,
     required this.selected,
+    required this.hasAssignments,
     required this.onTap,
   });
 
   final DateTime date;
   final bool selected;
+  final bool hasAssignments;
   final ValueChanged<DateTime> onTap;
 
   @override
@@ -1301,30 +1417,47 @@ class _CalendarDay extends StatelessWidget {
       onTap: () => onTap(date),
       customBorder: const CircleBorder(),
       child: Center(
-        child: Container(
-          width: 26,
-          height: 26,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: selected ? BrandColors.of(context).tonePrimary : null,
-            shape: BoxShape.circle,
-            border: !selected && isToday
-                ? Border.all(color: BrandColors.of(context).tonePrimary.withValues(alpha: 0.45))
-                : null,
-          ),
-          child: Text(
-            '${date.day}',
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-              height: 1,
-              color: selected
-                  ? Colors.white
-                  : isToday
-                      ? BrandColors.of(context).toneButton
-                      : AppColors.textPrimary,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 26,
+              height: 26,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: selected ? BrandColors.of(context).tonePrimary : null,
+                shape: BoxShape.circle,
+                border: !selected && isToday
+                    ? Border.all(color: BrandColors.of(context).tonePrimary.withValues(alpha: 0.45))
+                    : null,
+              ),
+              child: Text(
+                '${date.day}',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  height: 1,
+                  color: selected
+                      ? Colors.white
+                      : isToday
+                          ? BrandColors.of(context).toneButton
+                          : AppColors.textPrimary,
+                ),
+              ),
             ),
-          ),
+            if (hasAssignments && !selected)
+              Container(
+                width: 4,
+                height: 4,
+                margin: const EdgeInsets.only(top: 1),
+                decoration: BoxDecoration(
+                  color: BrandColors.of(context).toneButton,
+                  shape: BoxShape.circle,
+                ),
+              )
+            else
+              const SizedBox(height: 5),
+          ],
         ),
       ),
     );
@@ -1492,6 +1625,7 @@ class _InfoBanner extends StatelessWidget {
 
 class _AssignedEmployeeRow extends StatelessWidget {
   const _AssignedEmployeeRow({
+    required this.assignmentId,
     required this.name,
     required this.position,
     required this.imageUrl,
@@ -1500,10 +1634,11 @@ class _AssignedEmployeeRow extends StatelessWidget {
     required this.assignedDuringLeave,
     required this.leavePending,
     required this.saving,
-    required this.onReassign,
+    required this.onRestDayChanged,
     required this.onRemove,
   });
 
+  final String assignmentId;
   final String name;
   final String? position;
   final String? imageUrl;
@@ -1512,91 +1647,105 @@ class _AssignedEmployeeRow extends StatelessWidget {
   final bool assignedDuringLeave;
   final bool leavePending;
   final bool saving;
-  final VoidCallback onReassign;
+  final ValueChanged<bool> onRestDayChanged;
   final VoidCallback onRemove;
 
   @override
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          EmployeeAvatar(imageUrl: imageUrl, name: name, size: 40),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  name,
-                  softWrap: true,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 14,
-                    height: 1.3,
-                    color: AppColors.textPrimary,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  position ?? 'Assigned',
-                  style: appMutedStyle().copyWith(fontSize: 12),
-                ),
-                const SizedBox(height: 6),
-                Wrap(
-                  spacing: 6,
-                  runSpacing: 6,
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              EmployeeAvatar(imageUrl: imageUrl, name: name, size: 40),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    if (isRestDayWork)
-                      const _SoftChip(
-                        label: 'Rest day',
-                        background: Color(0xFFF0F9FF),
-                        foreground: Color(0xFF075985),
-                        border: Color(0xFFBAE6FD),
+                    Text(
+                      name,
+                      softWrap: true,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                        height: 1.3,
+                        color: AppColors.textPrimary,
                       ),
-                    _SoftChip(
-                      label: onLeave ? 'On Leave' : 'Assigned',
-                      background: onLeave
-                          ? const Color(0xFFDBEAFE)
-                          : const Color(0xFFEFF6FF),
-                      foreground: const Color(0xFF1D4ED8),
-                      border: const Color(0xFFBFDBFE),
                     ),
-                    if (assignedDuringLeave)
-                      const _SoftChip(
-                        label: 'Assigned During Leave',
-                        background: Color(0xFFFFF7ED),
-                        foreground: Color(0xFFC2410C),
-                        border: Color(0xFFFDBA74),
-                      ),
-                    if (leavePending)
-                      const _SoftChip(
-                        label: 'Leave Pending',
-                        background: Color(0xFFFFFBEB),
-                        foreground: Color(0xFFB45309),
-                        border: Color(0xFFFDE68A),
-                      ),
+                    const SizedBox(height: 2),
+                    Text(
+                      position ?? 'Assigned',
+                      style: appMutedStyle().copyWith(fontSize: 12),
+                    ),
+                    const SizedBox(height: 6),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: [
+                        if (isRestDayWork)
+                          const _SoftChip(
+                            label: 'Approved rest day',
+                            background: Color(0xFFF0F9FF),
+                            foreground: Color(0xFF075985),
+                            border: Color(0xFFBAE6FD),
+                          ),
+                        _SoftChip(
+                          label: onLeave ? 'On Leave' : 'Assigned',
+                          background: onLeave
+                              ? const Color(0xFFDBEAFE)
+                              : const Color(0xFFEFF6FF),
+                          foreground: const Color(0xFF1D4ED8),
+                          border: const Color(0xFFBFDBFE),
+                        ),
+                        if (assignedDuringLeave)
+                          const _SoftChip(
+                            label: 'Assigned During Leave',
+                            background: Color(0xFFFFF7ED),
+                            foreground: Color(0xFFC2410C),
+                            border: Color(0xFFFDBA74),
+                          ),
+                        if (leavePending)
+                          const _SoftChip(
+                            label: 'Leave Pending',
+                            background: Color(0xFFFFFBEB),
+                            foreground: Color(0xFFB45309),
+                            border: Color(0xFFFDE68A),
+                          ),
+                      ],
+                    ),
                   ],
                 ),
-              ],
+              ),
+              IconButton(
+                tooltip: 'Remove',
+                visualDensity: VisualDensity.compact,
+                constraints: const BoxConstraints.tightFor(width: 36, height: 36),
+                padding: EdgeInsets.zero,
+                onPressed: saving ? null : onRemove,
+                icon: const Icon(Icons.delete_outline, size: 18),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          SwitchListTile.adaptive(
+            key: Key('assigned-rest-day-$assignmentId'),
+            contentPadding: EdgeInsets.zero,
+            dense: true,
+            activeThumbColor: BrandColors.of(context).tonePrimary,
+            title: const Text(
+              'Mark as approved rest day',
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
             ),
-          ),
-          IconButton(
-            tooltip: 'Reassign',
-            visualDensity: VisualDensity.compact,
-            constraints: const BoxConstraints.tightFor(width: 36, height: 36),
-            padding: EdgeInsets.zero,
-            onPressed: saving ? null : onReassign,
-            icon: const Icon(Icons.edit_outlined, size: 18),
-          ),
-          IconButton(
-            tooltip: 'Remove',
-            visualDensity: VisualDensity.compact,
-            constraints: const BoxConstraints.tightFor(width: 36, height: 36),
-            padding: EdgeInsets.zero,
-            onPressed: saving ? null : onRemove,
-            icon: const Icon(Icons.delete_outline, size: 18),
+            subtitle: Text(
+              'Only for $name on this shift',
+              style: appMutedStyle().copyWith(fontSize: 11),
+            ),
+            value: isRestDayWork,
+            onChanged: saving ? null : onRestDayChanged,
           ),
         ],
       ),

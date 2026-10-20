@@ -9,7 +9,7 @@ import {
   Filter,
   IdCard,
   KeyRound,
-  Phone,
+  Mail,
   Plus,
   Scale,
   Search,
@@ -59,7 +59,6 @@ type EmployeeForm = {
   positionTitle: string;
   positionId: string;
   employmentType: "full_time" | "part_time";
-  phone: string;
   payBasis: PayBasis;
   dailyRate: string;
   hourlyRate: string;
@@ -71,7 +70,6 @@ const emptyForm: EmployeeForm = {
   positionTitle: "",
   positionId: "",
   employmentType: "full_time",
-  phone: "",
   payBasis: "daily",
   dailyRate: "",
   hourlyRate: "",
@@ -324,7 +322,6 @@ export function OwnerEmployeesPage() {
     return employees.filter((employee) =>
       [
         employee.full_name,
-        employee.phone ?? "",
         employee.position_title ?? "",
         employee.employment_type,
         employee.username,
@@ -412,7 +409,6 @@ export function OwnerEmployeesPage() {
         position_title: form.positionTitle,
         position_id: form.positionId || undefined,
         employment_type: form.employmentType,
-        phone: form.phone.trim() || undefined,
         ...ratePayload(form),
       }),
     onSuccess: (employee) => {
@@ -432,7 +428,6 @@ export function OwnerEmployeesPage() {
         position_title: editForm.positionTitle,
         position_id: editForm.positionId || undefined,
         employment_type: editForm.employmentType,
-        phone: editForm.phone.trim() || null,
         ...ratePayload(editForm),
       });
     },
@@ -548,7 +543,6 @@ export function OwnerEmployeesPage() {
       positionTitle: employee.position_title ?? "",
       positionId: matchedPosition?.id ?? employee.position_id ?? "",
       employmentType: employee.employment_type as EmployeeForm["employmentType"],
-      phone: employee.phone ?? "",
       payBasis,
       dailyRate,
       hourlyRate,
@@ -603,7 +597,7 @@ export function OwnerEmployeesPage() {
           <Search className="h-4 w-4 shrink-0 text-[#9CA3AF]" />
           <input
             className="h-full flex-1 bg-transparent text-sm text-[#1F2937] outline-none placeholder:text-[#9CA3AF]"
-            placeholder="Search by name, role, phone, or username..."
+            placeholder="Search by name, role, or username..."
             value={query}
             onChange={(event) => {
               setQuery(event.target.value);
@@ -647,13 +641,13 @@ export function OwnerEmployeesPage() {
                           <SimulatedBadge label="Demo Employee" />
                         </p>
                       ) : null}
+                      {employee.recovery_email ? (
+                        <div className="mt-2 flex items-center gap-2 text-[11px] font-medium text-[#6B7280]">
+                          <Mail className="h-3.5 w-3.5 shrink-0 text-[#9CA3AF]" />
+                          <span className="truncate">{employee.recovery_email}</span>
+                        </div>
+                      ) : null}
                       <div className="mt-2 flex items-center gap-2 text-[11px] font-medium text-[#6B7280]">
-                        <Phone className="h-3.5 w-3.5 shrink-0 text-[#9CA3AF]" />
-                        <span className="truncate">
-                          {employee.phone || "No contact number"}
-                        </span>
-                      </div>
-                      <div className="mt-1 flex items-center gap-2 text-[11px] font-medium text-[#6B7280]">
                         <BriefcaseBusiness className="h-3.5 w-3.5 shrink-0 text-[#9CA3AF]" />
                         <span className="truncate">
                           {workdays || "No assigned workdays this week"}
@@ -944,11 +938,6 @@ export function OwnerEmployeesPage() {
 
                     <div className="divide-y divide-slate-100 rounded-2xl border border-slate-200 bg-[#FAFBFC] px-3 py-1">
                       <DetailInfoRow
-                        icon={<Phone className="h-4 w-4" />}
-                        label="Contact"
-                        value={detailsEmployee.phone || "No contact number"}
-                      />
-                      <DetailInfoRow
                         icon={<BriefcaseBusiness className="h-4 w-4" />}
                         label="Role"
                         value={detailsEmployee.position_title ?? "No role"}
@@ -967,6 +956,11 @@ export function OwnerEmployeesPage() {
                         icon={<KeyRound className="h-4 w-4" />}
                         label="Username"
                         value={detailsEmployee.username}
+                      />
+                      <DetailInfoRow
+                        icon={<Mail className="h-4 w-4" />}
+                        label="Recovery email"
+                        value={detailsEmployee.recovery_email || "Not registered yet"}
                       />
                     </div>
 
@@ -1389,19 +1383,6 @@ function EmployeeFields({
           value={form.fullName}
           onChange={(event) =>
             onChange({ ...form, fullName: event.target.value })
-          }
-        />
-      </div>
-      <div className="space-y-2">
-        <Label className="text-xs font-semibold uppercase tracking-wide text-[#9CA3AF]" htmlFor="employee-phone">
-          Contact Number
-        </Label>
-        <Input
-          className={fieldClass}
-          id="employee-phone"
-          value={form.phone}
-          onChange={(event) =>
-            onChange({ ...form, phone: event.target.value })
           }
         />
       </div>

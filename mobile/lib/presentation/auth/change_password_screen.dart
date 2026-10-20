@@ -75,7 +75,7 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
     await loadEmployeePostAuthGates(appState, clearedSession);
     if (!mounted) return;
     if (clearedSession.isOwner) {
-      context.go('/owner/home');
+      context.go(resolveAuthenticatedRoute(appState));
       return;
     }
     context.go(resolveAuthenticatedRoute(appState));
@@ -162,7 +162,9 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
                     Text(
                       voluntary
                           ? 'Enter your current password, then choose a new one.'
-                          : 'You must set a new password before continuing.',
+                          : sl<AppState>().session?.isEmployee == true
+                              ? 'Step 1 of account setup. Choose a new password. Next you will register a recovery email for password reset codes.'
+                              : 'You must set a new password before continuing.',
                       style: const TextStyle(color: EmployeeColors.textMuted),
                     ),
                     const SizedBox(height: 24),

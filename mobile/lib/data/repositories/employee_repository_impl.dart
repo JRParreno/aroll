@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:aroll_mobile/core/network/api_client.dart';
 import 'package:aroll_mobile/core/utils/business_time.dart';
 import 'package:aroll_mobile/domain/entities/employee_portal.dart';
+import 'package:aroll_mobile/domain/entities/employee_workplace_policies.dart';
 import 'package:aroll_mobile/domain/entities/face_liveness.dart';
 import 'package:aroll_mobile/domain/entities/leave_request.dart';
 import 'package:aroll_mobile/domain/entities/legal_consent.dart';
@@ -26,6 +27,14 @@ class EmployeeRepositoryImpl implements EmployeeRepository {
   Future<EmployeeProfile> getProfile() async {
     final res = await _api.dio.get<Map<String, dynamic>>('/employee/profile');
     return _profileFromJson(res.data!);
+  }
+
+  @override
+  Future<void> registerRecoveryEmail(String email) async {
+    await _api.dio.post<Map<String, dynamic>>(
+      '/employee/recovery-email',
+      data: {'email': email.trim()},
+    );
   }
 
   @override
@@ -259,6 +268,14 @@ class EmployeeRepositoryImpl implements EmployeeRepository {
   }
 
   @override
+  Future<EmployeeWorkplacePolicies> getWorkplacePolicies() async {
+    final res = await _api.dio.get<Map<String, dynamic>>(
+      '/employee/workplace-policies',
+    );
+    return EmployeeWorkplacePolicies.fromJson(res.data!);
+  }
+
+  @override
   Future<EmployeeWorksite> getWorksite() async {
     final res = await _api.dio.get<Map<String, dynamic>>('/employee/worksite');
     return _worksiteFromJson(res.data!);
@@ -435,9 +452,14 @@ class EmployeeRepositoryImpl implements EmployeeRepository {
   }
 
   @override
-  Future<int> unreadNotificationCount() async {
+  Future<int> unreadNotificationCount({String? createdAfter}) async {
+    final seenThrough = createdAfter?.trim();
     final res = await _api.dio.get<Map<String, dynamic>>(
       '/notifications/unread-count',
+      queryParameters: {
+        if (seenThrough != null && seenThrough.isNotEmpty)
+          'created_after': seenThrough,
+      },
     );
     return (res.data?['count'] as num?)?.toInt() ?? 0;
   }
@@ -448,8 +470,26 @@ class EmployeeRepositoryImpl implements EmployeeRepository {
   }
 
   @override
-  Future<void> markAllNotificationsRead() async {
-    await _api.dio.post('/notifications/read-all');
+  Future<int> markAllNotificationsRead({String? createdThrough}) async {
+    final through = createdThrough?.trim();
+    final res = await _api.dio.post<Map<String, dynamic>>(
+      '/notifications/read-all',
+      queryParameters: {
+        if (through != null && through.isNotEmpty) 'created_through': through,
+      },
+    );
+    return (res.data?['marked_read'] as num?)?.toInt() ?? 0;
+  }
+
+  @override
+  Future<void> registerDeviceToken({
+    required String token,
+    required String platform,
+  }) async {
+    await _api.dio.post(
+      '/notifications/device-token',
+      data: {'token': token, 'platform': platform},
+    );
   }
 }
 
@@ -534,6 +574,7 @@ EmployeeProfile _profileFromJson(Map<String, dynamic> json) {
     businessType: json['business_type'] as String?,
     ownerName: json['owner_name'] as String?,
     ownerEmail: json['owner_email'] as String?,
+    recoveryEmail: json['recovery_email'] as String?,
     faceRegistrationStatus:
         json['face_registration_status'] as String? ?? 'not_registered',
     branding: _brandingFromJson(json),

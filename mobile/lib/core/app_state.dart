@@ -13,6 +13,7 @@ class AppState extends ChangeNotifier {
   bool? biometricConsentSatisfied;
   bool? consentsCompleted;
   bool permissionsIntroSeen = false;
+  bool needsRecoveryEmail = false;
   /// UI-only DEMO01 research notice. Not a demo-mode security flag.
   bool researchEvalAcknowledged = false;
 
@@ -24,6 +25,7 @@ class AppState extends ChangeNotifier {
     session = s;
     isLoggedIn = true;
     mustChangePassword = mustChange;
+    needsRecoveryEmail = s.isEmployee && s.needsRecoveryEmail;
     researchEvalAcknowledged = false;
     consentsCompleted = s.isDemo ? true : s.consentsCompleted;
     legalConsentSatisfied = consentsCompleted;
@@ -85,6 +87,7 @@ class AppState extends ChangeNotifier {
     biometricConsentSatisfied = null;
     consentsCompleted = null;
     permissionsIntroSeen = false;
+    needsRecoveryEmail = false;
     researchEvalAcknowledged = false;
     notifyListeners();
   }
@@ -101,9 +104,23 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  void markRecoveryEmailRegistered() {
+    needsRecoveryEmail = false;
+    if (session != null) {
+      session = session!.copyWith(needsRecoveryEmail: false);
+    }
+    notifyListeners();
+  }
+
   void updateSetupCompletedAt(DateTime? setupCompletedAt) {
     if (session == null) return;
     session = session!.copyWith(setupCompletedAt: setupCompletedAt);
+    notifyListeners();
+  }
+
+  void updateNeedsBrandingOnboarding(bool value) {
+    if (session == null) return;
+    session = session!.copyWith(needsBrandingOnboarding: value);
     notifyListeners();
   }
 
@@ -122,6 +139,7 @@ class AppState extends ChangeNotifier {
         email: current.email,
         businessCode: current.businessCode,
         setupCompletedAt: current.setupCompletedAt,
+        needsBrandingOnboarding: current.needsBrandingOnboarding,
         mustChangePassword: current.mustChangePassword,
         branding: current.branding,
         profileImageUrl: imageUrl,
@@ -129,6 +147,7 @@ class AppState extends ChangeNotifier {
         isInternalTest: current.isInternalTest,
         consentsCompleted: current.consentsCompleted,
         permissionsOnboardingCompleted: current.permissionsOnboardingCompleted,
+        needsRecoveryEmail: current.needsRecoveryEmail,
         timezone: current.timezone,
       );
     }

@@ -94,6 +94,7 @@ def _run_payslip(
     attendance_rows: list,
     scheduled: list,
     today: date = date(2026, 7, 30),
+    rest_premium: float | None = None,
 ):
     business_id = uuid4()
     position_id = uuid4()
@@ -116,7 +117,9 @@ def _run_payslip(
         if model is Business:
             return business
         if model is BusinessRestDayPolicy:
-            return None
+            if rest_premium is None:
+                return None
+            return SimpleNamespace(rest_day_premium_percent=rest_premium)
         if model is Position:
             return position
         return None
@@ -364,6 +367,55 @@ def test_custom_worked_uses_multiplier():
     assert slip["gross_pay"] == 1600.0
 
 
+def test_custom_holiday_on_rest_day_keeps_the_owner_premiums_separate():
+    """Custom rules stay additive. They are not replaced by the 260% combination."""
+    business_id = uuid4()
+    work_date = date(2026, 7, 28)
+    shift = _shift(business_id)
+    assignment = _assignment(uuid4(), shift, work_date)
+    assignment.is_rest_day_work = True
+    holiday = _holiday(
+        business_id,
+        work_date,
+        holiday_type=HolidayType.regular,
+        is_paid=False,
+        pay_multiplier=2.0,
+    )
+    record = SimpleNamespace(
+        id=uuid4(),
+        shift_assignment_id=assignment.id,
+        status=AttendanceStatus.complete,
+        time_in=datetime(2026, 7, 28, 8, 0),
+        time_out=datetime(2026, 7, 28, 16, 0),
+        created_at=datetime(2026, 7, 28, 8, 0),
+        pay_basis_at_completion=PayBasis.daily,
+        daily_rate_at_completion=800.0,
+        hourly_rate_at_completion=None,
+    )
+    slip = _run_payslip(
+        mode=HolidayRulesMode.custom_company,
+        work_date=work_date,
+        holiday=holiday,
+        attendance_rows=[(record, assignment, shift)],
+        scheduled=[(assignment, shift)],
+        rest_premium=30.0,
+    )
+    assert slip["regular_pay"] == 800.0
+    assert slip["holiday_pay"] == 800.0
+    assert slip["rest_day_pay"] == 240.0
+    assert slip["overtime_pay"] == 0.0
+    assert slip["leave_pay"] == 0.0
+    assert slip["gross_pay"] == (
+        slip["regular_pay"]
+        + slip["leave_pay"]
+        + slip["overtime_pay"]
+        + slip["holiday_pay"]
+        + slip["rest_day_pay"]
+    )
+    assert slip["net_pay"] == slip["gross_pay"] - slip["deductions"]
+    assert slip["overtime_calculation_method"] == "flat_per_minute"
+
+
 def test_custom_unworked_paid():
     business_id = uuid4()
     work_date = date(2026, 7, 28)
@@ -510,3 +562,115 @@ def test_noshow_ordinary_day_still_absent():
     )
     assert slip["absent_days"] == 1
     assert slip["gross_pay"] == 0.0
+
+
+def test_scenario_9_unpaid_leave_blocks_paid_company_holiday_noshow_credit():
+    """Approved unpaid leave on a paid company holiday shift pays ₱0 (no no-show credit)."""
+    business_id = uuid4()
+    work_date = date(2026, 9, 28)
+    shift = Shift(
+        id=uuid4(),
+        business_id=business_id,
+        name="Evening",
+        start_time=time(17, 0),
+        end_time=time(19, 0),
+    )
+    employee_id = uuid4()
+    assignment = ShiftAssignment(
+        id=uuid4(),
+        shift_id=shift.id,
+        employee_id=employee_id,
+        work_date=work_date,
+        is_rest_day_work=False,
+    )
+    holiday = _holiday(
+        business_id,
+        work_date,
+        holiday_type=HolidayType.company,
+        is_paid=True,
+        pay_multiplier=2.0,
+    )
+    employee = SimpleNamespace(
+        id=employee_id,
+        business_id=business_id,
+        full_name="Drew Gabriel",
+        position_title="Staff",
+        position_id=uuid4(),
+        employment_type=EmploymentType.full_time,
+        pay_basis=PayBasis.hourly,
+        daily_rate=None,
+        hourly_rate=100.0,
+        monthly_salary=None,
+    )
+    position = SimpleNamespace(daily_rate=800.0, hourly_rate=100.0)
+    business = SimpleNamespace(timezone="Asia/Manila")
+    att_policy = _att_policy(business_id)
+    config = _payroll_config(HolidayRulesMode.philippine_labor)
+
+    db = MagicMock()
+
+    def db_get(model, key=None):
+        if model is BusinessPayrollConfig:
+            return config
+        if model is BusinessAttendancePolicy:
+            return att_policy
+        if model is Business:
+            return business
+        if model is Position:
+            return position
+        return None
+
+    db.get.side_effect = db_get
+    attendance_query = MagicMock()
+    attendance_query.outerjoin.return_value.outerjoin.return_value.filter.return_value.all.return_value = (
+        []
+    )
+    scheduled_query = MagicMock()
+    scheduled_query.join.return_value.filter.return_value.all.return_value = [
+        (assignment, shift)
+    ]
+    holiday_query = MagicMock()
+    holiday_query.filter.return_value.all.return_value = [holiday]
+
+    def real_query(*models):
+        if models[0] is AttendanceRecord:
+            return attendance_query
+        if models[0] is ShiftAssignment:
+            return scheduled_query
+        if models[0] is Holiday:
+            return holiday_query
+        return MagicMock()
+
+    db.query.side_effect = real_query
+
+    with (
+        patch("app.api.owner_reports.ensure_incomplete_for_employee"),
+        patch("app.api.owner_reports.employee_on_approved_leave", return_value=False),
+        patch(
+            "app.api.owner_reports.approved_leave_dates_for_employee",
+            return_value=[work_date],
+        ),
+        patch(
+            "app.api.owner_reports.leave_is_paid_for_attendance_day",
+            return_value=False,
+        ),
+        patch("app.api.owner_reports.business_today", return_value=date(2026, 9, 29)),
+        patch(
+            "app.api.owner_reports.business_now",
+            return_value=datetime(2026, 9, 29, 12, 0),
+        ),
+        patch("app.api.owner_reports.is_past_clock_out_deadline", return_value=True),
+        patch(
+            "app.api.owner_reports.resolve_holiday_rules_mode",
+            return_value="philippine_labor",
+        ),
+    ):
+        slip = _calculate_employee_payslip(
+            db, employee, date(2026, 9, 1), date(2026, 9, 30)
+        )
+
+    assert slip["leave_pay"] == 0.0
+    assert slip["holiday_pay"] == 0.0
+    assert slip["gross_pay"] == 0.0
+    assert slip["unpaid_leave_days"] == 1
+    assert not any(r["status"] == "holiday_paid" for r in slip["attendance_records"])

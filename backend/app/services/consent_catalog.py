@@ -43,6 +43,11 @@ ALLOWED_CONSENT_FILES = {
 ALLOWED_CONSENT_EXTENSIONS = {".pdf", ".jpg", ".jpeg", ".png"}
 MAX_CONSENT_FILE_BYTES = 10 * 1024 * 1024
 CONSENT_TYPES = ("terms", "privacy", "biometric", "custom")
+CORE_LEGAL_TYPES = ALL_TYPES
+
+
+def is_core_legal_document(document: ConsentDocument) -> bool:
+    return (document.consent_type or "") in CORE_LEGAL_TYPES
 
 PUBLIC_DOC_PREFIX = "/legal/c/"
 PUBLIC_API_PREFIX = "/api/v1/public/consents/"
@@ -158,6 +163,11 @@ def published_effective_documents(
     return [doc for doc in effective_documents(db, business) if document_published(doc)]
 
 
+def core_legal_documents(documents: list[ConsentDocument]) -> list[ConsentDocument]:
+    """Terms, Privacy, and Biometric only. Custom handbook rows stay in the DB."""
+    return [doc for doc in documents if is_core_legal_document(doc)]
+
+
 def required_published_documents(
     db: Session,
     business: Business,
@@ -167,7 +177,7 @@ def required_published_documents(
     docs = [
         doc
         for doc in published_effective_documents(db, business)
-        if doc.is_required
+        if doc.is_required and is_core_legal_document(doc)
     ]
     if biometric is True:
         return [doc for doc in docs if doc.consent_type == CONSENT_BIOMETRIC]
@@ -264,7 +274,7 @@ def employee_consent_items(
     db: Session, employee: Employee, business: Business
 ) -> list[dict]:
     items = []
-    for doc in published_effective_documents(db, business):
+    for doc in core_legal_documents(published_effective_documents(db, business)):
         satisfied = document_satisfied(db, employee, business, doc)
         record = latest_document_record(db, employee.id, doc)
         accepted_at = None
@@ -285,6 +295,7 @@ def employee_consent_items(
                 "web_path": document_page_path(doc.id),
                 "required": doc.is_required,
                 "accepted": satisfied,
+                "body_text": doc.body_text,
                 "consent_type": doc.consent_type,
                 "version": doc.version,
                 "content_source": document_source(doc),
@@ -319,6 +330,11 @@ def catalog_item_payload(document: ConsentDocument) -> dict:
         "updated_at": document.updated_at,
         "updated_by": str(document.updated_by) if document.updated_by else None,
     }
+
+
+def legal_ui_catalog_payloads(documents: list[ConsentDocument]) -> list[dict]:
+    """Owner/Admin legal lists show Terms, Privacy, and Biometric only."""
+    return [catalog_item_payload(doc) for doc in core_legal_documents(documents)]
 
 
 def _validate_consent_type(value: str | None) -> str:
@@ -429,15 +445,30 @@ def reorder_documents(
     updated_by: uuid.UUID | None,
 ) -> list[ConsentDocument]:
     rows = list_catalog_documents(db, scope=scope, business_id=business_id)
-    by_id = {row.id: row for row in rows}
-    if set(ordered_ids) != set(by_id):
-        raise HTTPException(400, "Reorder list must include every document once")
+    core_rows = core_legal_documents(rows)
+    hidden_rows = [row for row in rows if not is_core_legal_document(row)]
+    all_by_id = {row.id: row for row in rows}
+    core_by_id = {row.id: row for row in core_rows}
     now = datetime.now(timezone.utc)
-    for index, document_id in enumerate(ordered_ids, start=1):
-        row = by_id[document_id]
-        row.position = index
-        row.updated_at = now
-        row.updated_by = updated_by
+
+    if set(ordered_ids) == set(all_by_id):
+        for index, document_id in enumerate(ordered_ids, start=1):
+            row = all_by_id[document_id]
+            row.position = index
+            row.updated_at = now
+            row.updated_by = updated_by
+    elif set(ordered_ids) == set(core_by_id):
+        for index, document_id in enumerate(ordered_ids, start=1):
+            row = core_by_id[document_id]
+            row.position = index
+            row.updated_at = now
+            row.updated_by = updated_by
+        for offset, row in enumerate(hidden_rows, start=len(ordered_ids) + 1):
+            row.position = offset
+            row.updated_at = now
+            row.updated_by = updated_by
+    else:
+        raise HTTPException(400, "Reorder list must include every document once")
     return list_catalog_documents(db, scope=scope, business_id=business_id)
 
 
@@ -487,8 +518,73 @@ def save_document_file(
     return document
 
 
-def _format_plain_body_html(text: str) -> str:
-    """Present plain-text legal body with paragraphs/lists. Does not alter wording."""
+LEGAL_DOCUMENT_CSS = """
+  :root { color-scheme: light; }
+  html, body { margin: 0; padding: 0; background: #F7F8FA; color: #111827; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 15px;
+    line-height: 1.65;
+    -webkit-text-size-adjust: 100%;
+  }
+  main { max-width: 42rem; margin: 0 auto; padding: 1.5rem 1.25rem 3rem; }
+  .kicker {
+    margin: 0;
+    font-size: 0.72rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #64748B;
+    font-weight: 700;
+  }
+  h1 { margin: 0.45rem 0 0.25rem; font-size: 1.5rem; font-weight: 700; letter-spacing: -0.02em; line-height: 1.25; }
+  h2 { margin: 1.35rem 0 0.45rem; font-size: 1.05rem; font-weight: 700; color: #0F172A; }
+  h3 { margin: 1.1rem 0 0.4rem; font-size: 0.98rem; font-weight: 700; color: #1E293B; }
+  .meta { margin: 0 0 1rem; color: #64748B; font-size: 0.875rem; }
+  .card {
+    background: #fff;
+    border: 1px solid #E5E7EB;
+    border-radius: 1rem;
+    padding: 1.35rem 1.35rem 1.5rem;
+    margin-bottom: 1rem;
+  }
+  .card > h1, .card > h2 { margin-top: 0; }
+  .body p { margin: 0 0 0.9rem; }
+  .body p:last-child { margin-bottom: 0; }
+  .body ul, .body ol { margin: 0 0 0.95rem; padding-left: 1.25rem; }
+  .body li { margin: 0.32rem 0; padding-left: 0.15rem; }
+  .body li::marker { color: #64748B; }
+  .body hr { border: 0; border-top: 1px solid #E5E7EB; margin: 1.1rem 0; }
+  a { color: #1E3A5F; }
+  @media (max-width: 640px) {
+    main { padding: 1.15rem 1rem 2.5rem; }
+    h1 { font-size: 1.35rem; }
+    .card { padding: 1.1rem 1.05rem 1.2rem; border-radius: 0.85rem; }
+  }
+"""
+
+LEGAL_EMBED_CSS = """
+  html, body { margin: 0; padding: 0; background: #ffffff; color: #1f2937; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 15px;
+    line-height: 1.65;
+    -webkit-text-size-adjust: 100%;
+  }
+  main { padding: 0.15rem 0 1.75rem; }
+  h2 { margin: 1.2rem 0 0.4rem; font-size: 1.02rem; font-weight: 700; color: #0F172A; }
+  h3 { margin: 1rem 0 0.35rem; font-size: 0.95rem; font-weight: 700; color: #1E293B; }
+  .body p { margin: 0 0 0.9rem; }
+  .body p:last-child { margin-bottom: 0; }
+  .body ul, .body ol { margin: 0 0 0.9rem; padding-left: 1.25rem; }
+  .body li { margin: 0.32rem 0; padding-left: 0.15rem; }
+  .body li::marker { color: #6b7280; }
+  .body hr { border: 0; border-top: 1px solid #E5E7EB; margin: 1rem 0; }
+  a { color: #1E3A5F; }
+"""
+
+
+def format_plain_body_html(text: str) -> str:
+    """Present plain-text legal body with headings, paragraphs, and lists."""
     escaped = html.escape(text)
     blocks: list[str] = []
     paragraph: list[str] = []
@@ -506,6 +602,22 @@ def _format_plain_body_html(text: str) -> str:
         if not stripped:
             flush_paragraph()
             continue
+        if stripped in {"---", "***"}:
+            flush_paragraph()
+            blocks.append("<hr />")
+            continue
+        if stripped.startswith("### "):
+            flush_paragraph()
+            blocks.append(f"<h3>{stripped[4:].strip()}</h3>")
+            continue
+        if stripped.startswith("## "):
+            flush_paragraph()
+            blocks.append(f"<h2>{stripped[3:].strip()}</h2>")
+            continue
+        if stripped.startswith("# "):
+            flush_paragraph()
+            blocks.append(f"<h2>{stripped[2:].strip()}</h2>")
+            continue
         bullet = False
         ordered = False
         content = stripped
@@ -513,7 +625,6 @@ def _format_plain_body_html(text: str) -> str:
             bullet = True
             content = stripped[2:].strip()
         else:
-            # Numbered clauses: "1. ", "1) ", "12. "
             idx = 0
             while idx < len(stripped) and stripped[idx].isdigit():
                 idx += 1
@@ -525,7 +636,6 @@ def _format_plain_body_html(text: str) -> str:
         if bullet or ordered:
             flush_paragraph()
             tag = "ol" if ordered else "ul"
-            # Keep consecutive list items in one list when possible.
             if blocks and blocks[-1].startswith(f"<{tag}>") and blocks[-1].endswith(
                 f"</{tag}>"
             ):
@@ -536,6 +646,10 @@ def _format_plain_body_html(text: str) -> str:
             paragraph.append(stripped)
     flush_paragraph()
     return "\n".join(blocks) if blocks else f"<p>{escaped}</p>"
+
+
+def _format_plain_body_html(text: str) -> str:
+    return format_plain_body_html(text)
 
 
 def render_document_html(
@@ -574,24 +688,7 @@ def render_document_html(
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>{title}</title>
-  <style>
-    html, body {{ margin: 0; padding: 0; background: #ffffff; color: #1f2937; }}
-    body {{
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-      font-size: 15px;
-      line-height: 1.65;
-      -webkit-text-size-adjust: 100%;
-    }}
-    main {{ padding: 0.25rem 0 2rem; }}
-    .body p {{ margin: 0 0 0.95rem; }}
-    .body p:last-child {{ margin-bottom: 0; }}
-    .body ul, .body ol {{
-      margin: 0 0 0.95rem;
-      padding-left: 1.35rem;
-    }}
-    .body li {{ margin: 0.35rem 0; padding-left: 0.15rem; }}
-    .body li::marker {{ color: #6b7280; }}
-  </style>
+  <style>{LEGAL_EMBED_CSS}</style>
 </head>
 <body>
   <main>
@@ -607,21 +704,12 @@ def render_document_html(
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>{title}</title>
-  <style>
-    body {{ margin: 0; font-family: system-ui, sans-serif; background: #F4F6F8; color: #111827; }}
-    main {{ max-width: 42rem; margin: 0 auto; padding: 1.5rem 1.25rem 3rem; }}
-    .card {{ background: #fff; border: 1px solid #E5E7EB; border-radius: 1.25rem; padding: 1.5rem; }}
-    h1 {{ margin: 0 0 0.5rem; font-size: 1.35rem; }}
-    .meta {{ margin: 0 0 1rem; color: #6B7280; font-size: 0.875rem; }}
-    .body {{ font-size: 0.95rem; line-height: 1.7; }}
-    .body p {{ margin: 0 0 0.9rem; }}
-    .body ul, .body ol {{ margin: 0 0 0.9rem; padding-left: 1.35rem; }}
-    .body li {{ margin: 0.3rem 0; }}
-  </style>
+  <style>{LEGAL_DOCUMENT_CSS}</style>
 </head>
 <body>
   <main>
     <section class="card">
+      <p class="kicker">Workplace document</p>
       <h1>{title}</h1>
       <p class="meta">Version {version}</p>
       <div class="body">{body}</div>

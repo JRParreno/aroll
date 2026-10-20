@@ -32,6 +32,10 @@ class BusinessListResponse(BaseModel):
     location_count: int
     is_demo: bool = False
     is_internal_test: bool = False
+    registration_id: str | None = None
+    owner_email: str | None = None
+    approved_at: datetime | None = None
+    approval_email_status: str | None = None
 
 
 class BusinessDetailResponse(BaseModel):

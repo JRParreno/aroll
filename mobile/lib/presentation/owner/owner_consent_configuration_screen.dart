@@ -34,9 +34,11 @@ class _OwnerConsentConfigurationScreenState
     final catalog = await _repo.consentCatalog();
     final useCustom = legal['use_custom_consents'] == true;
     _useCustom = useCustom;
+    const coreTypes = {'terms', 'privacy', 'biometric'};
     final docs = (catalog['documents'] as List? ?? const [])
         .whereType<Map>()
         .map((item) => Map<String, dynamic>.from(item))
+        .where((item) => coreTypes.contains('${item['consent_type'] ?? ''}'))
         .toList()
       ..sort((a, b) {
         final ap = (a['position'] as num?)?.toInt() ?? 0;
@@ -91,7 +93,12 @@ class _OwnerConsentConfigurationScreenState
     final bodyController = TextEditingController(
       text: '${document?['body_text'] ?? ''}',
     );
-    var consentType = '${document?['consent_type'] ?? 'custom'}';
+    var consentType = '${document?['consent_type'] ?? 'terms'}';
+    if (consentType != 'terms' &&
+        consentType != 'privacy' &&
+        consentType != 'biometric') {
+      consentType = 'terms';
+    }
     var isRequired = document?['is_required'] != false;
     var isActive = document?['is_active'] != false;
     final isNew = document == null;
@@ -121,19 +128,15 @@ class _OwnerConsentConfigurationScreenState
                           items: const [
                             DropdownMenuItem(
                               value: 'terms',
-                              child: Text('terms'),
+                              child: Text('Terms and Conditions'),
                             ),
                             DropdownMenuItem(
                               value: 'privacy',
-                              child: Text('privacy'),
+                              child: Text('Privacy Policy'),
                             ),
                             DropdownMenuItem(
                               value: 'biometric',
-                              child: Text('biometric'),
-                            ),
-                            DropdownMenuItem(
-                              value: 'custom',
-                              child: Text('custom'),
+                              child: Text('Biometric Consent'),
                             ),
                           ],
                           onChanged: (value) {

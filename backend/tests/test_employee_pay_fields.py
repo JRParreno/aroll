@@ -228,6 +228,13 @@ def test_create_employee_ignores_client_override_daily_rate():
     assert result.daily_rate == 650.0
 
 
+def test_employee_update_omits_phone_when_unset():
+    body = EmployeeUpdate(full_name="Casey Consent")
+    dumped = body.model_dump(exclude_unset=True)
+    assert "phone" not in dumped
+    assert dumped["full_name"] == "Casey Consent"
+
+
 def test_update_position_resolves_configured_rate():
     """Changing Role applies the new Role's configured rate."""
     business_id = uuid4()

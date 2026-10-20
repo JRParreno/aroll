@@ -3,13 +3,14 @@ import { getAuthToken } from "@/lib/authSession";
 
 const API_BASE =
   import.meta.env.VITE_API_URL ??
-  (import.meta.env.DEV ? "/api/v1" : "http://localhost:8000/api/v1");
+  (import.meta.env.DEV ? "/api/v1" : "http://127.0.0.1:8000/api/v1");
 
 /** Routes that must not send a stale session token. */
 function isPublicAuthPath(path: string): boolean {
   if (
     path.includes("/auth/login") ||
-    path.includes("/auth/business-owner-login")
+    path.includes("/auth/business-owner-login") ||
+    path.includes("/auth/owner/password-reset")
   ) {
     return true;
   }
@@ -61,6 +62,7 @@ export type UserMe = {
   business_name: string | null;
   business_code: string | null;
   setup_completed_at: string | null;
+  needs_branding_onboarding?: boolean;
   branding?: BusinessBrandingSettings | null;
   profile_image_url?: string | null;
   is_demo?: boolean;
@@ -95,6 +97,10 @@ export type BusinessListItem = {
   location_count: number;
   is_demo?: boolean;
   is_internal_test?: boolean;
+  registration_id?: string | null;
+  owner_email?: string | null;
+  approved_at?: string | null;
+  approval_email_status?: string | null;
 };
 
 export type BusinessLocation = {
@@ -159,6 +165,7 @@ export type Employee = {
   position_title: string | null;
   position_id?: string | null;
   phone: string | null;
+  recovery_email?: string | null;
   employment_type: string;
   pay_basis: PayBasis;
   daily_rate: number | null;
@@ -384,6 +391,7 @@ export type EmployeePayslip = {
   rejected_overtime_minutes?: number;
   overtime_approval_required?: boolean;
   overtime_per_minute?: number;
+  overtime_calculation_method?: "flat_per_minute" | "hourly_statutory";
   late_minutes?: number;
   late_deduction_per_minute?: number;
   undertime_minutes?: number;
@@ -485,6 +493,48 @@ export async function businessOwnerLogin(
   return data;
 }
 
+export type OwnerPasswordResetTicket = {
+  message: string;
+  resend_available_at: string | null;
+  retry_after_seconds: number;
+};
+
+export async function requestOwnerPasswordReset(email: string, businessCode: string) {
+  const { data } = await api.post<OwnerPasswordResetTicket>(
+    "/auth/owner/password-reset/request",
+    { email, business_code: businessCode }
+  );
+  return data;
+}
+
+export async function ownerPasswordResetStatus(email: string, businessCode: string) {
+  const { data } = await api.post<OwnerPasswordResetTicket>(
+    "/auth/owner/password-reset/status",
+    { email, business_code: businessCode }
+  );
+  return data;
+}
+
+export async function verifyOwnerPasswordReset(
+  email: string,
+  businessCode: string,
+  code: string
+) {
+  const { data } = await api.post<{ reset_token: string; expires_in_seconds: number }>(
+    "/auth/owner/password-reset/verify",
+    { email, business_code: businessCode, code }
+  );
+  return data;
+}
+
+export async function completeOwnerPasswordReset(resetToken: string, newPassword: string) {
+  const { data } = await api.post<{ message: string }>(
+    "/auth/owner/password-reset/complete",
+    { reset_token: resetToken, new_password: newPassword }
+  );
+  return data;
+}
+
 export async function getMe() {
   const { data } = await api.get<UserMe>("/auth/me");
   return data;
@@ -519,18 +569,29 @@ export async function getRegistration(id: string) {
 
 export async function rejectRegistration(
   id: string,
-  rejection_reason: string
+  payload: { reasons: string[]; other_explanation?: string }
 ) {
-  const { data } = await api.post(
-    `/admin/registrations/${id}/reject`,
-    { rejection_reason }
-  );
+  const { data } = await api.post<{
+    status: string;
+    email_status: string;
+    email_error?: string | null;
+    recipient?: string | null;
+  }>(`/admin/registrations/${id}/reject`, payload);
 
   return data;
 }
 
 export async function approveRegistration(id: string) {
   const { data } = await api.post(`/admin/registrations/${id}/approve`);
+  return data;
+}
+
+export async function sendRegistrationApprovalEmail(id: string) {
+  const { data } = await api.post<{
+    status: string;
+    recipient: string;
+    previously_sent: boolean;
+  }>(`/admin/registrations/${id}/send-approval-email`);
   return data;
 }
 
@@ -649,8 +710,14 @@ export async function getDashboardStats() {
   return data;
 }
 
-export async function listBusinesses() {
-  const { data } = await api.get<BusinessListItem[]>("/admin/businesses");
+export async function listBusinesses(params?: {
+  approved_from?: string;
+  approved_to?: string;
+  email_status?: "pending" | "sent" | "failed" | "not_sent";
+}) {
+  const { data } = await api.get<BusinessListItem[]>("/admin/businesses", {
+    params,
+  });
   return data;
 }
 
@@ -1489,6 +1556,7 @@ export type PayrollConfig = {
   late_deduction_per_minute: number;
   overtime_enabled: boolean;
   overtime_per_minute: number;
+  overtime_calculation_method?: "flat_per_minute" | "hourly_statutory";
   enable_late_overtime_balancing: boolean;
   overtime_approval_required: boolean;
   ordinary_ot_premium_percent: number;
@@ -1905,6 +1973,19 @@ export async function updateBusinessSettings(payload: BusinessSettingsUpdate) {
   return data;
 }
 
+export async function completeBrandingOnboarding(
+  branding?: BusinessBrandingSettings
+) {
+  const { data } = await api.post<{
+    status: string;
+    needs_branding_onboarding: boolean;
+  }>(
+    "/businesses/me/branding-onboarding/complete",
+    branding ? { branding } : {}
+  );
+  return data;
+}
+
 export type PublicLegalSection = {
   title: string;
   consent_type: string;
@@ -2277,6 +2358,8 @@ export async function previewScheduleReuse(payload: {
   target_week_start: string;
   source_week_start?: string;
   template_id?: string;
+  start_date?: string;
+  end_date?: string;
 }) {
   const { data } = await api.post<ScheduleReusePreview>(
     "/schedules/reuse/preview",
@@ -2291,6 +2374,8 @@ export async function applyScheduleReuse(payload: {
   conflict_mode: ScheduleConflictMode;
   source_week_start?: string;
   template_id?: string;
+  start_date?: string;
+  end_date?: string;
 }) {
   const { data } = await api.post<ScheduleReuseApplyResult>(
     "/schedules/reuse/apply",

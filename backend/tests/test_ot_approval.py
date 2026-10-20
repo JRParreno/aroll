@@ -18,6 +18,7 @@ from app.models.enums import (
 from app.models.payroll import BusinessPayrollConfig, Position
 from app.models.rest_day_policy import BusinessRestDayPolicy
 from app.models.scheduling import Shift, ShiftAssignment
+from app.services.employee_pay import stamp_attendance_completion_pay
 from app.services.ot_approval import payable_ot_minutes
 from app.services.payroll_adjustments import apply_adjustments_to_slip
 from app.services.payroll_engine import overtime_pay_amount
@@ -72,6 +73,7 @@ def _run_slip(
     ot_rate: float = 1.0,
     grace: int = 10,
     ot_minimum: int = 30,
+    stamp: bool = True,
 ):
     business_id = uuid4()
     employee_id = uuid4()
@@ -130,6 +132,8 @@ def _run_slip(
         status=AttendanceStatus.late if time_in > _ph(8, grace) else AttendanceStatus.complete,
         ot_approval_status=ot_approval_status,
     )
+    if stamp:
+        stamp_attendance_completion_pay(record, employee, position=position)
     db = MagicMock()
 
     def db_get(model, key=None):
@@ -201,6 +205,16 @@ def test_ot_rate_reaches_payslip_thirty_minutes():
     assert slip["overtime_minutes"] == 30.0
     assert abs(slip["overtime_pay"] - 30.0) < 0.01
     assert slip["attendance_records"][0]["ot"]["ot_rate_per_minute"] == 1.0
+
+
+def test_closed_punch_without_completion_stamp_is_not_priced_from_the_live_rate():
+    slip = _run_slip(time_in=_ph(8, 0), time_out=_ph(17, 30), stamp=False)
+    row = slip["attendance_records"][0]
+    assert row["historical_rate_required"] is True
+    assert slip["regular_pay"] == 0.0
+    assert slip["overtime_pay"] == 0.0
+    assert slip["late_deductions"] == 0.0
+    assert slip["unresolved_historical_rate_count"] == 1
 
 
 def test_late_twenty_minutes_twenty_pesos():

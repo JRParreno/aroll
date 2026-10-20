@@ -223,7 +223,7 @@ export function TrackRegistrationPage() {
                         <p className="text-xs font-medium uppercase tracking-wide text-red-800">
                           Rejection Reason
                         </p>
-                        <p className="mt-2 text-sm leading-relaxed text-red-700">
+                        <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-red-700">
                           {data.rejection_reason}
                         </p>
                       </section>

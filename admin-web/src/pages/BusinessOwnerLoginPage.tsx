@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PasswordInput } from "@/components/ui/password-input";
 import { businessOwnerLogin, getMe } from "@/lib/api";
+import { ownerFirstLoginPath } from "@/lib/ownerFirstLoginPath";
 import {
   clearAuthSession,
   isOwnerRole,
@@ -54,7 +55,7 @@ export function BusinessOwnerLoginPage() {
         navigate("/owner/change-password");
       } else {
         toast.success("Signed in successfully");
-        navigate("/owner/dashboard");
+        navigate(ownerFirstLoginPath(me));
       }
     } catch {
       toast.error("Invalid business code, email, or password");
@@ -123,6 +124,15 @@ export function BusinessOwnerLoginPage() {
                 required
                 inputClassName="h-11 rounded-lg border-0 bg-white shadow-sm"
               />
+
+              <div className="text-right">
+                <Link
+                  to="/owner-forgot-password"
+                  className="text-sm font-medium text-[#1E3A5F] underline underline-offset-2"
+                >
+                  Forgot password?
+                </Link>
+              </div>
 
               <Button
                 type="submit"

@@ -464,6 +464,13 @@ def approve_correction(
     request.review_note = None
     db.commit()
     db.refresh(request)
+    try:
+        from app.services.activity_notifications import notify_overtime_pending_if_needed
+
+        if record is not None:
+            notify_overtime_pending_if_needed(db, record)
+    except Exception:
+        pass
     if employee is None:
         employee = db.get(Employee, request.employee_id)
     if employee and employee.user_id:

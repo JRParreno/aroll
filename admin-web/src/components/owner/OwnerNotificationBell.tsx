@@ -1,16 +1,47 @@
+import { useEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Bell } from "lucide-react";
-import { Link } from "react-router-dom";
-import { getNotificationUnreadCount } from "@/lib/api";
+import { Link, useNavigate } from "react-router-dom";
+import { toast } from "sonner";
+import { getNotificationUnreadCount, listNotifications } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 export function OwnerNotificationBell({ className }: { className?: string }) {
+  const navigate = useNavigate();
   const { data: unreadCount = 0 } = useQuery({
     queryKey: ["notifications", "unread-count"],
     queryFn: getNotificationUnreadCount,
     refetchInterval: 60_000,
     refetchOnWindowFocus: true,
   });
+  const lastCount = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (lastCount.current === null) {
+      lastCount.current = unreadCount;
+      return;
+    }
+    if (unreadCount <= lastCount.current) {
+      lastCount.current = unreadCount;
+      return;
+    }
+    lastCount.current = unreadCount;
+    void listNotifications({ unread_only: true, limit: 1 })
+      .then((items) => {
+        const newest = items[0];
+        if (!newest) return;
+        toast(newest.title, {
+          description: newest.message,
+          action: {
+            label: "View",
+            onClick: () => {
+              navigate(newest.deep_link || "/owner/notifications");
+            },
+          },
+        });
+      })
+      .catch(() => {});
+  }, [unreadCount]);
 
   return (
     <Link
