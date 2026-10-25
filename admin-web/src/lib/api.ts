@@ -1326,6 +1326,7 @@ export type Shift = {
   color: string | null;
   is_active: boolean;
   has_in_progress_today?: boolean;
+  has_open_attendance?: boolean;
 };
 
 export type ScheduleAssignment = {
@@ -2436,4 +2437,54 @@ export async function getBusinessLocation() {
 export async function updateBusinessLocation(payload: BusinessLocationConfig) {
   const { data } = await api.put("/businesses/me/location", payload);
   return data;
+}
+
+export type WorkplaceWifiAccessPoint = {
+  id: string;
+  location_id: string;
+  label: string;
+  ssid: string | null;
+  bssid: string;
+  enabled: boolean;
+};
+
+export type WorkplaceWifiRssiSetting = {
+  minimum_rssi_dbm: number | null;
+};
+
+export async function getWorkplaceWifiRssi() {
+  const { data } = await api.get<WorkplaceWifiRssiSetting>(
+    "/businesses/me/location/wifi-rssi"
+  );
+  return data;
+}
+
+export async function updateWorkplaceWifiRssi(minimumRssiDbm: number | null) {
+  const { data } = await api.put<WorkplaceWifiRssiSetting>(
+    "/businesses/me/location/wifi-rssi",
+    { minimum_rssi_dbm: minimumRssiDbm }
+  );
+  return data;
+}
+
+export async function listWorkplaceWifi() {
+  const { data } = await api.get<WorkplaceWifiAccessPoint[]>(
+    "/businesses/me/location/wifi-access-points"
+  );
+  return data;
+}
+
+export async function updateWorkplaceWifi(
+  accessPointId: string,
+  payload: { enabled?: boolean; label?: string }
+) {
+  const { data } = await api.patch<WorkplaceWifiAccessPoint>(
+    `/businesses/me/location/wifi-access-points/${accessPointId}`,
+    payload
+  );
+  return data;
+}
+
+export async function deleteWorkplaceWifi(accessPointId: string) {
+  await api.delete(`/businesses/me/location/wifi-access-points/${accessPointId}`);
 }

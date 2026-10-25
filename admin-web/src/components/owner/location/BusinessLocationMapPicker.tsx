@@ -118,13 +118,19 @@ export function BusinessLocationMapPicker({
   );
 
   return (
-    <div className={cn("relative h-full w-full overflow-hidden bg-[#D6E3EB]", className)}>
+    <div
+      className={cn(
+        "business-location-map relative z-0 h-full min-h-0 w-full min-w-0 isolate overflow-hidden bg-[#D6E3EB]",
+        className
+      )}
+    >
       <MapContainer
         center={center}
-        className="h-full w-full"
+        className="relative z-0 h-full w-full"
         maxZoom={19}
         minZoom={3}
         scrollWheelZoom
+        style={{ height: "100%", width: "100%" }}
         zoom={hasPin ? zoomForRadiusMeters(geofenceRadiusM, center[0]) : 12}
       >
         <TileLayer
@@ -172,7 +178,7 @@ export function BusinessLocationMapPicker({
 
       {showMyLocationButton ? (
         <button
-          className="absolute bottom-3.5 right-3.5 z-[1000] flex h-11 w-11 items-center justify-center rounded-full bg-white shadow-md hover:bg-slate-50 disabled:opacity-60"
+          className="absolute bottom-3.5 right-3.5 z-10 flex h-11 w-11 items-center justify-center rounded-full bg-white shadow-md hover:bg-slate-50 disabled:opacity-60"
           disabled={locating}
           onClick={onMyLocationPressed}
           title="Use my current location"

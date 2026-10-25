@@ -18,6 +18,18 @@ import 'package:aroll_mobile/presentation/shared/tenant_mode_banner.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+/// Scroll padding for the employee Attendance screen.
+///
+/// The system navigation inset is applied once, on the scrollable, so the
+/// last action can move fully above the navigation bar without a second
+/// SafeArea gap.
+EdgeInsets employeeAttendanceScrollPadding(MediaQueryData media) {
+  final viewBottom = media.viewPadding.bottom;
+  final paddingBottom = media.padding.bottom;
+  final systemBottom = viewBottom > paddingBottom ? viewBottom : paddingBottom;
+  return EdgeInsets.fromLTRB(16, 4, 16, 16 + systemBottom);
+}
+
 class ScanAttendanceScreen extends StatefulWidget {
   const ScanAttendanceScreen({
     super.key,
@@ -288,23 +300,36 @@ class _ScanAttendanceScreenState extends State<ScanAttendanceScreen> {
             shiftAssignmentId: action == FaceAttendanceAction.clockIn
                 ? _resolvedShiftAssignmentId
                 : null,
+            confirmWifiFallback: _repo.confirmWorkplaceWifiFallback,
             submit: ({
               required FaceQuickCapture capture,
-              required double latitude,
-              required double longitude,
+              double? latitude,
+              double? longitude,
+              double? horizontalAccuracyM,
+              String? observedBssid,
+              int? observedRssiDbm,
+              String? locationEvidence,
             }) async {
               if (action == FaceAttendanceAction.clockIn) {
                 return _repo.clockInWithFace(
                   latitude: latitude,
                   longitude: longitude,
+                  horizontalAccuracyM: horizontalAccuracyM,
                   capture: capture,
                   shiftAssignmentId: _resolvedShiftAssignmentId,
+                  observedBssid: observedBssid,
+                  observedRssiDbm: observedRssiDbm,
+                  locationEvidence: locationEvidence,
                 );
               }
               return _repo.clockOutWithFace(
                 latitude: latitude,
                 longitude: longitude,
+                horizontalAccuracyM: horizontalAccuracyM,
                 capture: capture,
+                observedBssid: observedBssid,
+                observedRssiDbm: observedRssiDbm,
+                locationEvidence: locationEvidence,
               );
             },
           ),
@@ -404,15 +429,23 @@ class _ScanAttendanceScreenState extends State<ScanAttendanceScreen> {
     return Scaffold(
       backgroundColor: EmployeeColors.scaffold,
       body: SafeArea(
+        // Bottom inset is added to the list padding so it scrolls with the
+        // content instead of leaving a second gap above the navigation bar.
+        bottom: false,
         child: _loading
-            ? loadingView()
+            ? SafeArea(top: false, child: loadingView())
             : _loadError != null
-                ? errorView(_loadError, onRetry: _load)
+                ? SafeArea(
+                    top: false,
+                    child: errorView(_loadError, onRetry: _load),
+                  )
                 : RefreshIndicator(
                     color: primary,
                     onRefresh: _load,
                     child: ListView(
-                      padding: const EdgeInsets.fromLTRB(16, 4, 16, 28),
+                      padding: employeeAttendanceScrollPadding(
+                        MediaQuery.of(context),
+                      ),
                       children: [
                         _AttendanceHeader(
                           onBack: () => employeeNavigateBack(context),

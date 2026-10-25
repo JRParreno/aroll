@@ -71,6 +71,10 @@ import {
 } from "@/lib/api";
 import { ME_QUERY_KEY } from "@/lib/authSession";
 import {
+  SHIFT_DELETE_BLOCKED_MESSAGE,
+  shiftDeleteBlockedMessage,
+} from "@/lib/shiftDeletion";
+import {
   SETUP_WIZARD_LOCATION_STEP,
   SETUP_WIZARD_STATUS_KEYS,
   SETUP_WIZARD_STEPS,
@@ -1093,6 +1097,11 @@ export function OwnerSetupWizardPage() {
                           {formatShiftTime(s.start_time)}–{formatShiftTime(s.end_time)}{" "}
                           · Capacity {s.employee_capacity}
                         </p>
+                        {s.has_open_attendance ? (
+                          <p className="mt-1 text-xs leading-relaxed text-[#6B7280]">
+                            {SHIFT_DELETE_BLOCKED_MESSAGE}
+                          </p>
+                        ) : null}
                       </div>
                       <div className="flex shrink-0 items-center gap-2">
                         <Button
@@ -1107,9 +1116,17 @@ export function OwnerSetupWizardPage() {
                           size="sm"
                           variant="outline"
                           className="h-8 rounded-lg px-2.5 text-xs"
-                          onClick={() =>
-                            deleteShift(s.id).then(() => refetchShifts())
-                          }
+                          disabled={s.has_open_attendance === true}
+                          onClick={() => {
+                            void deleteShift(s.id)
+                              .then(() => refetchShifts())
+                              .catch((error) => {
+                                toast.error(
+                                  shiftDeleteBlockedMessage(error) ??
+                                    "Could not remove work shift"
+                                );
+                              });
+                          }}
                         >
                           Remove
                         </Button>

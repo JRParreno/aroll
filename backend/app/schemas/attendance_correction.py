@@ -24,8 +24,8 @@ class AttendanceCorrectionCreateRequest(BaseModel):
 
     @model_validator(mode="after")
     def _validate_times(self):
-        # Clock-out is always required. Clock-in may be omitted for incomplete
-        # attendance fixes (server locks the recorded clock-in).
+        # Clock-out is always required. A recorded clock-in is locked in the
+        # service: the client may omit Time In or repeat the same minute.
         if self.requested_time_out is None:
             raise ValueError("Provide corrected Time Out.")
         if (

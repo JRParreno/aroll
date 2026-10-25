@@ -75,17 +75,30 @@ abstract class EmployeeRepository {
 
   Future<EmployeeWorkplacePolicies> getWorkplacePolicies();
 
+  Future<void> confirmWorkplaceWifiFallback(
+    String bssid, {
+    int? observedRssiDbm,
+  });
+
   Future<AttendanceClockResult> clockInWithFace({
-    required double latitude,
-    required double longitude,
+    double? latitude,
+    double? longitude,
+    double? horizontalAccuracyM,
     FaceQuickCapture? capture,
     String? shiftAssignmentId,
+    String? observedBssid,
+    int? observedRssiDbm,
+    String? locationEvidence,
   });
 
   Future<AttendanceClockResult> clockOutWithFace({
-    required double latitude,
-    required double longitude,
+    double? latitude,
+    double? longitude,
+    double? horizontalAccuracyM,
     FaceQuickCapture? capture,
+    String? observedBssid,
+    int? observedRssiDbm,
+    String? locationEvidence,
   });
 
   Future<List<LeaveRequestItem>> getLeaveRequests({String? status});

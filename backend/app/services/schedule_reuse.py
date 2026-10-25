@@ -15,6 +15,7 @@ from fastapi import HTTPException
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.models.business import Business
 from app.models.employee import Employee
 from app.models.schedule_template import ScheduleTemplate, ScheduleTemplateEntry
 from app.models.scheduling import Shift, ShiftAssignment
@@ -30,7 +31,10 @@ from app.schemas.schedule_reuse import (
     ScheduleTemplateSummary,
 )
 from app.services.leave_requests import blocking_leave_dates_for_employees
-from app.services.schedule_overlap import shifts_times_overlap
+from app.services.schedule_overlap import (
+    assert_shifts_still_assignable,
+    shifts_times_overlap,
+)
 
 _LEAVE_CONFLICT = (
     "This employee is currently on approved leave for the selected date(s)."
@@ -453,6 +457,40 @@ def apply_reuse(
 
     def _blocked_by_leave(item: ScheduleReusePreviewItem) -> bool:
         return item.work_date in protected_leave.get(uuid.UUID(item.employee_id), set())
+
+    business = db.get(Business, business_id)
+    tz_name = business.timezone if business is not None else None
+    shifts_by_id = {
+        shift.id: shift
+        for shift in db.query(Shift).filter(Shift.business_id == business_id).all()
+    }
+
+    def _will_create(item: ScheduleReusePreviewItem) -> bool:
+        if _blocked_by_leave(item):
+            return False
+        if conflict_mode == ScheduleConflictMode.replace:
+            return item.status not in ("skipped_inactive", "skipped_missing_shift")
+        return item.status == "new"
+
+    assert_shifts_still_assignable(
+        [
+            (item.work_date, shifts_by_id.get(uuid.UUID(item.shift_id)))
+            for item in preview.items
+            if _will_create(item)
+        ],
+        tz_name=tz_name,
+    )
+    if conflict_mode == ScheduleConflictMode.replace:
+        existing_before_replace = _assignment_rows_for_range(
+            db, business_id, span_start, span_end
+        )
+        assert_shifts_still_assignable(
+            [
+                (assignment.work_date, shift_row)
+                for assignment, _employee, shift_row in existing_before_replace
+            ],
+            tz_name=tz_name,
+        )
 
     removed_snapshots: list[dict] = []
     created_snapshots: list[dict] = []

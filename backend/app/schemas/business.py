@@ -38,6 +38,32 @@ class LocationResponse(BaseModel):
     geofence_radius_m: int
 
 
+class WorkplaceWifiAccessPointCreate(BaseModel):
+    label: str = Field(min_length=1, max_length=80)
+    bssid: str = Field(min_length=1, max_length=32)
+    ssid: str | None = Field(default=None, max_length=64)
+
+
+class WorkplaceWifiAccessPointUpdate(BaseModel):
+    label: str | None = Field(default=None, min_length=1, max_length=80)
+    enabled: bool | None = None
+
+
+class WorkplaceWifiAccessPointResponse(BaseModel):
+    id: str
+    location_id: str
+    label: str
+    ssid: str | None
+    bssid: str
+    enabled: bool
+
+
+class WorkplaceWifiRssiSetting(BaseModel):
+    """Owner floor for Wi-Fi fallback. Null turns the signal check off."""
+
+    minimum_rssi_dbm: int | None = Field(default=None, ge=-120, le=-20)
+
+
 class AccountSettingsResponse(BaseModel):
     business_name: str
     owner_name: str | None = None

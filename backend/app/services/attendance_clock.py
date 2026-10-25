@@ -25,8 +25,15 @@ from app.models.employee import Employee
 from app.models.enums import AttendanceStatus
 from app.models.scheduling import Shift, ShiftAssignment
 from app.services.demo_tenant import (
+    business_is_demo,
     load_business_for_employee,
     substitute_demo_worksite_coordinates,
+)
+from app.services.workplace_wifi import (
+    WIFI_MATCHED,
+    WorkplaceWifiFallbackRejected,
+    assert_wifi_fallback,
+    wifi_verification_enabled,
 )
 
 
@@ -355,14 +362,39 @@ def _existing_assignment_record(
     )
 
 
+def _clock_minute(value: datetime) -> datetime:
+    """Drop seconds so the grace comparison matches the displayed clock minute."""
+    return value.replace(second=0, microsecond=0)
+
+
+def arrival_is_after_grace(
+    *,
+    arrived_at: datetime,
+    scheduled_start: datetime,
+    grace_minutes: float,
+) -> bool:
+    """True when the arrival minute is after scheduled start plus grace.
+
+    The grace end minute is inclusive. With an 8:00 start and 10 minutes of
+    grace, 8:10:00 through 8:10:59 is still on time and 8:11:00 is late.
+    ``grace_minutes`` is the configured value; it is not a fixed threshold.
+    """
+    grace = max(float(grace_minutes or 0), 0.0)
+    grace_end = _clock_minute(scheduled_start) + timedelta(minutes=grace)
+    return _clock_minute(arrived_at) > _clock_minute(grace_end)
+
+
 def _clock_in_status(
     *,
     now_local: datetime,
     scheduled_start: datetime,
     grace_minutes: int,
 ) -> AttendanceStatus:
-    grace_end = scheduled_start + timedelta(minutes=grace_minutes)
-    if now_local > grace_end:
+    if arrival_is_after_grace(
+        arrived_at=now_local,
+        scheduled_start=scheduled_start,
+        grace_minutes=grace_minutes,
+    ):
         return AttendanceStatus.late
     return AttendanceStatus.in_progress
 
@@ -647,17 +679,107 @@ def verify_employee_face_match(
     return mean_score
 
 
+def _location_required() -> HTTPException:
+    return HTTPException(
+        400,
+        detail={
+            "code": "location_required",
+            "message": "Turn on location so attendance can confirm the work area.",
+        },
+    )
+
+
+def _resolve_clock_location(
+    db: Session,
+    *,
+    business,
+    location,
+    latitude: float | None,
+    longitude: float | None,
+    observed_bssid: str | None,
+    observed_rssi_dbm: int | None,
+    location_evidence: str | None,
+) -> tuple[float | None, float | None, str | None, uuid.UUID | None, dict]:
+    """Choose GPS geofence or a server-checked Wi-Fi fallback.
+
+    Coordinates are the GPS path. An inside fix ignores any BSSID. An outside
+    fix raises before a BSSID can authorize the punch. Omitting coordinates is
+    the Wi-Fi path, and it succeeds only when ``assert_wifi_fallback`` matches
+    an enabled access point. ``location_evidence`` by itself never authorizes.
+    """
+    if business_is_demo(business):
+        if latitude is None or longitude is None:
+            raise _location_required()
+        latitude, longitude = substitute_demo_worksite_coordinates(
+            business=business,
+            location=location,
+            latitude=latitude,
+            longitude=longitude,
+        )
+        geofence = _validate_geofence(location, latitude, longitude)
+        return latitude, longitude, None, None, geofence
+
+    if latitude is not None or longitude is not None:
+        if latitude is None or longitude is None:
+            raise HTTPException(
+                400,
+                detail={
+                    "code": "invalid_location",
+                    "message": "Send both location coordinates, or use workplace Wi-Fi.",
+                },
+            )
+        geofence = _validate_geofence(location, latitude, longitude)
+        return latitude, longitude, None, None, geofence
+
+    if (location_evidence or "").strip().lower() != "wifi":
+        raise _location_required()
+
+    outcome, matched_id = assert_wifi_fallback(
+        db, location, observed_bssid, observed_rssi_dbm
+    )
+    # The response schema requires a distance. No GPS sample exists, so the
+    # stored punch keeps latitude and longitude null. distance_m 0 is only a
+    # placeholder for that schema, not a measured position.
+    geofence = {
+        "inside_geofence": True,
+        "distance_m": 0.0,
+        "allowed_radius_m": float(location.geofence_radius_m),
+        "location_evidence": "wifi",
+    }
+    return None, None, outcome, matched_id, geofence
+
+
+def check_wifi_fallback(
+    db: Session,
+    employee: Employee,
+    observed_bssid: str | None,
+    observed_rssi_dbm: int | None = None,
+) -> None:
+    """Preflight the fallback BSSID. Does not create or update a punch."""
+    business = load_business_for_employee(db, employee)
+    if business_is_demo(business):
+        raise WorkplaceWifiFallbackRejected(
+            "wifi_fallback_unavailable",
+            "Demo attendance does not use workplace Wi-Fi.",
+        )
+    location = _primary_location(db, employee.business_id)
+    assert_wifi_fallback(db, location, observed_bssid, observed_rssi_dbm)
+
+
 def clock_in_employee(
     db: Session,
     employee: Employee,
     *,
-    latitude: float,
-    longitude: float,
+    latitude: float | None = None,
+    longitude: float | None = None,
     shift_assignment_id: uuid.UUID | None = None,
     business_timezone: str | None = "Asia/Manila",
     face_image_bytes: bytes | None = None,
     liveness_passed: bool | None = None,
     face_match_score: float | None = None,
+    observed_bssid: str | None = None,
+    observed_rssi_dbm: int | None = None,
+    location_evidence: str | None = None,
 ) -> dict:
     from app.services.leave_requests import raise_if_on_approved_leave
     from app.services.missing_clock_out import ensure_incomplete_for_employee
@@ -669,13 +791,17 @@ def clock_in_employee(
     )
 
     location = _primary_location(db, employee.business_id)
-    latitude, longitude = substitute_demo_worksite_coordinates(
-        business=load_business_for_employee(db, employee),
+    business = load_business_for_employee(db, employee)
+    latitude, longitude, wifi_outcome, matched_wifi_id, geofence = _resolve_clock_location(
+        db,
+        business=business,
         location=location,
         latitude=latitude,
         longitude=longitude,
+        observed_bssid=observed_bssid,
+        observed_rssi_dbm=observed_rssi_dbm,
+        location_evidence=location_evidence,
     )
-    geofence = _validate_geofence(location, latitude, longitude)
 
     resolved_score = face_match_score
     if face_image_bytes is not None and resolved_score is None:
@@ -742,6 +868,8 @@ def clock_in_employee(
         longitude_in=longitude,
         face_match_score=resolved_score,
         liveness_passed=liveness_passed,
+        wifi_verification_in=wifi_outcome,
+        matched_wifi_access_point_id_in=matched_wifi_id,
     )
     db.add(record)
     db.commit()
@@ -775,6 +903,8 @@ def clock_in_employee(
         message = f"{message} Face match score: {resolved_score:.3f}."
     if liveness_passed is True:
         message = f"{message} Liveness passed."
+    if wifi_outcome == WIFI_MATCHED:
+        message = f"{message} Workplace Wi-Fi confirmed this worksite."
     return {
         "id": str(record.id),
         "status": record.status.value,
@@ -796,11 +926,14 @@ def clock_out_employee(
     db: Session,
     employee: Employee,
     *,
-    latitude: float,
-    longitude: float,
+    latitude: float | None = None,
+    longitude: float | None = None,
     business_timezone: str | None = "Asia/Manila",
     face_match_score: float | None = None,
     liveness_passed: bool | None = None,
+    observed_bssid: str | None = None,
+    observed_rssi_dbm: int | None = None,
+    location_evidence: str | None = None,
 ) -> dict:
     from app.services.leave_requests import raise_if_on_approved_leave
     from app.services.missing_clock_out import raise_if_incomplete_clock_out
@@ -809,13 +942,17 @@ def clock_out_employee(
     raise_if_on_approved_leave(db, employee=employee, work_date=today)
 
     location = _primary_location(db, employee.business_id)
-    latitude, longitude = substitute_demo_worksite_coordinates(
-        business=load_business_for_employee(db, employee),
+    business = load_business_for_employee(db, employee)
+    latitude, longitude, wifi_outcome, matched_wifi_id, geofence = _resolve_clock_location(
+        db,
+        business=business,
         location=location,
         latitude=latitude,
         longitude=longitude,
+        observed_bssid=observed_bssid,
+        observed_rssi_dbm=observed_rssi_dbm,
+        location_evidence=location_evidence,
     )
-    geofence = _validate_geofence(location, latitude, longitude)
 
     # If open punch is past end + maximum_overtime_minutes, mark incomplete.
     open_any = (
@@ -884,6 +1021,9 @@ def clock_out_employee(
         record.liveness_passed = True
     elif liveness_passed is False:
         record.liveness_passed = False
+    if wifi_outcome is not None:
+        record.wifi_verification_out = wifi_outcome
+        record.matched_wifi_access_point_id_out = matched_wifi_id
 
     worked_minutes = max(
         (now_utc - record.time_in).total_seconds() / 60.0,
@@ -978,6 +1118,8 @@ def clock_out_employee(
         message = f"{message} Face match score: {face_match_score:.3f}."
     if liveness_passed is True:
         message = f"{message} Liveness passed."
+    if wifi_outcome == WIFI_MATCHED:
+        message = f"{message} Workplace Wi-Fi confirmed this worksite."
     if getattr(record, "ot_approval_status", None) is not None:
         message = f"{message} Overtime awaiting approval."
 
@@ -1010,7 +1152,12 @@ def clock_out_employee(
     }
 
 
-def worksite_for_business(db: Session, business_id: uuid.UUID) -> dict:
+def worksite_for_business(
+    db: Session,
+    business_id: uuid.UUID,
+    *,
+    is_demo: bool = False,
+) -> dict:
     location = _primary_location(db, business_id)
     return {
         "label": location.label,
@@ -1018,4 +1165,8 @@ def worksite_for_business(db: Session, business_id: uuid.UUID) -> dict:
         "latitude": float(location.latitude),
         "longitude": float(location.longitude),
         "geofence_radius_m": location.geofence_radius_m,
+        "minimum_rssi_dbm": location.minimum_rssi_dbm,
+        "wifi_verification_enabled": wifi_verification_enabled(
+            db, location, is_demo=is_demo
+        ),
     }

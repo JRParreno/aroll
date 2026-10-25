@@ -27,6 +27,10 @@ from app.schemas.business import (
     BrandingOnboardingComplete,
     LocationResponse,
     LocationUpdate,
+    WorkplaceWifiAccessPointCreate,
+    WorkplaceWifiAccessPointResponse,
+    WorkplaceWifiAccessPointUpdate,
+    WorkplaceWifiRssiSetting,
 )
 from app.schemas.profile_image import (
     OwnerProfileImageResponse,
@@ -93,6 +97,13 @@ from app.services.legal_consent import (
     legal_settings_payload,
 )
 from app.services.registration_documents import get_document_file_path
+from app.services.workplace_wifi import (
+    list_access_points,
+    owned_access_point,
+    primary_location_for_business,
+    register_access_point,
+    require_owner_business,
+)
 from app.services.registration_service import document_response
 
 router = APIRouter(prefix="/businesses", tags=["businesses"])
@@ -535,6 +546,112 @@ def update_location(
         loc.latitude = body.latitude
         loc.longitude = body.longitude
         loc.geofence_radius_m = body.geofence_radius_m
+    db.commit()
+    return {"status": "ok"}
+
+
+def _wifi_response(row) -> WorkplaceWifiAccessPointResponse:
+    return WorkplaceWifiAccessPointResponse(
+        id=str(row.id),
+        location_id=str(row.location_id),
+        label=row.label,
+        ssid=row.ssid,
+        bssid=row.bssid,
+        enabled=row.enabled,
+    )
+
+
+@router.get(
+    "/me/location/wifi-access-points",
+    response_model=list[WorkplaceWifiAccessPointResponse],
+)
+def list_workplace_wifi(
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(require_roles(UserRole.owner))],
+):
+    business_id = require_owner_business(user)
+    return [_wifi_response(row) for row in list_access_points(db, business_id)]
+
+
+@router.get("/me/location/wifi-rssi", response_model=WorkplaceWifiRssiSetting)
+def get_workplace_wifi_rssi(
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(require_roles(UserRole.owner))],
+):
+    business_id = require_owner_business(user)
+    location = primary_location_for_business(db, business_id)
+    return WorkplaceWifiRssiSetting(minimum_rssi_dbm=location.minimum_rssi_dbm)
+
+
+@router.put("/me/location/wifi-rssi", response_model=WorkplaceWifiRssiSetting)
+def update_workplace_wifi_rssi(
+    body: WorkplaceWifiRssiSetting,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(require_roles(UserRole.owner))],
+):
+    business_id = require_owner_business(user)
+    location = primary_location_for_business(db, business_id)
+    location.minimum_rssi_dbm = body.minimum_rssi_dbm
+    db.commit()
+    db.refresh(location)
+    return WorkplaceWifiRssiSetting(minimum_rssi_dbm=location.minimum_rssi_dbm)
+
+
+@router.post(
+    "/me/location/wifi-access-points",
+    response_model=WorkplaceWifiAccessPointResponse,
+    status_code=201,
+)
+def create_workplace_wifi(
+    body: WorkplaceWifiAccessPointCreate,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(require_roles(UserRole.owner))],
+):
+    business_id = require_owner_business(user)
+    row = register_access_point(
+        db,
+        business_id=business_id,
+        label=body.label,
+        bssid=body.bssid,
+        ssid=body.ssid,
+    )
+    return _wifi_response(row)
+
+
+@router.patch(
+    "/me/location/wifi-access-points/{access_point_id}",
+    response_model=WorkplaceWifiAccessPointResponse,
+)
+def update_workplace_wifi(
+    access_point_id: uuid.UUID,
+    body: WorkplaceWifiAccessPointUpdate,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(require_roles(UserRole.owner))],
+):
+    business_id = require_owner_business(user)
+    row = owned_access_point(
+        db, business_id=business_id, access_point_id=access_point_id
+    )
+    if body.label is not None:
+        row.label = body.label.strip()[:80]
+    if body.enabled is not None:
+        row.enabled = body.enabled
+    db.commit()
+    db.refresh(row)
+    return _wifi_response(row)
+
+
+@router.delete("/me/location/wifi-access-points/{access_point_id}")
+def delete_workplace_wifi(
+    access_point_id: uuid.UUID,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(require_roles(UserRole.owner))],
+):
+    business_id = require_owner_business(user)
+    row = owned_access_point(
+        db, business_id=business_id, access_point_id=access_point_id
+    )
+    db.delete(row)
     db.commit()
     return {"status": "ok"}
 

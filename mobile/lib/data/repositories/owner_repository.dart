@@ -854,6 +854,61 @@ class OwnerRepository {
       ))
           .data!;
 
+  Future<Map<String, dynamic>> workplaceWifiRssiSetting() async =>
+      (await _api.dio.get<Map<String, dynamic>>(
+        '/businesses/me/location/wifi-rssi',
+      ))
+          .data!;
+
+  Future<Map<String, dynamic>> updateWorkplaceWifiRssi(int? minimumRssiDbm) async =>
+      (await _api.dio.put<Map<String, dynamic>>(
+        '/businesses/me/location/wifi-rssi',
+        data: {'minimum_rssi_dbm': minimumRssiDbm},
+      ))
+          .data!;
+
+  Future<List<Map<String, dynamic>>> workplaceWifiAccessPoints() async =>
+      _list(
+        await _api.dio.get<List<dynamic>>(
+          '/businesses/me/location/wifi-access-points',
+        ),
+      );
+
+  Future<Map<String, dynamic>> registerWorkplaceWifi({
+    required String label,
+    required String bssid,
+    String? ssid,
+  }) async =>
+      (await _api.dio.post<Map<String, dynamic>>(
+        '/businesses/me/location/wifi-access-points',
+        data: {
+          'label': label,
+          'bssid': bssid,
+          if (ssid != null) 'ssid': ssid,
+        },
+      ))
+          .data!;
+
+  Future<Map<String, dynamic>> updateWorkplaceWifi(
+    String accessPointId, {
+    String? label,
+    bool? enabled,
+  }) async =>
+      (await _api.dio.patch<Map<String, dynamic>>(
+        '/businesses/me/location/wifi-access-points/$accessPointId',
+        data: {
+          if (label != null) 'label': label,
+          if (enabled != null) 'enabled': enabled,
+        },
+      ))
+          .data!;
+
+  Future<void> deleteWorkplaceWifi(String accessPointId) async {
+    await _api.dio.delete<void>(
+      '/businesses/me/location/wifi-access-points/$accessPointId',
+    );
+  }
+
   Future<Map<String, dynamic>> completeSetup() async =>
       (await _api.dio.post<Map<String, dynamic>>(
         '/businesses/me/complete-setup',

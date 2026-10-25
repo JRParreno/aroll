@@ -10,6 +10,7 @@ import 'package:aroll_mobile/core/location/employee_location_service.dart';
 import 'package:aroll_mobile/data/repositories/owner_repository.dart';
 import 'package:aroll_mobile/presentation/owner/owner_shell.dart';
 import 'package:aroll_mobile/presentation/owner/widgets/business_location_map_picker.dart';
+import 'package:aroll_mobile/presentation/owner/widgets/workplace_wifi_section.dart';
 import 'package:aroll_mobile/presentation/shared/app_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:latlong2/latlong.dart';
@@ -51,8 +52,8 @@ class _OwnerLocationScreenState extends State<OwnerLocationScreen> {
   double _savedGeofenceRadiusM = kDefaultGeofenceRadiusM.toDouble();
 
   List<PlaceSuggestion> _suggestions = const [];
-  Timer? _debounce;
   Timer? _reverseGeocodeDebounce;
+  int _suggestionGeneration = 0;
 
   void _bumpMapFocus() {
     _mapFocusToken++;
@@ -68,7 +69,6 @@ class _OwnerLocationScreenState extends State<OwnerLocationScreen> {
 
   @override
   void dispose() {
-    _debounce?.cancel();
     _reverseGeocodeDebounce?.cancel();
     _addressController.dispose();
     _addressFocus.dispose();
@@ -135,7 +135,14 @@ class _OwnerLocationScreenState extends State<OwnerLocationScreen> {
   ) async {
     if (_addressEditedManually) return;
     final address = await reverseGeocodeAddress(latitude, longitude);
-    if (!mounted || address == null || address.trim().isEmpty) return;
+    if (!mounted || _addressEditedManually) return;
+    if (_latitude == null ||
+        _longitude == null ||
+        (_latitude! - latitude).abs() > 1e-6 ||
+        (_longitude! - longitude).abs() > 1e-6) {
+      return;
+    }
+    if (address == null || address.trim().isEmpty) return;
     setState(() => _addressController.text = address);
   }
 
@@ -182,34 +189,12 @@ class _OwnerLocationScreenState extends State<OwnerLocationScreen> {
     });
   }
 
-  void _onAddressChanged(String value) {
+  void _onAddressChanged(String _) {
+    _suggestionGeneration++;
     setState(() {
       _addressEditedManually = true;
+      _suggestions = const [];
     });
-    _debounce?.cancel();
-    _debounce = Timer(const Duration(milliseconds: 350), () {
-      _fetchSuggestions(value);
-    });
-  }
-
-  Future<void> _fetchSuggestions(String query) async {
-    if (_isManager) return;
-    final trimmed = query.trim();
-    if (trimmed.length < 2) {
-      if (mounted) setState(() => _suggestions = const []);
-      return;
-    }
-    setState(() => _searching = true);
-    try {
-      final results = await _placesSearch.autocomplete(trimmed);
-      if (!mounted) return;
-      setState(() => _suggestions = results);
-    } catch (_) {
-      if (!mounted) return;
-      setState(() => _suggestions = const []);
-    } finally {
-      if (mounted) setState(() => _searching = false);
-    }
   }
 
   Future<void> _selectSuggestion(PlaceSuggestion suggestion) async {
@@ -246,25 +231,23 @@ class _OwnerLocationScreenState extends State<OwnerLocationScreen> {
   Future<void> _submitAddressSearch() async {
     final query = _addressController.text.trim();
     if (query.length < 3 || _isManager) return;
+    final generation = ++_suggestionGeneration;
     setState(() {
       _searching = true;
       _suggestions = const [];
     });
-    _addressFocus.unfocus();
     try {
-      final place = await _placesSearch.resolveAddress(query);
-      if (!mounted) return;
-      if (place == null) {
+      final results = await _placesSearch.autocomplete(query);
+      if (!mounted || generation != _suggestionGeneration) return;
+      if (results.isEmpty) {
         _showSnack('No results for that address.', isError: true);
         return;
       }
-      setState(() {
-        _addressController.text = place.address;
-        _latitude = place.latitude;
-        _longitude = place.longitude;
-        _addressEditedManually = true;
-        _bumpMapFocus();
-      });
+      if (results.length == 1) {
+        await _selectSuggestion(results.first);
+        return;
+      }
+      setState(() => _suggestions = results);
     } catch (_) {
       if (!mounted) return;
       _showSnack('No results for that address.', isError: true);
@@ -556,6 +539,11 @@ class _OwnerLocationScreenState extends State<OwnerLocationScreen> {
                       ),
                     ),
                   ],
+                  if (!_isManager)
+                    WorkplaceWifiSection(
+                      repository: _repo,
+                      radiusM: _geofenceRadiusM,
+                    ),
                 ]),
               ),
             ),
@@ -652,7 +640,7 @@ class _OwnerLocationScreenState extends State<OwnerLocationScreen> {
         onChanged: _onAddressChanged,
         onSubmitted: (_) => _submitAddressSearch(),
         decoration: InputDecoration(
-          hintText: 'Search street, barangay, or place',
+          hintText: 'Street, barangay, or place, then press search',
           hintStyle: TextStyle(color: Colors.grey.shade500, fontSize: 14),
           prefixIcon: Icon(Icons.search_rounded, color: Colors.grey.shade600),
           suffixIcon: _searching

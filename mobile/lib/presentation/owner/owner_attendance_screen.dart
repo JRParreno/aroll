@@ -17,6 +17,29 @@ String _formatTime(String? value, {String? timeZone}) {
   return formatBusinessAttendanceTimeIso(value, timeZone: timeZone);
 }
 
+/// Places the pending-corrections card near its button without leaving the
+/// screen. The button sits left of another header action, so aligning the
+/// card's right edge to the button would push the card off the left side.
+Rect pendingCorrectionsPopupFrame({
+  required Size screenSize,
+  required EdgeInsets screenPadding,
+  required Rect buttonRect,
+  double margin = 16,
+  double maxWidth = 360,
+  double gap = 10,
+}) {
+  final minLeft = screenPadding.left + margin;
+  final maxRight = screenSize.width - screenPadding.right - margin;
+  final available = (maxRight - minLeft).clamp(0.0, double.infinity);
+  final width = available < maxWidth ? available : maxWidth;
+  final maxLeft = maxRight - width;
+  final left = (buttonRect.right - width).clamp(
+    minLeft,
+    maxLeft < minLeft ? minLeft : maxLeft,
+  );
+  return Rect.fromLTWH(left, buttonRect.bottom + gap, width, 0);
+}
+
 class OwnerAttendanceScreen extends StatefulWidget {
   const OwnerAttendanceScreen({super.key});
 
@@ -533,7 +556,7 @@ class _OwnerAttendanceScreenState extends State<OwnerAttendanceScreen> {
                         correctionsButton: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            _PendingCorrectionsButton(
+                            PendingCorrectionsButton(
                               items: _pendingCorrections,
                               timeZone: _attendanceTimeZone,
                               busyId: _busyCorrectionId,
@@ -1002,8 +1025,9 @@ class _AttendanceEmployeeCard extends StatelessWidget {
   }
 }
 
-class _PendingCorrectionsButton extends StatefulWidget {
-  const _PendingCorrectionsButton({
+class PendingCorrectionsButton extends StatefulWidget {
+  const PendingCorrectionsButton({
+    super.key,
     required this.items,
     required this.busyId,
     required this.rejectingId,
@@ -1026,17 +1050,17 @@ class _PendingCorrectionsButton extends StatefulWidget {
   final Future<void> Function(String requestId) onConfirmReject;
 
   @override
-  State<_PendingCorrectionsButton> createState() =>
+  State<PendingCorrectionsButton> createState() =>
       _PendingCorrectionsButtonState();
 }
 
-class _PendingCorrectionsButtonState extends State<_PendingCorrectionsButton> {
+class _PendingCorrectionsButtonState extends State<PendingCorrectionsButton> {
   final OverlayPortalController _portal = OverlayPortalController();
-  final LayerLink _link = LayerLink();
+  final GlobalKey _buttonKey = GlobalKey();
   final ValueNotifier<int> _reviewTick = ValueNotifier(0);
 
   @override
-  void didUpdateWidget(covariant _PendingCorrectionsButton oldWidget) {
+  void didUpdateWidget(covariant PendingCorrectionsButton oldWidget) {
     super.didUpdateWidget(oldWidget);
     _reviewTick.value++;
   }
@@ -1143,11 +1167,21 @@ class _PendingCorrectionsButtonState extends State<_PendingCorrectionsButton> {
   Widget build(BuildContext context) {
     final open = _portal.isShowing;
     final count = widget.items.length;
-    final width = MediaQuery.sizeOf(context).width;
 
     return OverlayPortal(
       controller: _portal,
       overlayChildBuilder: (context) {
+        final media = MediaQuery.of(context);
+        final buttonBox =
+            _buttonKey.currentContext?.findRenderObject() as RenderBox?;
+        final buttonRect = buttonBox == null || !buttonBox.hasSize
+            ? Rect.fromLTWH(media.size.width - 56, media.padding.top + 8, 40, 40)
+            : buttonBox.localToGlobal(Offset.zero) & buttonBox.size;
+        final frame = pendingCorrectionsPopupFrame(
+          screenSize: media.size,
+          screenPadding: media.padding,
+          buttonRect: buttonRect,
+        );
         return Stack(
           children: [
             Positioned.fill(
@@ -1157,20 +1191,18 @@ class _PendingCorrectionsButtonState extends State<_PendingCorrectionsButton> {
                 child: const ColoredBox(color: Color(0x33000000)),
               ),
             ),
-            CompositedTransformFollower(
-              link: _link,
-              showWhenUnlinked: false,
-              targetAnchor: Alignment.bottomRight,
-              followerAnchor: Alignment.topRight,
-              offset: const Offset(0, 10),
+            Positioned(
+              left: frame.left,
+              top: frame.top,
+              width: frame.width,
               child: Material(
                 color: Colors.transparent,
                 child: ConstrainedBox(
                   constraints: BoxConstraints(
-                    maxWidth: (width - 32).clamp(280.0, 360.0),
-                    maxHeight: MediaQuery.sizeOf(context).height * 0.65,
+                    maxHeight: media.size.height * 0.65,
                   ),
                   child: Container(
+                    key: const Key('pending-corrections-popup'),
                     decoration: BoxDecoration(
                       color: AppColors.white,
                       borderRadius: BorderRadius.circular(18),
@@ -1360,9 +1392,8 @@ class _PendingCorrectionsButtonState extends State<_PendingCorrectionsButton> {
           ],
         );
       },
-      child: CompositedTransformTarget(
-        link: _link,
-        child: Tooltip(
+      child: Tooltip(
+          key: _buttonKey,
           message: 'Pending corrections',
           child: Material(
             color: open
@@ -1417,7 +1448,6 @@ class _PendingCorrectionsButtonState extends State<_PendingCorrectionsButton> {
             ),
           ),
         ),
-      ),
     );
   }
 }

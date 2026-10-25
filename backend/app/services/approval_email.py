@@ -13,7 +13,7 @@ from fastapi import HTTPException
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.core.config import settings
+from app.core.config import settings, smtp_settings
 from app.models.business import Business, BusinessRegistration
 from app.models.enums import ApplicationStatus, UserRole
 from app.models.user import User
@@ -37,12 +37,13 @@ class ApprovalEmailConfigError(Exception):
 
 
 def smtp_configured() -> bool:
-    host = (settings.smtp_host or "").strip()
-    from_email = (settings.smtp_from_email or "").strip()
+    current = smtp_settings()
+    host = (current.smtp_host or "").strip()
+    from_email = (current.smtp_from_email or "").strip()
     if not host or not from_email:
         return False
-    username = (settings.smtp_username or "").strip()
-    if username and not (settings.smtp_password or "").strip():
+    username = (current.smtp_username or "").strip()
+    if username and not (current.smtp_password or "").strip():
         return False
     return True
 
@@ -230,24 +231,25 @@ def send_message(to_email: str, subject: str, text_body: str, html_body: str) ->
     """Deliver one message through SMTP. Tests may replace this function."""
     if not smtp_configured():
         raise ApprovalEmailConfigError(_SAFE_CONFIG_ERROR)
+    current = smtp_settings()
     message = EmailMessage()
     message["Subject"] = subject
-    message["From"] = settings.smtp_from_email.strip()
+    message["From"] = current.smtp_from_email.strip()
     message["To"] = to_email
     message.set_content(text_body)
     message.add_alternative(html_body, subtype="html")
 
-    host = settings.smtp_host.strip()
-    port = int(settings.smtp_port)
-    username = (settings.smtp_username or "").strip()
-    password = settings.smtp_password or ""
+    host = current.smtp_host.strip()
+    port = int(current.smtp_port)
+    username = (current.smtp_username or "").strip()
+    password = current.smtp_password or ""
     context = ssl.create_default_context()
-    if settings.smtp_use_ssl:
+    if current.smtp_use_ssl:
         client = smtplib.SMTP_SSL(host, port, timeout=30, context=context)
     else:
         client = smtplib.SMTP(host, port, timeout=30)
     try:
-        if settings.smtp_use_tls and not settings.smtp_use_ssl:
+        if current.smtp_use_tls and not current.smtp_use_ssl:
             client.starttls(context=context)
         if username:
             client.login(username, password)

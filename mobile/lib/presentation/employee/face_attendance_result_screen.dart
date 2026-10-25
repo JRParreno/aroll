@@ -6,7 +6,6 @@ import 'package:aroll_mobile/core/utils/business_time.dart';
 import 'package:aroll_mobile/domain/entities/employee_portal.dart';
 import 'package:aroll_mobile/presentation/employee/employee_ui.dart';
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
 enum FaceAttendanceAction { clockIn, clockOut }
@@ -130,14 +129,6 @@ class _FaceAttendanceResultScreenState
                       formatTime: _formatTime,
                       formatDate: _formatDate,
                       onBackToAttendance: () => Navigator.of(context).pop(true),
-                      onHome: () {
-                        Navigator.of(context).pop(true);
-                        context.go('/home');
-                      },
-                      onShiftHistory: () {
-                        Navigator.of(context).pop(true);
-                        context.go('/shift-history');
-                      },
                       onClockOut: widget.action == FaceAttendanceAction.clockIn
                           ? () => Navigator.of(context).pop('clock_out')
                           : null,
@@ -211,8 +202,6 @@ class _SuccessBody extends StatelessWidget {
     required this.formatTime,
     required this.formatDate,
     required this.onBackToAttendance,
-    required this.onHome,
-    required this.onShiftHistory,
     this.onClockOut,
   });
 
@@ -223,8 +212,6 @@ class _SuccessBody extends StatelessWidget {
   final String Function(DateTime?) formatTime;
   final String Function(DateTime?) formatDate;
   final VoidCallback onBackToAttendance;
-  final VoidCallback onHome;
-  final VoidCallback onShiftHistory;
   final VoidCallback? onClockOut;
 
   @override
@@ -405,76 +392,13 @@ class _SuccessBody extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 20),
-        if (onClockOut != null) ...[
+        if (onClockOut != null)
           EmployeePrimaryButton(
             label: 'Time Out',
             onPressed: onClockOut,
             icon: Icons.logout_rounded,
           ),
-          const SizedBox(height: 10),
-        ],
-        Row(
-          children: [
-            Expanded(
-              child: _SuccessNavButton(
-                icon: Icons.home_rounded,
-                label: 'Home',
-                onTap: onHome,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _SuccessNavButton(
-                icon: Icons.assignment_rounded,
-                label: 'Shift History',
-                onTap: onShiftHistory,
-              ),
-            ),
-          ],
-        ),
       ],
-    );
-  }
-}
-
-class _SuccessNavButton extends StatelessWidget {
-  const _SuccessNavButton({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final brand = BrandColors.of(context);
-    return Material(
-      color: brand.iconWell,
-      borderRadius: BorderRadius.circular(16),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(16),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 14),
-          child: Column(
-            children: [
-              Icon(icon, color: brand.primary, size: 24),
-              const SizedBox(height: 4),
-              Text(
-                label,
-                style: const TextStyle(
-                  fontWeight: FontWeight.w700,
-                  fontSize: 12,
-                  color: EmployeeColors.textPrimary,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
     );
   }
 }

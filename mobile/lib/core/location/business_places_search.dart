@@ -1,3 +1,4 @@
+import 'package:aroll_mobile/core/location/business_location_geocoding.dart';
 import 'package:dio/dio.dart';
 
 class PlaceSuggestion {
@@ -46,26 +47,17 @@ class BusinessPlacesSearch {
 
   final Dio _dio;
   static const _searchUrl = 'https://nominatim.openstreetmap.org/search';
-  DateTime? _lastRequestAt;
-
-  Future<void> _throttle() async {
-    final last = _lastRequestAt;
-    if (last != null) {
-      final wait = const Duration(milliseconds: 1100) -
-          DateTime.now().difference(last);
-      if (wait > Duration.zero) {
-        await Future<void>.delayed(wait);
-      }
-    }
-    _lastRequestAt = DateTime.now();
-  }
+  final Map<String, List<PlaceSuggestion>> _cache = {};
 
   Future<List<PlaceSuggestion>> autocomplete(String input) async {
     final query = input.trim();
     if (query.length < 2) return const [];
+    final cacheKey = query.toLowerCase();
+    final cached = _cache[cacheKey];
+    if (cached != null) return cached;
 
     try {
-      await _throttle();
+      await waitForNominatimSlot();
       final response = await _dio.get<List<dynamic>>(
         _searchUrl,
         queryParameters: {
@@ -77,7 +69,7 @@ class BusinessPlacesSearch {
         },
       );
       final results = response.data ?? const [];
-      return results
+      final suggestions = results
           .map((raw) {
             final item = raw as Map<String, dynamic>;
             final lat = double.tryParse('${item['lat'] ?? ''}');
@@ -95,6 +87,8 @@ class BusinessPlacesSearch {
           })
           .whereType<PlaceSuggestion>()
           .toList();
+      if (suggestions.isNotEmpty) _cache[cacheKey] = suggestions;
+      return suggestions;
     } catch (_) {
       return const [];
     }

@@ -11,6 +11,8 @@ class WorksiteResponse(BaseModel):
     latitude: float
     longitude: float
     geofence_radius_m: int
+    wifi_verification_enabled: bool = False
+    minimum_rssi_dbm: int | None = None
 
 
 class ClockLocationRequest(BaseModel):
@@ -23,6 +25,9 @@ class GeofenceStatusResponse(BaseModel):
     inside_geofence: bool
     distance_m: float
     allowed_radius_m: float
+    # "wifi" when attendance was authorized by a matched access point and no
+    # GPS sample was stored. Absent on a normal geofence result.
+    location_evidence: str | None = None
 
 
 class AttendanceActionResponse(BaseModel):

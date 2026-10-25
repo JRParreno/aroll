@@ -76,6 +76,7 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
           maxChildSize: 0.88,
           expand: false,
           builder: (context, scrollController) {
+            final bottomInset = MediaQuery.viewPaddingOf(context).bottom;
             return Container(
               decoration: BoxDecoration(
                 color: AppColors.white,
@@ -92,7 +93,7 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
               ),
               child: Column(
                 children: [
-                  const SizedBox(height: 10),
+                  const SizedBox(height: AppSpacing.md),
                   Container(
                     width: 40,
                     height: 4,
@@ -102,7 +103,12 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
                     ),
                   ),
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(18, 14, 10, 12),
+                    padding: const EdgeInsets.fromLTRB(
+                      AppSpacing.xl,
+                      AppSpacing.lg,
+                      AppSpacing.lg,
+                      AppSpacing.md,
+                    ),
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -115,7 +121,7 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
                             shape: BoxShape.circle,
                           ),
                         ),
-                        const SizedBox(width: 10),
+                        const SizedBox(width: AppSpacing.sm),
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -126,7 +132,7 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
                                   fontSize: 17,
                                 ),
                               ),
-                              const SizedBox(height: 3),
+                              const SizedBox(height: AppSpacing.xs),
                               Text(
                                 filtered.isEmpty
                                     ? 'No employees for this period'
@@ -139,6 +145,12 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
                         IconButton(
                           onPressed: () => Navigator.pop(context),
                           tooltip: 'Close',
+                          visualDensity: VisualDensity.compact,
+                          padding: const EdgeInsets.all(AppSpacing.sm),
+                          constraints: const BoxConstraints(
+                            minWidth: 40,
+                            minHeight: 40,
+                          ),
                           icon: const Icon(
                             Icons.close_rounded,
                             color: AppColors.textMuted,
@@ -152,7 +164,12 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
                     child: filtered.isEmpty
                         ? Center(
                             child: Padding(
-                              padding: const EdgeInsets.fromLTRB(28, 20, 28, 28),
+                              padding: EdgeInsets.fromLTRB(
+                                AppSpacing.xl,
+                                AppSpacing.xl,
+                                AppSpacing.xl,
+                                AppSpacing.xl + bottomInset,
+                              ),
                               child: Column(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
@@ -168,7 +185,7 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
                                       color: AppColors.textMuted,
                                     ),
                                   ),
-                                  const SizedBox(height: 12),
+                                  const SizedBox(height: AppSpacing.md),
                                   Text(
                                     'No employees found for this period.',
                                     textAlign: TextAlign.center,
@@ -183,10 +200,15 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
                           )
                         : ListView.separated(
                             controller: scrollController,
-                            padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
+                            padding: EdgeInsets.fromLTRB(
+                              AppSpacing.xl,
+                              AppSpacing.lg,
+                              AppSpacing.xl,
+                              AppSpacing.lg + bottomInset,
+                            ),
                             itemCount: filtered.length,
                             separatorBuilder: (_, __) =>
-                                const SizedBox(height: 10),
+                                const SizedBox(height: AppSpacing.md),
                             itemBuilder: (context, index) {
                               final event = filtered[index];
                               final name =
@@ -203,12 +225,7 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
                                 fallback: '—',
                               );
                               return Container(
-                                padding: const EdgeInsets.fromLTRB(
-                                  14,
-                                  12,
-                                  14,
-                                  12,
-                                ),
+                                padding: const EdgeInsets.all(AppSpacing.lg),
                                 decoration: BoxDecoration(
                                   color: const Color(0xFFF8FAFC),
                                   borderRadius: BorderRadius.circular(14),
@@ -226,7 +243,7 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
                                       ),
                                     ),
                                     if (workDate.isNotEmpty) ...[
-                                      const SizedBox(height: 3),
+                                      const SizedBox(height: AppSpacing.xs),
                                       Text(
                                         workDate,
                                         style: appMutedStyle().copyWith(
@@ -235,7 +252,7 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
                                         ),
                                       ),
                                     ],
-                                    const SizedBox(height: 10),
+                                    const SizedBox(height: AppSpacing.md),
                                     Row(
                                       children: [
                                         Expanded(
@@ -244,7 +261,7 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
                                             value: timeIn,
                                           ),
                                         ),
-                                        const SizedBox(width: 10),
+                                        const SizedBox(width: AppSpacing.md),
                                         Expanded(
                                           child: _TimeDetail(
                                             label: 'Time Out',

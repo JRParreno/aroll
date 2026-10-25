@@ -7,10 +7,13 @@ import 'package:aroll_mobile/core/face/face_api_errors.dart';
 import 'package:aroll_mobile/core/face/face_camera_preview.dart';
 import 'package:aroll_mobile/core/face/face_quality.dart';
 import 'package:aroll_mobile/core/location/employee_location_service.dart';
+import 'package:aroll_mobile/core/location/geofence_diagnostics.dart';
+import 'package:aroll_mobile/core/location/workplace_wifi.dart';
 import 'package:aroll_mobile/core/theme/business_brand_theme.dart';
 import 'package:aroll_mobile/domain/entities/employee_portal.dart';
 import 'package:aroll_mobile/domain/entities/face_liveness.dart';
 import 'package:aroll_mobile/presentation/employee/employee_ui.dart';
+import 'package:aroll_mobile/presentation/shared/confirm_action_dialog.dart';
 import 'package:aroll_mobile/presentation/employee/face_attendance_result_screen.dart';
 import 'package:camera/camera.dart';
 import 'package:dio/dio.dart';
@@ -28,6 +31,7 @@ class FaceAutoAttendanceScreen extends StatefulWidget {
     required this.action,
     required this.worksite,
     required this.submit,
+    this.confirmWifiFallback,
     this.profile,
     this.shiftAssignmentId,
   });
@@ -37,12 +41,21 @@ class FaceAutoAttendanceScreen extends StatefulWidget {
   final EmployeeProfile? profile;
   final String? shiftAssignmentId;
 
-  /// Server clock-in/out with the captured still + GPS (identity match on server).
+  /// Server clock-in/out. GPS success sends coordinates and no BSSID.
+  /// Wi-Fi fallback sends the matched BSSID and omits coordinates.
   final Future<AttendanceClockResult> Function({
     required FaceQuickCapture capture,
-    required double latitude,
-    required double longitude,
+    double? latitude,
+    double? longitude,
+    double? horizontalAccuracyM,
+    String? observedBssid,
+    int? observedRssiDbm,
+    String? locationEvidence,
   }) submit;
+
+  /// Server check that the connected BSSID is registered. No punch is created.
+  final Future<void> Function(String bssid, {int? observedRssiDbm})?
+      confirmWifiFallback;
 
   @override
   State<FaceAutoAttendanceScreen> createState() =>
@@ -51,6 +64,7 @@ class FaceAutoAttendanceScreen extends StatefulWidget {
 
 class _FaceAutoAttendanceScreenState extends State<FaceAutoAttendanceScreen> {
   final _locationService = EmployeeLocationService();
+  late final WorkplaceWifiAttempt _wifiAttempt;
 
   static List<CameraDescription>? _cachedCameras;
 
@@ -62,7 +76,12 @@ class _FaceAutoAttendanceScreenState extends State<FaceAutoAttendanceScreen> {
   bool _processingFrame = false;
   bool _submitting = false;
   bool _gpsRunning = false;
-  /// True only after multi-sample fresh GPS finishes (never the quick first fix).
+  bool _wifiFallbackStarted = false;
+  bool _wifiDialogOffered = false;
+  bool _submitWifiOnly = false;
+  String? _wifiFallbackBssid;
+  int? _wifiFallbackRssi;
+  /// True only after multi-sample fresh GPS finishes inside the geofence.
   bool _gpsReliable = false;
   bool _faceReady = false;
   int? _trackingId;
@@ -98,7 +117,8 @@ class _FaceAutoAttendanceScreenState extends State<FaceAutoAttendanceScreen> {
   void initState() {
     super.initState();
     _openedAt = DateTime.now();
-    // Camera + GPS start together — never wait on each other.
+    _wifiAttempt = WorkplaceWifiAttempt(PlatformWorkplaceWifiReader());
+    // Camera + GPS start together. Wi-Fi is read once, after GPS is ready.
     unawaited(_bootstrapCamera());
     unawaited(_startGpsParallel());
   }
@@ -256,36 +276,150 @@ class _FaceAutoAttendanceScreenState extends State<FaceAutoAttendanceScreen> {
         'result=${preview.insideGeofence ? 'INSIDE' : 'OUTSIDE'}',
         name: 'aroll.perf',
       );
+      final decision = decideAttendanceLocation(
+        demo: false,
+        radiusM: worksite.geofenceRadiusM.toDouble(),
+        mocked: position.isMocked,
+        permissionDenied: false,
+        locationServicesDisabled: false,
+        gpsFixAvailable: true,
+        insideGeofence: preview.insideGeofence,
+        needsBetterGps: preview.needsBetterGps,
+      );
+      if (!mounted) return;
       setState(() {
         _latestGps = position;
         _geofence = preview;
-        _gpsReliable = preview.insideGeofence && !preview.needsBetterGps;
-        _gpsStatus = preview.insideGeofence
-            ? 'Work location confirmed'
-            : _outsideMessage(preview);
-      });
-      if (_faceReady) {
-        _updateGuidance('Verifying identity');
-      }
-      _tryAutoSubmit();
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _gpsReliable = false;
-        if (e is LocationMockException) {
-          _error = e.message;
-          _gpsStatus = e.message;
-          _guidance = e.message;
-        } else {
-          _gpsStatus = faceApiErrorMessage(
-            e,
-            fallback: 'We couldn’t confirm your workplace location yet.',
-          );
+        _gpsReliable = decision.route == AttendanceLocationRoute.gpsInside;
+        _gpsStatus = switch (decision.route) {
+          AttendanceLocationRoute.gpsInside => 'Work location confirmed',
+          AttendanceLocationRoute.gpsOutside => _outsideMessage(preview),
+          AttendanceLocationRoute.wifiFallback => 'Use workplace Wi-Fi?',
+          AttendanceLocationRoute.blocked =>
+            decision.message ?? _outsideMessage(preview),
+        };
+        if (decision.route == AttendanceLocationRoute.blocked) {
+          _error = decision.message;
         }
       });
+      if (decision.route == AttendanceLocationRoute.gpsInside) {
+        if (_faceReady) {
+          _updateGuidance('Verifying identity');
+        }
+        _tryAutoSubmit();
+      } else if (decision.route == AttendanceLocationRoute.gpsOutside) {
+        _logGeofenceFailure(
+          gpsFixObtained: true,
+          wifiFallbackConsidered: false,
+          reason: preview.failReason ?? _outsideMessage(preview),
+          preview: preview,
+          position: position,
+        );
+        _updateGuidance(_outsideMessage(preview));
+      } else if (decision.route == AttendanceLocationRoute.wifiFallback) {
+        await _offerWifiFallbackDialog(
+          gpsFixObtained: true,
+          preview: preview,
+          position: position,
+        );
+      } else {
+        _logGeofenceFailure(
+          gpsFixObtained: true,
+          wifiFallbackConsidered: _wifiFallbackWasConsidered(decision),
+          reason: decision.message ?? 'Location check stopped before attendance.',
+          preview: preview,
+          position: position,
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      final decision = decideAttendanceLocation(
+        demo: false,
+        radiusM: worksite.geofenceRadiusM.toDouble(),
+        mocked: e is LocationMockException,
+        permissionDenied: e is LocationPermissionException,
+        locationServicesDisabled: e is LocationServiceException,
+        gpsFixAvailable: false,
+        insideGeofence: false,
+        needsBetterGps: false,
+      );
+      if (decision.route == AttendanceLocationRoute.wifiFallback) {
+        await _offerWifiFallbackDialog(gpsFixObtained: false);
+      } else {
+        final message = switch (e) {
+          LocationMockException(:final message) => message,
+          LocationPermissionException(:final message) => message,
+          LocationServiceException(:final message) => message,
+          _ => decision.message ??
+              faceApiErrorMessage(
+                e,
+                fallback: 'We couldn’t confirm your workplace location yet.',
+              ),
+        };
+        _logGeofenceFailure(
+          gpsFixObtained: false,
+          wifiFallbackConsidered: _wifiFallbackWasConsidered(decision),
+          reason: message,
+        );
+        setState(() {
+          _gpsReliable = false;
+          _error = message;
+          _gpsStatus = message;
+          _guidance = message;
+        });
+      }
     } finally {
       _gpsRunning = false;
     }
+  }
+
+  bool _wifiFallbackWasConsidered(AttendanceLocationDecision decision) {
+    return decision.route == AttendanceLocationRoute.wifiFallback ||
+        decision.message == wifiNotConfiguredAttendanceMessage ||
+        decision.message == gpsUnavailableNoWifiMessage;
+  }
+
+  void _logGeofenceFailure({
+    required bool gpsFixObtained,
+    required bool wifiFallbackConsidered,
+    required String reason,
+    GeofencePreview? preview,
+    EmployeeLocationSnapshot? position,
+  }) {
+    final worksite = widget.worksite;
+    logGeofenceFailureDiagnostic(
+      action: widget.action == FaceAttendanceAction.clockIn
+          ? 'time_in'
+          : 'time_out',
+      worksiteLatitude: worksite.latitude,
+      worksiteLongitude: worksite.longitude,
+      radiusM: worksite.geofenceRadiusM.toDouble(),
+      phoneLatitude: position?.latitude,
+      phoneLongitude: position?.longitude,
+      accuracyM: position?.accuracyM,
+      distanceM: preview?.distanceM,
+      gpsFixObtained: gpsFixObtained,
+      wifiFallbackConsidered: wifiFallbackConsidered,
+      reason: reason,
+    );
+  }
+
+  String _serverLocationReason(Object error) {
+    if (error is DioException) {
+      final data = error.response?.data;
+      if (data is Map) {
+        final detail = data['detail'];
+        if (detail is Map) {
+          final code = detail['code']?.toString() ?? 'location_rejected';
+          final message = detail['message']?.toString() ?? '';
+          final distance = detail['distance_m'];
+          final radius = detail['allowed_radius_m'];
+          return 'server $code: $message '
+              'distance_m=$distance radius_m=$radius';
+        }
+      }
+    }
+    return 'server location rejection';
   }
 
   String _outsideMessage(GeofencePreview preview) {
@@ -311,7 +445,7 @@ class _FaceAutoAttendanceScreenState extends State<FaceAutoAttendanceScreen> {
   }
 
   Future<void> _onFrame(CameraImage image) async {
-    if (_submitting || _busy || _processingFrame || _detector == null) {
+    if (_submitting || _busy || _processingFrame || _error != null || _detector == null) {
       return;
     }
     final now = DateTime.now();
@@ -389,17 +523,17 @@ class _FaceAutoAttendanceScreenState extends State<FaceAutoAttendanceScreen> {
 
       _faceReady = true;
 
-      if (!_gpsReliable || _geofence == null || _latestGps == null) {
-        _updateGuidance('Checking work location');
-        return;
-      }
-      if (_geofence!.needsBetterGps) {
-        _updateGuidance('Checking work location');
-        return;
-      }
-      if (!_geofence!.insideGeofence) {
-        _updateGuidance(_outsideMessage(_geofence!));
-        return;
+      if (!(_submitWifiOnly && _wifiFallbackBssid != null)) {
+        if (_geofence != null &&
+            _latestGps != null &&
+            !_geofence!.insideGeofence) {
+          _updateGuidance(_outsideMessage(_geofence!));
+          return;
+        }
+        if (!_gpsReliable || _geofence == null || _latestGps == null) {
+          _updateGuidance('Checking work location');
+          return;
+        }
       }
 
       // Embedding / server match only when face is stable + GPS ready.
@@ -418,12 +552,20 @@ class _FaceAutoAttendanceScreenState extends State<FaceAutoAttendanceScreen> {
   }
 
   Future<void> _tryAutoSubmit() async {
-    if (!mounted || _submitting || _busy) return;
+    if (!mounted || _submitting || _busy || _error != null) return;
     final geo = _geofence;
     final gps = _latestGps;
-    if (!_gpsReliable || geo == null || gps == null) return;
-    if (!geo.insideGeofence || geo.needsBetterGps) return;
-    if (gps.isMocked) return;
+    final wifiReady = _submitWifiOnly && _wifiFallbackBssid != null;
+    if (!wifiReady) {
+      if (!_gpsReliable || geo == null || gps == null) return;
+      if (!gpsAllowsAttendanceAttempt(
+        insideGeofence: geo.insideGeofence,
+        needsBetterGps: geo.needsBetterGps,
+        mocked: gps.isMocked,
+      )) {
+        return;
+      }
+    }
     if (_alignedFrames < _minAlignedFrames) return;
     // Require a short live-stream window before capture (passive anti-spoof).
     if (_cameraReadyAt != null &&
@@ -436,11 +578,182 @@ class _FaceAutoAttendanceScreenState extends State<FaceAutoAttendanceScreen> {
         now.difference(_lastSubmitAt!) < _submitCooldown) {
       return;
     }
-    await _captureAndSubmit(gps);
+    await _captureAndSubmit();
   }
 
-  Future<void> _captureAndSubmit(EmployeeLocationSnapshot gps) async {
-    if (_submitting) return;
+  Future<void> _offerWifiFallbackDialog({
+    required bool gpsFixObtained,
+    GeofencePreview? preview,
+    EmployeeLocationSnapshot? position,
+  }) async {
+    if (_wifiDialogOffered || !mounted) return;
+    _wifiDialogOffered = true;
+    final accepted = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const ConfirmActionDialog(
+        icon: Icons.wifi_rounded,
+        title: 'Use workplace Wi-Fi?',
+        message:
+            'Your GPS location could not be verified within the work area. You may use workplace Wi-Fi instead.',
+        confirmLabel: 'Yes',
+        cancelLabel: 'No',
+      ),
+    );
+    if (!mounted) return;
+    if (accepted == true) {
+      setState(() {
+        _submitWifiOnly = true;
+        _gpsReliable = false;
+        _wifiFallbackBssid = null;
+        _wifiFallbackRssi = null;
+        _latestGps = null;
+        _geofence = null;
+        _gpsStatus = 'Checking workplace Wi-Fi…';
+      });
+      await _startWifiFallback(gpsFixObtained: gpsFixObtained);
+      return;
+    }
+    _cancelAttendanceAttempt(
+      gpsFixObtained: gpsFixObtained,
+      preview: preview,
+      position: position,
+    );
+  }
+
+  void _cancelAttendanceAttempt({
+    required bool gpsFixObtained,
+    GeofencePreview? preview,
+    EmployeeLocationSnapshot? position,
+  }) {
+    const message = 'Attendance was cancelled.';
+    _submitWifiOnly = false;
+    _wifiFallbackBssid = null;
+    _wifiFallbackRssi = null;
+    _gpsReliable = false;
+    _latestGps = null;
+    _logGeofenceFailure(
+      gpsFixObtained: gpsFixObtained,
+      wifiFallbackConsidered: true,
+      reason: message,
+      preview: preview,
+      position: position,
+    );
+    setState(() {
+      _error = message;
+      _gpsStatus = message;
+      _guidance = message;
+    });
+    unawaited(_stopStream());
+  }
+
+  Future<void> _startWifiFallback({bool gpsFixObtained = false}) async {
+    if (_wifiFallbackStarted || _gpsReliable || _error != null) return;
+    _wifiFallbackStarted = true;
+    final snapshot = await _wifiAttempt.reader.readConnected();
+    if (!mounted) return;
+    final bssid = bssidToSubmit(snapshot);
+    final minimumRssi = widget.worksite.minimumRssiDbm;
+    if (bssid != null &&
+        !rssiMeetsMinimum(
+          observedRssiDbm: snapshot.rssiDbm,
+          minimumRssiDbm: minimumRssi,
+        )) {
+      final message = snapshot.rssiDbm == null
+          ? wifiRssiUnavailableMessage
+          : wifiRssiWeakMessage;
+      _logGeofenceFailure(
+        gpsFixObtained: gpsFixObtained,
+        wifiFallbackConsidered: true,
+        reason: message,
+      );
+      setState(() {
+        _error = message;
+        _gpsStatus = message;
+        _guidance = message;
+        _wifiFallbackBssid = null;
+        _wifiFallbackRssi = null;
+        _latestGps = null;
+        _submitWifiOnly = false;
+      });
+      await _stopStream();
+      return;
+    }
+    if (bssid == null) {
+      final message = workplaceWifiReadMessage(snapshot.status);
+      _logGeofenceFailure(
+        gpsFixObtained: gpsFixObtained,
+        wifiFallbackConsidered: true,
+        reason: message,
+      );
+      setState(() {
+        _error = message;
+        _gpsStatus = message;
+        _guidance = message;
+        _wifiFallbackBssid = null;
+        _wifiFallbackRssi = null;
+        _latestGps = null;
+        _submitWifiOnly = false;
+      });
+      await _stopStream();
+      return;
+    }
+    final confirm = widget.confirmWifiFallback;
+    if (confirm == null) {
+      _logGeofenceFailure(
+        gpsFixObtained: gpsFixObtained,
+        wifiFallbackConsidered: true,
+        reason: wifiNotConfiguredAttendanceMessage,
+      );
+      setState(() {
+        _error = wifiNotConfiguredAttendanceMessage;
+        _gpsStatus = wifiNotConfiguredAttendanceMessage;
+        _guidance = wifiNotConfiguredAttendanceMessage;
+        _wifiFallbackBssid = null;
+        _wifiFallbackRssi = null;
+        _latestGps = null;
+        _submitWifiOnly = false;
+      });
+      await _stopStream();
+      return;
+    }
+    try {
+      await confirm(bssid, observedRssiDbm: snapshot.rssiDbm);
+    } catch (error) {
+      if (!mounted) return;
+      final message = faceApiErrorMessage(
+        error,
+        fallback: 'Workplace Wi-Fi could not be confirmed.',
+      );
+      _logGeofenceFailure(
+        gpsFixObtained: gpsFixObtained,
+        wifiFallbackConsidered: true,
+        reason: message,
+      );
+      setState(() {
+        _error = message;
+        _gpsStatus = message;
+        _guidance = message;
+        _wifiFallbackBssid = null;
+        _wifiFallbackRssi = null;
+        _latestGps = null;
+        _submitWifiOnly = false;
+      });
+      await _stopStream();
+      return;
+    }
+    if (!mounted) return;
+    setState(() {
+      _wifiFallbackBssid = bssid;
+      _wifiFallbackRssi = snapshot.rssiDbm;
+      _gpsStatus = 'Workplace Wi-Fi confirmed';
+      _guidance = 'Look at the camera';
+    });
+    _tryAutoSubmit();
+  }
+
+  Future<void> _captureAndSubmit() async {
+    if (_submitting || _error != null) return;
     _submitting = true;
     _lastSubmitAt = DateTime.now();
     final started = DateTime.now();
@@ -466,11 +779,25 @@ class _FaceAutoAttendanceScreenState extends State<FaceAutoAttendanceScreen> {
       if (!mounted) return;
       setState(() => _guidance = 'Recording attendance');
 
+      final usingWifi = _submitWifiOnly && _wifiFallbackBssid != null;
+      final payload = attendancePayloadForChoice(
+        choice: usingWifi
+            ? AttendanceLocationChoice.wifiOmitCoordinates
+            : AttendanceLocationChoice.gps,
+        latitude: _latestGps?.latitude,
+        longitude: _latestGps?.longitude,
+        observedBssid: _wifiFallbackBssid,
+      );
+      if (!payload.submit) return;
       final apiStarted = DateTime.now();
       final result = await widget.submit(
         capture: capture,
-        latitude: gps.latitude,
-        longitude: gps.longitude,
+        latitude: payload.latitude,
+        longitude: payload.longitude,
+        horizontalAccuracyM: usingWifi ? null : _latestGps?.accuracyM,
+        observedBssid: payload.observedBssid,
+        observedRssiDbm: usingWifi ? _wifiFallbackRssi : null,
+        locationEvidence: payload.locationEvidence,
       );
       final apiMs = DateTime.now().difference(apiStarted).inMilliseconds;
       final elapsed = DateTime.now().difference(started).inMilliseconds;
@@ -508,6 +835,15 @@ class _FaceAutoAttendanceScreenState extends State<FaceAutoAttendanceScreen> {
         name: 'aroll.perf',
       );
       if (!mounted) return;
+      if (_isLocationRejection(e)) {
+        _logGeofenceFailure(
+          gpsFixObtained: _latestGps != null && _wifiFallbackBssid == null,
+          wifiFallbackConsidered: _wifiFallbackBssid != null,
+          reason: _serverLocationReason(e),
+          preview: _geofence,
+          position: _wifiFallbackBssid == null ? _latestGps : null,
+        );
+      }
       final identityReject = _isIdentityReject(e);
       setState(() {
         _submitting = false;
@@ -528,8 +864,17 @@ class _FaceAutoAttendanceScreenState extends State<FaceAutoAttendanceScreen> {
           _error = null;
         }
       });
-      if (identityReject) {
+      if (identityReject || _isLocationRejection(e)) {
         await _stopStream();
+        if (mounted) {
+          setState(() {
+            _error = faceApiErrorMessage(
+              e,
+              fallback: 'Couldn’t complete attendance. Please try again.',
+            );
+            _guidance = _error!;
+          });
+        }
         return;
       }
       // Soft fail only for transient capture / network issues.
@@ -559,7 +904,29 @@ class _FaceAutoAttendanceScreenState extends State<FaceAutoAttendanceScreen> {
     return false;
   }
 
+  bool _isLocationRejection(Object error) {
+    final code = _errorCode(error);
+    return code == 'workplace_wifi_mismatch' ||
+        code == 'workplace_wifi_unavailable' ||
+        code == 'workplace_wifi_not_configured' ||
+        code == 'wifi_fallback_unavailable' ||
+        code == 'workplace_wifi_rssi_unavailable' ||
+        code == 'workplace_wifi_rssi_weak' ||
+        code == 'location_required' ||
+        code == 'outside_geofence';
+  }
+
+  String? _errorCode(Object error) {
+    if (error is! DioException) return null;
+    final data = error.response?.data;
+    if (data is! Map) return null;
+    final detail = data['detail'];
+    if (detail is! Map) return null;
+    return detail['code']?.toString();
+  }
+
   bool _isHardFailure(Object error) {
+    if (_isLocationRejection(error)) return true;
     if (error is! DioException) return true;
     final code = error.response?.statusCode ?? 0;
     // Identity rejects are hard-stopped earlier; stop on auth/business rules.

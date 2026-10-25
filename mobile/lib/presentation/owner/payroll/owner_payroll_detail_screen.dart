@@ -185,8 +185,7 @@ class _OwnerPayrollDetailScreenState extends State<OwnerPayrollDetailScreen> {
     if (payslip == null) return;
     setState(() => _downloading = true);
     try {
-      final businessName =
-          sl<AppState>().session?.businessName ?? 'Business';
+      final businessName = sl<AppState>().session?.businessName ?? 'Business';
       final path = await generateOwnerPayslipPdf(
         payslip: payslip,
         businessName: businessName,
@@ -252,7 +251,8 @@ class _OwnerPayrollDetailScreenState extends State<OwnerPayrollDetailScreen> {
                                       name:
                                           '${payslip['employee_name'] ?? 'Employee'}',
                                       size: 60,
-                                      backgroundColor: BrandColors.of(context).toneWell,
+                                      backgroundColor:
+                                          BrandColors.of(context).toneWell,
                                     ),
                                     const SizedBox(width: 14),
                                     Expanded(
@@ -285,7 +285,8 @@ class _OwnerPayrollDetailScreenState extends State<OwnerPayrollDetailScreen> {
                                             style: appMutedStyle().copyWith(
                                               fontSize: 12,
                                               fontWeight: FontWeight.w600,
-                                              color: BrandColors.of(context).toneButton,
+                                              color: BrandColors.of(context)
+                                                  .toneButton,
                                             ),
                                           ),
                                         ],
@@ -561,7 +562,8 @@ class _OwnerPayrollDetailScreenState extends State<OwnerPayrollDetailScreen> {
                                 'Payroll Status',
                                 'Pending — open attendance not finalized',
                               )
-                            else if (payslip['has_unresolved_historical_rate'] ==
+                            else if (payslip[
+                                    'has_unresolved_historical_rate'] ==
                                 true)
                               const _DetailRow(
                                 'Payroll Status',
@@ -746,14 +748,12 @@ class _OwnerPayrollDetailScreenState extends State<OwnerPayrollDetailScreen> {
       showDragHandle: true,
       builder: (context) => _AdjustmentFormSheet(
         existing: existing,
-        deductionTypes:
-            (types['deduction_types'] as List<dynamic>? ?? const [])
-                .whereType<Map<String, dynamic>>()
-                .toList(),
-        allowanceTypes:
-            (types['allowance_types'] as List<dynamic>? ?? const [])
-                .whereType<Map<String, dynamic>>()
-                .toList(),
+        deductionTypes: (types['deduction_types'] as List<dynamic>? ?? const [])
+            .whereType<Map<String, dynamic>>()
+            .toList(),
+        allowanceTypes: (types['allowance_types'] as List<dynamic>? ?? const [])
+            .whereType<Map<String, dynamic>>()
+            .toList(),
         onSubmit: (payload) async {
           if (existing != null) {
             await _repo.updatePayrollAdjustment(
@@ -789,9 +789,12 @@ class _OwnerPayrollDetailScreenState extends State<OwnerPayrollDetailScreen> {
     return [
       _DetailRow(
         'Rest day type',
-        restDayName.isEmpty ? 'Owner-approved rest day work' : titleCase(restDayName),
+        restDayName.isEmpty
+            ? 'Owner-approved rest day work'
+            : titleCase(restDayName),
       ),
-      _DetailRow('Days worked', '${payslip['rest_day_days'] ?? records.length}'),
+      _DetailRow(
+          'Days worked', '${payslip['rest_day_days'] ?? records.length}'),
       ...records.map((record) {
         final weekday = '${record['weekday'] ?? ''}';
         final unauthorized = record['authorized'] == false;
@@ -862,10 +865,10 @@ class _OwnerPayrollDetailScreenState extends State<OwnerPayrollDetailScreen> {
     Map<String, dynamic> payslip,
     double dailyRate,
   ) {
-    final records = (payslip['attendance_records'] as List<dynamic>? ??
-            const [])
-        .whereType<Map<String, dynamic>>()
-        .toList();
+    final records =
+        (payslip['attendance_records'] as List<dynamic>? ?? const [])
+            .whereType<Map<String, dynamic>>()
+            .toList();
     if (records.isEmpty) {
       return [
         const Padding(
@@ -884,9 +887,8 @@ class _OwnerPayrollDetailScreenState extends State<OwnerPayrollDetailScreen> {
       final remarks = _attendanceRemarks(record);
       // Use backend day earned (completion-rate aware). Never recompute from
       // the slip-level current daily_rate — that reprices historical days.
-      final historicalRequired =
-          record['historical_rate_required'] == true ||
-              '${record['payroll_status'] ?? ''}' == 'historical_rate_required';
+      final historicalRequired = record['historical_rate_required'] == true ||
+          '${record['payroll_status'] ?? ''}' == 'historical_rate_required';
       final earnedLabel = historicalRequired
           ? 'Unresolved'
           : ownerPayrollMoney(
@@ -919,8 +921,7 @@ class _OwnerPayrollDetailScreenState extends State<OwnerPayrollDetailScreen> {
               'Salary Earned',
               earnedLabel,
             ),
-            if (historicalRequired &&
-                record['attendance_record_id'] != null)
+            if (historicalRequired && record['attendance_record_id'] != null)
               Padding(
                 padding: const EdgeInsets.only(top: 8),
                 child: Align(
@@ -990,7 +991,8 @@ class _SectionCard extends StatelessWidget {
                     color: BrandColors.of(context).toneWell,
                     borderRadius: BorderRadius.circular(9),
                   ),
-                  child: Icon(icon, size: 16, color: BrandColors.of(context).tonePrimary),
+                  child: Icon(icon,
+                      size: 16, color: BrandColors.of(context).tonePrimary),
                 ),
                 const SizedBox(width: 10),
               ],
@@ -1099,8 +1101,10 @@ class _AdjustmentFormSheetState extends State<_AdjustmentFormSheet> {
     super.initState();
     final existing = widget.existing;
     _kind = '${existing?['kind'] ?? 'deduction'}';
-    _typeKey = '${existing?['type_key'] ?? (widget.deductionTypes.isNotEmpty ? widget.deductionTypes.first['key'] : 'other')}';
-    _customName = TextEditingController(text: '${existing?['custom_name'] ?? ''}');
+    _typeKey =
+        '${existing?['type_key'] ?? (widget.deductionTypes.isNotEmpty ? widget.deductionTypes.first['key'] : 'other')}';
+    _customName =
+        TextEditingController(text: '${existing?['custom_name'] ?? ''}');
     _description =
         TextEditingController(text: '${existing?['description'] ?? ''}');
     _amount = TextEditingController(
@@ -1162,89 +1166,104 @@ class _AdjustmentFormSheetState extends State<_AdjustmentFormSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final bottom = MediaQuery.viewInsetsOf(context).bottom;
+    // Keyboard inset only. SafeArea supplies the system navigation inset,
+    // which is zero while the keyboard is open so the two do not stack.
+    final keyboard = MediaQuery.viewInsetsOf(context).bottom;
     return Padding(
-      padding: EdgeInsets.fromLTRB(16, 0, 16, 16 + bottom),
-      child: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              widget.existing == null ? 'Add Deduction' : 'Edit Adjustment',
-              style: appSectionTitleStyle(),
-            ),
-            const SizedBox(height: 12),
-            DropdownButtonFormField<String>(
-              value: _kind,
-              decoration: appInputDecoration(labelText: 'Kind'),
-              items: const [
-                DropdownMenuItem(value: 'deduction', child: Text('Deduction')),
-                DropdownMenuItem(value: 'allowance', child: Text('Allowance')),
-              ],
-              onChanged: (value) {
-                if (value == null) return;
-                setState(() {
-                  _kind = value;
-                  final types = _types;
-                  _typeKey = types.isNotEmpty ? '${types.first['key']}' : 'other';
-                });
-              },
-            ),
-            const SizedBox(height: 10),
-            DropdownButtonFormField<String>(
-              value: _types.any((t) => '${t['key']}' == _typeKey)
-                  ? _typeKey
-                  : (_types.isNotEmpty ? '${_types.first['key']}' : null),
-              decoration: appInputDecoration(labelText: 'Type'),
-              items: [
-                for (final type in _types)
+      padding: EdgeInsets.only(bottom: keyboard),
+      child: SafeArea(
+        top: false,
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(
+            AppSpacing.lg,
+            AppSpacing.sm,
+            AppSpacing.lg,
+            AppSpacing.lg,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                widget.existing == null ? 'Add Deduction' : 'Edit Adjustment',
+                style: appSectionTitleStyle(),
+              ),
+              const SizedBox(height: AppSpacing.lg),
+              DropdownButtonFormField<String>(
+                value: _kind,
+                decoration: appInputDecoration(labelText: 'Kind'),
+                items: const [
                   DropdownMenuItem(
-                    value: '${type['key']}',
-                    child: Text('${type['label']}'),
+                      value: 'deduction', child: Text('Deduction')),
+                  DropdownMenuItem(
+                      value: 'allowance', child: Text('Allowance')),
+                ],
+                onChanged: (value) {
+                  if (value == null) return;
+                  setState(() {
+                    _kind = value;
+                    final types = _types;
+                    _typeKey =
+                        types.isNotEmpty ? '${types.first['key']}' : 'other';
+                  });
+                },
+              ),
+              const SizedBox(height: AppSpacing.md),
+              DropdownButtonFormField<String>(
+                value: _types.any((t) => '${t['key']}' == _typeKey)
+                    ? _typeKey
+                    : (_types.isNotEmpty ? '${_types.first['key']}' : null),
+                decoration: appInputDecoration(labelText: 'Type'),
+                items: [
+                  for (final type in _types)
+                    DropdownMenuItem(
+                      value: '${type['key']}',
+                      child: Text('${type['label']}'),
+                    ),
+                ],
+                onChanged: (value) {
+                  if (value == null) return;
+                  setState(() => _typeKey = value);
+                },
+              ),
+              if (_typeKey == 'other') ...[
+                const SizedBox(height: AppSpacing.md),
+                TextField(
+                  controller: _customName,
+                  decoration: appInputDecoration(
+                    labelText: 'Custom name',
+                    hintText: 'e.g. Lost company property',
                   ),
+                ),
               ],
-              onChanged: (value) {
-                if (value == null) return;
-                setState(() => _typeKey = value);
-              },
-            ),
-            if (_typeKey == 'other') ...[
-              const SizedBox(height: 10),
+              const SizedBox(height: AppSpacing.md),
               TextField(
-                controller: _customName,
+                controller: _description,
                 decoration: appInputDecoration(
-                  labelText: 'Custom name',
-                  hintText: 'e.g. Lost company property',
+                  labelText: 'Description (optional)',
                 ),
               ),
-            ],
-            const SizedBox(height: 10),
-            TextField(
-              controller: _description,
-              decoration: appInputDecoration(
-                labelText: 'Description (optional)',
+              const SizedBox(height: AppSpacing.md),
+              TextField(
+                controller: _amount,
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                decoration: appInputDecoration(labelText: 'Amount'),
               ),
-            ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: _amount,
-              keyboardType:
-                  const TextInputType.numberWithOptions(decimal: true),
-              decoration: appInputDecoration(labelText: 'Amount'),
-            ),
-            if (_error != null) ...[
-              const SizedBox(height: 8),
-              Text(_error!, style: const TextStyle(color: Colors.red, fontSize: 12)),
+              if (_error != null) ...[
+                const SizedBox(height: AppSpacing.sm),
+                Text(_error!,
+                    style: const TextStyle(color: Colors.red, fontSize: 12)),
+              ],
+              const SizedBox(height: AppSpacing.lg),
+              AppPrimaryButton(
+                label:
+                    widget.existing == null ? 'Add Adjustment' : 'Save Changes',
+                loading: _saving,
+                onPressed: _saving ? null : _save,
+              ),
             ],
-            const SizedBox(height: 14),
-            AppPrimaryButton(
-              label: widget.existing == null ? 'Add Adjustment' : 'Save Changes',
-              loading: _saving,
-              onPressed: _saving ? null : _save,
-            ),
-            const SizedBox(height: 8),
-          ],
+          ),
         ),
       ),
     );

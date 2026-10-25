@@ -10,6 +10,22 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
+/// Clock time from a 24-hour shift value such as `17:00` or `17:00:00`.
+///
+/// Display labels like `5:00 PM` are not parsed here. A locale-sensitive
+/// `jm()` parse can drop the meridian and prefill 5:00 AM.
+TimeOfDay? timeOfDayFrom24Hour(String? value) {
+  if (value == null) return null;
+  final match =
+      RegExp(r'^(\d{1,2}):(\d{2})(?::(\d{2}))?$').firstMatch(value.trim());
+  if (match == null) return null;
+  final hour = int.tryParse(match.group(1)!);
+  final minute = int.tryParse(match.group(2)!);
+  if (hour == null || minute == null) return null;
+  if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
+  return TimeOfDay(hour: hour, minute: minute);
+}
+
 class AttendanceCorrectionScreen extends StatefulWidget {
   const AttendanceCorrectionScreen({super.key, required this.item});
 
@@ -32,10 +48,10 @@ class _AttendanceCorrectionScreenState
   void initState() {
     super.initState();
     _timeIn = _todFrom(widget.item.timeIn) ??
-        _todFromLabel(widget.item.shiftStart) ??
+        timeOfDayFrom24Hour(widget.item.shiftStartTime) ??
         const TimeOfDay(hour: 9, minute: 0);
     _timeOut = _todFrom(widget.item.timeOut) ??
-        _todFromLabel(widget.item.shiftEnd) ??
+        timeOfDayFrom24Hour(widget.item.shiftEndTime) ??
         const TimeOfDay(hour: 17, minute: 0);
   }
 
@@ -54,16 +70,6 @@ class _AttendanceCorrectionScreenState
     return TimeOfDay(hour: wall.hour, minute: wall.minute);
   }
 
-  TimeOfDay? _todFromLabel(String? label) {
-    if (label == null || label.trim().isEmpty) return null;
-    try {
-      final parsed = DateFormat.jm().parse(label.trim());
-      return TimeOfDay(hour: parsed.hour, minute: parsed.minute);
-    } catch (_) {
-      return null;
-    }
-  }
-
   DateTime _combine(DateTime day, TimeOfDay tod) {
     return DateTime(day.year, day.month, day.day, tod.hour, tod.minute);
   }
@@ -71,10 +77,13 @@ class _AttendanceCorrectionScreenState
   bool get _isIncomplete =>
       widget.item.status.toLowerCase() == 'incomplete';
 
+  /// Recorded Time In is the official clock-in and cannot be edited.
+  /// A shift with no Time In can still supply one (missed clock-in).
+  bool get _timeInLocked =>
+      widget.item.timeIn != null || _isIncomplete;
+
   Future<void> _pickTime({required bool isIn}) async {
-    // Incomplete attendance: clock-in is the official recorded punch and
-    // cannot be changed via employee correction.
-    if (isIn && _isIncomplete) return;
+    if (isIn && _timeInLocked) return;
     final initial = isIn ? _timeIn : _timeOut;
     final picked = await showTimePicker(
       context: context,
@@ -102,11 +111,13 @@ class _AttendanceCorrectionScreenState
     }
 
     final day = widget.item.date;
-    var requestedIn = _combine(day, _timeIn);
+    // Send the stored clock-in when it exists. Do not substitute a picked time.
+    final DateTime? requestedIn =
+        _timeInLocked ? widget.item.timeIn : _combine(day, _timeIn);
     var requestedOut = _combine(day, _timeOut);
 
     // Overnight: if out is earlier than/equal to in, push out to next day.
-    if (!requestedOut.isAfter(requestedIn)) {
+    if (requestedIn != null && !requestedOut.isAfter(requestedIn)) {
       requestedOut = requestedOut.add(const Duration(days: 1));
     }
 
@@ -159,6 +170,7 @@ class _AttendanceCorrectionScreenState
     final item = widget.item;
     final brand = BrandColors.of(context);
     final isIncomplete = _isIncomplete;
+    final timeInLocked = _timeInLocked;
     final shiftLabel = item.shiftName?.trim().isNotEmpty == true
         ? item.shiftName!
         : 'Shift';
@@ -259,7 +271,7 @@ class _AttendanceCorrectionScreenState
                     ],
                   ),
                 ),
-                if (isIncomplete) ...[
+                if (timeInLocked) ...[
                   const SizedBox(height: 12),
                   Container(
                     width: double.infinity,
@@ -288,11 +300,11 @@ class _AttendanceCorrectionScreenState
           ),
           const SizedBox(height: 14),
           EmployeeSectionTitle(
-            isIncomplete ? 'Corrected Time Out' : 'Corrected times',
+            timeInLocked ? 'Corrected Time Out' : 'Corrected times',
           ),
           const SizedBox(height: 4),
           Text(
-            isIncomplete
+            timeInLocked
                 ? 'Tap time-out to update it.'
                 : 'Tap a time to update it.',
             style: appMutedStyle().copyWith(fontSize: 12.5),
@@ -302,11 +314,13 @@ class _AttendanceCorrectionScreenState
             children: [
               Expanded(
                 child: _TimePickerCard(
-                  label: isIncomplete ? 'Time In (locked)' : 'Time In',
-                  value: _formatTod(_timeIn),
+                  label: timeInLocked ? 'Time In (locked)' : 'Time In',
+                  value: timeInLocked
+                      ? _recordedTime(item.timeIn)
+                      : _formatTod(_timeIn),
                   icon: Icons.login_rounded,
-                  enabled: !_submitting && !isIncomplete,
-                  readOnly: isIncomplete,
+                  enabled: !_submitting && !timeInLocked,
+                  readOnly: timeInLocked,
                   onTap: () => _pickTime(isIn: true),
                 ),
               ),

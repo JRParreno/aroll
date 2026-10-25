@@ -2,7 +2,7 @@
 
 import inspect
 import uuid
-from datetime import date, time
+from datetime import date, datetime, time
 from unittest.mock import patch
 
 import pytest
@@ -34,7 +34,6 @@ from app.models.scheduling import Shift, ShiftAssignment
 from app.models.user import User
 from app.schemas.schedule_reuse import ScheduleConflictMode, ScheduleReuseSource
 from app.services.leave_entitlements import list_balances, request_balance_preview
-from app.services.schedule_reuse import apply_reuse, build_preview
 from app.services.leave_policy import replace_leave_allowances
 from app.services.leave_requests import (
     approve_leave_cancellation,
@@ -44,6 +43,20 @@ from app.services.leave_requests import (
     edit_leave_request,
     reject_leave_request,
 )
+from app.services.schedule_reuse import apply_reuse, build_preview
+
+
+@pytest.fixture(autouse=True)
+def _schedule_clock_before_leave_assignment_dates(monkeypatch):
+    """Leave assignment fixtures use September 2026 dates.
+
+    Freeze only the schedule-window clock so those tests still exercise
+    leave conflicts. Other "today" calculations keep the real clock.
+    """
+    monkeypatch.setattr(
+        "app.services.schedule_overlap.business_now",
+        lambda tz_name: datetime(2026, 9, 1, 8, 0),
+    )
 
 
 def _headers(user: User) -> dict[str, str]:

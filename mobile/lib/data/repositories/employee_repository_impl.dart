@@ -10,6 +10,7 @@ import 'package:aroll_mobile/domain/entities/legal_consent.dart';
 import 'package:aroll_mobile/domain/entities/user_session.dart';
 import 'package:aroll_mobile/domain/repositories/employee_repository.dart';
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 
 class EmployeeRepositoryImpl implements EmployeeRepository {
@@ -282,17 +283,42 @@ class EmployeeRepositoryImpl implements EmployeeRepository {
   }
 
   @override
+  Future<void> confirmWorkplaceWifiFallback(
+    String bssid, {
+    int? observedRssiDbm,
+  }) async {
+    await _api.dio.post<Map<String, dynamic>>(
+      '/employee/attendance/wifi-fallback-check',
+      data: FormData.fromMap({
+        'observed_bssid': bssid,
+        if (observedRssiDbm != null) 'observed_rssi_dbm': observedRssiDbm,
+      }),
+    );
+  }
+
+  @override
   Future<AttendanceClockResult> clockInWithFace({
-    required double latitude,
-    required double longitude,
+    double? latitude,
+    double? longitude,
+    double? horizontalAccuracyM,
     FaceQuickCapture? capture,
     String? shiftAssignmentId,
+    String? observedBssid,
+    int? observedRssiDbm,
+    String? locationEvidence,
   }) async {
     final form = FormData.fromMap({
-      'latitude': latitude.toStringAsFixed(7),
-      'longitude': longitude.toStringAsFixed(7),
+      if (latitude != null) 'latitude': latitude.toStringAsFixed(7),
+      if (longitude != null) 'longitude': longitude.toStringAsFixed(7),
+      if (!kReleaseMode && horizontalAccuracyM != null)
+        'horizontal_accuracy_m': horizontalAccuracyM.toStringAsFixed(1),
       if (capture != null) 'liveness_gesture': capture.gesture,
       if (shiftAssignmentId != null) 'shift_assignment_id': shiftAssignmentId,
+      if (locationEvidence != null && locationEvidence.isNotEmpty)
+        'location_evidence': locationEvidence,
+      if (observedBssid != null && observedBssid.isNotEmpty)
+        'observed_bssid': observedBssid,
+      if (observedRssiDbm != null) 'observed_rssi_dbm': observedRssiDbm,
       if (capture != null)
         'file': await MultipartFile.fromFile(
           capture.imagePath,
@@ -308,14 +334,25 @@ class EmployeeRepositoryImpl implements EmployeeRepository {
 
   @override
   Future<AttendanceClockResult> clockOutWithFace({
-    required double latitude,
-    required double longitude,
+    double? latitude,
+    double? longitude,
+    double? horizontalAccuracyM,
     FaceQuickCapture? capture,
+    String? observedBssid,
+    int? observedRssiDbm,
+    String? locationEvidence,
   }) async {
     final form = FormData.fromMap({
-      'latitude': latitude.toStringAsFixed(7),
-      'longitude': longitude.toStringAsFixed(7),
+      if (latitude != null) 'latitude': latitude.toStringAsFixed(7),
+      if (longitude != null) 'longitude': longitude.toStringAsFixed(7),
+      if (!kReleaseMode && horizontalAccuracyM != null)
+        'horizontal_accuracy_m': horizontalAccuracyM.toStringAsFixed(1),
       if (capture != null) 'liveness_gesture': capture.gesture,
+      if (locationEvidence != null && locationEvidence.isNotEmpty)
+        'location_evidence': locationEvidence,
+      if (observedBssid != null && observedBssid.isNotEmpty)
+        'observed_bssid': observedBssid,
+      if (observedRssiDbm != null) 'observed_rssi_dbm': observedRssiDbm,
       if (capture != null)
         'file': await MultipartFile.fromFile(
           capture.imagePath,
@@ -633,6 +670,8 @@ EmployeeShiftHistoryItem _historyFromJson(Map<String, dynamic> json) {
     shiftName: json['shift_name'] as String?,
     shiftStart: json['shift_start'] as String?,
     shiftEnd: json['shift_end'] as String?,
+    shiftStartTime: json['shift_start_time'] as String?,
+    shiftEndTime: json['shift_end_time'] as String?,
     timeIn: _dateTime(json['time_in'] as String?),
     timeOut: _dateTime(json['time_out'] as String?),
     status: json['status'] as String? ?? 'in_progress',
@@ -869,6 +908,13 @@ int _int(Object? value) {
   return int.tryParse('$value') ?? 0;
 }
 
+int? _nullableInt(Object? value) {
+  if (value == null) return null;
+  if (value is int) return value;
+  if (value is num) return value.toInt();
+  return int.tryParse('$value');
+}
+
 double _double(Object? value) {
   if (value is double) return value;
   if (value is num) return value.toDouble();
@@ -889,6 +935,8 @@ EmployeeWorksite _worksiteFromJson(Map<String, dynamic> json) {
     latitude: _double(json['latitude']),
     longitude: _double(json['longitude']),
     geofenceRadiusM: _int(json['geofence_radius_m']),
+    wifiVerificationEnabled: json['wifi_verification_enabled'] == true,
+    minimumRssiDbm: _nullableInt(json['minimum_rssi_dbm']),
   );
 }
 

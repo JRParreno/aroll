@@ -12,10 +12,12 @@ final Dio _nominatimDio = Dio(
   ),
 );
 
-DateTime? _lastReverseAt;
+DateTime? _lastNominatimAt;
+final Map<String, String> _reverseCache = {};
 
-Future<void> _throttleReverse() async {
-  final last = _lastReverseAt;
+/// Shared by search and reverse geocoding. Nominatim allows one request per second.
+Future<void> waitForNominatimSlot() async {
+  final last = _lastNominatimAt;
   if (last != null) {
     final wait =
         const Duration(milliseconds: 1100) - DateTime.now().difference(last);
@@ -23,7 +25,7 @@ Future<void> _throttleReverse() async {
       await Future<void>.delayed(wait);
     }
   }
-  _lastReverseAt = DateTime.now();
+  _lastNominatimAt = DateTime.now();
 }
 
 /// Readable address for the UI (barangay / city / province). No raw coordinates.
@@ -34,8 +36,12 @@ Future<String?> reverseGeocodeAddress(double latitude, double longitude) async {
 }
 
 Future<String?> _reverseViaNominatim(double latitude, double longitude) async {
+  final cacheKey =
+      '${latitude.toStringAsFixed(5)},${longitude.toStringAsFixed(5)}';
+  final cached = _reverseCache[cacheKey];
+  if (cached != null) return cached;
   try {
-    await _throttleReverse();
+    await waitForNominatimSlot();
     final response = await _nominatimDio.get<Map<String, dynamic>>(
       'https://nominatim.openstreetmap.org/reverse',
       queryParameters: {
@@ -51,7 +57,9 @@ Future<String?> _reverseViaNominatim(double latitude, double longitude) async {
     final address = data['address'] as Map<String, dynamic>?;
     if (address == null) {
       final display = '${data['display_name'] ?? ''}'.trim();
-      return display.isEmpty ? null : display;
+      if (display.isEmpty) return null;
+      _reverseCache[cacheKey] = display;
+      return display;
     }
 
     final streetParts = <String>[
@@ -99,7 +107,9 @@ Future<String?> _reverseViaNominatim(double latitude, double longitude) async {
       if (province.isNotEmpty) province,
     ];
     if (parts.isEmpty) return null;
-    return parts.join(', ');
+    final formatted = parts.join(', ');
+    _reverseCache[cacheKey] = formatted;
+    return formatted;
   } catch (_) {
     return null;
   }

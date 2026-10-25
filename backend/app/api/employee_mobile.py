@@ -23,7 +23,9 @@ from sqlalchemy.orm import Session
 from app.api.owner_reports import _calculate_employee_payslip
 from app.services.payroll_engine import hours_worked_from_slip
 from app.services.payroll_snapshot import load_period_payslip, require_loaded_slip
+from app.core.config import settings
 from app.core.deps import get_current_user
+from app.core.geofence_diagnostics import log_clock_location_failure
 from app.core.profile_image import validate_profile_image_data
 from app.core.timezone import business_now, business_today
 from app.db.session import get_db
@@ -48,6 +50,7 @@ from app.services.attendance_clock import (
     _active_record,
     _list_assignment_candidates,
     _records_by_assignment,
+    check_wifi_fallback,
     clock_in_employee,
     clock_out_employee,
     select_open_time_in_assignment,
@@ -925,6 +928,8 @@ def _shift_history_rows(
                 "shift_name": shift.name,
                 "shift_start": _time_label(shift.start_time),
                 "shift_end": _time_label(shift.end_time),
+                "shift_start_time": shift.start_time.isoformat(),
+                "shift_end_time": shift.end_time.isoformat(),
                 "time_in": time_in,
                 "time_out": time_out,
                 "status": attendance_status,
@@ -1659,7 +1664,34 @@ def worksite(
 ):
     """Return the primary work-site coordinates and geofence radius for display."""
     _employee, business = _current_employee(db, user)
-    return worksite_for_business(db, business.id)
+    return worksite_for_business(
+        db, business.id, is_demo=business_is_demo(business)
+    )
+
+
+def _log_location_rejection(
+    db: Session,
+    employee,
+    exc: HTTPException,
+    *,
+    action: str,
+    latitude: float | None,
+    longitude: float | None,
+    horizontal_accuracy_m: float | None,
+    location_evidence: str | None,
+) -> None:
+    """Development log only. The original rejection is raised by the caller."""
+    if not settings.geofence_diagnostics:
+        return
+    log_clock_location_failure(
+        exc,
+        action=action,
+        location=_primary_location(db, employee.business_id),
+        latitude=latitude,
+        longitude=longitude,
+        horizontal_accuracy_m=horizontal_accuracy_m,
+        location_evidence=location_evidence,
+    )
 
 
 def _face_required() -> None:
@@ -1686,15 +1718,32 @@ def clock_in(
     _face_required()
 
 
+@router.post("/attendance/wifi-fallback-check")
+def wifi_fallback_check(
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+    observed_bssid: Annotated[str | None, Form()] = None,
+    observed_rssi_dbm: Annotated[int | None, Form()] = None,
+):
+    """Confirm a fallback BSSID before face capture. Does not record attendance."""
+    employee, _business = _current_employee(db, user)
+    check_wifi_fallback(db, employee, observed_bssid, observed_rssi_dbm)
+    return {"status": "matched"}
+
+
 @router.post("/attendance/clock-in-face", response_model=AttendanceActionResponse)
 async def clock_in_with_face(
     db: Annotated[Session, Depends(get_db)],
     user: Annotated[User, Depends(get_current_user)],
-    latitude: Annotated[float, Form(...)],
-    longitude: Annotated[float, Form(...)],
+    latitude: Annotated[float | None, Form()] = None,
+    longitude: Annotated[float | None, Form()] = None,
     file: Annotated[UploadFile | None, File()] = None,
     shift_assignment_id: Annotated[uuid.UUID | None, Form()] = None,
     liveness_gesture: Annotated[str | None, Form()] = None,
+    observed_bssid: Annotated[str | None, Form()] = None,
+    observed_rssi_dbm: Annotated[int | None, Form()] = None,
+    location_evidence: Annotated[str | None, Form()] = None,
+    horizontal_accuracy_m: Annotated[float | None, Form()] = None,
 ):
     """Time in with GPS + client blink/smile gesture + server face match.
 
@@ -1704,16 +1753,29 @@ async def clock_in_with_face(
     employee, business = _current_employee(db, user)
     if business_is_demo(business):
         score = verify_demo_seeded_identity(db, employee, business)
-        return clock_in_employee(
-            db,
-            employee,
-            latitude=latitude,
-            longitude=longitude,
-            shift_assignment_id=shift_assignment_id,
-            business_timezone=business.timezone,
-            face_match_score=score,
-            liveness_passed=True,
-        )
+        try:
+            return clock_in_employee(
+                db,
+                employee,
+                latitude=latitude,
+                longitude=longitude,
+                shift_assignment_id=shift_assignment_id,
+                business_timezone=business.timezone,
+                face_match_score=score,
+                liveness_passed=True,
+            )
+        except HTTPException as exc:
+            _log_location_rejection(
+                db,
+                employee,
+                exc,
+                action="time_in",
+                latitude=latitude,
+                longitude=longitude,
+                horizontal_accuracy_m=horizontal_accuracy_m,
+                location_evidence=location_evidence,
+            )
+            raise
 
     require_legal_consent(db, employee, business)
     require_biometric_consent(db, employee, business)
@@ -1738,16 +1800,32 @@ async def clock_in_with_face(
     score = verify_employee_face_match(
         db, employee, image_bytes, attendance_action="clock_in"
     )
-    return clock_in_employee(
-        db,
-        employee,
-        latitude=latitude,
-        longitude=longitude,
-        shift_assignment_id=shift_assignment_id,
-        business_timezone=business.timezone,
-        face_match_score=score,
-        liveness_passed=True,
-    )
+    try:
+        return clock_in_employee(
+            db,
+            employee,
+            latitude=latitude,
+            longitude=longitude,
+            shift_assignment_id=shift_assignment_id,
+            business_timezone=business.timezone,
+            face_match_score=score,
+            liveness_passed=True,
+            observed_bssid=observed_bssid,
+            observed_rssi_dbm=observed_rssi_dbm,
+            location_evidence=location_evidence,
+        )
+    except HTTPException as exc:
+        _log_location_rejection(
+            db,
+            employee,
+            exc,
+            action="time_in",
+            latitude=latitude,
+            longitude=longitude,
+            horizontal_accuracy_m=horizontal_accuracy_m,
+            location_evidence=location_evidence,
+        )
+        raise
 
 
 @router.post("/attendance/clock-out", response_model=AttendanceActionResponse)
@@ -1765,24 +1843,41 @@ def clock_out(
 async def clock_out_with_face(
     db: Annotated[Session, Depends(get_db)],
     user: Annotated[User, Depends(get_current_user)],
-    latitude: Annotated[float, Form(...)],
-    longitude: Annotated[float, Form(...)],
+    latitude: Annotated[float | None, Form()] = None,
+    longitude: Annotated[float | None, Form()] = None,
     file: Annotated[UploadFile | None, File()] = None,
     liveness_gesture: Annotated[str | None, Form()] = None,
+    observed_bssid: Annotated[str | None, Form()] = None,
+    observed_rssi_dbm: Annotated[int | None, Form()] = None,
+    location_evidence: Annotated[str | None, Form()] = None,
+    horizontal_accuracy_m: Annotated[float | None, Form()] = None,
 ):
     """Clock out with GPS + client blink/smile gesture + server face match."""
     employee, business = _current_employee(db, user)
     if business_is_demo(business):
         score = verify_demo_seeded_identity(db, employee, business)
-        return clock_out_employee(
-            db,
-            employee,
-            latitude=latitude,
-            longitude=longitude,
-            business_timezone=business.timezone,
-            face_match_score=score,
-            liveness_passed=True,
-        )
+        try:
+            return clock_out_employee(
+                db,
+                employee,
+                latitude=latitude,
+                longitude=longitude,
+                business_timezone=business.timezone,
+                face_match_score=score,
+                liveness_passed=True,
+            )
+        except HTTPException as exc:
+            _log_location_rejection(
+                db,
+                employee,
+                exc,
+                action="time_out",
+                latitude=latitude,
+                longitude=longitude,
+                horizontal_accuracy_m=horizontal_accuracy_m,
+                location_evidence=location_evidence,
+            )
+            raise
 
     require_legal_consent(db, employee, business)
     require_biometric_consent(db, employee, business)
@@ -1806,15 +1901,31 @@ async def clock_out_with_face(
     score = verify_employee_face_match(
         db, employee, await file.read(), attendance_action="clock_out"
     )
-    return clock_out_employee(
-        db,
-        employee,
-        latitude=latitude,
-        longitude=longitude,
-        business_timezone=business.timezone,
-        face_match_score=score,
-        liveness_passed=True,
-    )
+    try:
+        return clock_out_employee(
+            db,
+            employee,
+            latitude=latitude,
+            longitude=longitude,
+            business_timezone=business.timezone,
+            face_match_score=score,
+            liveness_passed=True,
+            observed_bssid=observed_bssid,
+            observed_rssi_dbm=observed_rssi_dbm,
+            location_evidence=location_evidence,
+        )
+    except HTTPException as exc:
+        _log_location_rejection(
+            db,
+            employee,
+            exc,
+            action="time_out",
+            latitude=latitude,
+            longitude=longitude,
+            horizontal_accuracy_m=horizontal_accuracy_m,
+            location_evidence=location_evidence,
+        )
+        raise
 
 
 @router.get("/face-status", response_model=FaceStatusResponse)

@@ -1,8 +1,12 @@
 """Attendance correction requests and approval.
 
-Employees may request corrected clock-in/out times for a specific shift.
-Owners/managers approve or reject; approval updates the attendance record.
-Payroll and reports recompute from attendance (single source of truth).
+Employees may request a corrected Time Out for a shift that already has a
+recorded Time In. That Time In stays the official clock-in: the request is
+rejected if it names a different minute, and approval never overwrites it.
+A shift with no recorded Time In can still supply one. That is the missed
+clock-in path. Owners and managers approve or reject; they do not edit
+Time In on a separate screen. Owner Complete Attendance still sets Time Out
+only. Payroll and reports recompute from the saved attendance.
 """
 
 from __future__ import annotations
@@ -48,8 +52,74 @@ def _to_business_local(value: datetime, tz_name: str | None) -> datetime:
     return value.astimezone(get_business_tz(tz_name)).replace(tzinfo=None)
 
 
+_TIME_IN_LOCKED_MESSAGE = (
+    "Time In cannot be changed. "
+    "It is the recorded clock-in time. You can correct Time Out only."
+)
+
+
+def _same_clock_minute(
+    left: datetime,
+    right: datetime,
+    tz_name: str | None,
+) -> bool:
+    """True when both instants fall in the same business-local clock minute."""
+    left_minute = _to_business_local(left, tz_name).replace(second=0, microsecond=0)
+    right_minute = _to_business_local(right, tz_name).replace(
+        second=0, microsecond=0
+    )
+    return left_minute == right_minute
+
+
 def _time_label(value) -> str:
     return value.strftime("%I:%M %p").lstrip("0")
+
+
+def _scheduled_window_local(work_date, shift: Shift) -> tuple[datetime, datetime]:
+    """Business-local scheduled start and end. Overnight ends on the next day."""
+    start_at = datetime.combine(work_date, shift.start_time)
+    end_at = datetime.combine(work_date, shift.end_time)
+    if shift.end_time <= shift.start_time:
+        end_at += timedelta(days=1)
+    return start_at, end_at
+
+
+def _early_clock_in_minutes(policy: BusinessAttendancePolicy) -> int:
+    raw = getattr(policy, "early_clock_in_minutes", None)
+    if isinstance(raw, int) and raw >= 0:
+        return raw
+    return 15
+
+
+def _assert_submitted_time_in_in_clock_window(
+    *,
+    time_in_utc: datetime,
+    assignment: ShiftAssignment,
+    shift: Shift,
+    business_timezone: str | None,
+    early_clock_in_minutes: int,
+) -> None:
+    """Reject a new Time In that live clock-in would also refuse.
+
+    The permitted window is the same one used for a real punch: from
+    ``early_clock_in_minutes`` before the scheduled start until the scheduled
+    end. Overnight shifts use the next-day end. The submitted instant is not
+    rewritten.
+    """
+    local_in = _to_business_local(time_in_utc, business_timezone)
+    start_at, end_at = _scheduled_window_local(assignment.work_date, shift)
+    earliest = start_at - timedelta(minutes=early_clock_in_minutes)
+    if earliest <= local_in < end_at:
+        return
+    submitted = _time_label(local_in)
+    scheduled = _time_label(shift.start_time)
+    raise HTTPException(
+        400,
+        (
+            f"Time In {submitted} is outside the clock-in window. "
+            f"This shift starts at {scheduled}."
+        ),
+    )
 
 
 def _load_assignment_bundle(
@@ -152,6 +222,8 @@ def serialize_correction(
         "shift_name": shift.name if shift else None,
         "shift_start": _time_label(shift.start_time) if shift else None,
         "shift_end": _time_label(shift.end_time) if shift else None,
+        "shift_start_time": shift.start_time.isoformat() if shift else None,
+        "shift_end_time": shift.end_time.isoformat() if shift else None,
         "recorded_time_in": _iso(record.time_in) if record else None,
         "recorded_time_out": _iso(record.time_out) if record else None,
         "requested_time_in": _iso(request.requested_time_in),
@@ -204,37 +276,50 @@ def create_correction_request(
     time_in_utc = _as_utc(requested_time_in) if requested_time_in else None
     time_out_utc = _as_utc(requested_time_out) if requested_time_out else None
 
-    # Incomplete attendance: official clock-in is locked; employee may only
-    # submit a corrected clock-out (+ reason). Managers correct clock-in.
+    # A recorded Time In is the official clock-in for every status, including
+    # incomplete, late, and complete. The employee may correct Time Out only.
     if record is not None and record.status == AttendanceStatus.incomplete:
         if record.time_in is None:
             raise HTTPException(
                 400,
                 "Incomplete attendance is missing a recorded Time In.",
             )
-        official_in = _as_utc(record.time_in)
+    if record is not None and record.time_in is not None:
         if time_out_utc is None:
             raise HTTPException(
                 400,
                 "Please provide the corrected Time Out.",
             )
-        if time_in_utc is not None and abs(
-            (time_in_utc - official_in).total_seconds()
-        ) > 60:
-            raise HTTPException(
-                400,
-                "Time In cannot be changed for incomplete attendance. "
-                "Contact your manager if the recorded Time In is wrong.",
-            )
+        official_in = _as_utc(record.time_in)
+        if time_in_utc is not None and not _same_clock_minute(
+            time_in_utc,
+            official_in,
+            business.timezone,
+        ):
+            raise HTTPException(400, _TIME_IN_LOCKED_MESSAGE)
         time_in_utc = official_in
     elif time_in_utc is None or time_out_utc is None:
-        # Non-incomplete corrections still require both punches.
+        # No recorded clock-in: the missed-punch path still requires both times.
         raise HTTPException(
             400,
             "Please provide corrected Time In and Time Out.",
         )
     if time_out_utc <= time_in_utc:
         raise HTTPException(400, "Time Out must be after Time In.")
+
+    # A newly supplied Time In (missed punch) must fall in the same window a
+    # live clock-in would accept. A recorded Time In is already official and
+    # is not rechecked here.
+    supplying_new_time_in = record is None or record.time_in is None
+    if supplying_new_time_in:
+        policy = _attendance_policy(db, business.id)
+        _assert_submitted_time_in_in_clock_window(
+            time_in_utc=time_in_utc,
+            assignment=assignment,
+            shift=shift,
+            business_timezone=business.timezone,
+            early_clock_in_minutes=_early_clock_in_minutes(policy),
+        )
 
     # Validate times fall on/near the work date (allow overnight).
     local_anchor = datetime.combine(assignment.work_date, shift.start_time)
@@ -390,19 +475,31 @@ def approve_correction(
 
     policy = _attendance_policy(db, business.id)
 
-    final_in = request.requested_time_in or (record.time_in if record else None)
     final_out = request.requested_time_out or (record.time_out if record else None)
-    # Preserve official clock-in when approving an incomplete-attendance fix.
-    if (
-        record is not None
-        and record.time_in is not None
-        and record.status == AttendanceStatus.incomplete
-    ):
+    # A recorded Time In is never replaced by the employee's requested value.
+    # Shifts with no clock-in still use the requested Time In.
+    if record is not None and record.time_in is not None:
         final_in = record.time_in
+    else:
+        final_in = request.requested_time_in or (
+            record.time_in if record else None
+        )
     if final_in is None:
         raise HTTPException(400, "Approved correction is missing a Time In.")
     if final_out is not None and final_out <= final_in:
         raise HTTPException(400, "Time Out must be after Time In.")
+
+    # Re-check a requested Time In before it can become the official punch.
+    # A recorded Time In is kept as-is and is not rewritten.
+    using_requested_time_in = record is None or record.time_in is None
+    if using_requested_time_in:
+        _assert_submitted_time_in_in_clock_window(
+            time_in_utc=_as_utc(final_in),
+            assignment=assignment,
+            shift=shift,
+            business_timezone=business.timezone,
+            early_clock_in_minutes=_early_clock_in_minutes(policy),
+        )
 
     status = _recompute_status(
         time_in=final_in,
@@ -427,8 +524,7 @@ def approve_correction(
         db.flush()
         request.attendance_record_id = record.id
     else:
-        # Keep official clock-in for incomplete fixes; only apply corrected out.
-        if record.status != AttendanceStatus.incomplete:
+        if record.time_in is None:
             record.time_in = final_in
         record.time_out = final_out
         record.status = status

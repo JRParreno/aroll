@@ -13,16 +13,23 @@ from app.models.scheduling import Shift
 from app.models.user import User
 from app.schemas.owner_setup import ShiftCreate, ShiftResponse, ShiftUpdate
 from app.services.shift_versioning import (
+    ShiftDeleteBlockedError,
     ShiftInProgressError,
     apply_shift_updates,
+    ensure_shift_deletable,
+    shift_delete_blocked_detail,
     shift_ids_with_in_progress_today,
+    shift_ids_with_open_attendance,
 )
 
 router = APIRouter(prefix="/shifts", tags=["shifts"])
 
 
 def _shift_response(
-    shift: Shift, *, has_in_progress_today: bool = False
+    shift: Shift,
+    *,
+    has_in_progress_today: bool = False,
+    has_open_attendance: bool = False,
 ) -> ShiftResponse:
     return ShiftResponse(
         id=str(shift.id),
@@ -35,6 +42,7 @@ def _shift_response(
         color=shift.color,
         is_active=shift.is_active,
         has_in_progress_today=has_in_progress_today,
+        has_open_attendance=has_open_attendance,
     )
 
 
@@ -50,6 +58,9 @@ def list_shifts(
     in_progress = shift_ids_with_in_progress_today(
         db, business_id=user.business_id, today=today
     )
+    open_attendance = shift_ids_with_open_attendance(
+        db, business_id=user.business_id
+    )
     rows = (
         db.query(Shift)
         .filter(Shift.business_id == user.business_id, Shift.is_active.is_(True))
@@ -57,7 +68,12 @@ def list_shifts(
         .all()
     )
     return [
-        _shift_response(s, has_in_progress_today=s.id in in_progress) for s in rows
+        _shift_response(
+            s,
+            has_in_progress_today=s.id in in_progress,
+            has_open_attendance=s.id in open_attendance,
+        )
+        for s in rows
     ]
 
 
@@ -112,13 +128,22 @@ def update_shift(
                 "message": exc.message,
             },
         ) from None
+    except ShiftDeleteBlockedError:
+        raise HTTPException(
+            status_code=409, detail=shift_delete_blocked_detail()
+        ) from None
     db.commit()
     db.refresh(result)
     in_progress = shift_ids_with_in_progress_today(
         db, business_id=user.business_id, today=today
     )
+    open_attendance = shift_ids_with_open_attendance(
+        db, business_id=user.business_id
+    )
     return _shift_response(
-        result, has_in_progress_today=result.id in in_progress
+        result,
+        has_in_progress_today=result.id in in_progress,
+        has_open_attendance=result.id in open_attendance,
     )
 
 
@@ -133,6 +158,12 @@ def delete_shift(
     shift = db.get(Shift, shift_id)
     if shift is None or shift.business_id != user.business_id:
         raise HTTPException(404, "Shift not found")
+    try:
+        ensure_shift_deletable(db, shift)
+    except ShiftDeleteBlockedError:
+        raise HTTPException(
+            status_code=409, detail=shift_delete_blocked_detail()
+        ) from None
     shift.is_active = False
     db.commit()
     return {"status": "ok"}

@@ -7,6 +7,9 @@ from sqlalchemy.orm import Session
 
 from app.core.deps import require_roles
 from app.db.session import get_db
+from app.models.attendance import AttendanceRecord
+from app.models.attendance_correction import AttendanceCorrectionRequest
+from app.models.business import Business
 from app.models.employee import Employee
 from app.models.enums import UserRole
 from app.models.scheduling import Shift, ShiftAssignment
@@ -25,9 +28,24 @@ from app.services.leave_requests import (
     leave_availability_for_date,
     pending_leave_dates_for_employees,
 )
-from app.services.schedule_overlap import shifts_times_overlap
+from app.services.schedule_overlap import (
+    assert_shift_still_assignable,
+    shifts_times_overlap,
+)
 
 router = APIRouter(prefix="/schedules", tags=["schedules"])
+
+ASSIGNMENT_OPEN_ATTENDANCE_MESSAGE = (
+    "This schedule cannot be removed because the employee is currently timed in. "
+    "Ask them to complete Time Out, then try again."
+)
+ASSIGNMENT_ATTENDANCE_RECORDED_MESSAGE = (
+    "This schedule cannot be removed because attendance has already been recorded "
+    "for this assignment."
+)
+ASSIGNMENT_CORRECTION_MESSAGE = (
+    "This schedule cannot be removed while a correction request is associated with it."
+)
 
 
 def _assignment_response(
@@ -64,6 +82,13 @@ def _week_bounds(week_start: date) -> tuple[date, date]:
 
 def _times_overlap(first: Shift, second: Shift) -> bool:
     return shifts_times_overlap(first, second)
+
+
+def _schedule_timezone(db: Session, business_id: uuid.UUID) -> str | None:
+    business = db.get(Business, business_id)
+    if business is None:
+        return None
+    return business.timezone
 
 def _validate_employee_schedule_conflicts(
     db: Session,
@@ -254,6 +279,12 @@ def assign_schedule(
             },
         )
 
+    assert_shift_still_assignable(
+        body.work_date,
+        shift,
+        tz_name=_schedule_timezone(db, user.business_id),
+    )
+
     existing_same_shift = (
         db.query(ShiftAssignment)
         .filter(
@@ -370,6 +401,13 @@ def update_schedule_assignment(
             },
         )
 
+    if assignment.shift_id != shift.id or assignment.work_date != body.work_date:
+        assert_shift_still_assignable(
+            body.work_date,
+            shift,
+            tz_name=_schedule_timezone(db, user.business_id),
+        )
+
     _validate_employee_schedule_conflicts(
         db,
         [assignment.employee_id],
@@ -452,6 +490,11 @@ def delete_schedule_assignment(
     assignment, employee, shift = row
     assignment_id = assignment.id
     work_date = assignment.work_date
+    _reject_assignment_delete_when_history_exists(
+        db,
+        assignment_id=assignment.id,
+        business_id=user.business_id,
+    )
     db.delete(assignment)
     db.commit()
     try:
@@ -467,3 +510,52 @@ def delete_schedule_assignment(
     except Exception:
         pass
     return {"status": "ok"}
+
+
+def _reject_assignment_delete_when_history_exists(
+    db: Session,
+    *,
+    assignment_id: uuid.UUID,
+    business_id: uuid.UUID,
+) -> None:
+    """Block removal while a punch or correction request still points here.
+
+    Raises before any delete. An open Time In is reported first. Any other
+    attendance row, including a completed punch, is reported next. A
+    correction request is reported last so the database cascade cannot
+    remove it. The shift row is never changed here.
+    """
+    open_punch = (
+        db.query(AttendanceRecord.id)
+        .filter(
+            AttendanceRecord.shift_assignment_id == assignment_id,
+            AttendanceRecord.business_id == business_id,
+            AttendanceRecord.time_in.isnot(None),
+            AttendanceRecord.time_out.is_(None),
+        )
+        .first()
+    )
+    if open_punch is not None:
+        raise HTTPException(409, ASSIGNMENT_OPEN_ATTENDANCE_MESSAGE)
+
+    attendance = (
+        db.query(AttendanceRecord.id)
+        .filter(
+            AttendanceRecord.shift_assignment_id == assignment_id,
+            AttendanceRecord.business_id == business_id,
+        )
+        .first()
+    )
+    if attendance is not None:
+        raise HTTPException(409, ASSIGNMENT_ATTENDANCE_RECORDED_MESSAGE)
+
+    correction = (
+        db.query(AttendanceCorrectionRequest.id)
+        .filter(
+            AttendanceCorrectionRequest.shift_assignment_id == assignment_id,
+            AttendanceCorrectionRequest.business_id == business_id,
+        )
+        .first()
+    )
+    if correction is not None:
+        raise HTTPException(409, ASSIGNMENT_CORRECTION_MESSAGE)

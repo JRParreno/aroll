@@ -20,8 +20,10 @@ const NOMINATIM_HEADERS = {
 };
 
 let lastRequestAt: number | null = null;
+const searchCache = new Map<string, PlaceSuggestion[]>();
 
-async function throttleNominatim() {
+/** Shared by search and reverse geocoding. Nominatim allows one request per second. */
+export async function waitForNominatimSlot() {
   if (lastRequestAt != null) {
     const wait = 1100 - (Date.now() - lastRequestAt);
     if (wait > 0) {
@@ -84,9 +86,12 @@ export async function autocompletePlaces(
 ): Promise<PlaceSuggestion[]> {
   const query = input.trim();
   if (query.length < 2) return [];
+  const cacheKey = query.toLowerCase();
+  const cached = searchCache.get(cacheKey);
+  if (cached) return cached;
 
   try {
-    await throttleNominatim();
+    await waitForNominatimSlot();
     const params = new URLSearchParams({
       q: query,
       format: "json",
@@ -114,6 +119,7 @@ export async function autocompletePlaces(
         longitude: lon,
       });
     }
+    if (suggestions.length > 0) searchCache.set(cacheKey, suggestions);
     return suggestions;
   } catch {
     return [];

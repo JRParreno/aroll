@@ -141,6 +141,8 @@ class BusinessLocation(Base):
     latitude: Mapped[float | None] = mapped_column(Numeric(10, 7), nullable=True)
     longitude: Mapped[float | None] = mapped_column(Numeric(10, 7), nullable=True)
     geofence_radius_m: Mapped[int] = mapped_column(Integer, default=75)
+    # Optional Wi-Fi fallback floor in dBm. Null keeps BSSID-only fallback.
+    minimum_rssi_dbm: Mapped[int | None] = mapped_column(Integer, nullable=True)
     is_primary: Mapped[bool] = mapped_column(default=True)
 
     business = relationship("Business", back_populates="locations")

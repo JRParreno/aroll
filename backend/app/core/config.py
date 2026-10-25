@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -68,6 +69,9 @@ class Settings(BaseSettings):
     face_liveness_turn_delta_min: float = 0.22
     # Cosine similarity required between consecutive challenge frames (same person).
     face_liveness_continuity_threshold: float = 0.40
+    # Temporary device-test log for geofence rejections. Off unless set.
+    # Does not change acceptance and is not shown to employees.
+    geofence_diagnostics: bool = False
 
     @property
     def cors_origin_list(self) -> list[str]:
@@ -82,3 +86,17 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+
+def smtp_settings() -> Settings:
+    """Return the SMTP settings to use for a delivery attempt.
+
+    ``settings`` is created when the API process imports this module. A reload
+    server does not restart when ``backend/.env`` changes, so a process that
+    started before the SMTP keys were saved keeps the empty defaults. Read the
+    file again for each delivery. Tests patch the imported object, so they
+    keep using that same instance.
+    """
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        return settings
+    return Settings()

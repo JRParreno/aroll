@@ -1,4 +1,6 @@
+import 'package:aroll_mobile/core/utils/business_time.dart';
 import 'package:intl/intl.dart';
+import 'package:timezone/timezone.dart' as tz;
 
 const ownerWeekdayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
@@ -213,4 +215,52 @@ String ownerScheduleViewerCellLabel(
     if (assignedDuringLeave) return '$times · Assigned During Leave';
     return times;
   }).join(', ');
+}
+
+const ownerPastShiftAssignmentMessage =
+    'This shift has already ended. Employees can only be assigned to shifts that are still ongoing or have not started yet.';
+
+tz.Location _scheduleLocation(String? timeZone) {
+  ensureBusinessTimeZones();
+  final name = (timeZone == null || timeZone.trim().isEmpty)
+      ? 'Asia/Manila'
+      : timeZone.trim();
+  try {
+    return tz.getLocation(name);
+  } catch (_) {
+    return tz.getLocation('Asia/Manila');
+  }
+}
+
+tz.TZDateTime? _wallClock(String dateKey, String clock, tz.Location location) {
+  final date = RegExp(r'^(\d{4})-(\d{2})-(\d{2})').firstMatch(dateKey);
+  final time = RegExp(r'^(\d{1,2}):(\d{2})').firstMatch(clock.trim());
+  if (date == null || time == null) return null;
+  return tz.TZDateTime(
+    location,
+    int.parse(date.group(1)!),
+    int.parse(date.group(2)!),
+    int.parse(date.group(3)!),
+    int.parse(time.group(1)!),
+    int.parse(time.group(2)!),
+  );
+}
+
+/// True when the scheduled end is at or before [now] in the business timezone.
+bool ownerShiftHasEnded({
+  required String workDate,
+  required String startTime,
+  required String endTime,
+  String? timeZone,
+  DateTime? now,
+}) {
+  final location = _scheduleLocation(timeZone);
+  final start = _wallClock(workDate, startTime, location);
+  var end = _wallClock(workDate, endTime, location);
+  if (start == null || end == null) return false;
+  if (!end.isAfter(start)) {
+    end = end.add(const Duration(days: 1));
+  }
+  final current = now ?? tz.TZDateTime.now(location);
+  return !current.isBefore(end);
 }

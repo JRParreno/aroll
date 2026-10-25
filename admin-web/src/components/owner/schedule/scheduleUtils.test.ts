@@ -12,6 +12,7 @@ import {
   getWeekStart,
   restDayPremiumInitialValue,
   scheduleRangeError,
+  shiftHasEnded,
   templateApplyRange,
   toDateKey,
 } from "./scheduleUtils.ts";
@@ -224,5 +225,71 @@ describe("buildScheduleMatrix", () => {
     assert.equal(matrix[0].employee.full_name, "Cara Lim");
     assert.equal(matrix[0].cells[3].length, 1);
     assert.equal(matrix[0].cells[0].length, 0);
+  });
+});
+
+describe("shiftHasEnded", () => {
+  const manilaAfternoon = new Date("2026-10-21T06:00:00Z");
+  const manilaMorning = new Date("2026-10-21T02:00:00Z");
+
+  it("rejects a shift that ended yesterday or earlier today", () => {
+    assert.equal(
+      shiftHasEnded("2026-10-20", "08:00:00", "12:00:00", "Asia/Manila", manilaAfternoon),
+      true
+    );
+    assert.equal(
+      shiftHasEnded("2026-10-21", "08:00:00", "12:00:00", "Asia/Manila", manilaAfternoon),
+      true
+    );
+  });
+
+  it("allows a future shift, an ongoing shift, and a shift later today", () => {
+    assert.equal(
+      shiftHasEnded("2026-10-22", "08:00:00", "12:00:00", "Asia/Manila", manilaAfternoon),
+      false
+    );
+    assert.equal(
+      shiftHasEnded("2026-10-21", "08:00:00", "12:00:00", "Asia/Manila", manilaMorning),
+      false
+    );
+    assert.equal(
+      shiftHasEnded("2026-10-21", "13:00:00", "17:00:00", "Asia/Manila", manilaMorning),
+      false
+    );
+  });
+
+  it("keeps an overnight shift open until the next morning", () => {
+    assert.equal(
+      shiftHasEnded(
+        "2026-10-21",
+        "22:00:00",
+        "06:00:00",
+        "Asia/Manila",
+        new Date("2026-10-21T21:00:00Z")
+      ),
+      false
+    );
+    assert.equal(
+      shiftHasEnded(
+        "2026-10-21",
+        "22:00:00",
+        "06:00:00",
+        "Asia/Manila",
+        new Date("2026-10-21T22:00:00Z")
+      ),
+      true
+    );
+  });
+
+  it("compares the business timezone instead of the calendar date alone", () => {
+    const sameInstant = new Date("2026-10-22T06:00:00Z");
+    assert.equal(
+      shiftHasEnded("2026-10-21", "22:00:00", "23:30:00", "America/Los_Angeles", sameInstant),
+      false
+    );
+    assert.equal(
+      shiftHasEnded("2026-10-21", "08:00:00", "12:00:00", "Asia/Manila", sameInstant),
+      true
+    );
   });
 });

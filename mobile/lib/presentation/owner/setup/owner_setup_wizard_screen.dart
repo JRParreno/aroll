@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:aroll_mobile/core/app_state.dart';
 import 'package:aroll_mobile/core/di/injection.dart';
 import 'package:aroll_mobile/core/location/business_location_defaults.dart';
@@ -7,9 +9,11 @@ import 'package:aroll_mobile/data/repositories/owner_repository.dart';
 import 'package:aroll_mobile/presentation/owner/owner_leave_allowances_section.dart';
 import 'package:aroll_mobile/presentation/owner/owner_shell.dart';
 import 'package:aroll_mobile/presentation/owner/setup/holiday_setup_section.dart';
+import 'package:aroll_mobile/presentation/owner/setup/shift_deletion.dart';
 import 'package:aroll_mobile/presentation/owner/setup/setup_ui.dart';
 import 'package:aroll_mobile/presentation/owner/setup/setup_wizard_constants.dart';
 import 'package:aroll_mobile/presentation/owner/widgets/business_location_map_picker.dart';
+import 'package:aroll_mobile/presentation/owner/widgets/workplace_wifi_section.dart';
 import 'package:aroll_mobile/presentation/shared/app_ui.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
@@ -97,6 +101,7 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
   double _locationGeofence = kDefaultGeofenceRadiusM.toDouble();
   bool _locationLocating = false;
   bool _locationAddressEditedManually = false;
+  Timer? _locationReverseDebounce;
 
   final _locationService = EmployeeLocationService();
 
@@ -109,6 +114,7 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
 
   @override
   void dispose() {
+    _locationReverseDebounce?.cancel();
     _shiftName.dispose();
     _shiftBreak.dispose();
     _shiftCapacity.dispose();
@@ -187,10 +193,9 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
     _nextPaydayDate =
         payday == null || payday.isEmpty ? null : DateTime.tryParse(payday);
     _autoResetPayrollCycle = payroll['auto_reset_payroll_cycle'] != false;
-    _holidayRulesMode =
-        payroll['holiday_rules_mode'] == 'custom_company'
-            ? 'custom_company'
-            : 'philippine_labor';
+    _holidayRulesMode = payroll['holiday_rules_mode'] == 'custom_company'
+        ? 'custom_company'
+        : 'philippine_labor';
     _payrollLateDeductionEnabled = payroll['late_deduction_enabled'] != false;
     _payrollLateDeductionRate.text =
         '${payroll['late_deduction_per_minute'] ?? 1}';
@@ -200,10 +205,8 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
             ? 'hourly_statutory'
             : 'flat_per_minute';
     _payrollOvertimeRate.text = '${payroll['overtime_per_minute'] ?? 1}';
-    _payrollLateOtBalancing =
-        payroll['enable_late_overtime_balancing'] == true;
-    _payrollOtApprovalRequired =
-        payroll['overtime_approval_required'] == true;
+    _payrollLateOtBalancing = payroll['enable_late_overtime_balancing'] == true;
+    _payrollOtApprovalRequired = payroll['overtime_approval_required'] == true;
   }
 
   void _applyAttendance(Map<String, dynamic> attendance) {
@@ -385,6 +388,10 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
       await _repo.deleteShift(id);
       _shifts = await _repo.shifts();
       await _refreshSetupStatus();
+    } on DioException catch (error) {
+      _showSnack(
+        shiftDeleteBlockedMessage(error) ?? 'Could not remove work shift',
+      );
     } catch (_) {
       _showSnack('Could not remove work shift');
     } finally {
@@ -528,10 +535,8 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
         return StatefulBuilder(
           builder: (context, setLocal) {
             final valid = (enableDaily || enableHourly) &&
-                (!enableDaily ||
-                    (double.tryParse(dailyCtrl.text) ?? 0) > 0) &&
-                (!enableHourly ||
-                    (double.tryParse(hourlyCtrl.text) ?? 0) > 0);
+                (!enableDaily || (double.tryParse(dailyCtrl.text) ?? 0) > 0) &&
+                (!enableHourly || (double.tryParse(hourlyCtrl.text) ?? 0) > 0);
             return AlertDialog(
               title: Text('Edit rates · ${position['title']}'),
               content: SingleChildScrollView(
@@ -583,9 +588,7 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
                   child: const Text('Cancel'),
                 ),
                 FilledButton(
-                  onPressed: !valid
-                      ? null
-                      : () => Navigator.pop(context, true),
+                  onPressed: !valid ? null : () => Navigator.pop(context, true),
                   child: const Text('Save'),
                 ),
               ],
@@ -617,7 +620,8 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
       await _refreshSetupStatus();
     } on DioException catch (e) {
       _showSnack(
-        _errorMessageFromDio(e, fallback: 'Could not update pay configurations'),
+        _errorMessageFromDio(e,
+            fallback: 'Could not update pay configurations'),
       );
     } catch (_) {
       _showSnack('Could not update pay configurations');
@@ -637,7 +641,8 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
       _showSnack('Job role classified');
       await _refreshSetupStatus();
     } on DioException catch (e) {
-      _showSnack(_errorMessageFromDio(e, fallback: 'Could not update job role'));
+      _showSnack(
+          _errorMessageFromDio(e, fallback: 'Could not update job role'));
     } catch (_) {
       _showSnack('Could not update job role');
     } finally {
@@ -794,7 +799,7 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
           position.latitude,
           position.longitude,
         );
-        if (!mounted) return;
+        if (!mounted || _locationAddressEditedManually) return;
         if (address != null && address.trim().isNotEmpty) {
           setState(() => _locationAddress.text = address);
         }
@@ -808,17 +813,34 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
     }
   }
 
-  Future<void> _onWizardMapPositionChanged(LatLng position) async {
+  void _onWizardMapPositionChanged(LatLng position) {
     setState(() {
       _locationLatitude.text = position.latitude.toStringAsFixed(6);
       _locationLongitude.text = position.longitude.toStringAsFixed(6);
     });
     if (_locationAddressEditedManually) return;
+    _locationReverseDebounce?.cancel();
+    _locationReverseDebounce = Timer(const Duration(milliseconds: 450), () {
+      unawaited(_applyWizardReverseGeocode(position));
+    });
+  }
+
+  Future<void> _applyWizardReverseGeocode(LatLng position) async {
+    if (_locationAddressEditedManually) return;
     final address = await reverseGeocodeAddress(
       position.latitude,
       position.longitude,
     );
-    if (!mounted || address == null || address.trim().isEmpty) return;
+    if (!mounted || _locationAddressEditedManually) return;
+    final currentLat = double.tryParse(_locationLatitude.text);
+    final currentLng = double.tryParse(_locationLongitude.text);
+    if (currentLat == null ||
+        currentLng == null ||
+        (currentLat - position.latitude).abs() > 1e-5 ||
+        (currentLng - position.longitude).abs() > 1e-5) {
+      return;
+    }
+    if (address == null || address.trim().isEmpty) return;
     setState(() => _locationAddress.text = address);
   }
 
@@ -989,7 +1011,8 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
       backgroundColor: SetupUi.scaffold,
       footer: _showsWizardFooter ? _buildFooter() : null,
       child: _loading
-          ? Center(child: CircularProgressIndicator(color: SetupUi.navyOf(context)))
+          ? Center(
+              child: CircularProgressIndicator(color: SetupUi.navyOf(context)))
           : _loadError != null
               ? Center(
                   child: Padding(
@@ -997,7 +1020,8 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        SetupInfoBanner(_loadError!, tone: SetupBannerTone.danger),
+                        SetupInfoBanner(_loadError!,
+                            tone: SetupBannerTone.danger),
                         const SizedBox(height: 14),
                         FilledButton(
                           onPressed: _loadAll,
@@ -1282,6 +1306,17 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
                                 color: AppColors.textMuted,
                               ),
                             ),
+                            if (shift['has_open_attendance'] == true) ...[
+                              const SizedBox(height: 4),
+                              const Text(
+                                shiftDeleteBlockedMessageText,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  height: 1.35,
+                                  color: AppColors.textMuted,
+                                ),
+                              ),
+                            ],
                           ],
                         ),
                       ),
@@ -1294,8 +1329,7 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
                     children: [
                       TextButton(
                         style: SetupUi.ghostButtonOf(context),
-                        onPressed:
-                            _busy ? null : () => _editShiftTimes(shift),
+                        onPressed: _busy ? null : () => _editShiftTimes(shift),
                         child: const Text('Edit shift'),
                       ),
                       TextButton(
@@ -1304,7 +1338,7 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
                             AppColors.danger,
                           ),
                         ),
-                        onPressed: _busy
+                        onPressed: _busy || shift['has_open_attendance'] == true
                             ? null
                             : () => _removeShift('${shift['id']}'),
                         child: const Text('Remove'),
@@ -1472,9 +1506,8 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
                 subtitle: _positionRateSubtitle(position),
                 actions: [
                   TextButton(
-                    onPressed: _busy
-                        ? null
-                        : () => _editPositionPayConfigs(position),
+                    onPressed:
+                        _busy ? null : () => _editPositionPayConfigs(position),
                     child: const Text('Edit rates'),
                   ),
                   TextButton(
@@ -1500,9 +1533,8 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
                 subtitle: _positionRateSubtitle(position),
                 actions: [
                   TextButton(
-                    onPressed: _busy
-                        ? null
-                        : () => _editPositionPayConfigs(position),
+                    onPressed:
+                        _busy ? null : () => _editPositionPayConfigs(position),
                     child: const Text('Edit rates'),
                   ),
                   TextButton(
@@ -1741,8 +1773,7 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
             ),
             SetupLabeledSetting(
               title: 'Payroll half-day cutoff (min)',
-              description:
-                  'Used for payslip half-day math (minutes).',
+              description: 'Used for payslip half-day math (minutes).',
               controller: _attHalfDay,
               inputHint: 'Minutes',
             ),
@@ -1830,7 +1861,8 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
           SetupPanel(
             title: 'Leave types',
             icon: Icons.event_busy_outlined,
-            subtitle: 'Employees pick the leave type. Payroll uses this policy.',
+            subtitle:
+                'Employees pick the leave type. Payroll uses this policy.',
             children: [
               for (final item in items)
                 SwitchListTile.adaptive(
@@ -1928,11 +1960,13 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
             TextField(
               controller: _locationAddress,
               style: const TextStyle(fontSize: 14),
-              decoration:
-                  _compactInput('Address', hint: '123 Main St, Manila'),
-              onChanged: (_) => setState(() {
-                _locationAddressEditedManually = true;
-              }),
+              decoration: _compactInput('Address', hint: '123 Main St, Manila'),
+              onChanged: (_) {
+                _locationReverseDebounce?.cancel();
+                setState(() {
+                  _locationAddressEditedManually = true;
+                });
+              },
             ),
             const SizedBox(height: 8),
             Text(
@@ -1957,8 +1991,7 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
                 max: kMaxGeofenceRadiusM.toDouble(),
                 divisions: kMaxGeofenceRadiusM - kMinGeofenceRadiusM,
                 label: '${_locationGeofence.round()}m',
-                onChanged: (value) =>
-                    setState(() => _locationGeofence = value),
+                onChanged: (value) => setState(() => _locationGeofence = value),
               ),
             ),
             Text(
@@ -1968,12 +2001,14 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
             if (isSmallGeofenceRadius(_locationGeofence)) ...[
               const SizedBox(height: 8),
               const SetupInfoBanner(
-                'Tip: A very small work area (under 20 m) can be hard for phones '
-                'to match because location can drift. Place the pin outdoors when '
-                'possible. 25–50 m is usually more reliable.',
+                kSmallGeofenceOwnerTip,
                 tone: SetupBannerTone.warning,
               ),
             ],
+            WorkplaceWifiSection(
+              repository: _repo,
+              radiusM: _locationGeofence,
+            ),
           ],
         ),
         const SizedBox(height: 10),
@@ -2041,12 +2076,10 @@ class _OwnerSetupWizardScreenState extends State<OwnerSetupWizardScreen> {
               leadingIcon: complete
                   ? Icons.check_circle_rounded
                   : Icons.radio_button_unchecked_rounded,
-              iconColor: complete
-                  ? const Color(0xFF059669)
-                  : const Color(0xFFC2410C),
-              iconBackground: complete
-                  ? const Color(0xFFECFDF5)
-                  : const Color(0xFFFFF7ED),
+              iconColor:
+                  complete ? const Color(0xFF059669) : const Color(0xFFC2410C),
+              iconBackground:
+                  complete ? const Color(0xFFECFDF5) : const Color(0xFFFFF7ED),
               title: '${step['label']}',
               subtitle: complete ? 'Completed' : 'Incomplete',
             );
@@ -2170,7 +2203,8 @@ class _EditShiftTimesDialogState extends State<_EditShiftTimesDialog> {
     super.initState();
     _start = widget.initialStart;
     _end = widget.initialEnd;
-    _capacityController = TextEditingController(text: widget.initialCapacityText);
+    _capacityController =
+        TextEditingController(text: widget.initialCapacityText);
   }
 
   @override

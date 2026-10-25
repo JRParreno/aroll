@@ -66,9 +66,6 @@ class GeofencePreview {
 class EmployeeLocationService {
   static const double distanceEpsilonM = 0.05;
 
-  /// Max meters of GPS uncertainty used when deciding overlap with the fence.
-  static const double maxAccuracyToleranceM = 12;
-
   static const int targetSampleCount = 5;
   static const int smallRadiusSampleCount = 7;
   static const int minSampleCount = 3;
@@ -124,11 +121,6 @@ class EmployeeLocationService {
       accuracy: LocationAccuracy.best,
       timeLimit: limit,
     );
-  }
-
-  static double cappedGpsUncertaintyM(double accuracyM) {
-    if (!accuracyM.isFinite || accuracyM <= 0) return 0;
-    return math.min(accuracyM, maxAccuracyToleranceM);
   }
 
   static double preferredAccuracyForRadius(double radiusM) {
@@ -438,10 +430,8 @@ class EmployeeLocationService {
     );
   }
 
-  /// GPS uncertainty overlap — required for small radii (5–20 m).
-  ///
-  /// Inside when: (distance − min(accuracy, 12)) ≤ radius
-  /// i.e. the GPS error circle still intersects the attendance disk.
+  /// Inside only when the measured point is within the configured radius.
+  /// Reported accuracy does not enlarge that radius.
   GeofencePreview preview({
     required EmployeeLocationSnapshot device,
     required double centerLatitude,
@@ -458,36 +448,13 @@ class EmployeeLocationService {
     final accuracyM = math.max(device.accuracyM, 0.0);
     final radius = math.max(radiusM, 0.0);
     final small = isSmallRadius(radius);
-    final uncertainty = cappedGpsUncertaintyM(accuracyM);
-    final bestCaseDistance = math.max(0.0, distanceM - uncertainty);
-    // If the full reported accuracy circle still reaches the fence, a sharper
-    // fix might flip the result — ask for better GPS instead of hard-reject.
-    final reachableWithFullAccuracy =
-        math.max(0.0, distanceM - accuracyM) <= radius + distanceEpsilonM;
+    final inside = distanceM <= radius + distanceEpsilonM;
+    const needsBetterGps = false;
 
-    final inside = bestCaseDistance <= radius + distanceEpsilonM;
-    final needsBetterGps = !inside &&
-        reachableWithFullAccuracy &&
-        accuracyM > preferredAccuracyForRadius(radius);
-
-    String? failReason;
-    if (inside) {
-      failReason = null;
-    } else if (needsBetterGps) {
-      failReason = small
-          ? 'Small ${radius.toStringAsFixed(0)} m area needs a sharper GPS fix '
-              '(±${accuracyM.toStringAsFixed(0)} m, distance '
-              '${distanceM.toStringAsFixed(1)} m).'
-          : 'GPS accuracy ±${accuracyM.toStringAsFixed(0)} m is too weak to decide '
-              'for a ${radius.toStringAsFixed(0)} m radius '
-              '(distance ${distanceM.toStringAsFixed(1)} m).';
-    } else {
-      failReason =
-          'best-case distance ${bestCaseDistance.toStringAsFixed(1)} m > '
-          'radius ${radius.toStringAsFixed(0)} m '
-          '(measured ${distanceM.toStringAsFixed(1)} m, '
-          'GPS ±${uncertainty.toStringAsFixed(1)} m).';
-    }
+    final failReason = inside
+        ? null
+        : 'distance ${distanceM.toStringAsFixed(1)} m > '
+            'radius ${radius.toStringAsFixed(0)} m.';
 
     logGeofenceValidation(
       businessLatitude: centerLatitude,
@@ -496,14 +463,14 @@ class EmployeeLocationService {
       employeeLongitude: device.longitude,
       accuracyM: accuracyM,
       radiusM: radius,
-      toleranceM: uncertainty,
+      toleranceM: 0,
       distanceM: distanceM,
       insideGeofence: inside,
       needsBetterGps: needsBetterGps,
       sampleCount: device.sampleCount,
       failReason: failReason,
       smallRadius: small,
-      bestCaseDistanceM: bestCaseDistance,
+      bestCaseDistanceM: distanceM,
     );
 
     return GeofencePreview(
@@ -515,7 +482,7 @@ class EmployeeLocationService {
       employeeLatitude: device.latitude,
       employeeLongitude: device.longitude,
       accuracyM: accuracyM,
-      toleranceM: uncertainty,
+      toleranceM: 0,
       needsBetterGps: needsBetterGps,
       failReason: failReason,
     );

@@ -65,6 +65,21 @@
     @apply rounded-2xl border border-slate-200/90 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_8px_24px_rgba(15,23,42,0.04)];
   }
 
+  /* Keep Leaflet panes inside the workplace map so they cannot paint over the sticky page header. */
+  .business-location-map {
+    position: relative;
+    z-index: 0;
+    isolation: isolate;
+    contain: paint;
+  }
+
+  .business-location-map .leaflet-container {
+    position: relative;
+    z-index: 0;
+    height: 100%;
+    width: 100%;
+  }
+
   .owner-card-muted {
     @apply rounded-2xl border border-slate-200/90 bg-[#FAFBFC] shadow-sm;
   }

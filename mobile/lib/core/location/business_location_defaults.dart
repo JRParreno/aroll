@@ -14,6 +14,8 @@ const int kSmallGeofenceRadiusM = 20;
 bool isSmallGeofenceRadius(num radiusM) => radiusM <= kSmallGeofenceRadiusM;
 
 const String kSmallGeofenceOwnerTip =
-    'Warning: radii under 20 m can be unreliable because phone GPS often '
-    'drifts 8–15 m. Prefer outdoor placement near the pin. '
-    'You can still use a small radius if needed; 25–50 m is more reliable.';
+    'A small work area is harder for phone GPS, which often drifts '
+    'by several meters. You can optionally register the workplace Wi-Fi as a '
+    'backup when the work area is under 20 m. That only confirms the '
+    'phone is connected to a network you saved. It is not a location measurement '
+    'and does not replace the map boundary.';

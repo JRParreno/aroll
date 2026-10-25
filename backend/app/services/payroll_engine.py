@@ -9,8 +9,9 @@ Rules encoded here:
   shift, capped at scheduled_paid_minutes.
 - Early arrival before scheduled start is never payable regular time and
   never offsets early departure.
-- Monetary late minutes = max(time_in − start − grace, 0). Unused grace
-  is not undertime. Late pesos use owner late_deduction_per_minute.
+- Monetary late minutes = max(time_in − start − grace, 0). The grace
+  clock-minute is inclusive, so a punch during that minute is 0 late.
+  Unused grace is not undertime. Late pesos use owner late_deduction_per_minute.
 - Undertime minutes = early departure vs scheduled end only.
 - Late/OT balancing (optional) lets post-end minutes recover late-from-start
   before remaining minutes can qualify as OT. Early arrival is excluded.
@@ -166,7 +167,20 @@ def monetary_late_minutes(
     scheduled_start: datetime,
     grace_minutes: float,
 ) -> float:
-    """Minutes after scheduled start that exceed grace. Unused grace is 0 late."""
+    """Minutes after scheduled start that exceed grace. Unused grace is 0 late.
+
+    A punch in the grace-end clock minute (8:10:06 with a 10-minute grace
+    from 8:00) has zero chargeable minutes. Once the next minute begins,
+    the existing second-based remainder applies.
+    """
+    from app.services.attendance_clock import arrival_is_after_grace
+
+    if not arrival_is_after_grace(
+        arrived_at=time_in,
+        scheduled_start=scheduled_start,
+        grace_minutes=grace_minutes,
+    ):
+        return 0.0
     raw = (time_in - scheduled_start).total_seconds() / 60.0
     return max(raw - max(float(grace_minutes or 0), 0.0), 0.0)
 

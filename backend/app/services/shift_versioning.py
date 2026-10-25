@@ -43,6 +43,32 @@ class ShiftInProgressError(Exception):
         self.message = SHIFT_IN_PROGRESS_MESSAGE
 
 
+SHIFT_DELETE_BLOCKED_CODE = "shift_delete_blocked"
+SHIFT_DELETE_BLOCKED_TITLE = "Cannot delete shift"
+SHIFT_DELETE_BLOCKED_MESSAGE = (
+    "This shift cannot be deleted because an employee assigned to it "
+    "is currently timed in. Ask them to complete Time Out, then try again."
+)
+
+
+class ShiftDeleteBlockedError(Exception):
+    """Deletion blocked because an assigned employee has Time In and no Time Out."""
+
+    def __init__(self) -> None:
+        super().__init__(SHIFT_DELETE_BLOCKED_MESSAGE)
+        self.code = SHIFT_DELETE_BLOCKED_CODE
+        self.title = SHIFT_DELETE_BLOCKED_TITLE
+        self.message = SHIFT_DELETE_BLOCKED_MESSAGE
+
+
+def shift_delete_blocked_detail() -> dict[str, str]:
+    return {
+        "code": SHIFT_DELETE_BLOCKED_CODE,
+        "title": SHIFT_DELETE_BLOCKED_TITLE,
+        "message": SHIFT_DELETE_BLOCKED_MESSAGE,
+    }
+
+
 def time_fields_changing(shift: Shift, updates: dict[str, Any]) -> bool:
     for key in TIME_FIELDS:
         if key not in updates:
@@ -77,6 +103,70 @@ def started_assignment_ids(
     if employee_id is not None:
         query = query.filter(ShiftAssignment.employee_id == employee_id)
     return {row[0] for row in query.all() if row[0] is not None}
+
+
+def open_attendance_query(
+    db: Session,
+    *,
+    business_id: uuid.UUID,
+    shift_id: uuid.UUID | None = None,
+):
+    """Attendance rows for this business whose assignment is still open.
+
+    Open means Time In is recorded and Time Out is not. A completed punch
+    (both times set) does not match. The link is the assignment: the same
+    shift, the same employee, and the same business. Any work date counts,
+    so an earlier open session still blocks deletion.
+    """
+    query = (
+        db.query(AttendanceRecord.id)
+        .join(
+            ShiftAssignment,
+            AttendanceRecord.shift_assignment_id == ShiftAssignment.id,
+        )
+        .join(Shift, ShiftAssignment.shift_id == Shift.id)
+        .filter(
+            Shift.business_id == business_id,
+            AttendanceRecord.business_id == business_id,
+            AttendanceRecord.employee_id == ShiftAssignment.employee_id,
+            AttendanceRecord.time_in.isnot(None),
+            AttendanceRecord.time_out.is_(None),
+        )
+    )
+    if shift_id is not None:
+        query = query.filter(Shift.id == shift_id)
+    return query
+
+
+def shift_has_open_attendance(
+    db: Session, *, shift_id: uuid.UUID, business_id: uuid.UUID
+) -> bool:
+    return (
+        open_attendance_query(
+            db, business_id=business_id, shift_id=shift_id
+        ).first()
+        is not None
+    )
+
+
+def shift_ids_with_open_attendance(
+    db: Session, *, business_id: uuid.UUID
+) -> set[uuid.UUID]:
+    rows = (
+        open_attendance_query(db, business_id=business_id)
+        .with_entities(Shift.id)
+        .distinct()
+        .all()
+    )
+    return {row[0] for row in rows if row[0] is not None}
+
+
+def ensure_shift_deletable(db: Session, shift: Shift) -> None:
+    """Reject removal while an assigned employee is still timed in."""
+    if shift_has_open_attendance(
+        db, shift_id=shift.id, business_id=shift.business_id
+    ):
+        raise ShiftDeleteBlockedError()
 
 
 def shift_ids_with_in_progress_today(
@@ -207,9 +297,16 @@ def apply_shift_updates(
 
     Raises ShiftInProgressError when a time edit is attempted while any
     assignment on this Shift already has time_in for today.
+
+    Raises ShiftDeleteBlockedError when the update would deactivate a shift
+    that still has an open attendance session. Time versioning that hides a
+    past shift row is unchanged.
     """
     if not updates:
         return shift
+
+    if updates.get("is_active") is False and shift.is_active:
+        ensure_shift_deletable(db, shift)
 
     if not time_fields_changing(shift, updates):
         for field, value in updates.items():

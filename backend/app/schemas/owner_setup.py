@@ -49,6 +49,7 @@ class ShiftResponse(BaseModel):
     color: str | None
     is_active: bool
     has_in_progress_today: bool = False
+    has_open_attendance: bool = False
 
     class Config:
         from_attributes = True

@@ -187,6 +187,72 @@ export function navigateWeek(weekStart: Date, direction: "prev" | "next"): Date 
   return direction === "prev" ? subWeeks(weekStart, 1) : addWeeks(weekStart, 1);
 }
 
+export const PAST_SHIFT_ASSIGNMENT_MESSAGE =
+  "This shift has already ended. Employees can only be assigned to shifts that are still ongoing or have not started yet.";
+
+const SCHEDULE_TIME_ZONE = "Asia/Manila";
+
+function wallClockToUtc(
+  dateKey: string,
+  clock: string,
+  timeZone: string,
+  allowFallback = true
+): number | null {
+  const dateMatch = /^(\d{4})-(\d{2})-(\d{2})/.exec(dateKey);
+  const timeMatch = /^(\d{1,2}):(\d{2})/.exec(clock.trim());
+  if (!dateMatch || !timeMatch) return null;
+  const year = Number(dateMatch[1]);
+  const month = Number(dateMatch[2]);
+  const day = Number(dateMatch[3]);
+  const hour = Number(timeMatch[1]);
+  const minute = Number(timeMatch[2]);
+  const utcGuess = Date.UTC(year, month - 1, day, hour, minute, 0);
+  let formatter: Intl.DateTimeFormat;
+  try {
+    formatter = new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hourCycle: "h23",
+    });
+  } catch {
+    if (!allowFallback || timeZone === SCHEDULE_TIME_ZONE) return null;
+    return wallClockToUtc(dateKey, clock, SCHEDULE_TIME_ZONE, false);
+  }
+  const parts = Object.fromEntries(
+    formatter.formatToParts(new Date(utcGuess)).map((part) => [part.type, part.value])
+  );
+  const asUtc = Date.UTC(
+    Number(parts.year),
+    Number(parts.month) - 1,
+    Number(parts.day),
+    Number(parts.hour),
+    Number(parts.minute),
+    Number(parts.second)
+  );
+  return utcGuess - (asUtc - utcGuess);
+}
+
+/** True when the scheduled end is at or before now in the business timezone. */
+export function shiftHasEnded(
+  workDate: string,
+  startTime: string,
+  endTime: string,
+  timeZone?: string | null,
+  now: Date = new Date()
+): boolean {
+  const zone = timeZone?.trim() || SCHEDULE_TIME_ZONE;
+  const startMs = wallClockToUtc(workDate, startTime, zone);
+  let endMs = wallClockToUtc(workDate, endTime, zone);
+  if (startMs == null || endMs == null) return false;
+  if (endMs <= startMs) endMs += 24 * 60 * 60 * 1000;
+  return now.getTime() >= endMs;
+}
+
 export function parseWeekStart(value: string): Date {
   return parseISO(value);
 }

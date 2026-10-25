@@ -8,6 +8,7 @@ import 'package:aroll_mobile/presentation/owner/owner_schedule_reuse.dart';
 import 'package:aroll_mobile/presentation/owner/owner_schedule_table_style.dart';
 import 'package:aroll_mobile/presentation/owner/owner_schedule_utils.dart';
 import 'package:aroll_mobile/presentation/owner/owner_schedule_viewer_table.dart';
+import 'package:aroll_mobile/presentation/owner/schedule_assignment_deletion.dart';
 import 'package:aroll_mobile/presentation/owner/owner_shell.dart';
 import 'package:aroll_mobile/presentation/owner/setup/setup_wizard_constants.dart';
 import 'package:aroll_mobile/presentation/shared/app_ui.dart';
@@ -300,9 +301,24 @@ class _OwnerScheduleScreenState extends State<OwnerScheduleScreen> {
     });
   }
 
+  bool _shiftHasEnded(String shiftId) {
+    final shift = _shiftById(shiftId);
+    if (shift == null) return false;
+    return ownerShiftHasEnded(
+      workDate: _workDate,
+      startTime: '${shift['start_time'] ?? ''}',
+      endTime: '${shift['end_time'] ?? ''}',
+      timeZone: sl<AppState>().session?.timezone,
+    );
+  }
+
   Future<void> _saveSchedule() async {
     if (_expandedShiftId == null || _selectedEmployeeIds.isEmpty) {
       _showMessage('Select a shift and at least one available employee.');
+      return;
+    }
+    if (_editingAssignmentId == null && _shiftHasEnded(_expandedShiftId!)) {
+      _showMessage(ownerPastShiftAssignmentMessage);
       return;
     }
 
@@ -407,8 +423,8 @@ class _OwnerScheduleScreenState extends State<OwnerScheduleScreen> {
       await _repo.deleteScheduleAssignment(assignmentId);
       _showMessage('Schedule removed');
       await _loadData();
-    } on DioException catch (_) {
-      _showMessage('Failed to remove schedule');
+    } on DioException catch (error) {
+      _showMessage(scheduleRemovalErrorMessage(error));
     } finally {
       if (mounted) {
         _refreshAssignUi(() {
@@ -937,10 +953,19 @@ class _OwnerScheduleScreenState extends State<OwnerScheduleScreen> {
                   ),
                 ),
                 const SizedBox(height: 10),
+                if (_shiftHasEnded(shiftId) && _editingAssignmentId == null) ...[
+                  Text(
+                    ownerPastShiftAssignmentMessage,
+                    style: appMutedStyle().copyWith(fontSize: 12),
+                  ),
+                  const SizedBox(height: 10),
+                ],
                 SizedBox(
                   width: double.infinity,
                   child: FilledButton(
                     onPressed: _saving ||
+                            (_shiftHasEnded(shiftId) &&
+                                _editingAssignmentId == null) ||
                             (_selectedEmployeeIds.isEmpty &&
                                 _editingAssignmentId == null)
                         ? null

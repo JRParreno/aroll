@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Numeric, func
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Numeric, String, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -79,6 +79,20 @@ class AttendanceRecord(Base):
     )
     monthly_salary_at_completion: Mapped[float | None] = mapped_column(
         Numeric(10, 2), nullable=True
+    )
+    # Optional secondary evidence. Null means Wi-Fi was not evaluated.
+    # Payroll and attendance status do not read these columns.
+    wifi_verification_in: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    wifi_verification_out: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    matched_wifi_access_point_id_in: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("workplace_wifi_access_point.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    matched_wifi_access_point_id_out: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("workplace_wifi_access_point.id", ondelete="SET NULL"),
+        nullable=True,
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()

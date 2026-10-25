@@ -1,7 +1,7 @@
 """Schedule Library apply: copy assignments, weekdays, and no duplicates."""
 
 import uuid
-from datetime import date, time, timedelta
+from datetime import date, datetime, time, timedelta
 
 import pytest
 from fastapi import HTTPException
@@ -142,6 +142,19 @@ class LibraryWorld:
             )
             .all()
         )
+
+
+@pytest.fixture(autouse=True)
+def _schedule_clock_before_library_dates(monkeypatch):
+    """September 2026 library weeks are historical on a later machine clock.
+
+    Freeze the assignment clock before those dates so the past-shift rule
+    does not reject the existing copy and rest-day scenarios.
+    """
+    monkeypatch.setattr(
+        "app.services.schedule_overlap.business_now",
+        lambda tz_name: datetime(2026, 9, 1, 8, 0),
+    )
 
 
 SOURCE_MONDAY = date(2026, 9, 21)

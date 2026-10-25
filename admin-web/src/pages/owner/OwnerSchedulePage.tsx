@@ -10,10 +10,13 @@ import {
 } from "@/components/owner/schedule/scheduleExport";
 import { ScheduleReusePanel } from "@/components/owner/schedule/ScheduleReusePanel";
 import {
+  assignmentDateKey,
   buildScheduleMatrix,
   formatShiftTime,
   assignmentsOnDate,
   restDayPremiumInitialValue,
+  PAST_SHIFT_ASSIGNMENT_MESSAGE,
+  shiftHasEnded,
   employeesWithScheduleAssignments,
   formatWeekRange,
   getWeekDays,
@@ -31,6 +34,7 @@ import {
   OwnerPageHeader,
 } from "@/components/owner/layout/OwnerPageLayout";
 import { WizardSettingRow } from "@/components/owner/setup/wizardUi";
+import { scheduleRemovalErrorMessage } from "@/lib/scheduleAssignmentDeletion";
 import {
   Dialog,
   DialogContent,
@@ -287,6 +291,21 @@ export function OwnerSchedulePage() {
   const businessName =
     me?.business_name ?? localStorage.getItem("aroll_business_name") ?? "Aroll+";
   const selectedShift = shifts.find((shift) => shift.id === selectedShiftId);
+  const selectedShiftEnded =
+    selectedShift != null &&
+    shiftHasEnded(
+      workDate,
+      selectedShift.start_time,
+      selectedShift.end_time,
+      me?.timezone
+    );
+  const editingAssignment = assignments.find(
+    (assignment) => assignment.id === editingAssignmentId
+  );
+  const editingSameSlot =
+    editingAssignment != null &&
+    String(editingAssignment.shift_id) === selectedShiftId &&
+    assignmentDateKey(editingAssignment.work_date) === workDate;
   const selectedHoliday = holidays.find(
     (holiday) => holiday.is_active && holiday.holiday_date === workDate
   );
@@ -577,7 +596,7 @@ export function OwnerSchedulePage() {
       qc.invalidateQueries({ queryKey: ["weekly-schedule"] });
       qc.invalidateQueries({ queryKey: ["owner-performance"] });
     },
-    onError: () => toast.error("Failed to remove schedule"),
+    onError: (error) => toast.error(scheduleRemovalErrorMessage(error)),
   });
 
   function toggleEmployee(employee: Employee) {
@@ -592,6 +611,10 @@ export function OwnerSchedulePage() {
   }
 
   function saveSchedule() {
+    if (selectedShiftEnded) {
+      toast.error(PAST_SHIFT_ASSIGNMENT_MESSAGE);
+      return;
+    }
     assign.mutate();
   }
 
@@ -789,6 +812,16 @@ export function OwnerSchedulePage() {
                           {formatShiftTime(shift.end_time)} · Capacity{" "}
                           {shift.employee_capacity}
                         </p>
+                        {shiftHasEnded(
+                          workDate,
+                          shift.start_time,
+                          shift.end_time,
+                          me?.timezone
+                        ) && (
+                          <p className="mt-2 text-sm text-[#6B7280]">
+                            {PAST_SHIFT_ASSIGNMENT_MESSAGE}
+                          </p>
+                        )}
                       </div>
                       {listedShiftIds.has(String(shift.id)) && (
                       <div className="flex flex-wrap gap-2">
@@ -812,6 +845,12 @@ export function OwnerSchedulePage() {
                         <Button
                           variant="outline"
                           className="gap-2"
+                          disabled={shiftHasEnded(
+                            workDate,
+                            shift.start_time,
+                            shift.end_time,
+                            me?.timezone
+                          )}
                           onClick={() => openEmployeeModal(shift.id)}
                         >
                           <Users className="h-4 w-4" />
@@ -919,8 +958,16 @@ export function OwnerSchedulePage() {
                 <div className="mt-4 flex gap-2">
                   <Button
                     className="bg-[var(--owner-button)] hover:bg-[var(--owner-navy-soft)]"
-                    disabled={!selectedShiftId || editAssignment.isPending}
+                    disabled={
+                      !selectedShiftId ||
+                      editAssignment.isPending ||
+                      (selectedShiftEnded && !editingSameSlot)
+                    }
                     onClick={() => {
+                      if (selectedShiftEnded && !editingSameSlot) {
+                        toast.error(PAST_SHIFT_ASSIGNMENT_MESSAGE);
+                        return;
+                      }
                       const employee = employees.find(
                         (item) =>
                           item.id ===
@@ -1387,6 +1434,9 @@ export function OwnerSchedulePage() {
           </div>
 
           <DialogFooter className="shrink-0 flex-col items-stretch gap-3 sm:flex-col">
+            {selectedShiftEnded && (
+              <p className="text-sm text-[#6B7280]">{PAST_SHIFT_ASSIGNMENT_MESSAGE}</p>
+            )}
             <label
               data-testid="rest-day-premium"
               className="flex items-center gap-2 rounded-xl border border-slate-200 bg-[#FAFBFC] px-4 py-3 text-sm text-[#1F2937]"
@@ -1405,7 +1455,12 @@ export function OwnerSchedulePage() {
               </Button>
               <Button
                 className="bg-[var(--owner-button)] hover:bg-[var(--owner-navy-soft)]"
-                disabled={!selectedShiftId || selectedEmployeeIds.length === 0 || assign.isPending}
+                disabled={
+                  !selectedShiftId ||
+                  selectedEmployeeIds.length === 0 ||
+                  assign.isPending ||
+                  selectedShiftEnded
+                }
                 onClick={saveSchedule}
               >
                 Save Schedule

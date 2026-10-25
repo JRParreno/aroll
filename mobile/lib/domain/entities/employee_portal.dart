@@ -483,6 +483,8 @@ class EmployeeWorksite extends Equatable {
     required this.latitude,
     required this.longitude,
     required this.geofenceRadiusM,
+    this.wifiVerificationEnabled = false,
+    this.minimumRssiDbm,
   });
 
   final String label;
@@ -490,6 +492,8 @@ class EmployeeWorksite extends Equatable {
   final double latitude;
   final double longitude;
   final int geofenceRadiusM;
+  final bool wifiVerificationEnabled;
+  final int? minimumRssiDbm;
 
   @override
   List<Object?> get props => [
@@ -498,6 +502,8 @@ class EmployeeWorksite extends Equatable {
         latitude,
         longitude,
         geofenceRadiusM,
+        wifiVerificationEnabled,
+        minimumRssiDbm,
       ];
 }
 
@@ -577,6 +583,8 @@ class EmployeeShiftHistoryItem extends Equatable {
     required this.shiftName,
     required this.shiftStart,
     required this.shiftEnd,
+    this.shiftStartTime,
+    this.shiftEndTime,
     required this.timeIn,
     required this.timeOut,
     required this.status,
@@ -618,6 +626,12 @@ class EmployeeShiftHistoryItem extends Equatable {
   final String? shiftName;
   final String? shiftStart;
   final String? shiftEnd;
+
+  /// Scheduled start as 24-hour `HH:mm` or `HH:mm:ss` (for example `17:00:00`).
+  final String? shiftStartTime;
+
+  /// Scheduled end as 24-hour `HH:mm` or `HH:mm:ss`.
+  final String? shiftEndTime;
   final DateTime? timeIn;
   final DateTime? timeOut;
   final String status;
@@ -667,6 +681,8 @@ class EmployeeShiftHistoryItem extends Equatable {
         shiftName,
         shiftStart,
         shiftEnd,
+        shiftStartTime,
+        shiftEndTime,
         timeIn,
         timeOut,
         status,

@@ -24,6 +24,23 @@ String? _friendlyCode(String? code) {
     case 'outside_geofence':
       return 'You’re currently outside your workplace’s allowed attendance area. '
           'Please move closer and try again.';
+    case 'workplace_wifi_mismatch':
+    case 'workplace_wifi_unavailable':
+      return 'Connect to the workplace Wi-Fi registered by your employer, then try again.';
+    case 'workplace_wifi_not_configured':
+      return 'Workplace Wi-Fi is not set up for this worksite. '
+          'Turn on location and try again from the work area.';
+    case 'workplace_wifi_rssi_unavailable':
+      return 'The phone could not read the workplace Wi-Fi signal strength. '
+          'Move closer to the access point and try again.';
+    case 'workplace_wifi_rssi_weak':
+      return 'The workplace Wi-Fi signal is too weak. '
+          'Move closer to the access point and try again.';
+    case 'wifi_fallback_unavailable':
+      return 'This workplace checks the map boundary. '
+          'Turn on location and try again from the work area.';
+    case 'location_required':
+      return 'Turn on location so attendance can confirm the work area.';
     case 'face_mismatch':
       return 'We couldn’t verify your face. Please make sure your face is '
           'clearly visible and try again.';

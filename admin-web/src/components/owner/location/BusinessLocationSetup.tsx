@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { BusinessLocationMapPicker } from "@/components/owner/location/BusinessLocationMapPicker";
+import { WorkplaceWifiPanel } from "@/components/owner/location/WorkplaceWifiPanel";
 import { getBusinessLocation, getMe, updateBusinessLocation } from "@/lib/api";
 import { ME_QUERY_KEY } from "@/lib/authSession";
 import {
@@ -18,7 +19,6 @@ import {
 import { reverseGeocodeAddress } from "@/lib/businessLocationGeocoding";
 import {
   autocompletePlaces,
-  resolveAddress,
   resolvePlaceSuggestion,
   type PlaceSuggestion,
 } from "@/lib/businessPlacesSearch";
@@ -49,8 +49,8 @@ export function BusinessLocationSetup({
 }: BusinessLocationSetupProps) {
   const qc = useQueryClient();
   const addressEditedManually = useRef(false);
-  const searchDebounce = useRef<number | null>(null);
   const reverseDebounce = useRef<number | null>(null);
+  const searchGeneration = useRef(0);
 
   const [form, setForm] = useState<LocationForm>({
     label: "Main",
@@ -93,7 +93,6 @@ export function BusinessLocationSetup({
 
   useEffect(() => {
     return () => {
-      if (searchDebounce.current) window.clearTimeout(searchDebounce.current);
       if (reverseDebounce.current) window.clearTimeout(reverseDebounce.current);
     };
   }, []);
@@ -103,8 +102,18 @@ export function BusinessLocationSetup({
   const applyReverseGeocode = async (lat: number, lng: number) => {
     if (addressEditedManually.current) return;
     const address = await reverseGeocodeAddress(lat, lng);
-    if (!address?.trim()) return;
-    setForm((current) => ({ ...current, address }));
+    if (!address?.trim() || addressEditedManually.current) return;
+    setForm((current) => {
+      if (
+        current.latitude == null ||
+        current.longitude == null ||
+        Math.abs(current.latitude - lat) > 1e-6 ||
+        Math.abs(current.longitude - lng) > 1e-6
+      ) {
+        return current;
+      }
+      return { ...current, address };
+    });
   };
 
   const scheduleReverseGeocode = (lat: number, lng: number) => {
@@ -158,31 +167,11 @@ export function BusinessLocationSetup({
     );
   };
 
-  const fetchSuggestions = async (query: string) => {
-    if (isManager) return;
-    const trimmed = query.trim();
-    if (trimmed.length < 2) {
-      setSuggestions([]);
-      return;
-    }
-    setSearching(true);
-    try {
-      const results = await autocompletePlaces(trimmed);
-      setSuggestions(results);
-    } catch {
-      setSuggestions([]);
-    } finally {
-      setSearching(false);
-    }
-  };
-
   const onAddressChanged = (value: string) => {
+    searchGeneration.current += 1;
     addressEditedManually.current = true;
+    setSuggestions([]);
     setForm((current) => ({ ...current, address: value }));
-    if (searchDebounce.current) window.clearTimeout(searchDebounce.current);
-    searchDebounce.current = window.setTimeout(() => {
-      void fetchSuggestions(value);
-    }, 350);
   };
 
   const selectSuggestion = async (suggestion: PlaceSuggestion) => {
@@ -213,26 +202,26 @@ export function BusinessLocationSetup({
   const submitAddressSearch = async () => {
     const query = form.address.trim();
     if (query.length < 3 || isManager) return;
+    const generation = ++searchGeneration.current;
     setSearching(true);
     setSuggestions([]);
     try {
-      const place = await resolveAddress(query);
-      if (!place) {
+      const results = await autocompletePlaces(query);
+      if (generation !== searchGeneration.current) return;
+      if (!results.length) {
         toast.error("No results for that address.");
         return;
       }
-      addressEditedManually.current = true;
-      setForm((current) => ({
-        ...current,
-        address: place.address,
-        latitude: place.latitude,
-        longitude: place.longitude,
-      }));
-      bumpMapFocus();
+      if (results.length === 1) {
+        await selectSuggestion(results[0]);
+        return;
+      }
+      setSuggestions(results);
     } catch {
+      if (generation !== searchGeneration.current) return;
       toast.error("No results for that address.");
     } finally {
-      setSearching(false);
+      if (generation === searchGeneration.current) setSearching(false);
     }
   };
 
@@ -306,7 +295,7 @@ export function BusinessLocationSetup({
 
       <div
         className={cn(
-          "owner-card overflow-hidden",
+          "owner-card relative z-0 isolate min-w-0 overflow-hidden",
           mapHeightClassName
         )}
       >
@@ -345,7 +334,7 @@ export function BusinessLocationSetup({
                   void submitAddressSearch();
                 }
               }}
-              placeholder="Search street, barangay, or place"
+              placeholder="Street, barangay, or place, then press Enter"
               value={form.address}
             />
             {searching ? (
@@ -431,6 +420,8 @@ export function BusinessLocationSetup({
             </div>
           ) : null}
         </div>
+
+        <WorkplaceWifiPanel canManage={!isManager} radiusM={form.geofence_radius_m} />
 
         <div className="flex flex-col-reverse gap-3 pt-1 sm:flex-row">
           <Button

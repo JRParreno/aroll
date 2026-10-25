@@ -297,6 +297,109 @@ def test_smtp_configured_requires_password_when_username_set(monkeypatch):
     assert smtp_configured() is True
 
 
+def test_smtp_settings_rereads_env_file_outside_pytest(monkeypatch):
+    from app.core import config
+
+    monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
+    sentinel = object()
+    monkeypatch.setattr(config, "Settings", lambda: sentinel)
+    assert config.smtp_settings() is sentinel
+
+
+def test_smtp_settings_keeps_imported_settings_during_pytest():
+    from app.core.config import settings, smtp_settings
+
+    assert smtp_settings() is settings
+
+
+def test_smtp_env_file_is_recognized_without_sending(monkeypatch, tmp_path):
+    """A populated SMTP env file counts as configured and does not connect."""
+    from app.core.config import Settings, settings
+
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        "SMTP_HOST=smtp.example.test\n"
+        "SMTP_PORT=2525\n"
+        "SMTP_USERNAME=smtp-user\n"
+        "SMTP_PASSWORD=smtp-secret\n"
+        "SMTP_FROM_EMAIL=noreply@example.test\n"
+        "SMTP_USE_TLS=true\n"
+        "SMTP_USE_SSL=false\n",
+        encoding="utf-8",
+    )
+    for name in (
+        "SMTP_HOST",
+        "SMTP_PORT",
+        "SMTP_USERNAME",
+        "SMTP_PASSWORD",
+        "SMTP_FROM_EMAIL",
+        "SMTP_USE_TLS",
+        "SMTP_USE_SSL",
+    ):
+        monkeypatch.delenv(name, raising=False)
+
+    # Import-time settings stay empty, as they would if the process started
+    # before backend/.env contained these keys.
+    monkeypatch.setattr(settings, "smtp_host", "")
+    monkeypatch.setattr(settings, "smtp_from_email", "")
+    monkeypatch.setattr(settings, "smtp_username", "")
+    monkeypatch.setattr(settings, "smtp_password", "")
+
+    loaded = Settings(_env_file=env_file, _env_file_encoding="utf-8")
+    assert loaded.smtp_host == "smtp.example.test"
+    assert loaded.smtp_port == 2525
+    assert loaded.smtp_from_email == "noreply@example.test"
+    assert loaded.smtp_use_tls is True
+    assert loaded.smtp_use_ssl is False
+    assert (loaded.smtp_password or "").strip()
+
+    monkeypatch.setattr("app.services.approval_email.smtp_settings", lambda: loaded)
+    assert smtp_configured() is True
+
+
+def test_send_email_uses_env_file_when_imported_settings_are_empty(monkeypatch):
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "smtp_host", "")
+    monkeypatch.setattr(settings, "smtp_from_email", "")
+    monkeypatch.setattr(settings, "smtp_username", "")
+    monkeypatch.setattr(settings, "smtp_password", "")
+
+    class _FileSettings:
+        smtp_host = "smtp.example.test"
+        smtp_port = 2525
+        smtp_username = "smtp-user"
+        smtp_password = "smtp-secret"
+        smtp_from_email = "noreply@example.test"
+        smtp_use_tls = True
+        smtp_use_ssl = False
+
+    monkeypatch.setattr(
+        "app.services.approval_email.smtp_settings",
+        lambda: _FileSettings(),
+    )
+    sent = _capture_send(monkeypatch)
+    db = SessionLocal()
+    client = TestClient(app)
+    try:
+        admin = _platform_admin(db)
+        reg = _pending_registration(db)
+        approved = client.post(
+            f"/api/v1/admin/registrations/{reg.id}/approve",
+            headers=_auth(admin),
+        )
+        assert approved.status_code == 200
+        mailed = client.post(
+            f"/api/v1/admin/registrations/{reg.id}/send-approval-email",
+            headers=_auth(admin),
+        )
+        assert mailed.status_code == 200, mailed.text
+        assert mailed.json()["status"] == "sent"
+        assert len(sent) == 1
+    finally:
+        db.close()
+
+
 def test_missing_smtp_config_does_not_unapprove(monkeypatch):
     from app.core.config import settings
 
