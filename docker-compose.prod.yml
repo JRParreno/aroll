@@ -1,0 +1,12 @@
+# Server-only override. The laptop keeps using docker-compose.yml.
+#
+#   POSTGRES_PASSWORD='a long random password' docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# Set the same password in the server's backend DATABASE_URL.
+# Do not commit that password. Postgres still listens on 127.0.0.1 only.
+services:
+  db:
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+    ports:
+      - "127.0.0.1:5432:5432"

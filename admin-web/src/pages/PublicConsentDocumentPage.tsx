@@ -1,8 +1,6 @@
 import { useParams } from "react-router-dom";
 
-const API_BASE =
-  import.meta.env.VITE_API_URL ??
-  (import.meta.env.DEV ? "/api/v1" : "http://127.0.0.1:8000/api/v1");
+const API_BASE = import.meta.env.VITE_API_URL ?? "/api/v1";
 
 export function PublicConsentDocumentPage() {
   const { documentId = "" } = useParams();

@@ -4,11 +4,13 @@ services:
     container_name: aroll-db
     restart: unless-stopped
     environment:
+      # Local development password. Production uses docker-compose.prod.yml.
       POSTGRES_USER: aroll
       POSTGRES_PASSWORD: aroll
       POSTGRES_DB: aroll
     ports:
-      - "5432:5432"
+      # Reachable from this computer only. The API uses localhost:5432.
+      - "127.0.0.1:5432:5432"
     volumes:
       - aroll_pgdata:/var/lib/postgresql/data
     healthcheck:

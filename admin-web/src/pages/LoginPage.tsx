@@ -17,8 +17,8 @@ type JwtPayload = { role?: string };
 export function LoginPage() {
   const navigate = useNavigate();
   const qc = useQueryClient();
-  const [email, setEmail] = useState("admin@example.com");
-  const [password, setPassword] = useState("changeme123");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -101,10 +101,6 @@ export function LoginPage() {
                 {loading ? "Signing in..." : "Sign in"}
                 {!loading && <ArrowRight className="ml-2 h-4 w-4" />}
               </Button>
-
-              <p className="text-center text-xs text-[#6B7280]">
-                Demo admin: admin@example.com / changeme123
-              </p>
             </form>
           </section>
         </div>
