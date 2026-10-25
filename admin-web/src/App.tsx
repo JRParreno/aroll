@@ -6,6 +6,7 @@ import { RequireOwnerAuth } from "@/layouts/RequireOwnerAuth";
 import { AdminRegistrationsPage } from "@/pages/AdminRegistrationsPage";
 import { LoginPage } from "@/pages/LoginPage";
 import { BusinessOwnerLoginPage } from "@/pages/BusinessOwnerLoginPage";
+import { OwnerFeaturesPage } from "@/pages/OwnerFeaturesPage";
 import { OwnerForgotPasswordPage } from "@/pages/OwnerForgotPasswordPage";
 import { OwnerEmployeesPage } from "@/pages/OwnerEmployeesPage";
 import { AdminDashboardPage } from "@/pages/AdminDashboardPage";
@@ -36,6 +37,7 @@ import { OwnerAuditHistoryPage } from "@/pages/owner/OwnerAuditHistoryPage";
 import { OwnerBusinessSettingsPage } from "@/pages/owner/OwnerBusinessSettingsPage";
 import { OwnerConsentConfigurationPage } from "@/pages/owner/OwnerConsentConfigurationPage";
 import { OwnerBusinessSetupsPage } from "@/pages/owner/OwnerBusinessSetupsPage";
+import { OwnerSetupSummaryPage } from "@/pages/owner/OwnerSetupSummaryPage";
 import { OwnerLeavePolicyPage } from "@/pages/owner/OwnerLeavePolicyPage";
 import { OwnerHelpPage } from "@/pages/owner/OwnerHelpPage";
 import { OwnerProfilePage } from "@/pages/owner/OwnerProfilePage";
@@ -55,6 +57,7 @@ export default function App() {
     <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/owner-login" element={<BusinessOwnerLoginPage />} />
+      <Route path="/features" element={<OwnerFeaturesPage />} />
       <Route path="/owner-forgot-password" element={<OwnerForgotPasswordPage />} />
 
       <Route
@@ -117,6 +120,7 @@ export default function App() {
         <Route path="settings/business" element={<OwnerBusinessSettingsPage />} />
         <Route path="settings/consents" element={<OwnerConsentConfigurationPage />} />
         <Route path="settings/setup" element={<OwnerBusinessSetupsPage />} />
+        <Route path="settings/setup-summary" element={<OwnerSetupSummaryPage />} />
         <Route path="settings/leave-policy" element={<OwnerLeavePolicyPage />} />
         <Route path="profile" element={<OwnerProfilePage />} />
         <Route path="help" element={<OwnerHelpPage />} />

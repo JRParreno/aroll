@@ -71,7 +71,6 @@ from app.services.consent_catalog import (
     catalog_item_payload,
     create_document,
     delete_document,
-    ensure_platform_consent_documents,
     get_document,
     legal_ui_catalog_payloads,
     list_catalog_documents,
@@ -81,6 +80,7 @@ from app.services.consent_catalog import (
 )
 from app.services.legal_consent import (
     apply_platform_legal_update,
+    ensure_platform_legal_defaults,
     platform_legal_payload,
 )
 from app.services.registration_documents import get_document_file_path
@@ -633,6 +633,8 @@ def get_platform_legal_defaults(
     db: Annotated[Session, Depends(get_db)],
     _: Annotated[User, Depends(require_roles(UserRole.platform_admin))],
 ):
+    ensure_platform_legal_defaults(db)
+    db.commit()
     return PlatformLegalSettingsResponse(**platform_legal_payload(db))
 
 
@@ -657,7 +659,7 @@ def list_platform_consents(
     db: Annotated[Session, Depends(get_db)],
     _: Annotated[User, Depends(require_roles(UserRole.platform_admin))],
 ):
-    ensure_platform_consent_documents(db)
+    ensure_platform_legal_defaults(db)
     db.commit()
     documents = list_catalog_documents(db, scope=SCOPE_PLATFORM, business_id=None)
     return ConsentCatalogResponse(

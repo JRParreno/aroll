@@ -1,4 +1,5 @@
 import type { BusinessThemeSettings } from "@/lib/api";
+import { defaultBusinessTheme } from "./brandingDefaults";
 
 /** Colors written into the existing branding theme. Non-color settings stay untouched. */
 export type BrandThemeColors = Pick<
@@ -23,6 +24,46 @@ export type BrandTheme = {
 };
 
 export const BRAND_THEME_GROUPS: BrandThemeGroup[] = ["Calm", "Warm", "Fresh"];
+
+/**
+ * Login-page tokens already used by the product:
+ * page background #F4F6F8 from the web owner login screen,
+ * navy #1E3A5F from the login brand panel and the saved default theme.
+ */
+export const SYSTEM_THEME_SURFACE = "#F4F6F8";
+
+export const SYSTEM_BRAND_THEME: BrandTheme = {
+  id: "system",
+  name: "System Theme (Default)",
+  description: "Original Aroll+ navy, matching the login page.",
+  group: "Calm",
+  previewSurface: SYSTEM_THEME_SURFACE,
+  colors: {
+    primary_color: defaultBusinessTheme.primary_color,
+    secondary_color: defaultBusinessTheme.secondary_color,
+    sidebar_color: defaultBusinessTheme.sidebar_color,
+    accent_color: defaultBusinessTheme.accent_color,
+    button_color: defaultBusinessTheme.button_color,
+  },
+};
+
+/** Display name is Plum. The id stays so a saved color match still selects this option. */
+export const PLUM_BRAND_THEME: BrandTheme = {
+  id: "aroll-signature",
+  name: "Plum",
+  description: "Warm plum, gold, and deep red",
+  group: "Warm",
+  previewSurface: "#F7F4EE",
+  colors: {
+    sidebar_color: "#3C275C",
+    primary_color: "#4C366E",
+    button_color: "#4A3168",
+    secondary_color: "#7A3142",
+    accent_color: "#8C6E16",
+  },
+};
+
+export const FEATURED_BRAND_THEMES: BrandTheme[] = [SYSTEM_BRAND_THEME];
 
 export const BRAND_THEMES: BrandTheme[] = [
   {
@@ -165,6 +206,7 @@ export const BRAND_THEMES: BrandTheme[] = [
       accent_color: "#94686A",
     },
   },
+  PLUM_BRAND_THEME,
   {
     id: "aqua",
     name: "Aqua",
@@ -231,8 +273,62 @@ const THEME_COLOR_KEYS = [
   "button_color",
 ] as const;
 
-export function normalizeBrandHex(value: string) {
-  const raw = value.trim().replace(/^#/, "");
+export type BrandColorOption = {
+  key: (typeof THEME_COLOR_KEYS)[number];
+  label: string;
+  effect: string;
+};
+
+/** Explanations match where each saved color is actually applied. */
+export const BRAND_COLOR_OPTIONS: BrandColorOption[] = [
+  {
+    key: "primary_color",
+    label: "Primary color",
+    effect:
+      "Headings, links, focus rings, and selected navigation icons. On the mobile owner app it also colors checkboxes, switches, progress indicators, and date-picker headers.",
+  },
+  {
+    key: "secondary_color",
+    label: "Secondary color",
+    effect:
+      "The selected item in the web owner sidebar, the hover color of primary buttons, and supporting gradients next to the primary color.",
+  },
+  {
+    key: "accent_color",
+    label: "Accent color",
+    effect:
+      "Highlights and selected outlines. On the web owner portal it also colors checkbox accents and emphasized borders. It does not change the page background.",
+  },
+  {
+    key: "sidebar_color",
+    label: "Sidebar color",
+    effect:
+      "Background of the web owner navigation sidebar. On mobile it tints some header gradients.",
+  },
+  {
+    key: "button_color",
+    label: "Button color",
+    effect:
+      "Primary action buttons and other main filled controls on web and mobile.",
+  },
+];
+
+export function orderedBrandThemes() {
+  return [...FEATURED_BRAND_THEMES, ...BRAND_THEMES];
+}
+
+export function themeColorSlice(theme: BusinessThemeSettings): BrandThemeColors {
+  return {
+    primary_color: theme.primary_color,
+    secondary_color: theme.secondary_color,
+    sidebar_color: theme.sidebar_color,
+    accent_color: theme.accent_color,
+    button_color: theme.button_color,
+  };
+}
+
+export function normalizeBrandHex(value: string | null | undefined) {
+  const raw = String(value ?? "").trim().replace(/^#/, "");
   if (/^[0-9a-fA-F]{3}$/.test(raw)) {
     return `#${raw
       .split("")
@@ -256,7 +352,11 @@ export function brandThemesMatch(
 }
 
 export function findBrandTheme(theme: BusinessThemeSettings) {
-  return BRAND_THEMES.find((item) => brandThemesMatch(theme, item.colors));
+  return orderedBrandThemes().find((item) => brandThemesMatch(theme, item.colors));
+}
+
+export function isValidBrandHex(value: string) {
+  return /^#[0-9A-F]{6}$/.test(normalizeBrandHex(value));
 }
 
 export function brandThemeSwatches(colors: BrandThemeColors, surface: string) {

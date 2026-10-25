@@ -33,6 +33,7 @@ from app.services.legal_consent import (
     SECTION_TITLES,
     content_hash,
     default_legal_content,
+    replace_unedited_platform_default,
 )
 
 ALLOWED_CONSENT_FILES = {
@@ -826,7 +827,14 @@ def ensure_platform_consent_documents(
                 )
             )
             continue
-        if force or not document_published(row):
+        if replace_unedited_platform_default(
+            current=row.body_text,
+            updated_by=row.updated_by,
+            published=document_published(row),
+            official=content,
+            force=force,
+            has_file=bool(row.file_stored_name),
+        ):
             row.body_text = content
             row.version = version
             row.is_active = True

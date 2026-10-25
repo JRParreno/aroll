@@ -65,7 +65,13 @@ export function BusinessOwnerLoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#F4F6F8] text-[#111827] lg:grid lg:grid-cols-[minmax(300px,38vw)_1fr]">
+    <div className="relative min-h-screen bg-[#F4F6F8] text-[#111827] lg:grid lg:grid-cols-[minmax(300px,38vw)_1fr]">
+      <Link
+        to="/features"
+        className="absolute right-5 top-5 z-10 text-sm font-medium text-[#1E3A5F] hover:underline hover:underline-offset-4 sm:right-8 sm:top-6"
+      >
+        Features
+      </Link>
       <SystemBrandPanel />
 
       <main className="flex min-h-screen items-center justify-center px-5 py-8 sm:px-8 lg:px-12">

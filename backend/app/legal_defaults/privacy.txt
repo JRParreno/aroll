@@ -1,0 +1,28 @@
+{workplace} Privacy Policy
+
+This notice explains what personal information Aroll+ uses to run attendance and payroll for this workplace. When Philippine law applies, this use of information is meant to follow the Data Privacy Act of 2012 (Republic Act No. 10173).
+
+## Information Aroll+ uses
+
+- Account details such as your name, email, phone (if given), role, and a password stored in a protected form that cannot be read back as your password.
+- Work details such as your employee code, job title, pay settings, and schedule.
+- Attendance records, including time in and time out, status, correction requests, leave, overtime, and the location used to check you are at the workplace.
+- Payroll and payslip data for this business.
+- Face photos taken when you enroll or use face attendance. These are turned into number codes of your face (templates) used to match you later. Aroll+ is not designed to keep a long-term photo album of faces.
+- Results of the live-person check and face match, linked to attendance.
+- Business sign-up details and uploaded documents when a business applies to use Aroll+.
+- Technical details needed to run and protect the app, such as when a request was made and basic device or app information.
+
+## How the information is used
+
+Aroll+ uses this information to sign you in, keep each business's data separate, record attendance, prepare payslips, review business sign-ups, and protect accounts. Data is not sold and is not used for marketing. Face templates stay with this business and are not shared with other workplaces on Aroll+.
+
+## Phone access
+
+On your phone, Aroll+ may ask for camera access for face enrollment and face Time In / Time Out, location while the app is open to check the workplace area at clock-in or clock-out, and notifications for attendance or account alerts. Aroll+ does not keep tracking your location in the background, does not use the camera in the background, and does not ask for your contacts.
+
+## Access and requests
+
+You may ask your employer to review or correct work records they control. You may withdraw biometric consent in the app. Face attendance is then blocked, and stored face templates for your account are cleared. Aroll+ is meant for adult employees and business users (18+).
+
+This notice does not replace your employer's own privacy duties.

@@ -1,0 +1,21 @@
+{workplace} Biometric Consent
+
+Give this consent before you enroll your face. It covers only face checks used for workplace attendance at this business.
+
+## What you are asked to allow
+
+- Taking face photos when you enroll and when you Time In or Time Out with face attendance.
+- Saving number codes of your face (templates) used to confirm it is you. This is not a photo gallery.
+- A check that you are a real person, and a workplace location check, at Time In / Time Out when this business has those features turned on.
+
+## What this is used for
+
+Face data is used only to enroll your face, confirm it is you at attendance, and support the attendance record your employer uses for timekeeping and payroll. It is not used for marketing and is not shared with other businesses on Aroll+.
+
+## Important limits
+
+This is not Apple Face ID or a lock stored only on your phone. Templates are stored in the Aroll+ database for this business and protected by normal app security (sign-in, access control, and HTTPS in deployed environments). Face matching can fail in poor light or at unusual angles and may need a retry.
+
+## If you decline or withdraw
+
+You may decline or later withdraw this consent in the app. Face enrollment and face Time In / Time Out will be unavailable, and stored face templates for your account are cleared. Other workplace features that do not need face recognition stay available. The phone's camera or location permission is separate from this consent.

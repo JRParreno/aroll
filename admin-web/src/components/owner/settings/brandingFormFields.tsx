@@ -4,10 +4,16 @@ import { Label } from "@/components/ui/label";
 import type { BusinessBrandingSettings, BusinessThemeSettings } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import {
+  BRAND_COLOR_OPTIONS,
   BRAND_THEME_GROUPS,
   BRAND_THEMES,
+  FEATURED_BRAND_THEMES,
   brandThemeSwatches,
+  brandThemesMatch,
   findBrandTheme,
+  isValidBrandHex,
+  normalizeBrandHex,
+  themeColorSlice,
   type BrandThemeColors,
 } from "@/components/owner/settings/brandThemes";
 
@@ -194,7 +200,8 @@ function BrandPreview({
             {["Attendance", "Payroll"].map((label) => (
               <div
                 key={label}
-                className="rounded-lg border border-white/80 bg-white px-2 py-2"
+                className="rounded-lg border bg-white px-2 py-2"
+                style={{ borderColor: colors.accent_color }}
               >
                 <p
                   className="truncate text-xs font-semibold"
@@ -217,6 +224,60 @@ function BrandPreview({
   );
 }
 
+function BrandColorControl({
+  label,
+  effect,
+  source,
+  value,
+  onChange,
+}: {
+  label: string;
+  effect: string;
+  source: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const valid = isValidBrandHex(value);
+  const pickerValue = valid ? normalizeBrandHex(value) : "#1E3A5F";
+
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-3">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-[#111827]">{label}</p>
+          <p className="mt-1 text-xs leading-5 text-[#6B7280]">{effect}</p>
+          <p className="mt-1.5 text-xs font-medium text-[var(--owner-navy)]">{source}</p>
+        </div>
+        <input
+          aria-label={`${label} picker`}
+          className="h-10 w-12 shrink-0 cursor-pointer rounded-md border border-slate-200 bg-white p-1"
+          type="color"
+          value={pickerValue}
+          onChange={(event) => onChange(normalizeBrandHex(event.target.value))}
+        />
+      </div>
+      <label className="mt-3 block text-xs font-medium text-[#6B7280]">
+        Hex value
+        <input
+          aria-label={`${label} hex value`}
+          className="mt-1 h-9 w-full rounded-md border border-slate-200 bg-[#FAFBFC] px-2 font-mono text-sm uppercase text-[#111827]"
+          value={value}
+          spellCheck={false}
+          onChange={(event) => onChange(event.target.value)}
+          onBlur={() => {
+            if (isValidBrandHex(value)) onChange(normalizeBrandHex(value));
+          }}
+        />
+      </label>
+      {valid ? null : (
+        <p className="mt-1.5 text-xs text-[#92400E]">
+          This value is not a usable hex color. Choose a color to replace it.
+        </p>
+      )}
+    </div>
+  );
+}
+
 export function BusinessLogoAndThemeFields({
   branding,
   savedTheme,
@@ -229,9 +290,27 @@ export function BusinessLogoAndThemeFields({
   onChange: (branding: BusinessBrandingSettings) => void;
 }) {
   const selectedTheme = findBrandTheme(branding.theme);
-  const savedIsCurated = savedTheme ? Boolean(findBrandTheme(savedTheme)) : true;
   const previewSurface = selectedTheme?.previewSurface ?? "#F4F6F8";
   const customSelected = !selectedTheme;
+  const savedColors = savedTheme ? themeColorSlice(savedTheme) : null;
+  const savedDiffers = savedColors
+    ? !brandThemesMatch(branding.theme, savedColors)
+    : false;
+
+  function chooseCustom() {
+    if (customSelected || !savedTheme || findBrandTheme(savedTheme)) return;
+    onChange(applyBrandColors(branding, themeColorSlice(savedTheme)));
+  }
+
+  function setColor(key: keyof BrandThemeColors, value: string) {
+    onChange({
+      ...branding,
+      theme: {
+        ...branding.theme,
+        [key]: value,
+      },
+    });
+  }
 
   return (
     <div className="space-y-6">
@@ -257,12 +336,23 @@ export function BusinessLogoAndThemeFields({
             Choose your brand style
           </h3>
           <p className="mt-1 max-w-2xl text-sm leading-6 text-[#6B7280]">
-            Select a professionally coordinated color theme. Each theme is
-            designed to keep your Owner and Employee experience clean, readable,
-            and visually balanced.
+            Start with System Theme or a coordinated theme. You can also set
+            your own colors. Nothing is replaced until you save.
           </p>
         </div>
         <div role="radiogroup" aria-label="Color theme" className="space-y-4">
+          <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+            {FEATURED_BRAND_THEMES.map((theme) => (
+              <ThemeChoice
+                key={theme.id}
+                name={theme.name}
+                description={theme.description}
+                swatches={brandThemeSwatches(theme.colors, theme.previewSurface)}
+                selected={selectedTheme?.id === theme.id}
+                onSelect={() => onChange(applyBrandColors(branding, theme.colors))}
+              />
+            ))}
+          </div>
           {BRAND_THEME_GROUPS.map((group) => (
             <div key={group}>
               <p className="mb-2 text-[11px] font-medium uppercase tracking-[0.14em] text-[#6B7280]">
@@ -289,17 +379,56 @@ export function BusinessLogoAndThemeFields({
               </div>
             </div>
           ))}
-          {!savedIsCurated && savedTheme ? (
-            <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 xl:grid-cols-4">
-              <ThemeChoice
-                name="Current theme"
-                description="Saved colors stay until you choose a coordinated theme."
-                swatches={brandThemeSwatches(savedTheme, "#F4F6F8")}
-                selected={customSelected}
-                onSelect={() => onChange(applyBrandColors(branding, savedTheme))}
-              />
-            </div>
+          <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 xl:grid-cols-4">
+            <ThemeChoice
+              name="Custom Colors"
+              description="Set your own primary, secondary, accent, sidebar, and button colors."
+              swatches={brandThemeSwatches(branding.theme, "#F4F6F8")}
+              selected={customSelected}
+              onSelect={chooseCustom}
+            />
+          </div>
+        </div>
+      </section>
+
+      <section className="space-y-3 border-t border-slate-200 pt-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-semibold text-[#111827]">Custom colors</h3>
+            <p className="mt-1 max-w-2xl text-sm leading-6 text-[#6B7280]">
+              {selectedTheme
+                ? `These colors come from ${selectedTheme.name}. Change a color to make your own theme. Saved colors stay as they are until you save.`
+                : "These are your custom colors. Save to use them on the web and mobile owner portals."}
+            </p>
+          </div>
+          {savedDiffers && savedTheme ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() =>
+                onChange(applyBrandColors(branding, themeColorSlice(savedTheme)))
+              }
+            >
+              Restore saved colors
+            </Button>
           ) : null}
+        </div>
+        <div className="grid grid-cols-1 gap-2.5 lg:grid-cols-2">
+          {BRAND_COLOR_OPTIONS.map((option) => (
+            <BrandColorControl
+              key={option.key}
+              label={option.label}
+              effect={option.effect}
+              source={
+                selectedTheme
+                  ? `Set by ${selectedTheme.name}`
+                  : "Your custom color"
+              }
+              value={branding.theme[option.key] || ""}
+              onChange={(value) => setColor(option.key, value)}
+            />
+          ))}
         </div>
       </section>
 

@@ -100,7 +100,8 @@ int? rssiThresholdValueToSave(RssiThresholdPreset preset, String customText) {
   return parsed;
 }
 
-bool rssiThresholdSelectionIsValid(RssiThresholdPreset preset, String customText) {
+bool rssiThresholdSelectionIsValid(
+    RssiThresholdPreset preset, String customText) {
   try {
     rssiThresholdValueToSave(preset, customText);
     return true;
@@ -126,7 +127,9 @@ int? parseConfiguredMinimumRssi(String raw) {
   final text = raw.trim();
   if (text.isEmpty) return null;
   final value = int.tryParse(text);
-  if (value == null || value < minConfigurableRssiDbm || value > maxConfigurableRssiDbm) {
+  if (value == null ||
+      value < minConfigurableRssiDbm ||
+      value > maxConfigurableRssiDbm) {
     throw const FormatException('Enter a whole number from -120 to -20 dBm.');
   }
   return value;
@@ -156,8 +159,7 @@ const wifiRssiUnavailableMessage =
     'The phone could not read the workplace Wi-Fi signal strength. '
     'Move closer to the access point and try again.';
 
-const wifiRssiWeakMessage =
-    'The workplace Wi-Fi signal is too weak. '
+const wifiRssiWeakMessage = 'The workplace Wi-Fi signal is too weak. '
     'Move closer to the access point and try again.';
 
 /// Connected access point only. This is not a location measurement.
@@ -169,6 +171,7 @@ enum WorkplaceWifiReadStatus {
   unavailable,
   permissionDenied,
   unsupported,
+  androidTooOld,
 }
 
 const workplaceWifiAndroidOnlyMessage =
@@ -181,6 +184,8 @@ String workplaceWifiReadMessage(WorkplaceWifiReadStatus status) {
       return 'Allow location access so this phone can read the connected Wi-Fi.';
     case WorkplaceWifiReadStatus.unsupported:
       return workplaceWifiAndroidOnlyMessage;
+    case WorkplaceWifiReadStatus.androidTooOld:
+      return 'This phone must be running Android 11 or later to read the connected Wi-Fi.';
     case WorkplaceWifiReadStatus.notConnected:
       return 'Turn on Wi-Fi and join the workplace network, then try again.';
     case WorkplaceWifiReadStatus.locationDisabled:
@@ -232,7 +237,7 @@ class PlatformWorkplaceWifiReader implements WorkplaceWifiReader {
     try {
       final raw = await _channel
           .invokeMapMethod<Object?, Object?>('readConnected')
-          .timeout(const Duration(seconds: 3));
+          .timeout(const Duration(seconds: 8));
       return snapshotFromChannel(raw);
     } on TimeoutException {
       return const WorkplaceWifiSnapshot(
@@ -295,40 +300,121 @@ String? normalizeBssid(String? value) {
     if (octet == null || octet < 0 || octet > 255) return null;
     octets.add(octet);
   }
-  final normalized = octets.map((octet) => octet.toRadixString(16).padLeft(2, '0')).join(':');
+  final normalized =
+      octets.map((octet) => octet.toRadixString(16).padLeft(2, '0')).join(':');
   if (normalized == '00:00:00:00:00:00' || normalized == '02:00:00:00:00:00') {
     return null;
   }
   return normalized;
 }
 
+/// One already-cached scan row. Used only to recognize the joined network.
+class WifiScanObservation {
+  const WifiScanObservation({this.ssid, this.bssid, this.rssiDbm});
+
+  final String? ssid;
+  final String? bssid;
+  final int? rssiDbm;
+}
+
+class ReliableWifiScanMatch {
+  const ReliableWifiScanMatch({required this.bssid, this.rssiDbm});
+
+  final String bssid;
+  final int? rssiDbm;
+}
+
+String? normalizeWifiSsid(String? raw) {
+  if (raw == null) return null;
+  var ssid = raw.trim();
+  if (ssid.length >= 2 && ssid.startsWith('"') && ssid.endsWith('"')) {
+    ssid = ssid.substring(1, ssid.length - 1);
+  }
+  if (ssid.trim().isEmpty || ssid.toLowerCase() == '<unknown ssid>') {
+    return null;
+  }
+  return ssid;
+}
+
+/// The joined network name must match exactly one real access-point address.
+///
+/// Keep this rule aligned with `ConnectedWifiReader.reliableScanMatch`.
+ReliableWifiScanMatch? reliableConnectedScanMatch({
+  required String? connectedSsid,
+  required List<WifiScanObservation> scans,
+}) {
+  final ssid = normalizeWifiSsid(connectedSsid);
+  if (ssid == null) return null;
+  final byBssid = <String, int?>{};
+  for (final scan in scans) {
+    if (normalizeWifiSsid(scan.ssid) != ssid) continue;
+    final bssid = normalizeBssid(scan.bssid);
+    if (bssid == null) continue;
+    final rssi = scan.rssiDbm;
+    final usable =
+        (rssi != null && rssi < 0 && rssi > invalidRssiDbm) ? rssi : null;
+    final previous = byBssid[bssid];
+    if (!byBssid.containsKey(bssid) ||
+        (usable != null && (previous == null || usable > previous))) {
+      byBssid[bssid] = usable;
+    }
+  }
+  if (byBssid.length != 1) return null;
+  final match = byBssid.entries.single;
+  return ReliableWifiScanMatch(bssid: match.key, rssiDbm: match.value);
+}
+
+List<WifiScanObservation> wifiScansFromChannel(Object? raw) {
+  if (raw is! List) return const [];
+  final scans = <WifiScanObservation>[];
+  for (final item in raw) {
+    if (item is! Map) continue;
+    scans.add(
+      WifiScanObservation(
+        ssid: item['ssid']?.toString(),
+        bssid: item['bssid']?.toString(),
+        rssiDbm: parseRssiDbm(item['rssi_dbm']),
+      ),
+    );
+  }
+  return scans;
+}
+
 WorkplaceWifiSnapshot snapshotFromChannel(Map<Object?, Object?>? raw) {
   final statusName = raw?['status']?.toString();
-  final status = switch (statusName) {
+  var status = switch (statusName) {
     'connected' => WorkplaceWifiReadStatus.connected,
     'not_connected' => WorkplaceWifiReadStatus.notConnected,
     'location_disabled' => WorkplaceWifiReadStatus.locationDisabled,
     'bssid_unavailable' => WorkplaceWifiReadStatus.bssidUnavailable,
     'permission_denied' => WorkplaceWifiReadStatus.permissionDenied,
     'unsupported' => WorkplaceWifiReadStatus.unsupported,
+    'android_too_old' => WorkplaceWifiReadStatus.androidTooOld,
     _ => WorkplaceWifiReadStatus.unavailable,
   };
-  final ssid = raw?['ssid']?.toString();
-  final bssid = raw?['bssid']?.toString();
-  final rssiDbm = parseRssiDbm(raw?['rssi_dbm']);
-  if (status == WorkplaceWifiReadStatus.connected && normalizeBssid(bssid) == null) {
-    return WorkplaceWifiSnapshot(
-      status: WorkplaceWifiReadStatus.bssidUnavailable,
-      ssid: ssid,
+  final ssid = normalizeWifiSsid(raw?['ssid']?.toString());
+  var bssid = normalizeBssid(raw?['bssid']?.toString());
+  var rssiDbm = parseRssiDbm(raw?['rssi_dbm']);
+  final mayMatchScan = status == WorkplaceWifiReadStatus.connected ||
+      status == WorkplaceWifiReadStatus.bssidUnavailable;
+  if (bssid == null && mayMatchScan) {
+    final match = reliableConnectedScanMatch(
+      connectedSsid: ssid,
+      scans: wifiScansFromChannel(raw?['scans']),
     );
+    if (match != null) {
+      bssid = match.bssid;
+      rssiDbm ??= match.rssiDbm;
+      status = WorkplaceWifiReadStatus.connected;
+    }
   }
-  if (status != WorkplaceWifiReadStatus.connected) {
-    return WorkplaceWifiSnapshot(status: status, ssid: ssid);
+  if (status == WorkplaceWifiReadStatus.connected && bssid == null) {
+    status = WorkplaceWifiReadStatus.bssidUnavailable;
   }
   return WorkplaceWifiSnapshot(
     status: status,
     ssid: ssid,
-    bssid: bssid,
+    bssid: status == WorkplaceWifiReadStatus.connected ? bssid : null,
     rssiDbm: rssiDbm,
   );
 }
@@ -399,9 +485,11 @@ AttendanceLocationDecision decideAttendanceLocation({
   }
   // A weak or outside fix still has a position. Under 20 m the employee may
   // choose Wi-Fi. needsBetterGps must not treat that fix as inside.
-  final outsideOrMissing = !gpsFixAvailable || !insideGeofence || needsBetterGps;
+  final outsideOrMissing =
+      !gpsFixAvailable || !insideGeofence || needsBetterGps;
   if (wifiFallbackRadiusAllows(radiusM) && outsideOrMissing) {
-    return const AttendanceLocationDecision(AttendanceLocationRoute.wifiFallback);
+    return const AttendanceLocationDecision(
+        AttendanceLocationRoute.wifiFallback);
   }
   if (gpsFixAvailable) {
     return const AttendanceLocationDecision(AttendanceLocationRoute.gpsOutside);
@@ -427,7 +515,8 @@ AttendanceLocationDecision decideAttendanceLocation({
 enum AttendanceLocationChoice { gps, wifiOmitCoordinates, cancelled }
 
 /// What the attendance request should send after the employee answers.
-AttendanceLocationChoice attendanceChoiceAfterFallback({required bool accepted}) {
+AttendanceLocationChoice attendanceChoiceAfterFallback(
+    {required bool accepted}) {
   if (!accepted) return AttendanceLocationChoice.cancelled;
   return AttendanceLocationChoice.wifiOmitCoordinates;
 }

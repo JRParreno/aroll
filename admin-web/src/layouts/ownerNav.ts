@@ -24,6 +24,7 @@ export const ownerNavItems: OwnerNavItem[] = [
       "/owner/setup-wizard",
     ],
   },
+  { to: "/owner/settings/setup-summary", label: "Setup Summary" },
   { to: "/owner/help", label: "Help" },
 ];
 
@@ -34,6 +35,10 @@ export function isOwnerNavItemActive(
 ) {
   const matches = (path: string) =>
     pathname === path || pathname.startsWith(`${path}/`);
+
+  if (matches("/owner/settings/setup-summary")) {
+    return to === "/owner/settings/setup-summary";
+  }
 
   if (matches(to)) return true;
   return (activePaths ?? []).some(matches);

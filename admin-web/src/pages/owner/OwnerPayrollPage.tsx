@@ -41,6 +41,7 @@ import {
   formatSalaryRate,
   salaryRateLabel,
 } from "@/lib/salaryRate";
+import { downloadPayrollSummaryPdf } from "@/lib/payrollSummaryPdf";
 import { downloadStandardPayslipPdf } from "@/lib/standardPayslipPdf";
 
 /** Unicode punctuation — avoids mojibake when source files are not UTF-8. */
@@ -106,6 +107,7 @@ export function OwnerPayrollPage() {
     useState<PayrollAdjustment | null>(null);
   const [showAdjustmentForm, setShowAdjustmentForm] = useState(false);
   const [unfinalizeOpen, setUnfinalizeOpen] = useState(false);
+  const [downloadingSummary, setDownloadingSummary] = useState(false);
   const [payslipSettings, setPayslipSettings] = useState({
     title: "Payslip",
     employeeSection: "Employee Information",
@@ -183,6 +185,58 @@ export function OwnerPayrollPage() {
     data?.unresolved_historical_rate_count ?? 0;
   const canFinalize = Boolean(data?.can_finalize);
   const isFinalized = Boolean(data?.is_finalized);
+
+  async function downloadSummary() {
+    if (downloadingSummary) return;
+    if (!data?.is_finalized || !data.period_start || !data.period_end) {
+      toast.error(
+        "Finalize this payroll period before downloading the summary."
+      );
+      return;
+    }
+    const periodEmployees = data.items ?? [];
+    if (periodEmployees.length === 0) {
+      toast.error(
+        "This finalized payroll period has no employee records to include."
+      );
+      return;
+    }
+
+    setDownloadingSummary(true);
+    try {
+      const slips = await Promise.all(
+        periodEmployees.map((item) => getEmployeePayslip(item.employee_id, asOf))
+      );
+      const expectedIds = new Set(periodEmployees.map((item) => item.employee_id));
+      const returnedIds = new Set(slips.map((slip) => slip.employee_id));
+      const sameEmployees =
+        expectedIds.size === returnedIds.size &&
+        [...expectedIds].every((id) => returnedIds.has(id));
+      const samePeriod = slips.every(
+        (slip) =>
+          slip.period_start === data.period_start &&
+          slip.period_end === data.period_end
+      );
+      if (!sameEmployees || !samePeriod) {
+        throw new Error("Payroll summary records did not match the selected period.");
+      }
+      const generatedOn = new Date().toISOString().slice(0, 10);
+      downloadPayrollSummaryPdf({
+        businessName,
+        periodStart: data.period_start,
+        periodEnd: data.period_end,
+        finalizedAt: data.finalized_at,
+        generatedOn,
+        sources: slips,
+      });
+    } catch {
+      toast.error(
+        "Could not download the payroll summary. Payroll records were not changed."
+      );
+    } finally {
+      setDownloadingSummary(false);
+    }
+  }
   const finalizeError = (() => {
     const error = finalizeMutation.error;
     if (!error || typeof error !== "object" || error === null) return null;
@@ -286,9 +340,15 @@ export function OwnerPayrollPage() {
                 )
               )}
             </select>
-            <Button variant="outline" className="h-10 gap-2 rounded-xl">
+            <Button
+              type="button"
+              variant="outline"
+              className="h-10 gap-2 rounded-xl"
+              disabled={downloadingSummary || isLoading}
+              onClick={() => void downloadSummary()}
+            >
               <Download className="h-4 w-4" />
-              Download Summary
+              {downloadingSummary ? `Downloading${ELLIPSIS}` : "Download Summary"}
             </Button>
             <Button
               className="h-10 gap-2 rounded-xl text-white"

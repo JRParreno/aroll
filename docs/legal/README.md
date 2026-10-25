@@ -4,7 +4,7 @@
 
 **Status:** Draft templates for the Aroll+ study and pilot businesses. They are **not** formal legal advice and are **not** the runtime source of truth. Have a lawyer review before commercial rollout beyond the academic pilot.
 
-**Runtime source of truth:** Platform Admin publishes default Terms, Privacy, and Biometric Consent. Businesses use those defaults unless an owner sets `use_custom_consents` and publishes custom copy. The app and public webpage (`/legal/b/{business_code}`) render the **effective** content. Unpublished sections cannot be accepted as consent. Acceptance is stored as append-only `consent_record` rows (type + version + content source + snapshot/hash + identity + UTC timestamp), not a single boolean.
+**Runtime source of truth:** The official default wording is the version-controlled text in `backend/app/legal_defaults/` (`terms.txt`, `privacy.txt`, `biometric.txt`). Application startup and `python -m app.seed` copy that wording into the platform consent records when a record is missing, unpublished, or still an unedited system default. A platform document an administrator has edited is left as saved. Businesses with custom consents keep their own documents. Web and mobile read those database records; they do not keep a separate copy of the text. These markdown files are templates and are not what the app displays. Acceptance is stored as append-only `consent_record` rows (type + version + content source + snapshot/hash + identity + UTC timestamp), not a single boolean.
 
 | Document | Audience | When to use |
 |----------|----------|-------------|

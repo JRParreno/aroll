@@ -5,6 +5,7 @@ import {
   CalendarCheck,
   CalendarOff,
   CircleHelp,
+  ClipboardCheck,
   ClipboardList,
   LayoutDashboard,
   LogOut,
@@ -38,6 +39,7 @@ const ownerNavIcons: Record<string, LucideIcon> = {
   Locations: MapPinned,
   Settings: Settings,
   "Business Setup": Settings,
+  "Setup Summary": ClipboardCheck,
   Help: CircleHelp,
 };
 

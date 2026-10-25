@@ -2,116 +2,17 @@ import 'dart:convert';
 
 import 'package:aroll_mobile/core/app_state.dart';
 import 'package:aroll_mobile/core/di/injection.dart';
+import 'package:aroll_mobile/core/theme/business_brand_theme.dart';
 import 'package:aroll_mobile/data/repositories/owner_repository.dart';
 import 'package:aroll_mobile/domain/entities/user_session.dart';
 import 'package:aroll_mobile/presentation/owner/owner_shell.dart';
+import 'package:aroll_mobile/presentation/owner/setup/brand_theme_choices.dart';
 import 'package:aroll_mobile/presentation/owner/setup/setup_ui.dart';
 import 'package:aroll_mobile/presentation/shared/app_ui.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
-
-const _brandThemes = <({
-  String id,
-  String name,
-  String primary,
-  String secondary,
-  String sidebar,
-  String accent,
-  String button,
-})>[
-  (
-    id: 'soft-blue',
-    name: 'Soft Blue',
-    primary: '#3D6280',
-    secondary: '#4A7090',
-    sidebar: '#35556F',
-    accent: '#5E86A3',
-    button: '#3A5C78',
-  ),
-  (
-    id: 'sage',
-    name: 'Sage',
-    primary: '#466053',
-    secondary: '#547062',
-    sidebar: '#3E5348',
-    accent: '#5E7A68',
-    button: '#42604F',
-  ),
-  (
-    id: 'lavender',
-    name: 'Lavender',
-    primary: '#554F78',
-    secondary: '#655F88',
-    sidebar: '#4A4568',
-    accent: '#746C96',
-    button: '#514B72',
-  ),
-  (
-    id: 'sky',
-    name: 'Sky',
-    primary: '#426074',
-    secondary: '#4E7084',
-    sidebar: '#3A5568',
-    accent: '#5C8498',
-    button: '#3E5C70',
-  ),
-  (
-    id: 'mint',
-    name: 'Mint',
-    primary: '#426056',
-    secondary: '#4E7066',
-    sidebar: '#3A554C',
-    accent: '#5C8478',
-    button: '#3E5C52',
-  ),
-  (
-    id: 'peach',
-    name: 'Peach',
-    primary: '#745445',
-    secondary: '#806052',
-    sidebar: '#6A4A3C',
-    accent: '#8C6A58',
-    button: '#6E4E40',
-  ),
-  (
-    id: 'blush',
-    name: 'Blush',
-    primary: '#754C5A',
-    secondary: '#865C6A',
-    sidebar: '#6A4552',
-    accent: '#946274',
-    button: '#6F4856',
-  ),
-  (
-    id: 'sand',
-    name: 'Sand',
-    primary: '#665A4E',
-    secondary: '#74685C',
-    sidebar: '#5C5146',
-    accent: '#7E7264',
-    button: '#615548',
-  ),
-  (
-    id: 'aqua',
-    name: 'Aqua',
-    primary: '#3D6A70',
-    secondary: '#456F76',
-    sidebar: '#355E64',
-    accent: '#5A8890',
-    button: '#39646A',
-  ),
-  (
-    id: 'soft-teal',
-    name: 'Soft Teal',
-    primary: '#386266',
-    secondary: '#467276',
-    sidebar: '#2F5558',
-    accent: '#548488',
-    button: '#345E62',
-  ),
-];
 
 bool brandingScreenShowsSkip(bool asSettings) => !asSettings;
 
@@ -154,25 +55,16 @@ class _OwnerBrandingOnboardingScreenState
   Map<String, dynamic> _settings = const {};
   String? _logoUrl;
   late Map<String, String> _theme;
+  Map<String, String>? _savedTheme;
 
   @override
   void initState() {
     super.initState();
-    _theme = _defaultTheme();
+    _theme = defaultBrandThemeFields();
     _load();
   }
 
-  Map<String, String> _defaultTheme() => {
-        'primary_color': '#1E3A5F',
-        'secondary_color': '#284B73',
-        'sidebar_color': '#1E3A5F',
-        'accent_color': '#3B82F6',
-        'button_color': '#1E3A5F',
-        'card_style': 'soft',
-        'font_size': 'comfortable',
-        'color_mode': 'light',
-        'layout_density': 'rounded',
-      };
+  Map<String, String> _defaultTheme() => defaultBrandThemeFields();
 
   Future<void> _load() async {
     setState(() {
@@ -183,15 +75,17 @@ class _OwnerBrandingOnboardingScreenState
       final data = await _repo.businessSettings();
       final branding = data['branding'];
       final theme = branding is Map ? branding['theme'] : null;
+      final nextTheme = {
+        ..._defaultTheme(),
+        if (theme is Map)
+          for (final entry in theme.entries)
+            if (entry.value != null) '${entry.key}': '${entry.value}',
+      };
       setState(() {
         _settings = data;
         _logoUrl = branding is Map ? branding['logo_url'] as String? : null;
-        _theme = {
-          ..._defaultTheme(),
-          if (theme is Map)
-            for (final entry in theme.entries)
-              if (entry.value != null) '${entry.key}': '${entry.value}',
-        };
+        _theme = nextTheme;
+        _savedTheme = Map<String, String>.from(nextTheme);
         _loading = false;
       });
     } catch (_) {
@@ -251,6 +145,7 @@ class _OwnerBrandingOnboardingScreenState
         _brandingFromPayload(_brandingPayload()),
       );
       if (!mounted) return;
+      setState(() => _savedTheme = Map<String, String>.from(_theme));
       if (widget.asSettings) {
         _showSnack('Business branding saved');
         return;
@@ -306,11 +201,14 @@ class _OwnerBrandingOnboardingScreenState
       ownerProfileImageUrl: payload['owner_profile_image_url'] as String?,
       displayImageUrl: payload['display_image_url'] as String?,
       theme: BusinessThemeSettings(
-        primaryColor: '${theme['primary_color'] ?? '#1E3A5F'}',
-        secondaryColor: '${theme['secondary_color'] ?? '#284B73'}',
-        sidebarColor: '${theme['sidebar_color'] ?? '#1E3A5F'}',
-        accentColor: '${theme['accent_color'] ?? '#3B82F6'}',
-        buttonColor: '${theme['button_color'] ?? '#1E3A5F'}',
+        primaryColor:
+            '${theme['primary_color'] ?? systemBrandTheme.primary}',
+        secondaryColor:
+            '${theme['secondary_color'] ?? systemBrandTheme.secondary}',
+        sidebarColor:
+            '${theme['sidebar_color'] ?? systemBrandTheme.sidebar}',
+        accentColor: '${theme['accent_color'] ?? systemBrandTheme.accent}',
+        buttonColor: '${theme['button_color'] ?? systemBrandTheme.button}',
         cardStyle: '${theme['card_style'] ?? 'soft'}',
         fontSize: '${theme['font_size'] ?? 'comfortable'}',
         colorMode: '${theme['color_mode'] ?? 'light'}',
@@ -322,6 +220,40 @@ class _OwnerBrandingOnboardingScreenState
   void _showSnack(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  void _applyChoice(BrandThemeChoice choice) {
+    setState(() {
+      _theme = {..._theme, ...choice.colorMap};
+    });
+  }
+
+  void _setColor(String key, String value) {
+    setState(() => _theme = {..._theme, key: value});
+  }
+
+  Future<void> _editColor(BrandColorOption option) async {
+    final picked = await showDialog<String>(
+      context: context,
+      builder: (context) => _BrandColorDialog(
+        label: option.label,
+        initialHex: _theme[option.key] ?? '',
+      ),
+    );
+    if (!mounted || picked == null) return;
+    _setColor(option.key, picked);
+  }
+
+  void _restoreSavedColors() {
+    final saved = _savedTheme;
+    if (saved == null) return;
+    setState(() {
+      _theme = {
+        ..._theme,
+        for (final key in brandColorKeys)
+          if (saved[key] != null) key: saved[key]!,
+      };
+    });
   }
 
   Widget _body() {
@@ -401,50 +333,134 @@ class _OwnerBrandingOnboardingScreenState
         SetupPanel(
           title: 'Brand colors',
           icon: Icons.palette_outlined,
-          subtitle: 'Choose a coordinated theme used on web and mobile.',
+          subtitle:
+              'System Theme, a coordinated theme, or your own colors. The same choice is saved for web and mobile.',
           children: [
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
+            for (final theme in featuredBrandThemes) ...[
+              _FeaturedThemeCard(
+                theme: theme,
+                selected: brandThemeMatches(_theme, theme),
+                onTap: _busy ? null : () => _applyChoice(theme),
+              ),
+              const SizedBox(height: 8),
+            ],
+            for (final group in brandThemeGroups) ...[
+              const SizedBox(height: 6),
+              Text(
+                group,
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.8,
+                  color: AppColors.textMuted,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final theme in brandThemesInGroup(group))
+                    _ThemeChoice(
+                      name: theme.name,
+                      color: theme.primary,
+                      selected: brandThemeMatches(_theme, theme),
+                      onTap: _busy ? () {} : () => _applyChoice(theme),
+                    ),
+                ],
+              ),
+            ],
+            const SizedBox(height: 12),
+            _ThemeChoice(
+              name: 'Custom Colors',
+              color: _theme['primary_color'] ?? systemBrandTheme.primary,
+              selected: findBrandThemeChoice(_theme) == null,
+              wide: true,
+              onTap: _busy
+                  ? () {}
+                  : () {
+                      final saved = _savedTheme;
+                      if (saved == null || findBrandThemeChoice(_theme) == null) {
+                        return;
+                      }
+                      if (findBrandThemeChoice(saved) != null) return;
+                      _restoreSavedColors();
+                    },
+            ),
+            const SizedBox(height: 14),
+            Row(
               children: [
-                for (final theme in _brandThemes)
-                  _ThemeChoice(
-                    name: theme.name,
-                    color: theme.primary,
-                    selected: _theme['primary_color'] == theme.primary,
-                    onTap: () => setState(() {
-                      _theme = {
-                        ..._theme,
-                        'primary_color': theme.primary,
-                        'secondary_color': theme.secondary,
-                        'sidebar_color': theme.sidebar,
-                        'accent_color': theme.accent,
-                        'button_color': theme.button,
-                      };
-                    }),
+                const Expanded(
+                  child: Text(
+                    'Custom colors',
+                    style: TextStyle(
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                if (_savedTheme != null &&
+                    brandColorsDiffer(_theme, _savedTheme!))
+                  TextButton(
+                    onPressed: _busy ? null : _restoreSavedColors,
+                    child: const Text('Restore saved colors'),
                   ),
               ],
             ),
-            const SizedBox(height: 12),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: Color(
-                  int.parse(
-                    'FF${_theme['primary_color']!.replaceFirst('#', '')}',
-                    radix: 16,
+            Text(
+              findBrandThemeChoice(_theme) == null
+                  ? 'These are your custom colors. Save to use them on web and mobile.'
+                  : 'These colors come from ${findBrandThemeChoice(_theme)!.name}. Change a color to make your own theme. Saved colors stay until you save.',
+              style: const TextStyle(
+                fontSize: 12,
+                height: 1.4,
+                color: AppColors.textMuted,
+              ),
+            ),
+            const SizedBox(height: 10),
+            for (final option in brandColorOptions) ...[
+              _BrandColorRow(
+                option: option,
+                value: _theme[option.key] ?? '',
+                source: findBrandThemeChoice(_theme) == null
+                    ? 'Your custom color'
+                    : 'Set by ${findBrandThemeChoice(_theme)!.name}',
+                enabled: !_busy,
+                onChanged: (value) => _setColor(option.key, value),
+                onPick: () => _editColor(option),
+              ),
+              const SizedBox(height: 10),
+            ],
+            const SizedBox(height: 2),
+            Builder(
+              builder: (context) {
+                final hex = normalizeBrandHex(_theme['primary_color'] ?? '');
+                final rgb = isValidBrandHex(hex)
+                    ? int.parse(hex.substring(1), radix: 16)
+                    : 0x1E3A5F;
+                final preview = Color(0xFF000000 | rgb);
+                final red = (rgb >> 16) & 0xFF;
+                final green = (rgb >> 8) & 0xFF;
+                final blue = rgb & 0xFF;
+                final luminance = (0.299 * red + 0.587 * green + 0.114 * blue) / 255;
+                return Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: preview,
+                    borderRadius: BorderRadius.circular(12),
                   ),
-                ),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Text(
-                name,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
+                  child: Text(
+                    name,
+                    style: TextStyle(
+                      color: luminance > 0.72
+                          ? const Color(0xFF111827)
+                          : Colors.white,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                );
+              },
             ),
           ],
         ),
@@ -505,28 +521,30 @@ class _ThemeChoice extends StatelessWidget {
     required this.color,
     required this.selected,
     required this.onTap,
+    this.wide = false,
   });
 
   final String name;
   final String color;
   final bool selected;
   final VoidCallback onTap;
+  final bool wide;
 
   @override
   Widget build(BuildContext context) {
-    final parsed = Color(int.parse('FF${color.replaceFirst('#', '')}', radix: 16));
+    final parsed = parseBrandHex(color) ?? const Color(0xFF1E3A5F);
     return Material(
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(12),
         child: Ink(
-          width: 104,
+          width: wide ? double.infinity : 104,
           padding: const EdgeInsets.fromLTRB(10, 10, 10, 8),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
-              color: selected ? parsed : AppColors.border,
+              color: selected ? const Color(0xFF1E3A5F) : AppColors.border,
               width: selected ? 2 : 1,
             ),
           ),
@@ -554,6 +572,349 @@ class _ThemeChoice extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _FeaturedThemeCard extends StatelessWidget {
+  const _FeaturedThemeCard({
+    required this.theme,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final BrandThemeChoice theme;
+  final bool selected;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final swatches = [
+      theme.previewSurface,
+      theme.accent,
+      theme.secondary,
+      theme.sidebar,
+    ];
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Ink(
+          width: double.infinity,
+          padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: selected ? const Color(0xFF1E3A5F) : AppColors.border,
+              width: selected ? 2 : 1,
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                theme.name,
+                style: const TextStyle(
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  for (final swatch in swatches)
+                    Expanded(
+                      child: Container(
+                        height: 22,
+                        color: parseBrandHex(swatch) ?? AppColors.border,
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                theme.description,
+                style: const TextStyle(
+                  fontSize: 12,
+                  height: 1.35,
+                  color: AppColors.textMuted,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                selected ? 'Selected' : 'Choose',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: selected
+                      ? const Color(0xFF1E3A5F)
+                      : AppColors.textMuted,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _BrandColorRow extends StatefulWidget {
+  const _BrandColorRow({
+    required this.option,
+    required this.value,
+    required this.source,
+    required this.enabled,
+    required this.onChanged,
+    required this.onPick,
+  });
+
+  final BrandColorOption option;
+  final String value;
+  final String source;
+  final bool enabled;
+  final ValueChanged<String> onChanged;
+  final VoidCallback onPick;
+
+  @override
+  State<_BrandColorRow> createState() => _BrandColorRowState();
+}
+
+class _BrandColorRowState extends State<_BrandColorRow> {
+  late final TextEditingController _controller;
+  final _focus = FocusNode();
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.value);
+  }
+
+  @override
+  void didUpdateWidget(covariant _BrandColorRow oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (_controller.text != widget.value) {
+      _controller.value = TextEditingValue(
+        text: widget.value,
+        selection: TextSelection.collapsed(offset: widget.value.length),
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _focus.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final parsed = parseBrandHex(widget.value);
+    final valid = isValidBrandHex(widget.value);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          widget.option.label,
+          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          widget.option.effect,
+          style: const TextStyle(
+            fontSize: 12,
+            height: 1.35,
+            color: AppColors.textMuted,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          widget.source,
+          style: const TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+            color: Color(0xFF1E3A5F),
+          ),
+        ),
+        const SizedBox(height: 6),
+        Row(
+          children: [
+            Material(
+              color: parsed ?? const Color(0xFFE5E7EB),
+              borderRadius: BorderRadius.circular(8),
+              child: InkWell(
+                onTap: widget.enabled ? widget.onPick : null,
+                borderRadius: BorderRadius.circular(8),
+                child: const SizedBox(width: 42, height: 42),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: TextField(
+                controller: _controller,
+                focusNode: _focus,
+                enabled: widget.enabled,
+                autocorrect: false,
+                textCapitalization: TextCapitalization.characters,
+                decoration: SetupUi.input('Hex value'),
+                onChanged: widget.onChanged,
+                onEditingComplete: () {
+                  if (isValidBrandHex(_controller.text)) {
+                    widget.onChanged(normalizeBrandHex(_controller.text));
+                  }
+                },
+              ),
+            ),
+          ],
+        ),
+        if (!valid)
+          const Padding(
+            padding: EdgeInsets.only(top: 4),
+            child: Text(
+              'This value is not a usable hex color. Choose a color to replace it.',
+              style: TextStyle(fontSize: 12, color: Color(0xFF92400E)),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _BrandColorDialog extends StatefulWidget {
+  const _BrandColorDialog({
+    required this.label,
+    required this.initialHex,
+  });
+
+  final String label;
+  final String initialHex;
+
+  @override
+  State<_BrandColorDialog> createState() => _BrandColorDialogState();
+}
+
+class _BrandColorDialogState extends State<_BrandColorDialog> {
+  late int _red;
+  late int _green;
+  late int _blue;
+  late final TextEditingController _hex;
+
+  @override
+  void initState() {
+    super.initState();
+    final hex = isValidBrandHex(widget.initialHex)
+        ? normalizeBrandHex(widget.initialHex)
+        : '#1E3A5F';
+    final rgb = int.parse(hex.substring(1), radix: 16);
+    _red = (rgb >> 16) & 0xFF;
+    _green = (rgb >> 8) & 0xFF;
+    _blue = rgb & 0xFF;
+    _hex = TextEditingController(text: _currentHex);
+  }
+
+  @override
+  void dispose() {
+    _hex.dispose();
+    super.dispose();
+  }
+
+  String get _currentHex {
+    String pair(int channel) =>
+        channel.toRadixString(16).padLeft(2, '0').toUpperCase();
+    return '#${pair(_red)}${pair(_green)}${pair(_blue)}';
+  }
+
+  void _setChannels(int red, int green, int blue) {
+    setState(() {
+      _red = red;
+      _green = green;
+      _blue = blue;
+      _hex.text = _currentHex;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final color = Color.fromARGB(255, _red, _green, _blue);
+    return AlertDialog(
+      title: Text(widget.label),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              height: 48,
+              width: double.infinity,
+              decoration: BoxDecoration(
+                color: color,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: AppColors.border),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _hex,
+              decoration: SetupUi.input('Hex value'),
+              autocorrect: false,
+              textCapitalization: TextCapitalization.characters,
+              onChanged: (value) {
+                if (!isValidBrandHex(value)) return;
+                final rgb = int.parse(
+                  normalizeBrandHex(value).substring(1),
+                  radix: 16,
+                );
+                setState(() {
+                  _red = (rgb >> 16) & 0xFF;
+                  _green = (rgb >> 8) & 0xFF;
+                  _blue = rgb & 0xFF;
+                });
+              },
+            ),
+            _channelSlider('Red', _red, (value) {
+              _setChannels(value.round(), _green, _blue);
+            }),
+            _channelSlider('Green', _green, (value) {
+              _setChannels(_red, value.round(), _blue);
+            }),
+            _channelSlider('Blue', _blue, (value) {
+              _setChannels(_red, _green, value.round());
+            }),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: isValidBrandHex(_hex.text)
+              ? () => Navigator.pop(context, normalizeBrandHex(_hex.text))
+              : null,
+          child: const Text('Use color'),
+        ),
+      ],
+    );
+  }
+
+  Widget _channelSlider(String label, int value, ValueChanged<double> onChanged) {
+    return Row(
+      children: [
+        SizedBox(
+          width: 52,
+          child: Text(label, style: const TextStyle(fontSize: 12)),
+        ),
+        Expanded(
+          child: Slider(
+            value: value.toDouble(),
+            max: 255,
+            label: '$value',
+            onChanged: onChanged,
+          ),
+        ),
+      ],
     );
   }
 }

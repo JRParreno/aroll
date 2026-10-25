@@ -1,0 +1,29 @@
+{workplace} Terms and Conditions
+
+These terms explain how you may use Aroll+ at this workplace for attendance, schedules, leave, overtime, and payroll.
+
+## Who may use Aroll+
+
+- Owners and managers look after employees, schedules, attendance, and payroll for this workplace.
+- Employees use an account created by the owner or manager. Employees cannot create their own account.
+- Platform administrators review new businesses and run the service.
+- You may use only the account given to you.
+
+## Your responsibilities
+
+- Keep your login private. Do not share your account.
+- Give accurate information when your employer asks you to update it.
+- Clock in and out only for yourself. Do not record time for someone else.
+- Do not fake your location, face check, or the check that you are a real person (not a photo).
+- Use overtime, leave, and attendance corrections only for your own records. Your employer still approves those requests.
+- Use Aroll+ only for work attendance and related HR or payroll tasks at this workplace.
+
+## Attendance, leave, and pay
+
+Aroll+ stores your shifts, time in and time out, leave, overtime, and payslips using the rules this workplace set. Your employer is still responsible for workplace rules, labor rules, and checking payroll before paying you. Using your face to enroll or to Time In / Time Out needs a separate biometric consent.
+
+## Phone permissions
+
+The app may ask your phone for camera, location (only while you use the app), and notifications. Saying yes on those phone prompts is not the same as agreeing to these terms. Camera and location are used for face attendance and to check that you are at work. Notifications are used for attendance and account alerts. You can change or turn these off later in your phone settings. If you turn one off, only the feature that needs it stops working. That does not accept or reject these terms.
+
+If you do not agree, do not continue into the app.

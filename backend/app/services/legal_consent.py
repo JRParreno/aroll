@@ -7,6 +7,7 @@ import html
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from pathlib import Path
 
 from fastapi import HTTPException, Request
 from fastapi.responses import HTMLResponse
@@ -49,6 +50,15 @@ DEFAULT_VERSIONS = {
     CONSENT_TERMS: DEFAULT_TERMS_VERSION,
     CONSENT_PRIVACY: DEFAULT_PRIVACY_VERSION,
     CONSENT_BIOMETRIC: DEFAULT_BIOMETRIC_VERSION,
+}
+
+# Official wording for the three platform defaults. Loaded once from
+# version-controlled files so every installation uses the same text.
+_OFFICIAL_DEFAULT_DIR = Path(__file__).resolve().parent.parent / "legal_defaults"
+_OFFICIAL_DEFAULT_FILES = {
+    CONSENT_TERMS: "terms.txt",
+    CONSENT_PRIVACY: "privacy.txt",
+    CONSENT_BIOMETRIC: "biometric.txt",
 }
 
 
@@ -650,124 +660,48 @@ def require_biometric_consent(
 
 
 def default_legal_content(business_name: str, consent_type: str) -> str:
+    """Official default for one consent type.
+
+    The saved wording lives in ``app/legal_defaults``. ``{workplace}`` is the
+    only substitution, and it replaces the workplace name on the first line.
+    """
+    filename = _OFFICIAL_DEFAULT_FILES.get(consent_type)
+    if filename is None:
+        raise ValueError(f"Unknown consent type: {consent_type}")
     name = business_name.strip() or "this workplace"
-    if consent_type == CONSENT_TERMS:
-        return (
-            f"{name} Terms and Conditions\n\n"
-            "These terms explain how you may use Aroll+ at this workplace for "
-            "attendance, schedules, leave, overtime, and payroll.\n\n"
-            "## Who may use Aroll+\n\n"
-            "- Owners and managers look after employees, schedules, attendance, "
-            "and payroll for this workplace.\n"
-            "- Employees use an account created by the owner or manager. Employees "
-            "cannot create their own account.\n"
-            "- Platform administrators review new businesses and run the service.\n"
-            "- You may use only the account given to you.\n\n"
-            "## Your responsibilities\n\n"
-            "- Keep your login private. Do not share your account.\n"
-            "- Give accurate information when your employer asks you to update it.\n"
-            "- Clock in and out only for yourself. Do not record time for someone "
-            "else.\n"
-            "- Do not fake your location, face check, or the check that you are a "
-            "real person (not a photo).\n"
-            "- Use overtime, leave, and attendance corrections only for your own "
-            "records. Your employer still approves those requests.\n"
-            "- Use Aroll+ only for work attendance and related HR or payroll tasks "
-            "at this workplace.\n\n"
-            "## Attendance, leave, and pay\n\n"
-            "Aroll+ stores your shifts, time in and time out, leave, overtime, and "
-            "payslips using the rules this workplace set. Your employer is still "
-            "responsible for workplace rules, labor rules, and checking payroll "
-            "before paying you. Using your face to enroll or to Time In / Time Out "
-            "needs a separate biometric consent.\n\n"
-            "## Phone permissions\n\n"
-            "The app may ask your phone for camera, location (only while you use "
-            "the app), and notifications. Saying yes on those phone prompts is not "
-            "the same as agreeing to these terms. Camera and location are used for "
-            "face attendance and to check that you are at work. Notifications are "
-            "used for attendance and account alerts. You can change or turn these "
-            "off later in your phone settings. If you turn one off, only the "
-            "feature that needs it stops working. That does not accept or reject "
-            "these terms.\n\n"
-            "If you do not agree, do not continue into the app."
-        )
-    if consent_type == CONSENT_PRIVACY:
-        return (
-            f"{name} Privacy Policy\n\n"
-            "This notice explains what personal information Aroll+ uses to run "
-            "attendance and payroll for this workplace. When Philippine law "
-            "applies, this use of information is meant to follow the Data Privacy "
-            "Act of 2012 (Republic Act No. 10173).\n\n"
-            "## Information Aroll+ uses\n\n"
-            "- Account details such as your name, email, phone (if given), role, "
-            "and a password stored in a protected form that cannot be read back "
-            "as your password.\n"
-            "- Work details such as your employee code, job title, pay settings, "
-            "and schedule.\n"
-            "- Attendance records, including time in and time out, status, "
-            "correction requests, leave, overtime, and the location used to check "
-            "you are at the workplace.\n"
-            "- Payroll and payslip data for this business.\n"
-            "- Face photos taken when you enroll or use face attendance. These "
-            "are turned into number codes of your face (templates) used to match "
-            "you later. Aroll+ is not designed to keep a long-term photo album of "
-            "faces.\n"
-            "- Results of the live-person check and face match, linked to "
-            "attendance.\n"
-            "- Business sign-up details and uploaded documents when a business "
-            "applies to use Aroll+.\n"
-            "- Technical details needed to run and protect the app, such as when "
-            "a request was made and basic device or app information.\n\n"
-            "## How the information is used\n\n"
-            "Aroll+ uses this information to sign you in, keep each business's "
-            "data separate, record attendance, prepare payslips, review business "
-            "sign-ups, and protect accounts. Data is not sold and is not used for "
-            "marketing. Face templates stay with this business and are not shared "
-            "with other workplaces on Aroll+.\n\n"
-            "## Phone access\n\n"
-            "On your phone, Aroll+ may ask for camera access for face enrollment "
-            "and face Time In / Time Out, location while the app is open to check "
-            "the workplace area at clock-in or clock-out, and notifications for "
-            "attendance or account alerts. Aroll+ does not keep tracking your "
-            "location in the background, does not use the camera in the "
-            "background, and does not ask for your contacts.\n\n"
-            "## Access and requests\n\n"
-            "You may ask your employer to review or correct work records they "
-            "control. You may withdraw biometric consent in the app. Face "
-            "attendance is then blocked, and stored face templates for your "
-            "account are cleared. Aroll+ is meant for adult employees and "
-            "business users (18+).\n\n"
-            "This notice does not replace your employer's own privacy duties."
-        )
-    return (
-        f"{name} Biometric Consent\n\n"
-        "Give this consent before you enroll your face. It covers only face "
-        "checks used for workplace attendance at this business.\n\n"
-        "## What you are asked to allow\n\n"
-        "- Taking face photos when you enroll and when you Time In or Time Out "
-        "with face attendance.\n"
-        "- Saving number codes of your face (templates) used to confirm it is "
-        "you. This is not a photo gallery.\n"
-        "- A check that you are a real person, and a workplace location check, "
-        "at Time In / Time Out when this business has those features turned on.\n\n"
-        "## What this is used for\n\n"
-        "Face data is used only to enroll your face, confirm it is you at "
-        "attendance, and support the attendance record your employer uses for "
-        "timekeeping and payroll. It is not used for marketing and is not shared "
-        "with other businesses on Aroll+.\n\n"
-        "## Important limits\n\n"
-        "This is not Apple Face ID or a lock stored only on your phone. "
-        "Templates are stored in the Aroll+ database for this business and "
-        "protected by normal app security (sign-in, access control, and HTTPS "
-        "in deployed environments). Face matching can fail in poor light or at "
-        "unusual angles and may need a retry.\n\n"
-        "## If you decline or withdraw\n\n"
-        "You may decline or later withdraw this consent in the app. Face "
-        "enrollment and face Time In / Time Out will be unavailable, and stored "
-        "face templates for your account are cleared. Other workplace features "
-        "that do not need face recognition stay available. The phone's camera "
-        "or location permission is separate from this consent."
-    )
+    template = (_OFFICIAL_DEFAULT_DIR / filename).read_text(encoding="utf-8")
+    if template.startswith("\ufeff"):
+        template = template[1:]
+    if template.endswith("\r\n"):
+        template = template[:-2]
+    elif template.endswith("\n"):
+        template = template[:-1]
+    if not template.startswith("{workplace}"):
+        raise RuntimeError(f"{filename} is missing the workplace placeholder")
+    return template.replace("{workplace}", name, 1)
+
+
+def replace_unedited_platform_default(
+    *,
+    current: str | None,
+    updated_by: uuid.UUID | None,
+    published: bool,
+    official: str,
+    force: bool,
+    has_file: bool = False,
+) -> bool:
+    """Whether a platform row should be set to the official default.
+
+    Missing or unpublished rows are filled. An already published row is
+    replaced only when nobody has edited it (``updated_by`` is empty and it
+    has no uploaded file) and its text is not already the official default.
+    ``force`` still resets a row, which tests use to republish defaults.
+    """
+    if force or not published:
+        return True
+    if has_file or updated_by is not None:
+        return False
+    return content_hash(current) != content_hash(official)
 
 
 def ensure_platform_legal_defaults(
@@ -793,7 +727,14 @@ def ensure_platform_legal_defaults(
                 )
             )
             continue
-        if force or not section_published(existing.content, existing.version):
+        published = section_published(existing.content, existing.version)
+        if replace_unedited_platform_default(
+            current=existing.content,
+            updated_by=existing.updated_by,
+            published=published,
+            official=content,
+            force=force,
+        ):
             existing.content = content
             existing.version = version
             existing.published = True

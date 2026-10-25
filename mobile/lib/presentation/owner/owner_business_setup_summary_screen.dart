@@ -3,6 +3,7 @@ import 'package:aroll_mobile/data/repositories/owner_repository.dart';
 import 'package:aroll_mobile/presentation/owner/owner_info_display.dart';
 import 'package:aroll_mobile/presentation/owner/owner_shell.dart';
 import 'package:aroll_mobile/presentation/owner/setup/setup_ui.dart';
+import 'package:aroll_mobile/presentation/shared/app_ui.dart';
 import 'package:flutter/material.dart';
 
 class OwnerBusinessSetupSummaryScreen extends StatelessWidget {
@@ -17,160 +18,139 @@ class OwnerBusinessSetupSummaryScreen extends StatelessWidget {
       future: _loadSummary(),
       builder: (data) {
         final summary = data as _SetupSummaryData;
+        final shifts = summary.shifts.map(_shiftItem).whereType<_SummaryItem>().toList();
+        final positions =
+            summary.positions.map(_positionItem).whereType<_SummaryItem>().toList();
+        final nextPayday = summary.payroll['next_payday_date'];
+        final paydayText = nextPayday == null || '$nextPayday'.trim().isEmpty
+            ? 'Not set'
+            : '$nextPayday'.trim();
         return [
-          const SizedBox(height: 14),
-          OwnerInfoSection(
+          const SizedBox(height: 6),
+          _SummarySection(
             title: 'Business Profile',
-            icon: Icons.business_rounded,
-            skipEmpty: false,
-            rows: [
-              ('Business Name', summary.business['business_name']),
-              ('Business Type', summary.business['business_type']),
-              ('Business Code', summary.business['business_code']),
-              (
-                'Business Status',
-                ownerStatusLabel(summary.business['application_status']),
-              ),
-            ],
+            child: _FactPanel(
+              rows: [
+                ('Business Name', _textOrNotSet(summary.business['business_name'])),
+                ('Business Type', _textOrNotSet(summary.business['business_type'])),
+                ('Business Code', _textOrNotSet(summary.business['business_code'])),
+                (
+                  'Business Status',
+                  ownerStatusLabel(summary.business['application_status']),
+                ),
+              ],
+            ),
           ),
-          OwnerInfoSection(
+          _SummarySection(
             title: 'Work Location',
-            icon: Icons.location_on_outlined,
-            skipEmpty: false,
-            rows: [
-              (
-                'Workplace Address',
-                summary.location['address'] ?? summary.business['address'],
-              ),
-              (
-                'Allowed Attendance Radius',
-                _radiusLabel(summary.location['geofence_radius_m']),
-              ),
-              (
-                'Work Location Validation',
-                _locationValidationLabel(summary.location),
-              ),
-            ],
+            child: _FactPanel(
+              rows: [
+                (
+                  'Workplace Address',
+                  _textOrNotSet(
+                    summary.location['address'] ?? summary.business['address'],
+                  ),
+                ),
+                (
+                  'Allowed Attendance Radius',
+                  _radiusLabel(summary.location['geofence_radius_m']),
+                ),
+                (
+                  'Work Location Validation',
+                  _locationValidationLabel(summary.location),
+                ),
+              ],
+            ),
           ),
-          OwnerInfoSection(
+          _SummarySection(
             title: 'Work Shifts',
-            icon: Icons.schedule_rounded,
-            skipEmpty: false,
-            rows: [
-              (
-                'Configured Shifts',
-                summary.shifts.isEmpty
-                    ? 'None configured'
-                    : summary.shifts
-                        .map(_shiftLabel)
-                        .whereType<String>()
-                        .join('\n'),
-              ),
-            ],
+            child: _ItemList(items: shifts, emptyLabel: 'None configured'),
           ),
-          OwnerInfoSection(
+          _SummarySection(
             title: 'Employee Positions',
-            icon: Icons.badge_outlined,
-            skipEmpty: false,
-            rows: [
-              (
-                'Configured Positions',
-                summary.positions.isEmpty
-                    ? 'None configured'
-                    : summary.positions
-                        .map(_positionLabel)
-                        .whereType<String>()
-                        .join('\n'),
-              ),
-            ],
+            child: _ItemList(items: positions, emptyLabel: 'None configured'),
           ),
-          OwnerInfoSection(
+          _SummarySection(
             title: 'Payroll',
-            icon: Icons.payments_outlined,
-            skipEmpty: false,
-            rows: [
-              (
-                'Payroll Frequency',
-                ownerPayFrequencyLabel(summary.payroll['pay_period_type']),
-              ),
-              (
-                'Daily Rate Settings',
-                summary.positions.isEmpty
-                    ? 'No job roles with daily pay yet'
-                    : '${summary.positions.length} job role'
-                        '${summary.positions.length == 1 ? '' : 's'} configured',
-              ),
-              (
-                'Next Payday',
-                summary.payroll['next_payday_date'],
-              ),
-            ],
+            child: _FactPanel(
+              rows: [
+                (
+                  'Payroll Frequency',
+                  ownerPayFrequencyLabel(summary.payroll['pay_period_type']),
+                ),
+                (
+                  'Daily Rate Settings',
+                  summary.positions.isEmpty
+                      ? 'No job roles with daily pay yet'
+                      : '${summary.positions.length} job role'
+                          '${summary.positions.length == 1 ? '' : 's'} configured',
+                ),
+                ('Next Payday', paydayText),
+              ],
+            ),
           ),
-          OwnerInfoSection(
+          _SummarySection(
             title: 'Attendance',
-            icon: Icons.fact_check_outlined,
-            skipEmpty: false,
-            rows: [
-              (
-                'Time-In Settings',
-                summary.attendancePolicy.isEmpty
-                    ? 'Not configured'
-                    : 'Configured',
-              ),
-              (
-                'Early Time-In Window',
-                _minutesLabel(summary.attendancePolicy['early_clock_in_minutes']),
-              ),
-              (
-                'Extra Minutes Before Late',
-                _minutesLabel(summary.attendancePolicy['on_time_grace_minutes']),
-              ),
-              (
-                'Minimum Worked Shift (%)',
-                '${summary.attendancePolicy['absent_threshold_percent'] ?? '—'}%',
-              ),
-              (
-                'Minimum Overtime',
-                _minutesLabel(
-                  summary.attendancePolicy['overtime_minimum_minutes'],
+            child: _FactPanel(
+              rows: [
+                (
+                  'Time-In Settings',
+                  summary.attendancePolicy.isEmpty
+                      ? 'Not configured'
+                      : 'Configured',
                 ),
-              ),
-              (
-                'Maximum Overtime Duration',
-                _minutesLabel(
-                  summary.attendancePolicy['maximum_overtime_minutes'],
+                (
+                  'Early Time-In Window',
+                  _minutesLabel(summary.attendancePolicy['early_clock_in_minutes']),
                 ),
-              ),
-              (
-                'Work Location Validation Status',
-                _locationValidationLabel(summary.location),
-              ),
-            ],
+                (
+                  'Extra Minutes Before Late',
+                  _minutesLabel(summary.attendancePolicy['on_time_grace_minutes']),
+                ),
+                (
+                  'Minimum Worked Shift (%)',
+                  '${summary.attendancePolicy['absent_threshold_percent'] ?? '—'}%',
+                ),
+                (
+                  'Minimum Overtime',
+                  _minutesLabel(
+                    summary.attendancePolicy['overtime_minimum_minutes'],
+                  ),
+                ),
+                (
+                  'Maximum Overtime Duration',
+                  _minutesLabel(
+                    summary.attendancePolicy['maximum_overtime_minutes'],
+                  ),
+                ),
+                (
+                  'Work Location Validation Status',
+                  _locationValidationLabel(summary.location),
+                ),
+              ],
+            ),
           ),
-          OwnerInfoSection(
+          _SummarySection(
             title: 'Holidays',
-            icon: Icons.event_outlined,
-            skipEmpty: false,
-            rows: [
-              (
-                'Configured Holidays',
-                summary.holidays.isEmpty
-                    ? 'None configured'
-                    : '${summary.holidays.length} holiday'
-                        '${summary.holidays.length == 1 ? '' : 's'}',
-              ),
-            ],
+            child: _FactPanel(
+              rows: [
+                (
+                  'Configured Holidays',
+                  summary.holidays.isEmpty
+                      ? 'None configured'
+                      : '${summary.holidays.length} holiday'
+                          '${summary.holidays.length == 1 ? '' : 's'}',
+                ),
+              ],
+            ),
           ),
-          OwnerInfoSection(
+          _SummarySection(
             title: 'Rest Days',
-            icon: Icons.weekend_outlined,
-            skipEmpty: false,
-            rows: [
-              (
-                'Configured Rest Days',
-                _restDayLabel(summary.restDayPolicy),
-              ),
-            ],
+            child: _FactPanel(
+              rows: [
+                ('Configured Rest Days', _restDayLabel(summary.restDayPolicy)),
+              ],
+            ),
           ),
         ];
       },
@@ -225,18 +205,25 @@ class _SetupSummaryData {
   final Map<String, dynamic> restDayPolicy;
 }
 
-String? _shiftLabel(Map<String, dynamic> shift) {
+String _textOrNotSet(Object? value) {
+  if (value == null) return 'Not set';
+  final text = '$value'.trim();
+  if (text.isEmpty || text == 'null') return 'Not set';
+  return text;
+}
+
+_SummaryItem? _shiftItem(Map<String, dynamic> shift) {
   final name = '${shift['name'] ?? ''}'.trim();
   if (name.isEmpty) return null;
   final start = shift['start_time'];
   final end = shift['end_time'];
   if (start != null && end != null) {
-    return '$name ($start–$end)';
+    return _SummaryItem(name, '$start–$end');
   }
-  return name;
+  return _SummaryItem(name, null);
 }
 
-String? _positionLabel(Map<String, dynamic> position) {
+_SummaryItem? _positionItem(Map<String, dynamic> position) {
   final title = '${position['title'] ?? ''}'.trim();
   if (title.isEmpty) return null;
   final daily = position['daily_rate'];
@@ -244,8 +231,199 @@ String? _positionLabel(Map<String, dynamic> position) {
   final parts = <String>[];
   if (daily != null) parts.add('₱$daily/day');
   if (hourly != null) parts.add('₱$hourly/hr');
-  if (parts.isEmpty) return title;
-  return '$title — ${parts.join(' · ')}';
+  if (parts.isEmpty) return _SummaryItem(title, null);
+  return _SummaryItem(title, parts.join(' · '));
+}
+
+class _SummaryItem {
+  const _SummaryItem(this.name, this.detail);
+
+  final String name;
+  final String? detail;
+}
+
+class _SummarySection extends StatelessWidget {
+  const _SummarySection({required this.title, required this.child});
+
+  final String title;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 22),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: AppColors.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 10),
+          child,
+        ],
+      ),
+    );
+  }
+}
+
+class _BoardCard extends StatelessWidget {
+  const _BoardCard({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: child,
+    );
+  }
+}
+
+class _FactPanel extends StatelessWidget {
+  const _FactPanel({required this.rows});
+
+  final List<(String, String)> rows;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        for (var i = 0; i < rows.length; i++) ...[
+          if (i > 0) const SizedBox(height: 8),
+          _BoardCard(child: _Fact(label: rows[i].$1, value: rows[i].$2)),
+        ],
+      ],
+    );
+  }
+}
+
+class _Fact extends StatelessWidget {
+  const _Fact({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  bool get _isStatus =>
+      label == 'Business Status' ||
+      label == 'Work Location Validation' ||
+      label == 'Work Location Validation Status' ||
+      label == 'Time-In Settings';
+
+  bool get _missing =>
+      value == 'Not set' ||
+      value == 'Not configured' ||
+      value == 'None configured' ||
+      value == 'No job roles with daily pay yet' ||
+      value == '—%';
+
+  @override
+  Widget build(BuildContext context) {
+    final positive = value == 'Enabled' || value == 'Configured';
+    final Color valueColor;
+    if (_isStatus && positive) {
+      valueColor = SetupUi.navyOf(context);
+    } else if (_missing || _isStatus) {
+      valueColor = AppColors.textMuted;
+    } else {
+      valueColor = AppColors.textPrimary;
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w400,
+            height: 1.3,
+            color: AppColors.textMuted,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          value,
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: _missing ? FontWeight.w400 : FontWeight.w500,
+            height: 1.35,
+            color: valueColor,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ItemList extends StatelessWidget {
+  const _ItemList({required this.items, required this.emptyLabel});
+
+  final List<_SummaryItem> items;
+  final String emptyLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    if (items.isEmpty) {
+      return _BoardCard(
+        child: Text(
+          emptyLabel,
+          style: const TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w400,
+            color: AppColors.textMuted,
+          ),
+        ),
+      );
+    }
+
+    return Column(
+      children: [
+        for (var i = 0; i < items.length; i++) ...[
+          if (i > 0) const SizedBox(height: 8),
+          _BoardCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  items[i].name,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                    height: 1.3,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                if (items[i].detail != null) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    items[i].detail!,
+                    style: const TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w400,
+                      height: 1.35,
+                      color: AppColors.textMuted,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ],
+    );
+  }
 }
 
 String _radiusLabel(Object? radius) {

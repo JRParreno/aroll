@@ -12,8 +12,30 @@ from app.core.config import settings
 logger = logging.getLogger("aroll.reminders")
 
 
+def _sync_official_consent_defaults() -> None:
+    """Copy version-controlled consent defaults into unedited platform rows.
+
+    Does not delete data, does not touch acceptance history, and does not
+    replace a platform document an administrator has already edited.
+    """
+    from app.db.session import SessionLocal
+    from app.services.legal_consent import ensure_platform_legal_defaults
+
+    db = SessionLocal()
+    try:
+        ensure_platform_legal_defaults(db)
+        db.commit()
+    except Exception:
+        db.rollback()
+        logger.exception("official consent default sync failed")
+    finally:
+        db.close()
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    if not os.environ.get("PYTEST_CURRENT_TEST"):
+        _sync_official_consent_defaults()
     stop = asyncio.Event()
     task: asyncio.Task | None = None
     if settings.schedule_reminder_loop_enabled and not os.environ.get(

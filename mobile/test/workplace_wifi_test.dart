@@ -6,7 +6,8 @@ import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  test('a geofence failure log names the rejection and does not claim a save', () {
+  test('a geofence failure log names the rejection and does not claim a save',
+      () {
     final line = geofenceFailureDiagnosticLine(
       action: 'time_in',
       worksiteLatitude: 13.2946150,
@@ -53,11 +54,15 @@ void main() {
 
   test('disabled worksite does not read Wi-Fi', () async {
     final reader = _CountingReader(
-      const WorkplaceWifiSnapshot(status: WorkplaceWifiReadStatus.connected, bssid: 'aa:bb:cc:dd:ee:01'),
+      const WorkplaceWifiSnapshot(
+          status: WorkplaceWifiReadStatus.connected,
+          bssid: 'aa:bb:cc:dd:ee:01'),
     );
     final attempt = WorkplaceWifiAttempt(reader);
-    final first = await attempt.observedBssid(verificationEnabled: false, isAndroid: true);
-    final second = await attempt.observedBssid(verificationEnabled: false, isAndroid: true);
+    final first = await attempt.observedBssid(
+        verificationEnabled: false, isAndroid: true);
+    final second = await attempt.observedBssid(
+        verificationEnabled: false, isAndroid: true);
     expect(first, isNull);
     expect(second, isNull);
     expect(reader.calls, 0);
@@ -72,15 +77,18 @@ void main() {
       ),
     );
     final attempt = WorkplaceWifiAttempt(reader);
-    final first = await attempt.observedBssid(verificationEnabled: true, isAndroid: true);
-    final second = await attempt.observedBssid(verificationEnabled: true, isAndroid: true);
+    final first =
+        await attempt.observedBssid(verificationEnabled: true, isAndroid: true);
+    final second =
+        await attempt.observedBssid(verificationEnabled: true, isAndroid: true);
     expect(first, 'aa:bb:cc:dd:ee:01');
     expect(second, first);
     expect(reader.calls, 1);
     expect(attempt.readCount, 1);
   });
 
-  test('a different usable BSSID is still sent for the server to reject', () async {
+  test('a different usable BSSID is still sent for the server to reject',
+      () async {
     final value = bssidToSubmit(
       const WorkplaceWifiSnapshot(
         status: WorkplaceWifiReadStatus.connected,
@@ -118,6 +126,155 @@ void main() {
     expect(normalizeBssid('not-a-mac'), isNull);
   });
 
+  test('a missing BSSID keeps a valid RSSI and is not a total failure', () {
+    final hidden = snapshotFromChannel({
+      'status': 'connected',
+      'ssid': 'Cafe',
+      'bssid': '02:00:00:00:00:00',
+      'rssi_dbm': '-70',
+    });
+    expect(hidden.status, WorkplaceWifiReadStatus.bssidUnavailable);
+    expect(hidden.bssid, isNull);
+    expect(hidden.rssiDbm, -70);
+    expect(bssidToSubmit(hidden), isNull);
+    expect(
+      workplaceWifiReadMessage(hidden.status),
+      isNot('The connected Wi-Fi could not be read. Try again.'),
+    );
+
+    final reported = snapshotFromChannel({
+      'status': 'bssid_unavailable',
+      'ssid': 'Cafe',
+      'rssi_dbm': '-75',
+    });
+    expect(reported.status, WorkplaceWifiReadStatus.bssidUnavailable);
+    expect(reported.rssiDbm, -75);
+    expect(
+      workplaceWifiReadMessage(reported.status),
+      contains('did not share the network address'),
+    );
+
+    final locationOff = snapshotFromChannel({
+      'status': 'location_disabled',
+      'bssid': '02:00:00:00:00:00',
+      'rssi_dbm': '-65',
+    });
+    expect(locationOff.status, WorkplaceWifiReadStatus.locationDisabled);
+    expect(locationOff.bssid, isNull);
+    expect(locationOff.rssiDbm, -65);
+  });
+
+  test(
+      'scan results identify the connected access point only when the match is unique',
+      () {
+    final unique = snapshotFromChannel({
+      'status': 'bssid_unavailable',
+      'ssid': '"Cafe"',
+      'bssid': '02:00:00:00:00:00',
+      'rssi_dbm': '-75',
+      'scans': [
+        {'ssid': 'Cafe', 'bssid': 'AA:BB:CC:DD:EE:10', 'rssi_dbm': '-80'},
+        {'ssid': 'Other', 'bssid': 'AA:BB:CC:DD:EE:11', 'rssi_dbm': '-40'},
+      ],
+    });
+    expect(unique.status, WorkplaceWifiReadStatus.connected);
+    expect(bssidToSubmit(unique), 'aa:bb:cc:dd:ee:10');
+    expect(unique.rssiDbm, -75);
+
+    final sameAddressTwice = reliableConnectedScanMatch(
+      connectedSsid: 'Cafe',
+      scans: const [
+        WifiScanObservation(
+            ssid: 'Cafe', bssid: 'AA-BB-CC-DD-EE-10', rssiDbm: -80),
+        WifiScanObservation(
+            ssid: '"Cafe"', bssid: 'aa:bb:cc:dd:ee:10', rssiDbm: -40),
+      ],
+    );
+    expect(sameAddressTwice?.bssid, 'aa:bb:cc:dd:ee:10');
+    expect(sameAddressTwice?.rssiDbm, -40);
+
+    final mesh = snapshotFromChannel({
+      'status': 'bssid_unavailable',
+      'ssid': 'Cafe',
+      'rssi_dbm': '-75',
+      'scans': [
+        {'ssid': 'Cafe', 'bssid': 'aa:bb:cc:dd:ee:10', 'rssi_dbm': '-80'},
+        {'ssid': 'Cafe', 'bssid': 'aa:bb:cc:dd:ee:11', 'rssi_dbm': '-70'},
+      ],
+    });
+    expect(mesh.status, WorkplaceWifiReadStatus.bssidUnavailable);
+    expect(mesh.bssid, isNull);
+    expect(mesh.rssiDbm, -75);
+    expect(bssidToSubmit(mesh), isNull);
+
+    final neighbor = snapshotFromChannel({
+      'status': 'bssid_unavailable',
+      'ssid': 'Cafe',
+      'rssi_dbm': '-70',
+      'scans': [
+        {'ssid': 'Neighbor', 'bssid': 'aa:bb:cc:dd:ee:22', 'rssi_dbm': '-40'},
+      ],
+    });
+    expect(neighbor.bssid, isNull);
+    expect(neighbor.rssiDbm, -70);
+
+    final unknown = snapshotFromChannel({
+      'status': 'bssid_unavailable',
+      'ssid': '<unknown ssid>',
+      'rssi_dbm': '-60',
+      'scans': [
+        {'ssid': 'Cafe', 'bssid': 'aa:bb:cc:dd:ee:10', 'rssi_dbm': '-60'},
+      ],
+    });
+    expect(unknown.bssid, isNull);
+    expect(unknown.rssiDbm, -60);
+
+    final placeholderScan = snapshotFromChannel({
+      'status': 'connected',
+      'ssid': 'Cafe',
+      'scans': [
+        {'ssid': 'Cafe', 'bssid': '02:00:00:00:00:00', 'rssi_dbm': '-40'},
+        {'ssid': 'Cafe', 'bssid': '00:00:00:00:00:00', 'rssi_dbm': '-40'},
+      ],
+    });
+    expect(placeholderScan.bssid, isNull);
+    expect(placeholderScan.status, WorkplaceWifiReadStatus.bssidUnavailable);
+
+    final direct = snapshotFromChannel({
+      'status': 'connected',
+      'ssid': 'Cafe',
+      'bssid': 'aa:bb:cc:dd:ee:01',
+      'rssi_dbm': '-50',
+      'scans': [
+        {'ssid': 'Cafe', 'bssid': 'aa:bb:cc:dd:ee:99', 'rssi_dbm': '-30'},
+      ],
+    });
+    expect(bssidToSubmit(direct), 'aa:bb:cc:dd:ee:01');
+    expect(direct.rssiDbm, -50);
+
+    expect(
+      reliableConnectedScanMatch(
+        connectedSsid: 'Cafe',
+        scans: const [
+          WifiScanObservation(
+              ssid: 'cafe', bssid: 'aa:bb:cc:dd:ee:10', rssiDbm: -40),
+        ],
+      ),
+      isNull,
+    );
+  });
+
+  test('phones below Android 11 are reported separately', () {
+    final snapshot = snapshotFromChannel({'status': 'android_too_old'});
+    expect(snapshot.status, WorkplaceWifiReadStatus.androidTooOld);
+    expect(snapshot.bssid, isNull);
+    expect(bssidToSubmit(snapshot), isNull);
+    expect(
+      workplaceWifiReadMessage(snapshot.status),
+      'This phone must be running Android 11 or later to read the connected Wi-Fi.',
+    );
+  });
+
   test('connected RSSI is parsed and an invalid reading is omitted', () {
     final strong = snapshotFromChannel({
       'status': 'connected',
@@ -140,9 +297,12 @@ void main() {
     expect(parseRssiDbm(0), isNull);
     expect(rssiMeetsMinimum(observedRssiDbm: -40, minimumRssiDbm: -50), isTrue);
     expect(rssiMeetsMinimum(observedRssiDbm: -50, minimumRssiDbm: -50), isTrue);
-    expect(rssiMeetsMinimum(observedRssiDbm: -51, minimumRssiDbm: -50), isFalse);
-    expect(rssiMeetsMinimum(observedRssiDbm: null, minimumRssiDbm: -50), isFalse);
-    expect(rssiMeetsMinimum(observedRssiDbm: null, minimumRssiDbm: null), isTrue);
+    expect(
+        rssiMeetsMinimum(observedRssiDbm: -51, minimumRssiDbm: -50), isFalse);
+    expect(
+        rssiMeetsMinimum(observedRssiDbm: null, minimumRssiDbm: -50), isFalse);
+    expect(
+        rssiMeetsMinimum(observedRssiDbm: null, minimumRssiDbm: null), isTrue);
     expect(parseConfiguredMinimumRssi(''), isNull);
     expect(parseConfiguredMinimumRssi('-50'), -50);
     expect(configuredMinimumRssiTextIsValid('-19'), isFalse);
@@ -151,10 +311,14 @@ void main() {
 
   test('saved RSSI thresholds map to presets, custom values, or off', () {
     expect(rssiThresholdChoiceFromSaved(null).preset, RssiThresholdPreset.off);
-    expect(rssiThresholdChoiceFromSaved(-40).preset, RssiThresholdPreset.veryStrong);
-    expect(rssiThresholdChoiceFromSaved(-50).preset, RssiThresholdPreset.strong);
-    expect(rssiThresholdChoiceFromSaved(-60).preset, RssiThresholdPreset.moderate);
-    expect(rssiThresholdChoiceFromSaved(-70).preset, RssiThresholdPreset.relaxed);
+    expect(rssiThresholdChoiceFromSaved(-40).preset,
+        RssiThresholdPreset.veryStrong);
+    expect(
+        rssiThresholdChoiceFromSaved(-50).preset, RssiThresholdPreset.strong);
+    expect(
+        rssiThresholdChoiceFromSaved(-60).preset, RssiThresholdPreset.moderate);
+    expect(
+        rssiThresholdChoiceFromSaved(-70).preset, RssiThresholdPreset.relaxed);
     final custom = rssiThresholdChoiceFromSaved(-55);
     expect(custom.preset, RssiThresholdPreset.custom);
     expect(custom.customText, '-55');
@@ -189,7 +353,8 @@ void main() {
       rssiThresholdSelectionIsValid(RssiThresholdPreset.custom, 'strong'),
       isFalse,
     );
-    expect(() => rssiThresholdValueToSave(RssiThresholdPreset.custom, ''), throwsFormatException);
+    expect(() => rssiThresholdValueToSave(RssiThresholdPreset.custom, ''),
+        throwsFormatException);
   });
 
   test('channel statuses stay distinct and never invent a BSSID', () {
@@ -262,49 +427,60 @@ void main() {
 
   test('platform exceptions become unavailable', () async {
     final attempt = WorkplaceWifiAttempt(_ThrowingReader());
-    final value = await attempt.observedBssid(verificationEnabled: true, isAndroid: true);
+    final value =
+        await attempt.observedBssid(verificationEnabled: true, isAndroid: true);
     expect(value, isNull);
   });
 
   test('iOS and unsupported platforms skip the read', () async {
     final reader = _CountingReader(
-      const WorkplaceWifiSnapshot(status: WorkplaceWifiReadStatus.connected, bssid: 'aa:bb:cc:dd:ee:01'),
+      const WorkplaceWifiSnapshot(
+          status: WorkplaceWifiReadStatus.connected,
+          bssid: 'aa:bb:cc:dd:ee:01'),
     );
     final attempt = WorkplaceWifiAttempt(reader);
-    final value = await attempt.observedBssid(verificationEnabled: true, isAndroid: false);
+    final value = await attempt.observedBssid(
+        verificationEnabled: true, isAndroid: false);
     expect(value, isNull);
     expect(reader.calls, 0);
     expect(
-      bssidToSubmit(const WorkplaceWifiSnapshot(status: WorkplaceWifiReadStatus.unsupported)),
+      bssidToSubmit(const WorkplaceWifiSnapshot(
+          status: WorkplaceWifiReadStatus.unsupported)),
       isNull,
     );
   });
 
   test('GPS rejection stays authoritative', () {
     expect(
-      gpsAllowsAttendanceAttempt(insideGeofence: false, needsBetterGps: false, mocked: false),
+      gpsAllowsAttendanceAttempt(
+          insideGeofence: false, needsBetterGps: false, mocked: false),
       isFalse,
     );
     expect(
-      gpsAllowsAttendanceAttempt(insideGeofence: true, needsBetterGps: true, mocked: false),
+      gpsAllowsAttendanceAttempt(
+          insideGeofence: true, needsBetterGps: true, mocked: false),
       isFalse,
     );
     expect(
-      gpsAllowsAttendanceAttempt(insideGeofence: true, needsBetterGps: false, mocked: true),
+      gpsAllowsAttendanceAttempt(
+          insideGeofence: true, needsBetterGps: false, mocked: true),
       isFalse,
     );
   });
 
   test('Wi-Fi mismatch asks the employee to retry and is not a success', () {
     final error = DioException(
-      requestOptions: RequestOptions(path: '/employee/attendance/clock-in-face'),
+      requestOptions:
+          RequestOptions(path: '/employee/attendance/clock-in-face'),
       response: Response(
-        requestOptions: RequestOptions(path: '/employee/attendance/clock-in-face'),
+        requestOptions:
+            RequestOptions(path: '/employee/attendance/clock-in-face'),
         statusCode: 409,
         data: {
           'detail': {
             'code': 'workplace_wifi_mismatch',
-            'message': 'Connect to the workplace Wi-Fi registered by your employer, then try again.',
+            'message':
+                'Connect to the workplace Wi-Fi registered by your employer, then try again.',
           },
         },
       ),
@@ -384,7 +560,8 @@ void main() {
     expect(gps.locationEvidence, 'gps');
   });
 
-  test('outside and missing fixes under 20 m offer Wi-Fi, and 20 m does not', () {
+  test('outside and missing fixes under 20 m offer Wi-Fi, and 20 m does not',
+      () {
     final outside = decideAttendanceLocation(
       demo: false,
       radiusM: 8,
@@ -522,7 +699,8 @@ void main() {
     );
     expect(
       bssidToSubmit(
-        const WorkplaceWifiSnapshot(status: WorkplaceWifiReadStatus.permissionDenied),
+        const WorkplaceWifiSnapshot(
+            status: WorkplaceWifiReadStatus.permissionDenied),
       ),
       isNull,
     );
@@ -556,9 +734,11 @@ void main() {
 
   test('existing GPS rejection copy is unchanged', () {
     final error = DioException(
-      requestOptions: RequestOptions(path: '/employee/attendance/clock-in-face'),
+      requestOptions:
+          RequestOptions(path: '/employee/attendance/clock-in-face'),
       response: Response(
-        requestOptions: RequestOptions(path: '/employee/attendance/clock-in-face'),
+        requestOptions:
+            RequestOptions(path: '/employee/attendance/clock-in-face'),
         statusCode: 403,
         data: {
           'detail': {'code': 'outside_geofence', 'message': 'outside'},
