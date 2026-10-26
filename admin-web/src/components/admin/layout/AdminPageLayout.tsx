@@ -1,7 +1,7 @@
 import { cn } from "@/lib/utils";
 
 export const adminPageContentClassName =
-  "mx-auto w-full max-w-6xl space-y-7 px-5 py-6 sm:px-8 sm:py-8";
+  "mx-auto w-full min-w-0 max-w-6xl space-y-5 px-4 py-4 sm:space-y-7 sm:px-8 sm:py-8";
 
 type AdminPageProps = {
   children: React.ReactNode;

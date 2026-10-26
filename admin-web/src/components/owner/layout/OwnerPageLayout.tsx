@@ -4,7 +4,7 @@ import { OwnerNotificationBell } from "@/components/owner/OwnerNotificationBell"
 import { cn } from "@/lib/utils";
 
 export const ownerPageContentClassName =
-  "mx-auto w-full max-w-6xl space-y-6 px-5 py-6 sm:px-8 sm:py-8";
+  "mx-auto w-full min-w-0 max-w-6xl space-y-5 px-4 py-4 sm:space-y-6 sm:px-8 sm:py-8";
 
 type OwnerPageBackLinkProps = {
   to: string;

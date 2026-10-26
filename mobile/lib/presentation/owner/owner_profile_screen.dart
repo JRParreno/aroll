@@ -368,6 +368,14 @@ class _OwnerProfileScreenState extends State<OwnerProfileScreen> {
                                                   '/owner/settings',
                                                 ),
                                               ),
+                                              _MenuItemData(
+                                                icon: Icons
+                                                    .support_agent_outlined,
+                                                label: 'Help',
+                                                onTap: () => context.push(
+                                                  '/owner/settings/help',
+                                                ),
+                                              ),
                                             ],
                                           ),
                                           const SizedBox(height: 10),

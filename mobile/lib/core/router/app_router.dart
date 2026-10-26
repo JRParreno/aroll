@@ -39,6 +39,7 @@ import 'package:aroll_mobile/presentation/owner/owner_audit_history_screen.dart'
 import 'package:aroll_mobile/presentation/owner/owner_business_information_screen.dart';
 import 'package:aroll_mobile/presentation/owner/owner_business_setup_summary_screen.dart';
 import 'package:aroll_mobile/presentation/owner/owner_profile_screen.dart';
+import 'package:aroll_mobile/presentation/owner/owner_help_screen.dart';
 import 'package:aroll_mobile/presentation/owner/owner_leave_policy_screen.dart';
 import 'package:aroll_mobile/presentation/owner/owner_consent_configuration_screen.dart';
 import 'package:aroll_mobile/presentation/owner/owner_settings_screen.dart';
@@ -574,6 +575,11 @@ GoRouter createAppRouter(AppState appState) {
             path: 'audit-history',
             pageBuilder: (context, state) =>
                 _fadePage(state, const OwnerAuditHistoryScreen()),
+          ),
+          GoRoute(
+            path: 'help',
+            pageBuilder: (context, state) =>
+                _fadePage(state, const OwnerHelpScreen()),
           ),
         ],
       ),

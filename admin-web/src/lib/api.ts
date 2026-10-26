@@ -538,6 +538,22 @@ export async function getMe() {
   return data;
 }
 
+export type OwnerSupportEmailResponse = {
+  status: string;
+  detail: string;
+};
+
+export async function sendOwnerSupportEmail(payload: {
+  subject: string;
+  message: string;
+}) {
+  const { data } = await api.post<OwnerSupportEmailResponse>(
+    "/owner/support-email",
+    payload
+  );
+  return data;
+}
+
 export async function changePassword(
   current_password: string,
   new_password: string

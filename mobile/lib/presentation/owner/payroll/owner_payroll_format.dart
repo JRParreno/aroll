@@ -1,8 +1,15 @@
 import 'package:aroll_mobile/core/utils/format.dart';
+import 'package:aroll_mobile/presentation/shared/shift_history_grouping.dart';
 import 'package:intl/intl.dart';
 
 /// Formats [value] as Philippine pesos. Delegates to [formatPeso].
 String ownerPayrollMoney(num value) => formatPeso(value);
+
+/// Late-minute label. The peso deduction stays a separate API amount.
+String ownerLateDeductionLabel(num minutes, num ratePerMinute) {
+  if (minutes <= 0) return 'Late Deduction';
+  return 'Late (${formatMinuteCount(minutes)} min × ₱${ratePerMinute.toStringAsFixed(2)})';
+}
 
 /// Salary rate from pay_basis (+ rates). Delegates to [formatSalaryRate].
 String ownerSalaryRate(Map<String, dynamic>? payload) {

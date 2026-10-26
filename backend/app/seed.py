@@ -41,40 +41,62 @@ def sync_owner_passwords() -> int:
         db.close()
 
 
+def seed_platform_admin() -> None:
+    """Create the platform admin and legal defaults without demo tenants.
+
+    Schema must already exist from Alembic. This does not load Demo Café or
+    Dev Lab. The initial password is the development default and must be
+    changed before the server is shared.
+    """
+    db = SessionLocal()
+    try:
+        _ensure_platform_admin(db)
+        from app.services.legal_consent import ensure_platform_legal_defaults
+
+        ensure_platform_legal_defaults(db)
+        db.commit()
+        print("Seeded platform legal defaults")
+    finally:
+        db.close()
+
+
+def _ensure_platform_admin(db) -> None:
+    admin_email = "admin@example.com"
+    admin = (
+        db.query(User)
+        .filter(User.role == UserRole.platform_admin)
+        .first()
+    )
+    legacy = (
+        db.query(User)
+        .filter(User.email == "admin@aroll.test", User.role == UserRole.platform_admin)
+        .first()
+    )
+    if legacy is not None:
+        legacy.email = admin_email
+        db.commit()
+        print(f"Migrated platform admin email to {admin_email}")
+    elif admin is None:
+        db.add(
+            User(
+                email=admin_email,
+                password_hash=hash_password("changeme123"),
+                role=UserRole.platform_admin,
+                business_id=None,
+                must_change_password=False,
+            )
+        )
+        db.commit()
+        print(f"Seeded platform admin: {admin_email} / changeme123")
+    else:
+        print(f"Platform admin already exists: {admin.email}")
+
+
 def seed():
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
     try:
-        admin_email = "admin@example.com"
-        admin = (
-            db.query(User)
-            .filter(User.role == UserRole.platform_admin)
-            .first()
-        )
-        legacy = (
-            db.query(User)
-            .filter(User.email == "admin@aroll.test", User.role == UserRole.platform_admin)
-            .first()
-        )
-        if legacy is not None:
-            legacy.email = admin_email
-            db.commit()
-            print(f"Migrated platform admin email to {admin_email}")
-        elif admin is None:
-            db.add(
-                User(
-                    email=admin_email,
-                    password_hash=hash_password("changeme123"),
-                    role=UserRole.platform_admin,
-                    business_id=None,
-                    must_change_password=False,
-                )
-            )
-            db.commit()
-            print(f"Seeded platform admin: {admin_email} / changeme123")
-        else:
-            print(f"Platform admin already exists: {admin.email}")
-
+        _ensure_platform_admin(db)
         from app.services.legal_consent import ensure_platform_legal_defaults
 
         ensure_platform_legal_defaults(db)
@@ -124,7 +146,12 @@ def reset_owner_login(email: str) -> bool:
 
 
 if __name__ == "__main__":
-    seed()
-    count = sync_owner_passwords()
-    if count:
-        print(f"Synced {count} owner password(s) to business code")
+    import sys
+
+    if "--admin-only" in sys.argv:
+        seed_platform_admin()
+    else:
+        seed()
+        count = sync_owner_passwords()
+        if count:
+            print(f"Synced {count} owner password(s) to business code")

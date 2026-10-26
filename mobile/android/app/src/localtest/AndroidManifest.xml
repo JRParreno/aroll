@@ -1,0 +1,8 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <!-- Installed beside the release app. HTTP is limited to this flavor. -->
+    <application
+        android:usesCleartextTraffic="true"
+        android:label="Aroll+ Local"
+        tools:replace="android:label,android:usesCleartextTraffic" />
+</manifest>

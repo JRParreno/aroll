@@ -1,5 +1,5 @@
 ﻿import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Download, Pencil, Plus, Search, Trash2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -43,6 +43,12 @@ import {
 } from "@/lib/salaryRate";
 import { downloadPayrollSummaryPdf } from "@/lib/payrollSummaryPdf";
 import { downloadStandardPayslipPdf } from "@/lib/standardPayslipPdf";
+import {
+  canOpenNextPayPeriod,
+  nextPeriodAsOf,
+  previousPeriodAsOf,
+} from "@/lib/payPeriodNavigation";
+import { latePayslipLabel } from "@/lib/shiftHistoryPayBreakdown";
 
 /** Unicode punctuation — avoids mojibake when source files are not UTF-8. */
 const PAYSLIP_SEP = "\u00B7";
@@ -90,18 +96,24 @@ function overtimeHoursLabel(item: {
   return `${hours.toFixed(2)} hrs`;
 }
 
-function asOfForMonth(year: number, month: number) {
-  const lastDay = new Date(year, month, 0).getDate();
-  const day = Math.min(new Date().getDate(), lastDay);
-  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+function todayIso() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+}
+
+function formatPeriodDate(iso: string) {
+  const [year, month, day] = iso.slice(0, 10).split("-").map(Number);
+  return new Date(year, month - 1, day).toLocaleDateString("en-PH", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
 }
 
 export function OwnerPayrollPage() {
-  const now = new Date();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
-  const [selectedYear, setSelectedYear] = useState(now.getFullYear());
-  const [selectedMonth, setSelectedMonth] = useState(now.getMonth() + 1);
+  const [asOf, setAsOf] = useState(todayIso);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null);
   const [editingAdjustment, setEditingAdjustment] =
     useState<PayrollAdjustment | null>(null);
@@ -120,7 +132,6 @@ export function OwnerPayrollPage() {
     deductionsColor: "#FECACA",
     netColor: "#BBF7D0",
   });
-  const asOf = asOfForMonth(selectedYear, selectedMonth);
   const { data: me } = useQuery({
     queryKey: ME_QUERY_KEY,
     queryFn: getMe,
@@ -185,6 +196,11 @@ export function OwnerPayrollPage() {
     data?.unresolved_historical_rate_count ?? 0;
   const canFinalize = Boolean(data?.can_finalize);
   const isFinalized = Boolean(data?.is_finalized);
+  const canGoNext = canOpenNextPayPeriod(data?.payroll_status);
+  const periodLabel =
+    data?.period_start && data?.period_end
+      ? `${formatPeriodDate(data.period_start)} – ${formatPeriodDate(data.period_end)}`
+      : null;
 
   async function downloadSummary() {
     if (downloadingSummary) return;
@@ -298,48 +314,59 @@ export function OwnerPayrollPage() {
               </p>
             </div>
           </div>
-          <div className="grid gap-3 lg:grid-cols-[1fr_auto_auto_auto_auto_auto]">
+          <div className="flex flex-col gap-3">
             <div className="relative">
               <Search className="absolute left-3 top-2.5 h-4 w-4 text-[#9CA3AF]" />
               <Input className="h-10 pl-9" placeholder="Search employee" value={search} onChange={(e) => setSearch(e.target.value)} />
             </div>
-            <select
-              className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm"
-              value={selectedMonth}
-              onChange={(e) => setSelectedMonth(Number(e.target.value))}
-            >
-              {[
-                "January",
-                "February",
-                "March",
-                "April",
-                "May",
-                "June",
-                "July",
-                "August",
-                "September",
-                "October",
-                "November",
-                "December",
-              ].map((label, index) => (
-                <option key={label} value={index + 1}>
-                  {label}
-                </option>
-              ))}
-            </select>
-            <select
-              className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm"
-              value={selectedYear}
-              onChange={(e) => setSelectedYear(Number(e.target.value))}
-            >
-              {Array.from({ length: 5 }, (_, i) => now.getFullYear() - i).map(
-                (year) => (
-                  <option key={year} value={year}>
-                    {year}
-                  </option>
-                )
-              )}
-            </select>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <div className="flex min-w-0 flex-1 items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-10 shrink-0 gap-1 rounded-xl px-3"
+                  disabled={isLoading || !data?.period_start}
+                  onClick={() => {
+                    if (data?.period_start) {
+                      setAsOf(previousPeriodAsOf(data.period_start));
+                    }
+                  }}
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                  Previous
+                </Button>
+                <p className="min-w-0 flex-1 truncate text-center text-sm font-medium text-[#1F2937]">
+                  {periodLabel ?? "Pay period"}
+                </p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-10 shrink-0 gap-1 rounded-xl px-3"
+                  disabled={isLoading || !data?.period_end || !canGoNext}
+                  onClick={() => {
+                    if (data?.period_end && canGoNext) {
+                      setAsOf(nextPeriodAsOf(data.period_end));
+                    }
+                  }}
+                >
+                  Next
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+              <label className="flex min-w-0 flex-col gap-1 text-xs font-medium text-[#6B7280] sm:w-40">
+                Jump to date
+                <Input
+                  type="date"
+                  className="h-10"
+                  value={asOf}
+                  max={todayIso()}
+                  onChange={(e) => {
+                    if (e.target.value) setAsOf(e.target.value);
+                  }}
+                />
+              </label>
+            </div>
+            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
             <Button
               type="button"
               variant="outline"
@@ -392,11 +419,12 @@ export function OwnerPayrollPage() {
                   : "Unfinalize Payroll"}
               </Button>
             ) : null}
+            </div>
           </div>
           {data?.period_start && data?.period_end ? (
-            <div className="mt-3 inline-flex items-center gap-2 rounded-xl bg-[var(--owner-well)] px-3 py-2 text-xs font-medium text-[var(--owner-navy)]">
-              <span>
-                Period {data.period_start} to {data.period_end}
+            <div className="mt-3 inline-flex max-w-full items-center gap-2 rounded-xl bg-[var(--owner-well)] px-3 py-2 text-xs font-medium text-[var(--owner-navy)]">
+              <span className="min-w-0 break-words">
+                Period {formatPeriodDate(data.period_start)} to {formatPeriodDate(data.period_end)}
                 {data.payroll_status ? ` ${PAYSLIP_SEP} ${data.payroll_status}` : ""}
                 {isFinalized ? ` ${PAYSLIP_SEP} finalized` : ""}
               </span>
@@ -449,7 +477,9 @@ export function OwnerPayrollPage() {
             <p className="text-sm text-[#6B7280]">Loading payroll...</p>
           ) : items.length === 0 ? (
             <div className="owner-empty">
-              No payroll records found.
+              {(data?.items.length ?? 0) === 0
+                ? "No payroll records for this pay period."
+                : "No employees match this search."}
             </div>
           ) : (
             items.map((item) => {
@@ -1034,13 +1064,10 @@ function PayslipPreview({
 
       <Section title={settings.deductionsSection} color={settings.deductionsColor}>
         <Row
-          label={
-            payslip.late_minutes
-              ? `Late (${Number(payslip.late_minutes).toFixed(0)} min × ₱${Number(
-                  payslip.late_deduction_per_minute ?? 0
-                ).toFixed(2)})`
-              : "Late Deduction"
-          }
+          label={latePayslipLabel(
+            payslip.late_minutes,
+            payslip.late_deduction_per_minute
+          )}
           value={moneyOrPending(
             payslip.late_deductions ?? 0,
             isUnfinalizedPending(payslip)

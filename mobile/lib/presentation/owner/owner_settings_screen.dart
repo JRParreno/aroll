@@ -65,6 +65,12 @@ const ownerSettingsEntries = [
     icon: Icons.fact_check_outlined,
     route: '/owner/settings/setup-summary',
   ),
+  OwnerSettingsEntry(
+    label: 'Help',
+    subtitle: 'Contact support about a problem with your business account.',
+    icon: Icons.support_agent_outlined,
+    route: '/owner/settings/help',
+  ),
 ];
 
 class OwnerSettingsScreen extends StatelessWidget {

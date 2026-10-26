@@ -33,6 +33,18 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    flavorDimensions += "env"
+    productFlavors {
+        create("prod") {
+            dimension = "env"
+            applicationId = "ph.edu.bicol.aroll"
+        }
+        create("localtest") {
+            dimension = "env"
+            applicationId = "ph.edu.bicol.aroll.localtest"
+        }
+    }
+
     signingConfigs {
         if (hasReleaseKeystore) {
             create("release") {

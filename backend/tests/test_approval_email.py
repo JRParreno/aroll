@@ -295,6 +295,14 @@ def test_smtp_configured_requires_password_when_username_set(monkeypatch):
     assert smtp_configured() is False
     monkeypatch.setattr(settings, "smtp_password", "smtp-secret")
     assert smtp_configured() is True
+    monkeypatch.setattr(settings, "smtp_username", "")
+    assert smtp_configured() is False
+    monkeypatch.setattr(settings, "smtp_username", "smtp-user")
+    monkeypatch.setattr(settings, "smtp_use_tls", False)
+    monkeypatch.setattr(settings, "smtp_use_ssl", False)
+    assert smtp_configured() is False
+    monkeypatch.setattr(settings, "smtp_use_ssl", True)
+    assert smtp_configured() is True
 
 
 def test_smtp_settings_rereads_env_file_outside_pytest(monkeypatch):

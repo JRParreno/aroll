@@ -1,4 +1,5 @@
 import 'package:aroll_mobile/core/network/api_client.dart';
+import 'package:aroll_mobile/data/owner_support_email.dart';
 import 'package:dio/dio.dart';
 import 'package:image_picker/image_picker.dart';
 
@@ -1020,6 +1021,17 @@ class OwnerRepository {
       data: formData,
     );
   }
+
+  Future<Map<String, dynamic>> sendOwnerSupportEmail({
+    required String subject,
+    required String message,
+  }) async =>
+      (await _api.dio.post<Map<String, dynamic>>(
+        '/owner/support-email',
+        data: ownerSupportEmailRequest(subject: subject, message: message),
+      ))
+          .data ??
+      const {};
 
   Future<Map<String, dynamic>> submitRegistration(String registrationId) async =>
       (await _api.dio.post<Map<String, dynamic>>(

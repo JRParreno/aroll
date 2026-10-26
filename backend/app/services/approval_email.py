@@ -36,16 +36,27 @@ class ApprovalEmailConfigError(Exception):
     """SMTP settings are missing."""
 
 
+def _single_line_header(value: str) -> str:
+    text = (value or "").strip()
+    if not text or any(char in text for char in ("\r", "\n", "\x00")):
+        raise ValueError("email header rejected")
+    return text
+
+
 def smtp_configured() -> bool:
+    """True when authenticated SMTP can run over TLS or SSL.
+
+    Host and sender are not enough. A username without a password, or a
+    connection that would send credentials in cleartext, stays disabled.
+    """
     current = smtp_settings()
     host = (current.smtp_host or "").strip()
     from_email = (current.smtp_from_email or "").strip()
-    if not host or not from_email:
-        return False
     username = (current.smtp_username or "").strip()
-    if username and not (current.smtp_password or "").strip():
+    password = (current.smtp_password or "").strip()
+    if not host or not from_email or not username or not password:
         return False
-    return True
+    return bool(current.smtp_use_tls or current.smtp_use_ssl)
 
 
 def owner_login_url() -> str:
@@ -227,15 +238,28 @@ def send_rejection_message(registration: BusinessRegistration) -> str:
     return recipient
 
 
-def send_message(to_email: str, subject: str, text_body: str, html_body: str) -> None:
-    """Deliver one message through SMTP. Tests may replace this function."""
+def send_message(
+    to_email: str,
+    subject: str,
+    text_body: str,
+    html_body: str,
+    *,
+    reply_to: str | None = None,
+) -> None:
+    """Deliver one message through SMTP. Tests may replace this function.
+
+    A successful return means the SMTP server accepted the message. It does
+    not prove the recipient's inbox received it.
+    """
     if not smtp_configured():
         raise ApprovalEmailConfigError(_SAFE_CONFIG_ERROR)
     current = smtp_settings()
     message = EmailMessage()
-    message["Subject"] = subject
-    message["From"] = current.smtp_from_email.strip()
-    message["To"] = to_email
+    message["Subject"] = _single_line_header(subject)
+    message["From"] = _single_line_header(current.smtp_from_email)
+    message["To"] = _single_line_header(to_email)
+    if reply_to:
+        message["Reply-To"] = _single_line_header(reply_to)
     message.set_content(text_body)
     message.add_alternative(html_body, subtype="html")
 

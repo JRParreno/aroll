@@ -4,6 +4,11 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { AlertCircle } from "lucide-react";
 import { toast } from "sonner";
 import { formatDateTime, StatusBadge } from "@/components/detail/DetailLayout";
+import {
+  PublicPage,
+  publicFieldClass,
+  publicPrimaryButtonClass,
+} from "@/components/marketing/PublicPage";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -67,7 +72,7 @@ function DocumentUploadField({
         id={id}
         type="file"
         accept={ACCEPTED_FILE_TYPES}
-        className="cursor-pointer"
+        className={`${publicFieldClass} cursor-pointer`}
         onChange={(e) => {
           const selected = e.target.files?.[0] ?? null;
           if (selected && !isAcceptedFile(selected)) {
@@ -177,8 +182,8 @@ export function RejectedApplicationPage() {
 
   if (!email) {
     return (
-      <div className="min-h-screen bg-muted/30 p-4 sm:p-6">
-        <div className="mx-auto max-w-xl">
+      <PublicPage showLoginLink>
+        <div className="mx-auto w-full max-w-xl py-2">
           <Card>
             <CardContent className="pt-6">
               <p className="text-sm text-muted-foreground">
@@ -190,28 +195,28 @@ export function RejectedApplicationPage() {
             </CardContent>
           </Card>
         </div>
-      </div>
+      </PublicPage>
     );
   }
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-muted/30 p-4 sm:p-6">
-        <div className="mx-auto max-w-xl">
+      <PublicPage showLoginLink>
+        <div className="mx-auto w-full max-w-xl py-2">
           <Card>
             <CardContent className="pt-6 text-sm text-muted-foreground">
               Loading application details…
             </CardContent>
           </Card>
         </div>
-      </div>
+      </PublicPage>
     );
   }
 
   if (isError || !data) {
     return (
-      <div className="min-h-screen bg-muted/30 p-4 sm:p-6">
-        <div className="mx-auto max-w-xl">
+      <PublicPage showLoginLink>
+        <div className="mx-auto w-full max-w-xl py-2">
           <Card>
             <CardContent className="space-y-4 pt-6">
               <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
@@ -223,7 +228,7 @@ export function RejectedApplicationPage() {
             </CardContent>
           </Card>
         </div>
-      </div>
+      </PublicPage>
     );
   }
 
@@ -234,8 +239,8 @@ export function RejectedApplicationPage() {
         : "/register-business";
 
     return (
-      <div className="min-h-screen bg-muted/30 p-4 sm:p-6">
-        <div className="mx-auto max-w-xl">
+      <PublicPage showLoginLink>
+        <div className="mx-auto w-full max-w-xl py-2">
           <Card>
             <CardContent className="space-y-4 pt-6">
               <p className="text-sm text-muted-foreground">
@@ -247,7 +252,7 @@ export function RejectedApplicationPage() {
             </CardContent>
           </Card>
         </div>
-      </div>
+      </PublicPage>
     );
   }
 
@@ -256,11 +261,11 @@ export function RejectedApplicationPage() {
   );
 
   return (
-    <div className="min-h-screen bg-muted/30 p-4 sm:p-6">
-      <div className="mx-auto flex max-w-xl flex-col gap-6">
+    <PublicPage showLoginLink>
+      <div className="mx-auto flex w-full max-w-xl flex-col gap-6 py-2">
         <div>
-          <h1 className="text-2xl font-semibold">Application Not Approved</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
+          <h1 className="text-3xl font-semibold text-white">Application Not Approved</h1>
+          <p className="mt-2 text-sm leading-6 text-[#B7C3D7]">
             Update your documents and resubmit without re-entering business
             information.
           </p>
@@ -329,7 +334,7 @@ export function RejectedApplicationPage() {
 
               <Button
                 type="submit"
-                className="w-full"
+                className={`w-full ${publicPrimaryButtonClass}`}
                 disabled={resubmit.isPending}
               >
                 {resubmit.isPending ? "Resubmitting…" : "Resubmit Application"}
@@ -340,8 +345,8 @@ export function RejectedApplicationPage() {
               <Link to="/owner-login">Back to Owner Login</Link>
             </Button>
           </CardContent>
-        </Card>
+          </Card>
       </div>
-    </div>
+    </PublicPage>
   );
 }

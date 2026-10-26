@@ -160,6 +160,8 @@ bool _isUnreachable(DioException error) {
       error.type == DioExceptionType.connectionTimeout;
 }
 
+const productionApiHost = 'arollplus.duckdns.org';
+
 String _defaultApiBaseUrl() {
   if (Platform.isAndroid) {
     return 'http://10.0.2.2:8000/api/v1';
@@ -167,17 +169,47 @@ String _defaultApiBaseUrl() {
   return 'http://127.0.0.1:8000/api/v1';
 }
 
-List<String> _apiBaseCandidates() {
-  final configured = dotenv.env['API_BASE_URL']?.trim();
+/// [locked] keeps a test build on one explicit URL. It does not add the
+/// production host or the emulator and loopback fallbacks.
+List<String> resolveApiBaseCandidates({
+  required String? configuredUrl,
+  required String lockedUrl,
+  required bool locked,
+  required String platformDefault,
+}) {
+  if (locked) {
+    final url = lockedUrl.trim();
+    final uri = Uri.tryParse(url);
+    final schemeOk =
+        uri != null && (uri.scheme == 'http' || uri.scheme == 'https');
+    if (!schemeOk || uri.host.isEmpty) {
+      throw StateError('API_LOCK requires one explicit http(s) API_BASE_URL');
+    }
+    if (uri.host == productionApiHost) {
+      throw StateError('API_LOCK refuses the production API host');
+    }
+    return [url];
+  }
+
   final seen = <String>{};
   final ordered = <String>[];
   for (final candidate in [
-    if (configured != null && configured.isNotEmpty) configured,
-    _defaultApiBaseUrl(),
+    if (configuredUrl != null && configuredUrl.trim().isNotEmpty)
+      configuredUrl.trim(),
+    platformDefault,
     'http://127.0.0.1:8000/api/v1',
     'http://10.0.2.2:8000/api/v1',
   ]) {
     if (seen.add(candidate)) ordered.add(candidate);
   }
   return ordered;
+}
+
+List<String> _apiBaseCandidates() {
+  return resolveApiBaseCandidates(
+    configuredUrl: dotenv.env['API_BASE_URL'],
+    lockedUrl: const String.fromEnvironment('API_BASE_URL'),
+    locked: const String.fromEnvironment('API_LOCK') == 'true',
+    platformDefault: _defaultApiBaseUrl(),
+  );
 }

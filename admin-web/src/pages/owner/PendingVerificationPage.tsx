@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, Navigate, useSearchParams } from "react-router-dom";
 import { formatDateTime, StatusBadge } from "@/components/detail/DetailLayout";
+import { PublicPage } from "@/components/marketing/PublicPage";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getRegistrationByEmail } from "@/lib/api";
@@ -31,11 +32,11 @@ export function PendingVerificationPage() {
   }
 
   return (
-    <div className="min-h-screen bg-muted/30 p-4 sm:p-6">
-      <div className="mx-auto flex max-w-xl flex-col gap-6">
+    <PublicPage showLoginLink>
+      <div className="mx-auto flex w-full max-w-xl flex-col gap-6 py-2">
         <div>
-          <h1 className="text-2xl font-semibold">Application Status</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
+          <h1 className="text-3xl font-semibold text-white">Application Status</h1>
+          <p className="mt-2 text-sm leading-6 text-[#B7C3D7]">
             Track your business registration while our team reviews your
             application.
           </p>
@@ -148,6 +149,6 @@ export function PendingVerificationPage() {
           </Card>
         )}
       </div>
-    </div>
+    </PublicPage>
   );
 }

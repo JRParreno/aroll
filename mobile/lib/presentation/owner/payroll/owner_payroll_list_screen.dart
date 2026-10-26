@@ -6,6 +6,7 @@ import 'package:aroll_mobile/data/repositories/owner_repository.dart';
 import 'package:aroll_mobile/presentation/employee/employee_ui.dart';
 import 'package:aroll_mobile/presentation/owner/owner_shell.dart';
 import 'package:aroll_mobile/presentation/owner/payroll/owner_payroll_format.dart';
+import 'package:aroll_mobile/presentation/owner/payroll/pay_period_navigation.dart';
 import 'package:aroll_mobile/presentation/shared/app_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -25,8 +26,10 @@ class _OwnerPayrollListScreenState extends State<OwnerPayrollListScreen> {
   String? _error;
   String? _finalizeMessage;
   String _selectedEmployeeId = '';
-  late int _selectedYear;
-  late int _selectedMonth;
+  late DateTime _asOf;
+  String? _periodStart;
+  String? _periodEnd;
+  String? _payrollStatus;
   List<Map<String, dynamic>> _items = const [];
   List<Map<String, dynamic>> _employees = const [];
   Map<String, String> _profileImages = const {};
@@ -39,15 +42,8 @@ class _OwnerPayrollListScreenState extends State<OwnerPayrollListScreen> {
   void initState() {
     super.initState();
     final now = DateTime.now();
-    _selectedYear = now.year;
-    _selectedMonth = now.month;
+    _asOf = DateTime(now.year, now.month, now.day);
     _load();
-  }
-
-  DateTime get _asOf {
-    final lastDay = DateTime(_selectedYear, _selectedMonth + 1, 0).day;
-    final day = DateTime.now().day.clamp(1, lastDay);
-    return DateTime(_selectedYear, _selectedMonth, day);
   }
 
   Future<void> _load() async {
@@ -75,6 +71,9 @@ class _OwnerPayrollListScreenState extends State<OwnerPayrollListScreen> {
         _items = (payroll['items'] as List<dynamic>? ?? const [])
             .whereType<Map<String, dynamic>>()
             .toList();
+        _periodStart = payroll['period_start'] as String?;
+        _periodEnd = payroll['period_end'] as String?;
+        _payrollStatus = payroll['payroll_status'] as String?;
         _employees = employees;
         _profileImages = images;
         _incompleteCount =
@@ -143,11 +142,33 @@ class _OwnerPayrollListScreenState extends State<OwnerPayrollListScreen> {
     }).toList();
   }
 
-  String? get _periodStart =>
-      _items.isEmpty ? null : '${_items.first['period_start']}';
+  void _openPreviousPeriod() {
+    final start = parsePayrollIsoDate(_periodStart);
+    if (start == null) return;
+    setState(() => _asOf = previousPeriodAsOf(start));
+    _load();
+  }
 
-  String? get _periodEnd =>
-      _items.isEmpty ? null : '${_items.first['period_end']}';
+  void _openNextPeriod() {
+    final end = parsePayrollIsoDate(_periodEnd);
+    if (end == null || !canOpenNextPayPeriod(_payrollStatus)) return;
+    setState(() => _asOf = nextPeriodAsOf(end));
+    _load();
+  }
+
+  Future<void> _jumpToDate() async {
+    final today = DateTime.now();
+    final last = DateTime(today.year, today.month, today.day);
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _asOf.isAfter(last) ? last : _asOf,
+      firstDate: DateTime(2000),
+      lastDate: last,
+    );
+    if (picked == null) return;
+    setState(() => _asOf = DateTime(picked.year, picked.month, picked.day));
+    await _load();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -183,20 +204,18 @@ class _OwnerPayrollListScreenState extends State<OwnerPayrollListScreen> {
                       _FilterCard(
                         employees: _employees,
                         selectedEmployeeId: _selectedEmployeeId,
-                        selectedYear: _selectedYear,
-                        selectedMonth: _selectedMonth,
                         periodStart: _periodStart,
                         periodEnd: _periodEnd,
+                        canGoNext: canOpenNextPayPeriod(_payrollStatus),
                         onEmployeeChanged: (value) =>
                             setState(() => _selectedEmployeeId = value ?? ''),
-                        onYearChanged: (year) {
-                          setState(() => _selectedYear = year);
-                          _load();
-                        },
-                        onMonthChanged: (month) {
-                          setState(() => _selectedMonth = month);
-                          _load();
-                        },
+                        onPrevious: _periodStart == null
+                            ? null
+                            : _openPreviousPeriod,
+                        onNext: canOpenNextPayPeriod(_payrollStatus)
+                            ? _openNextPeriod
+                            : null,
+                        onJumpToDate: _jumpToDate,
                       ),
                       const SizedBox(height: 14),
                       if (_incompleteCount > 0)
@@ -303,10 +322,13 @@ class _OwnerPayrollListScreenState extends State<OwnerPayrollListScreen> {
                           ),
                         ),
                       if (_filteredItems.isEmpty)
-                        const OwnerEmptyState(
-                          'No payroll history yet',
-                          description:
-                              'Payroll summaries will appear here once attendance is recorded.',
+                        OwnerEmptyState(
+                          _items.isEmpty
+                              ? 'No payroll records for this pay period.'
+                              : 'No employees match this filter.',
+                          description: _items.isEmpty
+                              ? 'This period has no payroll records yet.'
+                              : 'Try another employee. The selected pay period stays the same.',
                           icon: Icons.payments_outlined,
                         )
                       else
@@ -337,24 +359,24 @@ class _FilterCard extends StatelessWidget {
   const _FilterCard({
     required this.employees,
     required this.selectedEmployeeId,
-    required this.selectedYear,
-    required this.selectedMonth,
     required this.periodStart,
     required this.periodEnd,
+    required this.canGoNext,
     required this.onEmployeeChanged,
-    required this.onYearChanged,
-    required this.onMonthChanged,
+    required this.onPrevious,
+    required this.onNext,
+    required this.onJumpToDate,
   });
 
   final List<Map<String, dynamic>> employees;
-  final int selectedYear;
-  final int selectedMonth;
-  final ValueChanged<int> onYearChanged;
-  final ValueChanged<int> onMonthChanged;
   final String selectedEmployeeId;
   final String? periodStart;
   final String? periodEnd;
+  final bool canGoNext;
   final ValueChanged<String?> onEmployeeChanged;
+  final VoidCallback? onPrevious;
+  final VoidCallback? onNext;
+  final VoidCallback onJumpToDate;
 
   @override
   Widget build(BuildContext context) {
@@ -420,58 +442,30 @@ class _FilterCard extends StatelessWidget {
           Row(
             children: [
               Expanded(
-                child: DropdownButtonFormField<int>(
-                  value: selectedMonth,
-                  isExpanded: true,
-                  isDense: true,
-                  decoration: appInputDecoration(labelText: 'Month'),
-                  items: List.generate(
-                    12,
-                    (i) => DropdownMenuItem(
-                      value: i + 1,
-                      child: Text(
-                        [
-                          'Jan',
-                          'Feb',
-                          'Mar',
-                          'Apr',
-                          'May',
-                          'Jun',
-                          'Jul',
-                          'Aug',
-                          'Sep',
-                          'Oct',
-                          'Nov',
-                          'Dec',
-                        ][i],
-                      ),
-                    ),
-                  ),
-                  onChanged: (value) {
-                    if (value != null) onMonthChanged(value);
-                  },
+                child: OutlinedButton.icon(
+                  onPressed: onPrevious,
+                  icon: const Icon(Icons.chevron_left_rounded),
+                  label: const Text('Previous'),
                 ),
               ),
               const SizedBox(width: 8),
               Expanded(
-                child: DropdownButtonFormField<int>(
-                  value: selectedYear,
-                  isExpanded: true,
-                  isDense: true,
-                  decoration: appInputDecoration(labelText: 'Year'),
-                  items: List.generate(5, (i) {
-                    final year = DateTime.now().year - i;
-                    return DropdownMenuItem(
-                      value: year,
-                      child: Text('$year'),
-                    );
-                  }),
-                  onChanged: (value) {
-                    if (value != null) onYearChanged(value);
-                  },
+                child: OutlinedButton.icon(
+                  onPressed: canGoNext ? onNext : null,
+                  icon: const Icon(Icons.chevron_right_rounded),
+                  label: const Text('Next'),
                 ),
               ),
             ],
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: onJumpToDate,
+              icon: const Icon(Icons.calendar_month_outlined),
+              label: const Text('Jump to date'),
+            ),
           ),
           if (periodStart != null && periodEnd != null) ...[
             const SizedBox(height: 12),
