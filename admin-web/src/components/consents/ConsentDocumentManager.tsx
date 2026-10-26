@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -159,18 +160,22 @@ export function ConsentDocumentManager({
           {readOnlyHint}
         </p>
       ) : null}
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-sm text-slate-600">
           {ordered.length} document{ordered.length === 1 ? "" : "s"}
         </p>
         {canEdit ? (
-          <Button type="button" className={addButtonClassName} onClick={openCreate}>
+          <Button
+            type="button"
+            className={cn("w-full sm:w-auto", addButtonClassName)}
+            onClick={openCreate}
+          >
             Add consent
           </Button>
         ) : null}
       </div>
-      <div className="overflow-hidden rounded-xl border border-slate-200">
-        <table className="w-full text-left text-sm">
+      <div className="max-w-full overflow-x-auto rounded-xl border border-slate-200">
+        <table className="w-full min-w-[40rem] text-left text-sm">
           <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
             <tr>
               <th className="px-3 py-2">Title</th>

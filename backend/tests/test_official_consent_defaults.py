@@ -14,7 +14,9 @@ from app.models.user import User
 from app.services.consent_catalog import (
     document_published,
     ensure_platform_consent_documents,
+    is_legacy_short_consent,
     list_catalog_documents,
+    replace_legacy_short_consents,
 )
 from app.services.legal_consent import (
     ALL_TYPES,
@@ -190,6 +192,63 @@ def test_sync_updates_unedited_defaults_without_duplicates_or_lost_acceptances()
             row.position = position
             row.updated_by = updated_by
             row.updated_at = updated_at
+        db.commit()
+        db.close()
+
+
+def test_legacy_short_consent_is_replaced_and_rewritten_text_is_kept():
+    legacy_privacy = (
+        "North Cafe Privacy Policy\n\n"
+        "Aroll+ processes account, attendance, location (for geofence checks), "
+        "and face embedding data to provide workplace timekeeping.\n\n"
+        "Face images are processed to create numeric templates and are not "
+        "kept as a long-term photo album. Data is isolated to this business "
+        "and is not used for marketing.\n\n"
+        "You may request access, correction, or deletion of biometric templates "
+        "through your employer. Aroll+ is intended for adult employees (18+)."
+    )
+    rewritten = "Administrator managed privacy text."
+    assert is_legacy_short_consent(legacy_privacy, "privacy")
+    assert not is_legacy_short_consent(rewritten, "privacy")
+    assert not is_legacy_short_consent(
+        default_legal_content("Aroll+", "privacy"), "privacy"
+    )
+
+    db = SessionLocal()
+    row = (
+        db.query(ConsentDocument)
+        .filter(
+            ConsentDocument.scope == SCOPE_PLATFORM,
+            ConsentDocument.consent_type == "privacy",
+        )
+        .one()
+    )
+    original = (
+        row.body_text,
+        row.version,
+        row.updated_by,
+        row.updated_at,
+        row.file_stored_name,
+    )
+    try:
+        row.body_text = legacy_privacy
+        row.updated_by = db.query(User).first().id
+        db.commit()
+        replace_legacy_short_consents(db)
+        db.commit()
+        db.refresh(row)
+        assert row.body_text == default_legal_content("Aroll+", "privacy")
+        assert row.version == original[1]
+        assert "## Information Aroll+ uses" in row.body_text
+
+        row.body_text = rewritten
+        db.commit()
+        replace_legacy_short_consents(db)
+        db.commit()
+        db.refresh(row)
+        assert row.body_text == rewritten
+    finally:
+        row.body_text, row.version, row.updated_by, row.updated_at, row.file_stored_name = original
         db.commit()
         db.close()
 

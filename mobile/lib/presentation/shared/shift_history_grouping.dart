@@ -242,6 +242,16 @@ List<ShiftPayLine> buildAdditionalPayLines({
   return lines;
 }
 
+/// Authoritative minute count for a label.
+/// Whole values drop the decimal. Fractional values keep two places.
+String formatMinuteCount(num minutes) {
+  final rounded = (minutes * 100).round() / 100;
+  if (rounded == rounded.truncateToDouble()) {
+    return rounded.toInt().toString();
+  }
+  return rounded.toStringAsFixed(2);
+}
+
 List<ShiftPayLine> buildDeductionLines({
   Object? lateDeduction,
   Object? lateMinutes,
@@ -256,7 +266,7 @@ List<ShiftPayLine> buildDeductionLines({
       ShiftPayLine(
         key: 'late',
         label: lateMins != null
-            ? 'Late (${lateMins.round()} min)'
+            ? 'Late (${formatMinuteCount(lateMins)} min)'
             : 'Late',
         amount: latePay ?? 0,
         kind: 'deduction',

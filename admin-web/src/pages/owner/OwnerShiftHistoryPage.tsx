@@ -164,6 +164,81 @@ function attendanceLabelFor(item: OwnerShiftHistoryItem) {
   return statusLabel(item.status, item.payroll_status, item);
 }
 
+const HISTORY_GRID =
+  "lg:grid-cols-[minmax(7.5rem,1fr)_7.25rem_10.5rem_3.75rem_5.75rem_1.75rem]";
+
+function punchLabel(
+  value: string | null | undefined,
+  timeZone?: string | null
+) {
+  if (!value) return "Not recorded";
+  const formatted = formatAttendanceTime(value, timeZone);
+  return formatted === "--:--" ? "Not recorded" : formatted;
+}
+
+function listedPunches(
+  item: OwnerShiftHistoryItem,
+  timeZone?: string | null
+) {
+  if (item.status === "holiday_paid") {
+    return {
+      start: punchLabel(item.scheduled_start, timeZone),
+      end: punchLabel(item.scheduled_end, timeZone),
+    };
+  }
+  return {
+    start: punchLabel(item.time_in, timeZone),
+    end: punchLabel(item.time_out, timeZone),
+  };
+}
+
+function StatusPill({
+  status,
+  payrollStatus,
+  item,
+}: {
+  status: string;
+  payrollStatus?: string | null;
+  item?: OwnerShiftHistoryItem;
+}) {
+  return (
+    <span
+      className={`inline-flex max-w-full items-center rounded-full px-2 py-0.5 text-[11px] font-semibold leading-4 ${statusClass(status, payrollStatus)}`}
+    >
+      <span className="truncate">
+        {statusLabel(status, payrollStatus, item)}
+      </span>
+    </span>
+  );
+}
+
+function PunchToken({ value }: { value: string }) {
+  const missing = value === "Not recorded";
+  return (
+    <span
+      className={
+        missing
+          ? "text-[13px] font-medium text-[#9CA3AF]"
+          : "text-[13px] font-semibold tabular-nums text-[#111827]"
+      }
+    >
+      {value}
+    </span>
+  );
+}
+
+function PunchRange({ start, end }: { start: string; end: string }) {
+  return (
+    <span className="inline-flex max-w-full flex-wrap items-baseline justify-end gap-x-1">
+      <PunchToken value={start} />
+      <span className="text-[11px] font-medium text-[#9CA3AF]" aria-hidden="true">
+        →
+      </span>
+      <PunchToken value={end} />
+    </span>
+  );
+}
+
 export function OwnerShiftHistoryPage() {
   const { me } = useTenantMode();
   const queryClient = useQueryClient();
@@ -345,20 +420,22 @@ export function OwnerShiftHistoryPage() {
             </p>
           </OwnerCard>
         ) : (
-          <div className="space-y-6">
+          <div className="space-y-5">
             {grouped.map(([date, rows]) => (
-              <section key={date} className="space-y-3">
+              <section key={date} className="space-y-2">
                 <h2 className="text-sm font-semibold text-[#6B7280]">
                   {formatDateHeading(date)}
                 </h2>
                 <div className="owner-card overflow-hidden">
-                  <div className="hidden grid-cols-[minmax(0,1.4fr)_104px_minmax(0,1fr)_78px_110px_36px] gap-3 border-b border-[#E5E7EB] bg-[#F8FAFC] px-4 py-2.5 text-[11px] font-medium uppercase tracking-[0.08em] text-[#6B7280] lg:grid">
+                  <div
+                    className={`hidden gap-x-3 border-b border-[#E5E7EB] bg-[#F8FAFC] px-4 py-2 text-[11px] font-medium uppercase tracking-[0.06em] text-[#6B7280] lg:grid ${HISTORY_GRID}`}
+                  >
                     <span>Employee</span>
                     <span>Status</span>
                     <span>Time In → Time Out</span>
-                    <span>Hours</span>
-                    <span>Shift Total</span>
-                    <span />
+                    <span className="text-right">Hours</span>
+                    <span className="text-right">Shift Total</span>
+                    <span className="sr-only">Details</span>
                   </div>
                   <div className="divide-y divide-[#EEF2F7]">
                     {buildEmployeeDayBlocks(rows).map((block) => {
@@ -390,57 +467,50 @@ export function OwnerShiftHistoryPage() {
                       const open = Boolean(expanded[key]);
                       const face = presentShiftPay(item, [item]);
                       const net = face.shiftTotal ?? displayedShiftNet(item);
-                      const timeIn = formatAttendanceTime(
-                        item.time_in ?? null,
-                        timeZone
+                      const punches = listedPunches(item, timeZone);
+                      const hoursLabel = formatHours(
+                        item.hours_worked,
+                        item.worked_minutes
                       );
-                      const timeOut = formatAttendanceTime(
-                        item.time_out ?? null,
-                        timeZone
-                      );
-                      const shownIn =
-                        item.status === "holiday_paid"
-                          ? formatAttendanceTime(item.scheduled_start ?? null, timeZone)
-                          : timeIn;
-                      const shownOut =
-                        item.status === "holiday_paid"
-                          ? formatAttendanceTime(item.scheduled_end ?? null, timeZone)
-                          : timeOut;
+                      const totalLabel = item.historical_rate_required
+                        ? "Unresolved"
+                        : money(net);
                       return (
                         <div key={key}>
                           <button
                             type="button"
+                            aria-expanded={open}
                             onClick={() =>
                               setExpanded((prev) => ({
                                 ...prev,
                                 [key]: !prev[key],
                               }))
                             }
-                            className="grid w-full grid-cols-1 gap-3 px-4 py-3.5 text-left transition-colors hover:bg-[#F8FAFC] lg:grid-cols-[minmax(0,1.4fr)_104px_minmax(0,1fr)_78px_110px_36px] lg:items-center lg:gap-3"
+                            className={`grid w-full grid-cols-1 gap-2 px-3 py-2.5 text-left transition-colors hover:bg-[#F8FAFC] lg:items-center lg:gap-x-3 lg:px-4 ${HISTORY_GRID}`}
                           >
                             <div className="min-w-0">
                               <div className="flex items-start justify-between gap-3">
                                 <div className="min-w-0">
-                                  <p className="truncate text-sm font-semibold text-[#111827]">
+                                  <p className="truncate text-sm font-semibold leading-5 text-[#111827]">
                                     {item.employee_name}
                                   </p>
                                   {item.shift_name ? (
-                                    <p className="mt-0.5 truncate text-xs text-[#6B7280]">
+                                    <p className="truncate text-xs leading-4 text-[#6B7280]">
                                       {item.shift_name}
                                     </p>
                                   ) : null}
                                   {item.holiday_name ? (
-                                    <p className="mt-0.5 truncate text-xs font-medium text-[#0F766E]">
+                                    <p className="truncate text-xs font-medium leading-4 text-[#0F766E]">
                                       {item.holiday_name}
                                     </p>
                                   ) : null}
                                 </div>
                                 <div className="flex shrink-0 items-center gap-2 lg:hidden">
-                                  <span
-                                    className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold ${statusClass(item.status, item.payroll_status)}`}
-                                  >
-                                    {statusLabel(item.status, item.payroll_status, item)}
-                                  </span>
+                                  <StatusPill
+                                    status={item.status}
+                                    payrollStatus={item.payroll_status}
+                                    item={item}
+                                  />
                                   {open ? (
                                     <ChevronUp className="h-4 w-4 text-[#9CA3AF]" />
                                   ) : (
@@ -448,53 +518,48 @@ export function OwnerShiftHistoryPage() {
                                   )}
                                 </div>
                               </div>
-                              <div className="mt-3 rounded-xl bg-[#F8FAFC] px-3 py-2.5 lg:hidden">
-                                <p className="text-sm font-semibold text-[#111827]">
-                                  {shownIn}
-                                  <span className="mx-1.5 font-medium text-[#9CA3AF]">
-                                    →
-                                  </span>
-                                  {shownOut}
-                                </p>
-                                <div className="mt-1.5 flex items-center justify-between gap-3">
-                                  <p className="text-sm font-semibold text-[#374151]">
-                                    {formatHours(
-                                      item.hours_worked,
-                                      item.worked_minutes
-                                    )}
-                                  </p>
-                                  <p className="text-sm font-bold text-emerald-700">
-                                    {item.historical_rate_required
-                                      ? "Unresolved"
-                                      : money(net)}
-                                  </p>
-                                </div>
-                              </div>
+                              <dl className="mt-2 grid grid-cols-[4.5rem_minmax(0,1fr)] items-baseline gap-x-3 gap-y-1 lg:hidden">
+                                <dt className="text-[11px] font-medium text-[#6B7280]">
+                                  Time
+                                </dt>
+                                <dd>
+                                  <PunchRange
+                                    start={punches.start}
+                                    end={punches.end}
+                                  />
+                                </dd>
+                                <dt className="text-[11px] font-medium text-[#6B7280]">
+                                  Hours
+                                </dt>
+                                <dd className="text-[13px] font-semibold tabular-nums text-[#374151]">
+                                  {hoursLabel}
+                                </dd>
+                                <dt className="text-[11px] font-medium text-[#6B7280]">
+                                  Shift total
+                                </dt>
+                                <dd className="text-[13px] font-semibold tabular-nums text-emerald-700">
+                                  {totalLabel}
+                                </dd>
+                              </dl>
                             </div>
                             <div className="hidden lg:block">
-                              <span
-                                className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold ${statusClass(item.status, item.payroll_status)}`}
-                              >
-                                {statusLabel(item.status, item.payroll_status, item)}
-                              </span>
+                              <StatusPill
+                                status={item.status}
+                                payrollStatus={item.payroll_status}
+                                item={item}
+                              />
                             </div>
-                            <p className="hidden text-sm font-semibold text-[#111827] lg:block">
-                              {shownIn}
-                              <span className="mx-1.5 font-medium text-[#9CA3AF]">
-                                →
-                              </span>
-                              {shownOut}
+                            <div className="hidden lg:block">
+                              <PunchRange
+                                start={punches.start}
+                                end={punches.end}
+                              />
+                            </div>
+                            <p className="hidden text-right text-[13px] font-semibold tabular-nums text-[#374151] lg:block">
+                              {hoursLabel}
                             </p>
-                            <p className="hidden text-sm font-semibold text-[#374151] lg:block">
-                              {formatHours(
-                                item.hours_worked,
-                                item.worked_minutes
-                              )}
-                            </p>
-                            <p className="hidden text-sm font-bold text-emerald-700 lg:block">
-                              {item.historical_rate_required
-                                ? "Unresolved"
-                                : money(net)}
+                            <p className="hidden text-right text-[13px] font-semibold tabular-nums text-emerald-700 lg:block">
+                              {totalLabel}
                             </p>
                             <div className="hidden justify-end text-[#9CA3AF] lg:flex">
                               {open ? (
@@ -505,7 +570,7 @@ export function OwnerShiftHistoryPage() {
                             </div>
                           </button>
                           {open ? (
-                            <div className="border-t border-[#EEF2F7] bg-[#FCFCFD] px-4 py-4 text-sm">
+                            <div className="border-t border-[#EEF2F7] bg-[#F8FAFC] px-3 py-3 sm:px-4">
                               <ShiftDetailBands
                                 item={item}
                                 siblings={[item]}
@@ -629,9 +694,8 @@ function ShiftDetailBands({
 }) {
   const face = presentShiftPay(item, siblings);
   const total = face.shiftTotal ?? displayedShiftNet(item);
-  const scheduled = `${formatAttendanceTime(item.scheduled_start ?? null, timeZone)} → ${formatAttendanceTime(item.scheduled_end ?? null, timeZone)}`;
-  const timeIn = formatAttendanceTime(item.time_in ?? null, timeZone);
-  const timeOut = formatAttendanceTime(item.time_out ?? null, timeZone);
+  const timeIn = punchLabel(item.time_in, timeZone);
+  const timeOut = punchLabel(item.time_out, timeZone);
   const additional = buildAdditionalPayLines({
     ...item,
     holiday_pay: face.holidayPay,
@@ -642,18 +706,29 @@ function ShiftDetailBands({
   const unresolved = Boolean(item.historical_rate_required);
 
   return (
-    <div className="flex flex-col gap-5 md:flex-row md:items-start">
-      <div className="hidden md:block md:w-44 md:shrink-0" aria-hidden="true" />
-
-      <div className="min-w-0 flex-1 md:flex md:justify-center md:px-4">
-        <div className="w-full max-w-md space-y-1.5">
-          <h3 className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#6B7280]">
-            Shift summary
-          </h3>
-          <DetailRow label="Scheduled" value={scheduled} />
-          <DetailRow label="Attendance" value={attendanceLabelFor(item)} />
+    <div className="grid items-stretch gap-3 md:grid-cols-2">
+      <section className="rounded-xl border border-[#E6EAF0] bg-white px-3.5 py-3">
+        <h3 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#6B7280]">
+          Shift Summary
+        </h3>
+        <div className="mt-1 divide-y divide-[#F3F4F6]">
+          <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 py-1.5">
+            <p className="text-xs font-medium leading-5 text-[#6B7280]">
+              Scheduled shift
+            </p>
+            <PunchRange
+              start={punchLabel(item.scheduled_start, timeZone)}
+              end={punchLabel(item.scheduled_end, timeZone)}
+            />
+          </div>
+          <DetailRow label="Attendance status" value={attendanceLabelFor(item)} />
           {item.status === "holiday_paid" ? null : (
-            <DetailRow label="Time In → Out" value={`${timeIn} → ${timeOut}`} />
+            <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 py-1.5">
+              <p className="min-w-0 flex-1 text-xs font-medium leading-5 text-[#6B7280]">
+                Actual Time In → Time Out
+              </p>
+              <PunchRange start={timeIn} end={timeOut} />
+            </div>
           )}
           <DetailRow
             label="Hours Worked"
@@ -662,13 +737,13 @@ function ShiftDetailBands({
           <DetailRow label="Pay Basis" value={payBasisLabelFor(item)} />
           <DetailRow label="Rate Used" value={rateLabelFor(item)} />
         </div>
-      </div>
+      </section>
 
-      <div className="w-full min-w-0 md:w-64 md:shrink-0 md:border-l md:border-[#EEF2F7] md:pl-5">
-        <h3 className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#6B7280]">
-          Pay summary
+      <section className="flex flex-col rounded-xl border border-[#E6EAF0] bg-white px-3.5 py-3">
+        <h3 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#6B7280]">
+          Pay Summary
         </h3>
-        <div className="mt-1.5 space-y-1.5">
+        <div className="mt-1 divide-y divide-[#F3F4F6]">
           {face.showEarned ? (
             <DetailRow
               label={face.baseLabel}
@@ -692,17 +767,19 @@ function ShiftDetailBands({
               valueClassName={line.amount > 0 ? "text-rose-700" : undefined}
             />
           ))}
-          {face.hideShiftTotal ? null : (
-            <div className="mt-1 flex items-center justify-between gap-4 border-t border-emerald-200 pt-2">
-              <span className="text-[11px] font-extrabold uppercase tracking-[0.08em] text-emerald-900">
-                Shift Total
-              </span>
-              <span className="text-base font-extrabold tabular-nums text-emerald-700">
-                {unresolved ? "Unresolved" : money(total)}
-              </span>
-            </div>
-          )}
-          {unresolved ? (
+        </div>
+        {face.hideShiftTotal ? null : (
+          <div className="mt-auto flex items-center justify-between gap-3 rounded-lg bg-emerald-50 px-2.5 py-2 pt-2">
+            <span className="text-xs font-semibold text-emerald-900">
+              Shift Total
+            </span>
+            <span className="text-sm font-semibold tabular-nums text-emerald-800">
+              {unresolved ? "Unresolved" : money(total)}
+            </span>
+          </div>
+        )}
+        {unresolved ? (
+          <div className="mt-2">
             <DetailRow
               label={
                 item.daily_rate_conflict
@@ -712,24 +789,24 @@ function ShiftDetailBands({
               value="Owner resolution needed"
               valueClassName="text-amber-800"
             />
-          ) : null}
-          {unresolved && canResolve ? (
-            <div className="pt-1">
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                className="rounded-lg"
-                onClick={onResolve}
-              >
-                {item.daily_rate_conflict
-                  ? "Resolve Daily rate for this day"
-                  : "Resolve historical rate"}
-              </Button>
-            </div>
-          ) : null}
-        </div>
-      </div>
+          </div>
+        ) : null}
+        {unresolved && canResolve ? (
+          <div className="pt-2">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="rounded-lg"
+              onClick={onResolve}
+            >
+              {item.daily_rate_conflict
+                ? "Resolve Daily rate for this day"
+                : "Resolve historical rate"}
+            </Button>
+          </div>
+        ) : null}
+      </section>
     </div>
   );
 }
@@ -766,36 +843,34 @@ function MultiShiftDayGroup({
     <div>
       <button
         type="button"
+        aria-expanded={open}
         onClick={() =>
           setExpanded((prev) => ({
             ...prev,
             [groupKey]: !prev[groupKey],
           }))
         }
-        className="grid w-full grid-cols-1 gap-3 px-4 py-3.5 text-left transition-colors hover:bg-[#F8FAFC] lg:grid-cols-[minmax(0,1.4fr)_104px_minmax(0,1fr)_78px_110px_36px] lg:items-center lg:gap-3"
+        className={`grid w-full grid-cols-1 gap-2 px-3 py-2.5 text-left transition-colors hover:bg-[#F8FAFC] lg:items-center lg:gap-x-3 lg:px-4 ${HISTORY_GRID}`}
       >
         <div className="min-w-0">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <p className="truncate text-sm font-semibold text-[#111827]">
+              <p className="truncate text-sm font-semibold leading-5 text-[#111827]">
                 {items[0]!.employee_name}
               </p>
-              <p className="mt-0.5 text-xs font-semibold text-[#4B5563]">
-                {items.length} shifts on this date
-              </p>
-              {holidayName ? (
-                <p className="mt-0.5 truncate text-xs font-medium text-[#0F766E]">
-                  {holidayName}
-                </p>
-              ) : null}
-              <p className="mt-0.5 truncate text-xs text-[#6B7280]">
+              <p className="truncate text-xs leading-4 text-[#4B5563]">
                 {items
                   .map((s, i) => shiftIndexLabel(i, s.shift_name))
                   .join(" · ")}
               </p>
+              {holidayName ? (
+                <p className="truncate text-xs font-medium leading-4 text-[#0F766E]">
+                  {holidayName}
+                </p>
+              ) : null}
             </div>
             <div className="flex shrink-0 items-center gap-2 lg:hidden">
-              <span className="inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-700">
+              <span className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold leading-4 text-slate-700">
                 {items.length} Shifts
               </span>
               {open ? (
@@ -805,25 +880,33 @@ function MultiShiftDayGroup({
               )}
             </div>
           </div>
-          <div className="mt-3 rounded-xl bg-[#F8FAFC] px-3 py-2.5 lg:hidden">
-            <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#6B7280]">
-              Day Total
-            </p>
-            <p className="mt-1 text-sm font-bold text-emerald-700">{finalLabel}</p>
-          </div>
+          <dl className="mt-2 grid grid-cols-[4.5rem_minmax(0,1fr)] items-baseline gap-x-3 gap-y-1 lg:hidden">
+            <dt className="text-[11px] font-medium text-[#6B7280]">Time</dt>
+            <dd className="text-[13px] font-medium text-[#6B7280]">
+              Same-day multi-shift
+            </dd>
+            <dt className="text-[11px] font-medium text-[#6B7280]">Shifts</dt>
+            <dd className="text-[13px] font-semibold tabular-nums text-[#374151]">
+              {items.length}
+            </dd>
+            <dt className="text-[11px] font-medium text-[#6B7280]">Day total</dt>
+            <dd className="text-[13px] font-semibold tabular-nums text-emerald-700">
+              {finalLabel}
+            </dd>
+          </dl>
         </div>
         <div className="hidden lg:block">
-          <span className="inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-700">
+          <span className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold leading-4 text-slate-700">
             {items.length} Shifts
           </span>
         </div>
-        <p className="hidden text-sm font-semibold text-[#6B7280] lg:block">
+        <p className="hidden text-[13px] font-medium text-[#6B7280] lg:block">
           Same-day multi-shift
         </p>
-        <p className="hidden text-sm font-semibold text-[#374151] lg:block">
+        <p className="hidden text-right text-[13px] font-semibold tabular-nums text-[#374151] lg:block">
           {items.length}
         </p>
-        <p className="hidden text-sm font-bold text-emerald-700 lg:block">
+        <p className="hidden text-right text-[13px] font-semibold tabular-nums text-emerald-700 lg:block">
           {finalLabel}
         </p>
         <div className="hidden justify-end text-[#9CA3AF] lg:flex">
@@ -835,180 +918,64 @@ function MultiShiftDayGroup({
         </div>
       </button>
       {open ? (
-        <div className="border-t border-[#EEF2F7] bg-[#FCFCFD] px-4 py-4 text-sm">
-          <div className="space-y-4">
-            {datePay?.dailyEntitlement != null ? (
-              <div className="rounded-xl border border-[#E5E7EB] bg-white px-3.5 py-3">
-                <h3 className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#6B7280]">
-                  This date
-                </h3>
-                <div className="mt-2 space-y-1.5">
+        <div className="space-y-3 border-t border-[#EEF2F7] bg-[#F8FAFC] px-3 py-3 sm:px-4">
+          {datePay?.dailyEntitlement != null ? (
+            <section className="rounded-xl border border-[#E6EAF0] bg-white px-3.5 py-3">
+              <h3 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#6B7280]">
+                This date
+              </h3>
+              <div className="mt-1 divide-y divide-[#F3F4F6]">
+                <DetailRow
+                  label="Daily Entitlement"
+                  value={money(datePay.dailyEntitlement)}
+                  valueClassName="text-emerald-700"
+                />
+              </div>
+            </section>
+          ) : null}
+          {items.map((item, index) => (
+            <section key={rowKey(item)} className="space-y-2">
+              <h3 className="text-xs font-semibold text-[#111827]">
+                {shiftIndexLabel(index, item.shift_name)}
+              </h3>
+              <ShiftDetailBands
+                item={item}
+                siblings={items}
+                timeZone={timeZone}
+                canResolve={canResolve}
+                onResolve={() => onResolve(item)}
+              />
+            </section>
+          ))}
+          {dateAdditionalPay.length > 0 ? (
+            <section className="rounded-xl border border-[#E6EAF0] bg-white px-3.5 py-3">
+              <h3 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#6B7280]">
+                Additional pay
+              </h3>
+              <div className="mt-1 divide-y divide-[#F3F4F6]">
+                {dateAdditionalPay.map((line) => (
                   <DetailRow
-                    label="Daily Entitlement"
-                    value={money(datePay.dailyEntitlement)}
+                    key={line.key}
+                    label={line.label}
+                    value={`+${money(line.amount)}`}
                     valueClassName="text-emerald-700"
                   />
-                </div>
+                ))}
               </div>
+            </section>
+          ) : null}
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-emerald-50 px-3 py-2">
+            <span className="text-xs font-semibold text-emerald-900">
+              Day Total
+            </span>
+            <span className="text-sm font-semibold tabular-nums text-emerald-800">
+              {finalLabel}
+            </span>
+            {equation ? (
+              <p className="basis-full text-xs font-medium text-emerald-800">
+                {equation}
+              </p>
             ) : null}
-            {items.map((item, index) => {
-              const timeIn = formatAttendanceTime(item.time_in ?? null, timeZone);
-              const timeOut = formatAttendanceTime(item.time_out ?? null, timeZone);
-              const rowFace = presentShiftPay(item, items);
-              const additional = buildAdditionalPayLines({
-                ...item,
-                holiday_pay: rowFace.holidayPay,
-                rest_day_premium_pay: rowFace.restPay,
-                additional_pay: null,
-              });
-              const deductions = buildDeductionLines(item);
-              return (
-                <section
-                  key={rowKey(item)}
-                  className="rounded-xl border border-[#E5E7EB] bg-white px-3.5 py-3"
-                >
-                  <h3 className="text-[12px] font-extrabold tracking-[0.04em] text-[#111827]">
-                    {shiftIndexLabel(index, item.shift_name)}
-                  </h3>
-                  <div className="mt-2 grid gap-2 sm:grid-cols-2">
-                    <DetailRow
-                      label="Status"
-                      value={statusLabel(item.status, item.payroll_status, item)}
-                    />
-                    <DetailRow
-                      label="Time In → Out"
-                      value={
-                        item.status === "holiday_paid"
-                          ? "Not worked"
-                          : `${timeIn} → ${timeOut}`
-                      }
-                    />
-                    <DetailRow
-                      label="Hours Worked"
-                      value={formatHours(item.hours_worked, item.worked_minutes)}
-                    />
-                    <DetailRow
-                      label="Scheduled"
-                      value={`${formatAttendanceTime(item.scheduled_start ?? null, timeZone)} → ${formatAttendanceTime(item.scheduled_end ?? null, timeZone)}`}
-                    />
-                    <DetailRow label="Pay Basis" value={payBasisLabelFor(item)} />
-                    <DetailRow label="Rate Used" value={rateLabelFor(item)} />
-                    {rowFace.showEarned ? (
-                      <DetailRow
-                        label={rowFace.baseLabel}
-                        value={
-                          item.historical_rate_required
-                            ? "Unresolved"
-                            : money(rowFace.earned)
-                        }
-                        valueClassName="text-emerald-700"
-                      />
-                    ) : null}
-                  </div>
-                  {additional.length > 0 || deductions.length > 0 ? (
-                    <div className="mt-3 space-y-2 border-t border-[#EEF2F7] pt-2.5">
-                      {additional.length > 0 ? (
-                        <div className="space-y-1.5">
-                          <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#6B7280]">
-                            Additional pay
-                          </p>
-                          {additional.map((line) => (
-                            <DetailRow
-                              key={line.key}
-                              label={line.label}
-                              value={
-                                line.amount > 0 ? `+${money(line.amount)}` : "—"
-                              }
-                              valueClassName={
-                                line.amount > 0 ? "text-emerald-700" : undefined
-                              }
-                            />
-                          ))}
-                        </div>
-                      ) : null}
-                      {deductions.length > 0 ? (
-                        <div className="space-y-1.5">
-                          <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#6B7280]">
-                            Deductions
-                          </p>
-                          {deductions.map((line) => (
-                            <DetailRow
-                              key={line.key}
-                              label={line.label}
-                              value={
-                                line.amount > 0 ? `−${money(line.amount)}` : "—"
-                              }
-                              valueClassName={
-                                line.amount > 0 ? "text-rose-700" : undefined
-                              }
-                            />
-                          ))}
-                        </div>
-                      ) : null}
-                    </div>
-                  ) : null}
-                  {rowFace.hideShiftTotal ? null : (
-                    <div className="mt-3 flex items-center justify-between rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2.5">
-                      <span className="text-[11px] font-extrabold tracking-[0.08em] text-emerald-900">
-                        Shift Total
-                      </span>
-                      <span className="text-base font-extrabold text-emerald-700">
-                        {item.historical_rate_required
-                          ? "Unresolved"
-                          : money(rowFace.shiftTotal)}
-                      </span>
-                    </div>
-                  )}
-                  {item.historical_rate_required && canResolve ? (
-                    <div className="pt-2">
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        className="rounded-lg"
-                        onClick={() => onResolve(item)}
-                      >
-                        {item.daily_rate_conflict
-                          ? "Resolve Daily rate for this day"
-                          : "Resolve historical rate"}
-                      </Button>
-                    </div>
-                  ) : null}
-                </section>
-              );
-            })}
-            {dateAdditionalPay.length > 0 ? (
-              <section className="rounded-xl border border-[#E5E7EB] bg-white px-3.5 py-3">
-                <h3 className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#6B7280]">
-                  Additional pay
-                </h3>
-                <div className="mt-2 space-y-1.5">
-                  {dateAdditionalPay.map((line) => (
-                    <DetailRow
-                      key={line.key}
-                      label={line.label}
-                      value={`+${money(line.amount)}`}
-                      valueClassName="text-emerald-700"
-                    />
-                  ))}
-                </div>
-              </section>
-            ) : null}
-            <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3.5 py-3">
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-[11px] font-extrabold tracking-[0.08em] text-emerald-900">
-                  Day Total
-                </span>
-                <span className="text-base font-extrabold text-emerald-700">
-                  {finalLabel}
-                </span>
-              </div>
-              {equation ? (
-                <p className="mt-1.5 text-xs font-medium text-emerald-800">
-                  {equation}
-                </p>
-              ) : null}
-            </div>
           </div>
         </div>
       ) : null}
@@ -1025,11 +992,14 @@ function DetailRow({
   value: string;
   valueClassName?: string;
 }) {
+  const missing = value === "Not recorded";
   return (
-    <div className="flex items-start justify-between gap-3">
-      <p className="text-xs font-medium text-[#6B7280]">{label}</p>
+    <div className="flex items-start justify-between gap-4 py-1.5">
+      <p className="text-xs font-medium leading-5 text-[#6B7280]">{label}</p>
       <p
-        className={`text-right text-sm font-semibold tabular-nums text-[#111827] ${valueClassName ?? ""}`}
+        className={`max-w-[68%] text-right text-xs font-semibold leading-5 tabular-nums ${
+          missing ? "font-medium text-[#9CA3AF]" : "text-[#111827]"
+        } ${valueClassName ?? ""}`}
       >
         {value}
       </p>

@@ -59,6 +59,26 @@ aroll/
 
 ---
 
+## Public server
+
+The server branch is `release/deployment-ready`. It does not include a database dump. Alembic rebuilds the schema, including the `vector` extension, on an empty PostgreSQL 16 database.
+
+On a fresh Ubuntu VM:
+
+```bash
+sudo bash deploy/bootstrap-ubuntu.sh your-name.duckdns.org
+```
+
+That script installs Docker, Caddy, and the API service, generates `backend/.env` on the server, starts Postgres on `127.0.0.1:5432`, runs `alembic upgrade head`, and creates only the platform admin. It does not load Demo Café or Dev Lab.
+
+After it finishes, sign in at `https://your-name.duckdns.org` as `admin@example.com` / `changeme123` and change that password. Approval email and owner Help need the SMTP values in the server's `backend/.env`. Face recognition downloads its two ONNX models during setup. The Android app is built separately; set `API_BASE_URL` in `mobile/.env` to `https://your-name.duckdns.org/api/v1` before `flutter build apk`.
+
+To upgrade an existing server database, pull this branch and run `alembic upgrade head` from `backend/` with that server's `.env`. Do not run `python -m app.seed` on the server.
+
+Local development still uses `docker compose up -d`, then `alembic upgrade head`, then `python -m app.seed` from `backend/`.
+
+---
+
 ## Pilot businesses
 
 Mr. Bean Cafe, Ugom Cafe, Pande Doc, Benzon Burger House

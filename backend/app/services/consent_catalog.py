@@ -26,6 +26,7 @@ from app.services.legal_consent import (
     ACTION_ACCEPTED,
     ALL_TYPES,
     CONSENT_BIOMETRIC,
+    CONSENT_PRIVACY,
     CONTENT_SOURCE_ADMIN,
     CONTENT_SOURCE_CUSTOM,
     DEFAULT_VERSIONS,
@@ -796,6 +797,73 @@ def accept_document(
         ip_address=meta.get("ip_address"),
     )
     return row
+
+
+# Earlier pilot copy. It is not an administrator's own policy, so startup can
+# replace it with the official Privacy Policy and Biometric Consent text.
+_LEGACY_SHORT_BODIES = {
+    CONSENT_PRIVACY: (
+        "Aroll+ processes account, attendance, location (for geofence checks), "
+        "and face embedding data to provide workplace timekeeping.\n\n"
+        "Face images are processed to create numeric templates and are not "
+        "kept as a long-term photo album. Data is isolated to this business "
+        "and is not used for marketing.\n\n"
+        "You may request access, correction, or deletion of biometric templates "
+        "through your employer. Aroll+ is intended for adult employees (18+)."
+    ),
+    CONSENT_BIOMETRIC: (
+        "Before face enrollment, you consent to Aroll+ capturing face samples, "
+        "storing face embeddings for matching, and using liveness plus workplace "
+        "location checks when you Time In or Time Out.\n\n"
+        "This is not Apple Face ID. Templates are stored in the Aroll+ database "
+        "for this business only. You may withdraw consent; face clock-in will "
+        "then be unavailable and templates will be deleted."
+    ),
+}
+_LEGACY_SHORT_SUFFIXES = {
+    CONSENT_PRIVACY: " Privacy Policy",
+    CONSENT_BIOMETRIC: " Biometric Consent",
+}
+
+
+def is_legacy_short_consent(text: str | None, consent_type: str) -> bool:
+    """True when a saved document is still the old short pilot wording."""
+    body = _LEGACY_SHORT_BODIES.get(consent_type)
+    suffix = _LEGACY_SHORT_SUFFIXES.get(consent_type)
+    if body is None or suffix is None:
+        return False
+    raw = (text or "").replace("\r\n", "\n").strip()
+    title, separator, rest = raw.partition("\n\n")
+    if not separator:
+        return False
+    return title.endswith(suffix) and rest == body
+
+
+def replace_legacy_short_consents(db: Session) -> None:
+    """Show the official Privacy and Biometric text wherever the old stub remains.
+
+    Versions and acceptance rows stay as they are. A document an administrator
+    rewrote to different wording is left unchanged.
+    """
+    now = datetime.now(timezone.utc)
+    rows = (
+        db.query(ConsentDocument)
+        .filter(
+            ConsentDocument.consent_type.in_((CONSENT_PRIVACY, CONSENT_BIOMETRIC))
+        )
+        .all()
+    )
+    for row in rows:
+        if not is_legacy_short_consent(row.body_text, row.consent_type):
+            continue
+        if row.scope == SCOPE_PLATFORM or row.business_id is None:
+            name = "Aroll+"
+        else:
+            business = db.get(Business, row.business_id)
+            name = ((business.name if business is not None else "") or "").strip()
+            name = name or "this workplace"
+        row.body_text = default_legal_content(name, row.consent_type)
+        row.updated_at = now
 
 
 def ensure_platform_consent_documents(

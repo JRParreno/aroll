@@ -196,8 +196,27 @@ void main() {
         undertimeMinutes: 10,
       );
       expect(lines.map((l) => l.key).toList(), ['late', 'undertime']);
+      expect(lines[0].label, 'Late (5 min)');
       expect(lines[0].amount, 20);
       expect(lines[1].amount, 50);
+    });
+
+    test('fractional late minutes keep two decimals and the api amount', () {
+      final lines = buildDeductionLines(
+        lateDeduction: 2.60,
+        lateMinutes: 2.60,
+      );
+      expect(lines.single.label, 'Late (2.60 min)');
+      expect(lines.single.amount, 2.60);
+      expect(formatMinuteCount(25.78), '25.78');
+    });
+
+    test('whole late minutes omit trailing zeros', () {
+      expect(formatMinuteCount(5), '5');
+      expect(formatMinuteCount(5.00), '5');
+      final lines = buildDeductionLines(lateDeduction: 5, lateMinutes: 5);
+      expect(lines.single.label, 'Late (5 min)');
+      expect(lines.single.amount, 5);
     });
 
     test('multiple positive components', () {

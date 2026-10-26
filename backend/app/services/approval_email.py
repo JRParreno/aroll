@@ -227,8 +227,19 @@ def send_rejection_message(registration: BusinessRegistration) -> str:
     return recipient
 
 
-def send_message(to_email: str, subject: str, text_body: str, html_body: str) -> None:
-    """Deliver one message through SMTP. Tests may replace this function."""
+def send_message(
+    to_email: str,
+    subject: str,
+    text_body: str,
+    html_body: str,
+    *,
+    reply_to: str | None = None,
+) -> None:
+    """Deliver one message through SMTP. Tests may replace this function.
+
+    A successful return means the SMTP server accepted the message. It does
+    not prove the recipient's inbox received it.
+    """
     if not smtp_configured():
         raise ApprovalEmailConfigError(_SAFE_CONFIG_ERROR)
     current = smtp_settings()
@@ -236,6 +247,9 @@ def send_message(to_email: str, subject: str, text_body: str, html_body: str) ->
     message["Subject"] = subject
     message["From"] = current.smtp_from_email.strip()
     message["To"] = to_email
+    safe_reply = (reply_to or "").replace("\r", "").replace("\n", "").strip()
+    if safe_reply and safe_reply == (reply_to or "").strip():
+        message["Reply-To"] = safe_reply
     message.set_content(text_body)
     message.add_alternative(html_body, subtype="html")
 

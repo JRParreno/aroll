@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   buildAdditionalPayLines,
   buildDeductionLines,
+  formatMinuteCount,
+  latePayslipLabel,
 } from "./shiftHistoryPayBreakdown";
 import { presentShiftPay, type ShiftHistoryPayItem } from "./shiftHistoryGrouping";
 
@@ -140,6 +142,41 @@ describe("shift history pay summary components", () => {
     expect(deductions.map((line) => line.key)).toEqual(["late"]);
     expect(face.shiftTotal).toBe(425);
     expect(350 + 60 + 35 - 20).toBe(face.shiftTotal);
+  });
+
+  it("shows fractional late minutes without rounding the duration or the amount", () => {
+    const { deductions } = summaryLines(
+      dailyRow({
+        late_deduction: 2.6,
+        late_minutes: 2.6,
+        shift_net: 347.4,
+        reconciled_shift_total: 347.4,
+      })
+    );
+    expect(deductions).toEqual([
+      { key: "late", label: "Late (2.60 min)", amount: 2.6, kind: "deduction" },
+    ]);
+  });
+
+  it("keeps whole late minutes free of trailing zeros", () => {
+    expect(formatMinuteCount(5)).toBe("5");
+    expect(formatMinuteCount(20)).toBe("20");
+    const { deductions } = summaryLines(
+      dailyRow({
+        late_deduction: 5,
+        late_minutes: 5,
+      })
+    );
+    expect(deductions[0]?.label).toBe("Late (5 min)");
+    expect(deductions[0]?.amount).toBe(5);
+  });
+
+  it("labels a fractional payslip late total with the stored rate", () => {
+    expect(formatMinuteCount(25.78)).toBe("25.78");
+    expect(latePayslipLabel(25.78, 1)).toBe("Late (25.78 min × ₱1.00)");
+    expect(latePayslipLabel(2.6, 1)).toBe("Late (2.60 min × ₱1.00)");
+    expect(latePayslipLabel(5, 1)).toBe("Late (5 min × ₱1.00)");
+    expect(latePayslipLabel(0, 1)).toBe("Late Deduction");
   });
 
   it("omits late when the punch is inside grace (zero late minutes and pay)", () => {

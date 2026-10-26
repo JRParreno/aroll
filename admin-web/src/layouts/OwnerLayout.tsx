@@ -10,6 +10,8 @@ import {
   LayoutDashboard,
   LogOut,
   MapPinned,
+  Menu,
+  X,
   Settings,
   Users,
 } from "lucide-react";
@@ -23,6 +25,7 @@ import {
   isOwnerNavItemActive,
   ownerNavItems,
 } from "@/layouts/ownerNav";
+import { useDesktopNav } from "@/layouts/useDesktopNav";
 import { TenantModeBanner } from "@/components/tenant/TenantModeBanner";
 import { ResearchEvaluationGate } from "@/components/tenant/ResearchEvaluationGate";
 import { sessionIsDemo, sessionIsInternalTest } from "@/lib/tenantMode";
@@ -55,6 +58,9 @@ export function OwnerLayout() {
   const qc = useQueryClient();
   const { pathname, search } = useLocation();
   const [signOutOpen, setSignOutOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const desktopNav = useDesktopNav();
+  const sidebarRef = useRef<HTMLElement>(null);
   const mainScrollRef = useRef<HTMLDivElement>(null);
 
   const { data: me } = useQuery({
@@ -73,7 +79,27 @@ export function OwnerLayout() {
 
   useEffect(() => {
     mainScrollRef.current?.scrollTo({ top: 0 });
+    setMenuOpen(false);
   }, [pathname, search]);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setMenuOpen(false);
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [menuOpen]);
+
+  function closeMenu() {
+    setMenuOpen(false);
+  }
+
+  useEffect(() => {
+    const sidebar = sidebarRef.current;
+    if (!sidebar) return;
+    sidebar.inert = !desktopNav && !menuOpen;
+  }, [desktopNav, menuOpen]);
 
   function logout() {
     clearAuthSession();
@@ -83,9 +109,49 @@ export function OwnerLayout() {
 
   return (
     <div className="owner-shell font-sans flex h-full flex-col text-[#1F2937]">
-      <aside
-        className="relative flex max-h-56 w-full shrink-0 flex-col text-white lg:fixed lg:inset-y-0 lg:z-30 lg:max-h-none lg:w-64"
+      <header
+        className="flex min-h-14 shrink-0 items-center gap-2 px-3 pb-2 pt-[max(0.5rem,env(safe-area-inset-top))] text-white lg:hidden"
         style={{ backgroundColor: sidebarColor }}
+      >
+        <button
+          type="button"
+          className="inline-flex h-11 w-11 items-center justify-center rounded-xl hover:bg-white/10"
+          aria-label={menuOpen ? "Close menu" : "Open menu"}
+          aria-expanded={menuOpen}
+          aria-controls="owner-navigation"
+          onClick={() => setMenuOpen((open) => !open)}
+        >
+          {menuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+        </button>
+        <div className="min-w-0">
+          <p className="truncate text-sm font-semibold">
+            {me?.business_name ?? "Owner Portal"}
+          </p>
+          <p className="truncate text-[10px] font-medium uppercase tracking-[0.14em] text-white/55">
+            {sessionIsDemo(me)
+              ? "DEMO"
+              : sessionIsInternalTest(me)
+                ? "INTERNAL TEST"
+                : "Business Workspace"}
+          </p>
+        </div>
+      </header>
+      {menuOpen && !desktopNav ? (
+        <button
+          type="button"
+          className="fixed inset-0 z-40 border-0 bg-slate-900/45 lg:hidden"
+          aria-label="Close menu"
+          onClick={closeMenu}
+        />
+      ) : null}
+      <aside
+        id="owner-navigation"
+        className={cn(
+          "fixed inset-y-0 left-0 z-50 flex w-[min(18rem,calc(100vw-2.5rem))] max-w-full flex-col overflow-hidden pb-[env(safe-area-inset-bottom)] text-white transition-transform duration-200 lg:z-30 lg:w-64 lg:translate-x-0",
+          menuOpen ? "translate-x-0" : "-translate-x-full"
+        )}
+        style={{ backgroundColor: sidebarColor }}
+        ref={sidebarRef}
       >
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.12),transparent_42%)]" />
         <div className="relative flex h-[5.25rem] shrink-0 items-center gap-3 border-b border-white/10 px-5">
@@ -112,6 +178,14 @@ export function OwnerLayout() {
                   : "Business Workspace"}
             </p>
           </div>
+          <button
+            type="button"
+            className="ml-auto inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl hover:bg-white/10 lg:hidden"
+            aria-label="Close menu"
+            onClick={closeMenu}
+          >
+            <X className="h-5 w-5" />
+          </button>
         </div>
 
         <nav className="relative flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden px-3 py-4">
@@ -138,6 +212,7 @@ export function OwnerLayout() {
                       "text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]"
                   )}
                   style={active ? { backgroundColor: activeColor } : undefined}
+                  onClick={closeMenu}
                 >
                   <span
                     className={cn(
@@ -165,7 +240,10 @@ export function OwnerLayout() {
                 profileActive &&
                   "bg-white/10 text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]"
               )}
-              onClick={() => navigate("/owner/profile")}
+              onClick={() => {
+                closeMenu();
+                navigate("/owner/profile");
+              }}
               type="button"
               aria-current={profileActive ? "page" : undefined}
             >
@@ -191,7 +269,10 @@ export function OwnerLayout() {
             </button>
             <button
               className={ownerSidebarItemClass}
-              onClick={() => setSignOutOpen(true)}
+              onClick={() => {
+                closeMenu();
+                setSignOutOpen(true);
+              }}
               type="button"
             >
               <span className={ownerSidebarIconWellClass}>

@@ -449,16 +449,12 @@ class _OwnerPayrollDetailScreenState extends State<OwnerPayrollDetailScreen> {
                           icon: Icons.remove_circle_outline,
                           children: [
                             _DetailRow(
-                              () {
-                                final mins = parsePayrollAmount(
-                                  payslip['late_minutes'],
-                                );
-                                final rate = parsePayrollAmount(
+                              ownerLateDeductionLabel(
+                                parsePayrollAmount(payslip['late_minutes']),
+                                parsePayrollAmount(
                                   payslip['late_deduction_per_minute'],
-                                );
-                                if (mins <= 0) return 'Late Deduction';
-                                return 'Late (${mins.toStringAsFixed(0)} min × ₱${rate.toStringAsFixed(2)})';
-                              }(),
+                                ),
+                              ),
                               ownerPayrollMoney(
                                 parsePayrollAmount(payslip['late_deductions']),
                               ),

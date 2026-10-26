@@ -29,13 +29,13 @@ export function AdminLegalDefaultsPage() {
           <p className="text-sm text-red-700">Consents could not be loaded.</p>
         ) : (
           <Card className="admin-card overflow-hidden rounded-[1.25rem] border-[#E8EEF5] bg-white shadow-none">
-            <CardHeader className="border-b border-slate-200 bg-[#FAFBFC] p-5 sm:p-6">
+            <CardHeader className="border-b border-slate-200 bg-[#FAFBFC] p-4 sm:p-6">
               <CardTitle className="flex items-center gap-2 text-base font-semibold text-[#1F2937]">
                 <Scale className="h-4 w-4" />
                 Platform consent documents
               </CardTitle>
             </CardHeader>
-            <CardContent className="p-5 sm:p-6">
+            <CardContent className="p-4 sm:p-6">
               {isLoading ? (
                 <p className="text-sm text-[#6B7280]">Loading consents…</p>
               ) : (

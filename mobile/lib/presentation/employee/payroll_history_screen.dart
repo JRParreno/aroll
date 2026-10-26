@@ -29,8 +29,7 @@ class _EmployeePayrollHistoryScreenState
     return payroll.history;
   }
 
-  String _asOfParam(DateTime value) =>
-      value.toIso8601String().split('T').first;
+  String _asOfParam(DateTime value) => value.toIso8601String().split('T').first;
 
   @override
   Widget build(BuildContext context) {
@@ -69,60 +68,13 @@ class _EmployeePayrollHistoryScreenState
               await _future;
             },
             child: ListView(
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 28),
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
               children: [
-                Container(
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: EmployeeColors.border),
-                  ),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 40,
-                        height: 40,
-                        decoration: BoxDecoration(
-                          color: brand.iconWell,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Icon(
-                          Icons.history_rounded,
-                          color: brand.primary,
-                          size: 20,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'Past pay periods',
-                              style: TextStyle(
-                                fontWeight: FontWeight.w700,
-                                fontSize: 15,
-                                color: EmployeeColors.textPrimary,
-                              ),
-                            ),
-                            Text(
-                              '${items.length} period${items.length == 1 ? '' : 's'} · tap to open payslip',
-                              style: const TextStyle(
-                                fontSize: 12,
-                                color: EmployeeColors.textMuted,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 14),
+                _PastPeriodsEntry(count: items.length),
+                const SizedBox(height: 10),
                 ...items.map(
                   (item) => Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
+                    padding: const EdgeInsets.only(bottom: 8),
                     child: _PayrollHistoryCard(
                       item: item,
                       onTap: () => context.push(
@@ -140,6 +92,80 @@ class _EmployeePayrollHistoryScreenState
   }
 }
 
+class _PastPeriodsEntry extends StatelessWidget {
+  const _PastPeriodsEntry({required this.count});
+
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    final brand = BrandColors.of(context);
+    final periods = '$count ${count == 1 ? 'period' : 'periods'} available';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: EmployeeColors.border),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 32,
+            height: 32,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: brand.iconWell,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(
+              Icons.history_rounded,
+              color: brand.primary,
+              size: 16,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Past pay periods',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14,
+                    height: 1.2,
+                    color: EmployeeColors.textPrimary,
+                  ),
+                ),
+                Text(
+                  periods,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    height: 1.25,
+                    color: EmployeeColors.textMuted,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+String _periodRange(DateTime start, DateTime end) {
+  if (start.year == end.year) {
+    return '${monthDay(start)} – ${shortDate(end)}';
+  }
+  return '${shortDate(start)} – ${shortDate(end)}';
+}
+
 class _PayrollHistoryCard extends StatelessWidget {
   const _PayrollHistoryCard({
     required this.item,
@@ -154,6 +180,13 @@ class _PayrollHistoryCard extends StatelessWidget {
     final isCurrent = item.payrollStatus == 'current';
     final brand = BrandColors.of(context);
 
+    final rate = salaryRateDisplay(
+      payBasis: item.payBasis,
+      dailyRate: item.dailyRate,
+      hourlyRate: item.hourlyRate,
+      monthlySalary: item.monthlySalary,
+    );
+
     return EmployeeCard(
       padding: EdgeInsets.zero,
       onTap: onTap,
@@ -161,53 +194,46 @@ class _PayrollHistoryCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(14, 14, 10, 12),
+            padding: const EdgeInsets.fromLTRB(12, 10, 4, 8),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
                   children: [
-                    Container(
-                      width: 40,
-                      height: 40,
-                      decoration: BoxDecoration(
-                        color: brand.iconWell,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Icon(
-                        Icons.payments_outlined,
-                        size: 20,
-                        color: brand.primary,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            '${shortDate(item.periodStart)} – ${shortDate(item.periodEnd)}',
+                            _periodRange(item.periodStart, item.periodEnd),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
                               fontWeight: FontWeight.w700,
-                              fontSize: 14,
+                              fontSize: 15,
+                              height: 1.2,
                               color: EmployeeColors.textPrimary,
                             ),
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            'Pay date ${shortDate(item.payDate)}',
+                            'Pay date · ${shortDate(item.payDate)}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
                               color: EmployeeColors.textMuted,
                               fontSize: 12,
+                              height: 1.25,
                             ),
                           ),
                         ],
                       ),
                     ),
+                    const SizedBox(width: 6),
                     Container(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 8,
-                        vertical: 4,
+                        vertical: 3,
                       ),
                       decoration: BoxDecoration(
                         color: isCurrent
@@ -217,8 +243,10 @@ class _PayrollHistoryCard extends StatelessWidget {
                       ),
                       child: Text(
                         titleCase(item.payrollStatus),
+                        maxLines: 1,
                         style: TextStyle(
                           fontSize: 11,
+                          height: 1.2,
                           fontWeight: FontWeight.w700,
                           color: isCurrent
                               ? brand.primary
@@ -228,85 +256,60 @@ class _PayrollHistoryCard extends StatelessWidget {
                     ),
                     const Icon(
                       Icons.chevron_right_rounded,
+                      size: 20,
                       color: EmployeeColors.textMuted,
                     ),
                   ],
                 ),
-                const SizedBox(height: 14),
-                Text(
-                  '${salaryRateRowLabel()}: ${salaryRateDisplay(
-                    payBasis: item.payBasis,
-                    dailyRate: item.dailyRate,
-                    hourlyRate: item.hourlyRate,
-                    monthlySalary: item.monthlySalary,
-                  )}',
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: EmployeeColors.textBody,
-                  ),
-                ),
                 const SizedBox(height: 10),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _AmountColumn(
-                        label: 'Gross',
-                        value: money(item.grossPay),
-                      ),
-                    ),
-                    Expanded(
-                      child: _AmountColumn(
-                        label: 'Adjustments',
-                        value: money(item.payrollAdjustmentsTotal),
-                      ),
-                    ),
-                    Expanded(
-                      child: _AmountColumn(
-                        label: 'Days',
-                        value: '${item.workedDays}',
-                      ),
-                    ),
-                  ],
-                ),
+                _PayrollMetrics(item: item, salaryRate: rate),
                 if (item.payrollAdjustments.isNotEmpty) ...[
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 8),
                   Container(
                     width: double.infinity,
-                    padding: const EdgeInsets.all(10),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 6,
+                    ),
                     decoration: BoxDecoration(
                       color: EmployeeColors.fieldFill,
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: BorderRadius.circular(10),
                     ),
                     child: Column(
-                      children: item.payrollAdjustments
-                          .map(
-                            (adj) => Padding(
-                              padding: const EdgeInsets.only(bottom: 4),
-                              child: Row(
-                                children: [
-                                  Expanded(
-                                    child: Text(
-                                      '${adj.displayName}${adj.kind == 'allowance' ? ' (+)' : ' (−)'}',
-                                      style: const TextStyle(
-                                        fontSize: 12,
-                                        color: EmployeeColors.textMuted,
-                                      ),
-                                    ),
-                                  ),
-                                  Text(
-                                    money(adj.amount),
+                      children: [
+                        for (var i = 0; i < item.payrollAdjustments.length; i++)
+                          Padding(
+                            padding: EdgeInsets.only(
+                              bottom: i == item.payrollAdjustments.length - 1
+                                  ? 0
+                                  : 4,
+                            ),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    '${item.payrollAdjustments[i].displayName}${item.payrollAdjustments[i].kind == 'allowance' ? ' (+)' : ' (−)'}',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
                                     style: const TextStyle(
                                       fontSize: 12,
-                                      fontWeight: FontWeight.w700,
-                                      color: EmployeeColors.textPrimary,
+                                      color: EmployeeColors.textMuted,
                                     ),
                                   ),
-                                ],
-                              ),
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  money(item.payrollAdjustments[i].amount),
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                    color: EmployeeColors.textPrimary,
+                                  ),
+                                ),
+                              ],
                             ),
-                          )
-                          .toList(),
+                          ),
+                      ],
                     ),
                   ),
                 ],
@@ -315,7 +318,7 @@ class _PayrollHistoryCard extends StatelessWidget {
           ),
           Container(
             width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             decoration: BoxDecoration(
               color: brand.iconWell,
               borderRadius: const BorderRadius.vertical(
@@ -327,18 +330,23 @@ class _PayrollHistoryCard extends StatelessWidget {
                 Text(
                   'Final net pay',
                   style: TextStyle(
-                    fontSize: 13,
+                    fontSize: 12,
                     fontWeight: FontWeight.w600,
                     color: brand.primary,
                   ),
                 ),
-                const Spacer(),
-                Text(
-                  money(item.displayNetPay),
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w800,
-                    color: brand.primary,
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    money(item.displayNetPay),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.right,
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w800,
+                      color: brand.primary,
+                    ),
                   ),
                 ),
               ],
@@ -350,8 +358,65 @@ class _PayrollHistoryCard extends StatelessWidget {
   }
 }
 
-class _AmountColumn extends StatelessWidget {
-  const _AmountColumn({
+class _PayrollMetrics extends StatelessWidget {
+  const _PayrollMetrics({
+    required this.item,
+    required this.salaryRate,
+  });
+
+  final EmployeePayrollHistoryItem item;
+  final String salaryRate;
+
+  @override
+  Widget build(BuildContext context) {
+    final gross = money(item.grossPay);
+    final adjustments = money(item.payrollAdjustmentsTotal);
+    final days = '${item.workedDays}';
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final cells = [
+          _MetricCell(label: 'Gross pay', value: gross),
+          _MetricCell(label: 'Adjustments', value: adjustments),
+          _MetricCell(label: 'Days worked', value: days),
+          _MetricCell(label: 'Salary rate', value: salaryRate),
+        ];
+        if (constraints.maxWidth < 220) {
+          return Column(
+            children: [
+              for (var i = 0; i < cells.length; i++)
+                Padding(
+                  padding: EdgeInsets.only(top: i == 0 ? 0 : 6),
+                  child: cells[i],
+                ),
+            ],
+          );
+        }
+        return Column(
+          children: [
+            Row(
+              children: [
+                Expanded(child: cells[0]),
+                const SizedBox(width: 12),
+                Expanded(child: cells[1]),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(child: cells[2]),
+                const SizedBox(width: 12),
+                Expanded(child: cells[3]),
+              ],
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _MetricCell extends StatelessWidget {
+  const _MetricCell({
     required this.label,
     required this.value,
   });
@@ -366,9 +431,12 @@ class _AmountColumn extends StatelessWidget {
       children: [
         Text(
           label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
           style: const TextStyle(
             color: EmployeeColors.textMuted,
             fontSize: 11,
+            height: 1.2,
             fontWeight: FontWeight.w600,
           ),
         ),
@@ -379,6 +447,7 @@ class _AmountColumn extends StatelessWidget {
           overflow: TextOverflow.ellipsis,
           style: const TextStyle(
             fontSize: 13,
+            height: 1.2,
             fontWeight: FontWeight.w700,
             color: EmployeeColors.textPrimary,
           ),

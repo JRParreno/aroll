@@ -26,6 +26,27 @@ function asNonNegativeMinutes(value: unknown): number | null {
   return value;
 }
 
+/** Authoritative minute count for a label.
+ * Whole values drop the decimal. Fractional values keep two places.
+ */
+export function formatMinuteCount(minutes: number): string {
+  const rounded = Math.round(minutes * 100) / 100;
+  if (rounded % 1 === 0) return String(rounded);
+  return rounded.toFixed(2);
+}
+
+/** Payslip late row. The peso amount stays on the value column from the API. */
+export function latePayslipLabel(
+  lateMinutes: number | null | undefined,
+  ratePerMinute: number | null | undefined
+): string {
+  const minutes = Number(lateMinutes);
+  if (!Number.isFinite(minutes) || minutes === 0) return "Late Deduction";
+  const rate = Number(ratePerMinute ?? 0);
+  const rateText = Number.isFinite(rate) ? rate.toFixed(2) : "0.00";
+  return `Late (${formatMinuteCount(minutes)} min × ₱${rateText})`;
+}
+
 export type ShiftPayBreakdownSource = {
   overtime_pay?: number | null;
   overtime_minutes?: number | null;
@@ -98,7 +119,7 @@ export function buildDeductionLines(
       key: "late",
       label:
         lateMins != null
-          ? `Late (${Math.round(lateMins)} min)`
+          ? `Late (${formatMinuteCount(lateMins)} min)`
           : "Late",
       amount: latePay ?? 0,
       kind: "deduction",

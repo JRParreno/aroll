@@ -16,6 +16,7 @@ from app.api import (
     owner_activity_logs,
     owner_performance,
     owner_reports,
+    owner_support,
     payroll_adjustments,
     positions,
     public_consents,
@@ -54,4 +55,5 @@ api_router.include_router(holidays.router)
 api_router.include_router(owner_performance.router)
 api_router.include_router(owner_activity_logs.router)
 api_router.include_router(owner_reports.router)
+api_router.include_router(owner_support.router)
 api_router.include_router(payroll_adjustments.router)

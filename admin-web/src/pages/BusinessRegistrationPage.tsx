@@ -1,8 +1,12 @@
 import { useState } from "react";
-import { ArrowLeft, FileCheck2, UploadCloud } from "lucide-react";
+import { UploadCloud } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { SystemBrandPanel } from "@/components/branding/SystemBranding";
+import {
+  PublicPage,
+  publicFieldClass,
+  publicPrimaryButtonClass,
+} from "@/components/marketing/PublicPage";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -52,22 +56,22 @@ function isAcceptedFile(file: File) {
 
 function RegistrationStepIndicator({ step }: { step: number }) {
   return (
-    <div className="flex gap-3 overflow-x-auto pb-2">
+    <ol className="flex flex-wrap gap-x-6 gap-y-2">
       {STEPS.map((label, index) => (
-        <div
+        <li
           key={label}
-          className={`whitespace-nowrap rounded-full px-4 py-2 text-xs font-medium ${
+          className={`text-sm ${
             index === step
-              ? "bg-[#1E3A5F] text-white shadow-sm"
+              ? "font-semibold text-[#1D4ED8]"
               : index < step
-                ? "bg-[#DBEAFE] text-[#1E3A5F]"
-                : "bg-white text-[#6B7280]"
+                ? "font-medium text-[#172554]"
+                : "text-[#94A3B8]"
           }`}
         >
-          Step {index + 1}: {label}
-        </div>
+          {index + 1}. {label}
+        </li>
       ))}
-    </div>
+    </ol>
   );
 }
 
@@ -89,23 +93,18 @@ function DocumentUploadField({
   const [typeError, setTypeError] = useState<string | null>(null);
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-      <div className="mb-3 flex items-center gap-3">
-        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#EAF2FB] text-[#1E3A5F]">
-          <UploadCloud className="h-5 w-5" />
-        </div>
-        <div>
-          <Label htmlFor={id} className="text-sm font-medium text-[#1F2937]">
-            {label}
-          </Label>
-          <p className="text-xs text-[#6B7280]">PDF, JPG, JPEG, or PNG</p>
-        </div>
+    <div className="rounded-xl border border-dashed border-[#BFDBFE] bg-[#F8FBFF] px-3 py-2.5">
+      <div className="flex items-center gap-2">
+        <UploadCloud className="h-4 w-4 shrink-0 text-[#2563EB]" aria-hidden="true" />
+        <Label htmlFor={id} className="text-sm font-medium text-[#172554]">
+          {label}
+        </Label>
       </div>
       <Input
         id={id}
         type="file"
         accept={ACCEPTED_FILE_TYPES}
-        className="cursor-pointer border-slate-200 bg-[#FAFBFC]"
+        className={`${publicFieldClass} mt-2 h-9 cursor-pointer py-1 text-xs`}
         onChange={(e) => {
           const selected = e.target.files?.[0] ?? null;
           if (selected && !isAcceptedFile(selected)) {
@@ -118,14 +117,12 @@ function DocumentUploadField({
         }}
       />
       {file ? (
-        <p className="mt-2 text-sm text-[#1F2937]">Uploaded: {file.name}</p>
+        <p className="mt-1.5 truncate text-xs text-[#172554]">Uploaded: {file.name}</p>
       ) : (
-        <p className="mt-2 text-xs text-[#6B7280]">
-          Accepted formats: PDF, JPG, JPEG, PNG
-        </p>
+        <p className="mt-1.5 text-xs text-[#475569]">PDF, JPG, JPEG, or PNG</p>
       )}
-      {typeError && <p className="mt-2 text-sm text-red-600">{typeError}</p>}
-      {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
+      {typeError && <p className="mt-1.5 text-sm text-red-600">{typeError}</p>}
+      {error && <p className="mt-1.5 text-sm text-red-600">{error}</p>}
     </div>
   );
 }
@@ -282,65 +279,40 @@ export function BusinessRegistrationPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#F4F6F8] text-[#111827] lg:grid lg:grid-cols-[minmax(300px,38vw)_1fr]">
-      <SystemBrandPanel />
+    <PublicPage showLoginLink>
+      <div className="mx-auto w-full max-w-3xl">
+        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#93C5FD]">
+          Business registration
+        </p>
+        <h1 className="mt-1 text-2xl font-semibold tracking-tight text-white sm:text-3xl">
+          Complete your business registration
+        </h1>
+        <p className="mt-1 max-w-2xl text-sm leading-5 text-[#B7C3D7]">
+          Provide your business details, then upload the required documents. The application is reviewed before an owner account is created.
+        </p>
 
-      <main className="flex min-h-screen items-center justify-center px-5 py-8 sm:px-8 lg:px-12">
-        <div className="w-full max-w-4xl">
-          <div className="mb-8 flex items-start gap-5">
-            <Button
-              asChild
-              variant="ghost"
-              size="icon"
-              className="mt-1 h-11 w-11 rounded-full text-[#111827] hover:bg-white"
-            >
-              <Link to="/owner-login" aria-label="Back to login">
-                <ArrowLeft className="h-6 w-6" />
-              </Link>
-            </Button>
-            <div className="min-w-0">
-              <h1 className="text-3xl font-semibold tracking-tight text-[#111827] sm:text-4xl">
-                Let's create your account!
-              </h1>
-              <p className="mt-3 max-w-2xl text-sm leading-6 text-[#6B7280]">
-                Register your business with Aroll+. Complete both steps to
-                submit your application.
-              </p>
-            </div>
-          </div>
-
+        <section className="mt-3 rounded-2xl bg-white p-4 text-[#172554] shadow-xl shadow-black/25 sm:p-5">
           <RegistrationStepIndicator step={step} />
-
-          <section className="mt-5 rounded-3xl border border-white/70 bg-white/70 p-5 shadow-sm backdrop-blur sm:p-7">
-            <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <h2 className="text-xl font-semibold text-[#111827]">
-                  {STEPS[step]}
-                </h2>
-                <p className="mt-1 text-sm text-[#6B7280]">
-                  Step {step + 1} of {STEPS.length}
-                </p>
-              </div>
-              <div className="flex items-center gap-2 rounded-full bg-[#EAF2FB] px-4 py-2 text-xs font-medium text-[#1E3A5F]">
-                <FileCheck2 className="h-4 w-4" />
-                Business verification
-              </div>
-            </div>
+          <div className="mt-3">
+          <h2 className="text-lg font-semibold text-[#172554]">{STEPS[step]}</h2>
+          <p className="text-xs text-[#475569]">
+            Step {step + 1} of {STEPS.length}
+          </p>
 
             {step === 0 && (
               <form
-                className="space-y-5"
+                className="mt-3 space-y-3"
                 onSubmit={(e) => {
                   e.preventDefault();
                   void handleNext();
                 }}
               >
-                <div className="grid gap-5 md:grid-cols-2">
+                <div className="grid gap-3 md:grid-cols-2">
                   <div className="space-y-2">
                     <Label htmlFor="business_name">Business Name</Label>
                     <Input
                       id="business_name"
-                      className="h-11 rounded-lg border-0 bg-white shadow-sm"
+                      className={publicFieldClass}
                       value={form.business_name}
                       onChange={(e) =>
                         setForm({ ...form, business_name: e.target.value })
@@ -357,7 +329,7 @@ export function BusinessRegistrationPage() {
                     <Label htmlFor="owner_name">Owner Name</Label>
                     <Input
                       id="owner_name"
-                      className="h-11 rounded-lg border-0 bg-white shadow-sm"
+                      className={publicFieldClass}
                       value={form.owner_name}
                       onChange={(e) =>
                         setForm({ ...form, owner_name: e.target.value })
@@ -375,7 +347,7 @@ export function BusinessRegistrationPage() {
                     <Input
                       id="owner_email"
                       type="email"
-                      className="h-11 rounded-lg border-0 bg-white shadow-sm"
+                      className={publicFieldClass}
                       value={form.owner_email}
                       onChange={(e) =>
                         setForm({ ...form, owner_email: e.target.value })
@@ -392,7 +364,7 @@ export function BusinessRegistrationPage() {
                     <Label htmlFor="owner_phone">Phone Number</Label>
                     <Input
                       id="owner_phone"
-                      className="h-11 rounded-lg border-0 bg-white shadow-sm"
+                      className={publicFieldClass}
                       value={form.owner_phone}
                       onChange={(e) =>
                         setForm({ ...form, owner_phone: e.target.value })
@@ -405,11 +377,11 @@ export function BusinessRegistrationPage() {
                     )}
                   </div>
 
-                  <div className="space-y-2 md:col-span-2">
+                  <div className="space-y-2">
                     <Label htmlFor="proposed_address">Business Address</Label>
                     <Input
                       id="proposed_address"
-                      className="h-11 rounded-lg border-0 bg-white shadow-sm"
+                      className={publicFieldClass}
                       value={form.proposed_address}
                       onChange={(e) =>
                         setForm({ ...form, proposed_address: e.target.value })
@@ -426,7 +398,7 @@ export function BusinessRegistrationPage() {
                     <Label htmlFor="business_type">Business Type</Label>
                     <select
                       id="business_type"
-                      className="flex h-11 w-full rounded-lg border-0 bg-white px-3 py-2 text-sm shadow-sm outline-none focus:ring-2 focus:ring-[#1E3A5F]/30"
+                      className={`flex w-full px-3 py-2 text-sm outline-none ${publicFieldClass}`}
                       value={form.business_type}
                       onChange={(e) =>
                         setForm({
@@ -458,7 +430,7 @@ export function BusinessRegistrationPage() {
                       </Label>
                       <Input
                         id="business_type_other"
-                        className="h-11 rounded-lg border-0 bg-white shadow-sm"
+                        className={publicFieldClass}
                         value={form.business_type_other}
                         onChange={(e) =>
                           setForm({
@@ -477,10 +449,10 @@ export function BusinessRegistrationPage() {
                   )}
                 </div>
 
-                <div className="flex justify-end pt-3">
+                <div className="flex justify-end">
                   <Button
                     type="submit"
-                    className="h-12 min-w-48 rounded-xl bg-[#1E3A5F] text-white shadow-sm hover:bg-[#284B73]"
+                    className={`min-w-40 ${publicPrimaryButtonClass}`}
                     disabled={checkingEmail}
                   >
                     {checkingEmail ? "Checking..." : "Next"}
@@ -494,14 +466,13 @@ export function BusinessRegistrationPage() {
                 onSubmit={(e) => {
                   void handleSubmit(e);
                 }}
-                className="space-y-6"
+                className="mt-3 space-y-3"
               >
-                <p className="text-sm leading-6 text-[#6B7280]">
-                  Upload the required documents for verification. All files are
-                  required before submission.
+                <p className="text-sm leading-5 text-[#475569]">
+                  Upload the required documents for verification. All files are required before submission.
                 </p>
 
-                <div className="grid gap-4 md:grid-cols-2">
+                <div className="grid gap-3 md:grid-cols-2">
                   {DOCUMENT_FIELDS.map((field) => (
                     <DocumentUploadField
                       key={field.key}
@@ -514,18 +485,18 @@ export function BusinessRegistrationPage() {
                   ))}
                 </div>
 
-                <div className="flex flex-col-reverse gap-3 pt-2 sm:flex-row sm:justify-between">
+                <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-between">
                   <Button
                     type="button"
                     variant="outline"
-                    className="h-11 rounded-xl border-slate-200 bg-white"
+                    className="h-11 rounded-xl border-[#DBEAFE] bg-white"
                     onClick={() => setStep(0)}
                   >
                     Back
                   </Button>
                   <Button
                     type="submit"
-                    className="h-11 min-w-48 rounded-xl bg-[#1E3A5F] text-white shadow-sm hover:bg-[#284B73]"
+                    className={`min-w-48 ${publicPrimaryButtonClass}`}
                     disabled={submitting}
                   >
                     {submitting ? "Submitting..." : "Submit Application"}
@@ -533,29 +504,20 @@ export function BusinessRegistrationPage() {
                 </div>
               </form>
             )}
-          </section>
-
-          <div className="mt-5 grid gap-3 sm:grid-cols-2">
-            <Button
-              asChild
-              variant="outline"
-              className="h-11 rounded-xl border-slate-200 bg-white"
-            >
-              <Link to="/track-registration">Track Your Registration</Link>
-            </Button>
-
-            <p className="flex items-center justify-center text-center text-sm text-[#6B7280]">
-              Already registered?{" "}
-              <Link
-                to="/owner-login"
-                className="ml-1 font-medium text-[#1E3A5F] underline underline-offset-2"
-              >
-                Sign in here
-              </Link>
-            </p>
           </div>
-        </div>
-      </main>
-    </div>
+        </section>
+
+        <p className="mt-3 text-sm text-[#B7C3D7]">
+          <Link to="/track-registration" className="font-medium text-[#93C5FD] hover:underline">
+            Track your registration
+          </Link>
+          <span className="mx-2 text-[#CBD5E1]">·</span>
+          Already registered?{" "}
+          <Link to="/owner-login" className="font-medium text-[#93C5FD] hover:underline">
+            Sign in
+          </Link>
+        </p>
+      </div>
+    </PublicPage>
   );
 }

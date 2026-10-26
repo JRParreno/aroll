@@ -741,9 +741,13 @@ def ensure_platform_legal_defaults(
             existing.updated_at = now
             if updated_by is not None:
                 existing.updated_by = updated_by
-    from app.services.consent_catalog import ensure_platform_consent_documents
+    from app.services.consent_catalog import (
+        ensure_platform_consent_documents,
+        replace_legacy_short_consents,
+    )
 
     ensure_platform_consent_documents(db, force=force, updated_by=updated_by)
+    replace_legacy_short_consents(db)
 
 
 def publish_default_legal(

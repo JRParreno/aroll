@@ -13,7 +13,7 @@ if [[ -z "$DOMAIN" ]]; then
 fi
 
 REPO_URL="${AROLL_REPO_URL:-https://github.com/JRParreno/aroll.git}"
-BRANCH="${AROLL_BRANCH:-fix/public-deploy-prep}"
+BRANCH="${AROLL_BRANCH:-release/deployment-ready}"
 APP_ROOT="${AROLL_ROOT:-/opt/aroll}"
 APP_USER="${SUDO_USER:-ubuntu}"
 
@@ -100,6 +100,7 @@ sudo -u "$APP_USER" -H bash -lc "
       https://github.com/opencv/opencv_zoo/raw/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx
   fi
   .venv/bin/alembic upgrade head
+  .venv/bin/python -m app.seed --admin-only
   cd '$APP_ROOT/admin-web'
   npm install
   npm run build
@@ -122,5 +123,6 @@ fi
 echo
 echo "Aroll+ API is starting on https://${DOMAIN}"
 echo "Database password and JWT secret are in ${ENV_FILE} (mode 600)."
+echo "Platform admin: admin@example.com / changeme123"
+echo "Change that password before anyone else uses the server."
 echo "Do not run python -m app.seed on this server. It loads the demo businesses."
-echo "Create the platform admin separately, then change that password."

@@ -1,6 +1,6 @@
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
-import { payslipRateFieldAmounts, type SalaryRateFields } from "@/lib/salaryRate";
+import { payslipRateFieldAmounts, type SalaryRateFields } from "./salaryRate.ts";
 
 /** Fields already stored on a finalized payslip. No amounts are recalculated. */
 export type PayrollSummarySource = SalaryRateFields & {

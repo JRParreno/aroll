@@ -1,3 +1,5 @@
+import { useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   BadgeDollarSign,
   ClipboardList,
@@ -8,7 +10,10 @@ import {
   ShieldAlert,
   TriangleAlert,
 } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { getMe, sendOwnerSupportEmail } from "@/lib/api";
+import { ME_QUERY_KEY } from "@/lib/authSession";
 import {
   OwnerCard,
   OwnerPage,
@@ -16,10 +21,14 @@ import {
   OwnerPageHeader,
 } from "@/components/owner/layout/OwnerPageLayout";
 import { PrototypeNotice } from "@/components/tenant/PrototypeNotice";
+import {
+  SUPPORT_EMAIL,
+  SUPPORT_MESSAGE_MAX,
+  claimSupportSubmit,
+  supportRequestErrorMessage,
+  validateSupportDraft,
+} from "@/lib/supportEmail";
 import { cn } from "@/lib/utils";
-
-const SUPPORT_EMAIL = "arollplus1111@gmail.com";
-const SUPPORT_MAILTO = `mailto:${SUPPORT_EMAIL}`;
 
 const concernTopics = [
   {
@@ -64,6 +73,49 @@ const reportDetails = [
 ];
 
 export function OwnerHelpPage() {
+  const [subject, setSubject] = useState("");
+  const [message, setMessage] = useState("");
+  const [sending, setSending] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [noticeIsError, setNoticeIsError] = useState(false);
+  const sendingRef = useRef(false);
+  const { data: me } = useQuery({
+    queryKey: ME_QUERY_KEY,
+    queryFn: getMe,
+  });
+  const businessName = me?.business_name?.trim() || "Your signed-in business";
+
+  async function sendSupportEmail() {
+    const validation = validateSupportDraft(subject, message);
+    if (validation) {
+      setNoticeIsError(true);
+      setNotice(validation);
+      return;
+    }
+    if (!claimSupportSubmit(sendingRef)) return;
+    setSending(true);
+    setNotice(null);
+    try {
+      const result = await sendOwnerSupportEmail({
+        subject: subject.trim(),
+        message: message.trim(),
+      });
+      setSubject("");
+      setMessage("");
+      setNoticeIsError(false);
+      setNotice(result.detail);
+      toast.success("Support message accepted", { description: result.detail });
+    } catch (error) {
+      const detail = supportRequestErrorMessage(error);
+      setNoticeIsError(true);
+      setNotice(detail);
+      toast.error("Support message was not sent", { description: detail });
+    } finally {
+      sendingRef.current = false;
+      setSending(false);
+    }
+  }
+
   return (
     <OwnerPage>
       <OwnerPageHeader
@@ -117,41 +169,86 @@ export function OwnerHelpPage() {
         </section>
 
         <OwnerCard className="p-5 sm:p-6">
-          <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
-            <div className="flex min-w-0 items-start gap-4">
-              <span className="owner-icon-well h-12 w-12 shrink-0">
-                <LifeBuoy className="h-5 w-5" />
-              </span>
-              <div className="min-w-0">
-                <h2 className="text-base font-semibold text-[#1F2937]">
-                  Contact Aroll+ Support
-                </h2>
-                <p className="mt-1 max-w-2xl text-sm leading-relaxed text-[#6B7280]">
-                  If you encounter a problem that you cannot resolve or would
-                  like to send feedback, you can contact the Aroll+ support team
-                  through email.
-                </p>
-                <p className="mt-3 text-sm text-[#374151]">
-                  <span className="font-medium text-[#6B7280]">Email:</span>{" "}
-                  <a
-                    className="font-semibold text-[var(--owner-navy)] hover:underline"
-                    href={SUPPORT_MAILTO}
-                  >
-                    {SUPPORT_EMAIL}
-                  </a>
+          <div className="flex items-start gap-4">
+            <span className="owner-icon-well h-12 w-12 shrink-0">
+              <LifeBuoy className="h-5 w-5" />
+            </span>
+            <div className="min-w-0">
+              <h2 className="text-base font-semibold text-[#1F2937]">
+                Contact Aroll+ Support
+              </h2>
+              <p className="mt-1 max-w-2xl text-sm leading-relaxed text-[#6B7280]">
+                If you encounter a problem that you cannot resolve or would
+                like to send feedback, you can contact the Aroll+ support team
+                through email.
+              </p>
+            </div>
+          </div>
+          <form
+            className="mt-5 grid gap-4"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void sendSupportEmail();
+            }}
+          >
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <p className="text-sm font-medium text-[#374151]">Recipient</p>
+                <p className="mt-1 text-sm font-semibold text-[var(--owner-navy)]">
+                  {SUPPORT_EMAIL}
                 </p>
               </div>
+              <div>
+                <p className="text-sm font-medium text-[#374151]">Business name</p>
+                <p className="mt-1 text-sm text-[#1F2937]">{businessName}</p>
+              </div>
             </div>
-            <Button
-              asChild
-              className="h-10 shrink-0 rounded-xl bg-[var(--owner-button)] px-4 hover:bg-[var(--owner-navy-soft)]"
-            >
-              <a href={SUPPORT_MAILTO}>
+            <label className="grid gap-1.5 text-sm font-medium text-[#374151]">
+              Subject
+              <input
+                className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-normal text-[#1F2937] outline-none focus:border-[var(--owner-navy)]"
+                disabled={sending}
+                maxLength={120}
+                onChange={(event) => setSubject(event.target.value)}
+                required
+                value={subject}
+              />
+            </label>
+            <label className="grid gap-1.5 text-sm font-medium text-[#374151]">
+              Concern or message
+              <textarea
+                className="min-h-32 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-normal text-[#1F2937] outline-none focus:border-[var(--owner-navy)]"
+                disabled={sending}
+                maxLength={SUPPORT_MESSAGE_MAX}
+                onChange={(event) => setMessage(event.target.value)}
+                required
+                value={message}
+              />
+            </label>
+            <div>
+              <Button
+                className="h-10 rounded-xl bg-[var(--owner-button)] px-4 hover:bg-[var(--owner-navy-soft)]"
+                disabled={sending}
+                type="submit"
+              >
                 <Mail className="mr-2 h-4 w-4" />
-                Send Email
-              </a>
-            </Button>
-          </div>
+                {sending ? "Sending…" : "Send Email"}
+              </Button>
+            </div>
+          </form>
+          {notice ? (
+            <p
+              className={cn(
+                "mt-4 rounded-xl border px-4 py-3 text-sm leading-relaxed",
+                noticeIsError
+                  ? "border-red-200 bg-red-50 text-red-800"
+                  : "border-slate-200 bg-[#FAFBFC] text-[#374151]",
+              )}
+              role="status"
+            >
+              {notice}
+            </p>
+          ) : null}
         </OwnerCard>
 
         <OwnerCard className="p-5 sm:p-6">

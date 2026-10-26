@@ -1,5 +1,5 @@
 import type { BusinessThemeSettings } from "@/lib/api";
-import { defaultBusinessTheme } from "./brandingDefaults";
+import { defaultBusinessTheme } from "./brandingDefaults.ts";
 
 /** Colors written into the existing branding theme. Non-color settings stay untouched. */
 export type BrandThemeColors = Pick<

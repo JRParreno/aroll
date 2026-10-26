@@ -8,6 +8,7 @@ import 'package:aroll_mobile/core/face/face_api_errors.dart';
 import 'package:aroll_mobile/core/face/face_camera_preview.dart';
 import 'package:aroll_mobile/core/face/face_quality.dart';
 import 'package:aroll_mobile/domain/repositories/employee_repository.dart';
+import 'package:aroll_mobile/presentation/auth/sign_out_dialog.dart';
 import 'package:aroll_mobile/presentation/employee/employee_ui.dart';
 import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart';
@@ -25,6 +26,29 @@ const _minAcceptedFrames = 3;
 const _maxUploadFrames = 5;
 const _minFrameQuality = 0.55;
 const _stableBeforeBurst = Duration(milliseconds: 700);
+
+/// Close control while face enrollment is still required.
+///
+/// An in-flight upload is left alone because its completion navigates.
+/// A local burst can be cancelled, then the screen pops or signs out.
+enum FaceRegistrationDismiss { blocked, pop, signOut }
+
+FaceRegistrationDismiss faceRegistrationDismiss({
+  required bool canPop,
+  required bool enrolling,
+}) {
+  if (enrolling) return FaceRegistrationDismiss.blocked;
+  if (canPop) return FaceRegistrationDismiss.pop;
+  return FaceRegistrationDismiss.signOut;
+}
+
+bool faceRegistrationBurstShouldStop({
+  required bool closing,
+  required bool elapsed,
+  required bool frameLimitReached,
+}) {
+  return closing || elapsed || frameLimitReached;
+}
 
 class _ScoredFrame {
   const _ScoredFrame({required this.path, required this.score});
@@ -50,6 +74,8 @@ class _FaceRegistrationScreenState extends State<FaceRegistrationScreen> {
   bool _enrolling = false;
   bool _cameraStarting = false;
   bool _bursting = false;
+  bool _closing = false;
+  Future<void>? _burstTask;
   bool _streaming = false;
   bool _processingFrame = false;
   bool _lastFrameOk = false;
@@ -193,7 +219,8 @@ class _FaceRegistrationScreenState extends State<FaceRegistrationScreen> {
   }
 
   Future<void> _onPreviewFrame(CameraImage image) async {
-    if (_bursting ||
+    if (_closing ||
+        _bursting ||
         _enrolling ||
         _finished ||
         _processingFrame ||
@@ -263,8 +290,21 @@ class _FaceRegistrationScreenState extends State<FaceRegistrationScreen> {
     setState(() => _guidance = value);
   }
 
-  Future<void> _runBurstCapture() async {
-    if (_bursting || _enrolling || _finished) return;
+  Future<void> _runBurstCapture() {
+    if (_closing || _bursting || _enrolling || _finished) {
+      return Future<void>.value();
+    }
+    final task = _runBurstCaptureBody();
+    late final Future<void> tracked;
+    tracked = task.whenComplete(() {
+      if (identical(_burstTask, tracked)) _burstTask = null;
+    });
+    _burstTask = tracked;
+    return tracked;
+  }
+
+  Future<void> _runBurstCaptureBody() async {
+    if (_closing || _bursting || _enrolling || _finished) return;
     final camera = _camera;
     if (camera == null || !camera.value.isInitialized) return;
 
@@ -285,17 +325,32 @@ class _FaceRegistrationScreenState extends State<FaceRegistrationScreen> {
 
     try {
       await _stopStream();
+      if (_closing || !mounted) {
+        await _discardCaptured(candidates);
+        _finishCancelledBurst();
+        return;
+      }
 
-      while (DateTime.now().difference(started) < _burstDuration &&
-          _framesCaptured < _burstTargetFrames) {
+      while (!faceRegistrationBurstShouldStop(
+        closing: _closing,
+        elapsed: DateTime.now().difference(started) >= _burstDuration,
+        frameLimitReached: _framesCaptured >= _burstTargetFrames,
+      )) {
         if (!mounted) return;
         await Future<void>.delayed(const Duration(milliseconds: 130));
+        if (_closing || !mounted) break;
 
         late final XFile shot;
         try {
           shot = await camera.takePicture();
         } catch (_) {
           continue;
+        }
+        if (_closing || !mounted) {
+          try {
+            await File(shot.path).delete();
+          } catch (_) {}
+          break;
         }
         _framesCaptured += 1;
 
@@ -322,6 +377,12 @@ class _FaceRegistrationScreenState extends State<FaceRegistrationScreen> {
             _guidance = 'Scanning… $_framesAccepted clear frame(s)';
           });
         }
+      }
+
+      if (_closing || !mounted) {
+        await _discardCaptured(candidates);
+        _finishCancelledBurst();
+        return;
       }
 
       candidates.sort((a, b) => b.score.compareTo(a.score));
@@ -357,7 +418,11 @@ class _FaceRegistrationScreenState extends State<FaceRegistrationScreen> {
         }
       }
 
-      if (!mounted) return;
+      if (_closing || !mounted) {
+        await _discardCaptured(candidates);
+        _finishCancelledBurst();
+        return;
+      }
       setState(() {
         _selected
           ..clear()
@@ -367,7 +432,10 @@ class _FaceRegistrationScreenState extends State<FaceRegistrationScreen> {
       });
       await _enroll();
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || _closing) {
+        _finishCancelledBurst();
+        return;
+      }
       setState(() {
         _bursting = false;
         _stableSince = null;
@@ -402,8 +470,45 @@ class _FaceRegistrationScreenState extends State<FaceRegistrationScreen> {
     }
   }
 
+  Future<void> _discardCaptured(List<_ScoredFrame> frames) async {
+    for (final frame in frames) {
+      try {
+        await File(frame.path).delete();
+      } catch (_) {}
+    }
+  }
+
+  void _finishCancelledBurst() {
+    if (!mounted) return;
+    setState(() {
+      _bursting = false;
+      _progress = 0;
+      _stableSince = null;
+    });
+  }
+
+  Future<void> _leaveFaceRegistration(FaceRegistrationDismiss action) async {
+    if (action == FaceRegistrationDismiss.blocked || _closing) return;
+    setState(() => _closing = true);
+    final burst = _burstTask;
+    if (burst != null) await burst;
+    if (!mounted) return;
+    await _stopStream();
+    if (!mounted) return;
+    if (action == FaceRegistrationDismiss.pop) {
+      context.pop();
+      return;
+    }
+    await confirmSignOut(context);
+    if (!mounted) return;
+    if (sl<AppState>().isLoggedIn) {
+      setState(() => _closing = false);
+      await _ensureStream();
+    }
+  }
+
   Future<void> _enroll() async {
-    if (_selected.length < _minAcceptedFrames || _enrolling) return;
+    if (_closing || _selected.length < _minAcceptedFrames || _enrolling) return;
     setState(() {
       _enrolling = true;
       _error = null;
@@ -432,6 +537,7 @@ class _FaceRegistrationScreenState extends State<FaceRegistrationScreen> {
         name: 'aroll.face',
       );
 
+      if (_closing || !mounted) return;
       sl<AppState>().setFaceEnrolled(true);
       if (!mounted) return;
       setState(() {
@@ -440,7 +546,7 @@ class _FaceRegistrationScreenState extends State<FaceRegistrationScreen> {
         _guidance = 'You’re all set';
       });
       await Future<void>.delayed(const Duration(milliseconds: 650));
-      if (!mounted) return;
+      if (_closing || !mounted) return;
       context.go('/home');
     } catch (e) {
       if (!mounted) return;
@@ -540,18 +646,20 @@ class _FaceRegistrationScreenState extends State<FaceRegistrationScreen> {
                           children: [
                             IconButton(
                               tooltip: 'Back',
-                              onPressed: _enrolling || _bursting
+                              onPressed: _enrolling || _closing
                                   ? null
                                   : () {
-                                      if (context.canPop()) {
-                                        context.pop();
-                                      } else {
-                                        context.go('/home');
-                                      }
+                                      final action = faceRegistrationDismiss(
+                                        canPop: context.canPop(),
+                                        enrolling: _enrolling,
+                                      );
+                                      _leaveFaceRegistration(action);
                                     },
-                              icon: const Icon(
+                              icon: Icon(
                                 Icons.close_rounded,
-                                color: Colors.white,
+                                color: _enrolling || _closing
+                                    ? Colors.white38
+                                    : Colors.white,
                               ),
                             ),
                             const Expanded(
