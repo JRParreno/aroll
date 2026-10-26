@@ -1,3 +1,4 @@
+import 'package:aroll_mobile/core/face/face_quality.dart';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 
@@ -50,7 +51,7 @@ class FaceGuideOverlay extends StatelessWidget {
         final h = constraints.maxHeight;
         final ovalW = w * 0.78;
         final ovalH = h * 0.42;
-        final center = Offset(w / 2, h * 0.42);
+        final center = Offset(w / 2, h * faceGuideCenterY);
 
         return IgnorePointer(
           child: CustomPaint(

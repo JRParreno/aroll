@@ -1,7 +1,10 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:aroll_mobile/core/face/face_api_errors.dart';
+import 'package:aroll_mobile/core/face/face_camera_diagnostics.dart';
+import 'package:aroll_mobile/core/face/face_input_image.dart';
 import 'package:aroll_mobile/core/face/gesture_liveness_detector.dart';
 import 'package:aroll_mobile/core/theme/business_brand_theme.dart';
 import 'package:aroll_mobile/domain/entities/face_liveness.dart';
@@ -84,9 +87,7 @@ class _FaceLivenessCaptureScreenState extends State<FaceLivenessCaptureScreen> {
         // Same preset as face registration for compatible embeddings.
         ResolutionPreset.medium,
         enableAudio: false,
-        imageFormatGroup: Platform.isAndroid
-            ? ImageFormatGroup.nv21
-            : ImageFormatGroup.bgra8888,
+        imageFormatGroup: faceStreamImageFormat(android: Platform.isAndroid),
       );
       await controller.initialize();
       final detector = FaceDetector(
@@ -121,7 +122,17 @@ class _FaceLivenessCaptureScreenState extends State<FaceLivenessCaptureScreen> {
     final camera = _camera;
     if (camera == null || _streaming) return;
     _streaming = true;
-    await camera.startImageStream(_onFrame);
+    try {
+      await camera.startImageStream(_onFrame);
+      FaceCameraDiagnostics.streamStarted(
+        'liveness',
+        faceStreamImageFormat(android: Platform.isAndroid).name,
+      );
+    } catch (error, stack) {
+      _streaming = false;
+      FaceCameraDiagnostics.streamFailed('liveness', error, stack);
+      rethrow;
+    }
   }
 
   Future<void> _stopStream() async {
@@ -155,7 +166,7 @@ class _FaceLivenessCaptureScreenState extends State<FaceLivenessCaptureScreen> {
     return true;
   }
 
-  Future<void> _onFrame(CameraImage image) async {
+  void _onFrame(CameraImage image) {
     if (_capturing || _busy || _processingFrame || _detector == null) {
       return;
     }
@@ -166,13 +177,59 @@ class _FaceLivenessCaptureScreenState extends State<FaceLivenessCaptureScreen> {
     }
     final camera = _camera;
     if (camera == null) return;
+    final CameraFaceConversion conversion;
+    try {
+      conversion = cameraFaceFrame(image, camera);
+    } catch (error, stack) {
+      FaceCameraDiagnostics.error(
+        'liveness frame conversion failed',
+        error,
+        stack,
+      );
+      return;
+    }
+    FaceCameraDiagnostics.frame(
+      screen: 'liveness',
+      planes: image.planes.length,
+      rawFormat: image.format.raw is int ? image.format.raw as int : -1,
+      width: image.width,
+      height: image.height,
+      planeLayout: facePlaneLayout(image.planes),
+      rotation: conversion.frame?.rotationDegrees,
+      converted: conversion.frame != null,
+      outputBytes: conversion.frame?.input.bytes?.length,
+      skipReason: conversion.skipReason,
+    );
+    final frame = conversion.frame;
+    if (frame == null) return;
 
     _processingFrame = true;
     _lastProcessedAt = now;
+    unawaited(_analyzeLivenessFrame(frame, now));
+  }
+
+  Future<void> _analyzeLivenessFrame(
+    CameraFaceFrame frame,
+    DateTime now,
+  ) async {
     try {
-      final input = _inputImageFromCamera(image, camera);
-      if (input == null) return;
-      final faces = await _detector!.processImage(input);
+      final faces = await _detector!.processImage(frame.input);
+      FaceCameraDiagnostics.faces(
+        screen: 'liveness',
+        count: faces.length,
+        boxes: faces.isEmpty
+            ? 'none'
+            : faces
+                .map(
+                  (face) => faceBoxText(
+                    face.boundingBox.left.round(),
+                    face.boundingBox.top.round(),
+                    face.boundingBox.right.round(),
+                    face.boundingBox.bottom.round(),
+                  ),
+                )
+                .join(' '),
+      );
       if (!mounted || _capturing) return;
 
       if (faces.length != 1) {
@@ -189,8 +246,7 @@ class _FaceLivenessCaptureScreenState extends State<FaceLivenessCaptureScreen> {
       }
 
       final face = faces.first;
-      final imageSize = Size(image.width.toDouble(), image.height.toDouble());
-      final aligned = _isWellAligned(face, imageSize);
+      final aligned = _isWellAligned(face, frame.analysisSize);
       if (!aligned) {
         _alignedFrames = 0;
         _pendingGesture = null;
@@ -233,8 +289,12 @@ class _FaceLivenessCaptureScreenState extends State<FaceLivenessCaptureScreen> {
           await _finish(gesture);
         }
       }
-    } catch (_) {
-      // Drop frame errors; stream continues.
+    } catch (error, stack) {
+      FaceCameraDiagnostics.error(
+        'liveness face detection failed',
+        error,
+        stack,
+      );
     } finally {
       _processingFrame = false;
     }
@@ -280,28 +340,6 @@ class _FaceLivenessCaptureScreenState extends State<FaceLivenessCaptureScreen> {
       _gesture.reset();
       await _startStream();
     }
-  }
-
-  InputImage? _inputImageFromCamera(
-    CameraImage image,
-    CameraController controller,
-  ) {
-    final rotation = InputImageRotationValue.fromRawValue(
-          controller.description.sensorOrientation,
-        ) ??
-        InputImageRotation.rotation0deg;
-    final format = InputImageFormatValue.fromRawValue(image.format.raw);
-    if (format == null) return null;
-    final plane = image.planes.first;
-    return InputImage.fromBytes(
-      bytes: plane.bytes,
-      metadata: InputImageMetadata(
-        size: Size(image.width.toDouble(), image.height.toDouble()),
-        rotation: rotation,
-        format: format,
-        bytesPerRow: plane.bytesPerRow,
-      ),
-    );
   }
 
   @override

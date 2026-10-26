@@ -18,6 +18,10 @@ aroll.example.duckdns.org {
 	handle /redoc {
 		reverse_proxy 127.0.0.1:8000
 	}
+	handle /aroll.apk {
+		root * /opt/aroll/downloads
+		file_server
+	}
 
 	handle {
 		root * /opt/aroll/admin-web/dist

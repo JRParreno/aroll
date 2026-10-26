@@ -14,6 +14,9 @@ class FaceQualityAssessment {
   final String guidance;
 }
 
+/// Image-space vertical center shared by the quality check and the face guide.
+const faceGuideCenterY = 0.48;
+
 /// Geometric / pose quality gate used by enrollment burst and attendance.
 ///
 /// [naturalDistance] tunes fill ranges for holding the phone ~40–70 cm away
@@ -58,7 +61,7 @@ FaceQualityAssessment assessFaceQuality(
   final centerY = box.center.dy / imageSize.height;
   final centered =
       (centerX - 0.5).abs() <= centerXTol &&
-      (centerY - 0.48).abs() <= centerYTol;
+      (centerY - faceGuideCenterY).abs() <= centerYTol;
   if (!centered) {
     return const FaceQualityAssessment(
       ok: false,
@@ -104,7 +107,7 @@ FaceQualityAssessment assessFaceQuality(
       );
   final centerScore = (1.0 -
           (((centerX - 0.5).abs() / centerXTol) +
-                  ((centerY - 0.48).abs() / centerYTol)) /
+                  ((centerY - faceGuideCenterY).abs() / centerYTol)) /
               2.0)
       .clamp(0.0, 1.0);
   final score = (0.45 * fillScore) + (0.35 * poseScore) + (0.20 * centerScore);

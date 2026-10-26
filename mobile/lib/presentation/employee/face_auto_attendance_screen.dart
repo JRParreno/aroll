@@ -4,7 +4,9 @@ import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:aroll_mobile/core/face/face_api_errors.dart';
+import 'package:aroll_mobile/core/face/face_camera_diagnostics.dart';
 import 'package:aroll_mobile/core/face/face_camera_preview.dart';
+import 'package:aroll_mobile/core/face/face_input_image.dart';
 import 'package:aroll_mobile/core/face/face_quality.dart';
 import 'package:aroll_mobile/core/location/employee_location_service.dart';
 import 'package:aroll_mobile/core/location/geofence_diagnostics.dart';
@@ -158,9 +160,7 @@ class _FaceAutoAttendanceScreenState extends State<FaceAutoAttendanceScreen> {
         front,
         ResolutionPreset.medium,
         enableAudio: false,
-        imageFormatGroup: Platform.isAndroid
-            ? ImageFormatGroup.nv21
-            : ImageFormatGroup.bgra8888,
+        imageFormatGroup: faceStreamImageFormat(android: Platform.isAndroid),
       );
 
       await controller.initialize();
@@ -432,7 +432,17 @@ class _FaceAutoAttendanceScreenState extends State<FaceAutoAttendanceScreen> {
     final camera = _camera;
     if (camera == null || _streaming) return;
     _streaming = true;
-    await camera.startImageStream(_onFrame);
+    try {
+      await camera.startImageStream(_onFrame);
+      FaceCameraDiagnostics.streamStarted(
+        'attendance',
+        faceStreamImageFormat(android: Platform.isAndroid).name,
+      );
+    } catch (error, stack) {
+      _streaming = false;
+      FaceCameraDiagnostics.streamFailed('attendance', error, stack);
+      rethrow;
+    }
   }
 
   Future<void> _stopStream() async {
@@ -441,10 +451,17 @@ class _FaceAutoAttendanceScreenState extends State<FaceAutoAttendanceScreen> {
     _streaming = false;
     try {
       await camera.stopImageStream();
-    } catch (_) {}
+      FaceCameraDiagnostics.streamStopped('attendance');
+    } catch (error, stack) {
+      FaceCameraDiagnostics.error(
+        'attendance image stream stop failed',
+        error,
+        stack,
+      );
+    }
   }
 
-  Future<void> _onFrame(CameraImage image) async {
+  void _onFrame(CameraImage image) {
     if (_submitting || _busy || _processingFrame || _error != null || _detector == null) {
       return;
     }
@@ -456,13 +473,31 @@ class _FaceAutoAttendanceScreenState extends State<FaceAutoAttendanceScreen> {
     final camera = _camera;
     if (camera == null) return;
 
+    final CameraFaceConversion conversion;
+    try {
+      conversion = cameraFaceFrame(image, camera);
+    } catch (error, stack) {
+      FaceCameraDiagnostics.error(
+        'attendance frame conversion failed',
+        error,
+        stack,
+      );
+      return;
+    }
+    final frame = conversion.frame;
+    _logFrame('attendance', image, conversion);
+    if (frame == null) return;
+
     _processingFrame = true;
     _lastProcessedAt = now;
+    unawaited(_analyzeFrame(frame));
+  }
+
+  Future<void> _analyzeFrame(CameraFaceFrame frame) async {
     try {
       final detectStarted = DateTime.now();
-      final input = _inputImageFromCamera(image, camera);
-      if (input == null) return;
-      final faces = await _detector!.processImage(input);
+      final faces = await _detector!.processImage(frame.input);
+      _logFaces('attendance', faces);
       if (!mounted || _submitting) return;
 
       if (faces.length != 1) {
@@ -490,10 +525,9 @@ class _FaceAutoAttendanceScreenState extends State<FaceAutoAttendanceScreen> {
       }
       _trackingId ??= tid;
 
-      final imageSize = Size(image.width.toDouble(), image.height.toDouble());
       final assessment = assessFaceQuality(
         face,
-        imageSize,
+        frame.analysisSize,
         minScore: _minFaceQuality,
         naturalDistance: true,
       );
@@ -502,6 +536,7 @@ class _FaceAutoAttendanceScreenState extends State<FaceAutoAttendanceScreen> {
         _alignedFrames = 0;
         _faceReady = false;
         _updateGuidance(assessment.guidance);
+        _logQualityRejection('attendance', face, assessment.guidance);
         return;
       }
 
@@ -539,11 +574,66 @@ class _FaceAutoAttendanceScreenState extends State<FaceAutoAttendanceScreen> {
       // Embedding / server match only when face is stable + GPS ready.
       _updateGuidance('Verifying identity');
       await _tryAutoSubmit();
-    } catch (_) {
-      // Drop frame errors; stream continues.
+    } catch (error, stack) {
+      FaceCameraDiagnostics.error(
+        'attendance face detection failed',
+        error,
+        stack,
+      );
+      _updateGuidance('Look at the camera. Glasses and makeup are OK.');
     } finally {
       _processingFrame = false;
     }
+  }
+
+  void _logFrame(
+    String screen,
+    CameraImage image,
+    CameraFaceConversion conversion,
+  ) {
+    FaceCameraDiagnostics.frame(
+      screen: screen,
+      planes: image.planes.length,
+      rawFormat: image.format.raw is int ? image.format.raw as int : -1,
+      width: image.width,
+      height: image.height,
+      planeLayout: facePlaneLayout(image.planes),
+      rotation: conversion.frame?.rotationDegrees,
+      converted: conversion.frame != null,
+      outputBytes: conversion.frame?.input.bytes?.length,
+      skipReason: conversion.skipReason,
+    );
+  }
+
+  void _logFaces(String screen, List<Face> faces) {
+    final boxes = faces
+        .map(
+          (face) => faceBoxText(
+            face.boundingBox.left.round(),
+            face.boundingBox.top.round(),
+            face.boundingBox.right.round(),
+            face.boundingBox.bottom.round(),
+          ),
+        )
+        .join(' ');
+    FaceCameraDiagnostics.faces(
+      screen: screen,
+      count: faces.length,
+      boxes: boxes.isEmpty ? 'none' : boxes,
+    );
+  }
+
+  void _logQualityRejection(String screen, Face face, String reason) {
+    FaceCameraDiagnostics.qualityRejected(
+      screen: screen,
+      reason: reason,
+      box: faceBoxText(
+        face.boundingBox.left.round(),
+        face.boundingBox.top.round(),
+        face.boundingBox.right.round(),
+        face.boundingBox.bottom.round(),
+      ),
+    );
   }
 
   void _updateGuidance(String value) {
@@ -960,28 +1050,6 @@ class _FaceAutoAttendanceScreenState extends State<FaceAutoAttendanceScreen> {
       return true;
     }
     return false;
-  }
-
-  InputImage? _inputImageFromCamera(
-    CameraImage image,
-    CameraController controller,
-  ) {
-    final rotation = InputImageRotationValue.fromRawValue(
-          controller.description.sensorOrientation,
-        ) ??
-        InputImageRotation.rotation0deg;
-    final format = InputImageFormatValue.fromRawValue(image.format.raw);
-    if (format == null) return null;
-    final plane = image.planes.first;
-    return InputImage.fromBytes(
-      bytes: plane.bytes,
-      metadata: InputImageMetadata(
-        size: Size(image.width.toDouble(), image.height.toDouble()),
-        rotation: rotation,
-        format: format,
-        bytesPerRow: plane.bytesPerRow,
-      ),
-    );
   }
 
   @override

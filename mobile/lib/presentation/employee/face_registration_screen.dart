@@ -5,12 +5,14 @@ import 'dart:io';
 import 'package:aroll_mobile/core/app_state.dart';
 import 'package:aroll_mobile/core/di/injection.dart';
 import 'package:aroll_mobile/core/face/face_api_errors.dart';
+import 'package:aroll_mobile/core/face/face_camera_diagnostics.dart';
 import 'package:aroll_mobile/core/face/face_camera_preview.dart';
+import 'package:aroll_mobile/core/face/face_input_image.dart';
 import 'package:aroll_mobile/core/face/face_quality.dart';
 import 'package:aroll_mobile/domain/repositories/employee_repository.dart';
 import 'package:aroll_mobile/presentation/employee/employee_ui.dart';
 import 'package:camera/camera.dart';
-import 'package:flutter/foundation.dart';
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
@@ -25,6 +27,58 @@ const _minAcceptedFrames = 3;
 const _maxUploadFrames = 5;
 const _minFrameQuality = 0.55;
 const _stableBeforeBurst = Duration(milliseconds: 700);
+
+/// Stored JPEG pixel size, before any EXIF display rotation.
+///
+/// [InputImage.fromFilePath] decodes this bitmap and uses EXIF only so the
+/// detector knows which edge is up. [Face.boundingBox] stays in this bitmap:
+/// (0, 0) is its upper-left pixel. This is not the live camera analysis size,
+/// which swaps width and height for rotations of 90 and 270.
+Size? _jpegStoredPixelSize(List<int> bytes) {
+  if (bytes.length < 4 || bytes[0] != 0xFF || bytes[1] != 0xD8) return null;
+  var offset = 2;
+  while (offset + 1 < bytes.length) {
+    if (bytes[offset] != 0xFF) return null;
+    offset++;
+    while (offset < bytes.length && bytes[offset] == 0xFF) {
+      offset++;
+    }
+    if (offset >= bytes.length) return null;
+    final marker = bytes[offset];
+    offset++;
+    // Markers with no length. Start-of-scan follows the frame header, so a
+    // missing SOF by then means the file has no readable pixel size.
+    if (marker == 0x01 || (marker >= 0xD0 && marker <= 0xD9)) {
+      if (marker == 0xD8) continue;
+      return null;
+    }
+    if (offset + 1 >= bytes.length) return null;
+    final segmentLength = (bytes[offset] << 8) | bytes[offset + 1];
+    if (segmentLength < 2 || offset + segmentLength > bytes.length) return null;
+    final isStartOfFrame = marker == 0xC0 ||
+        marker == 0xC1 ||
+        marker == 0xC2 ||
+        marker == 0xC3 ||
+        marker == 0xC5 ||
+        marker == 0xC6 ||
+        marker == 0xC7 ||
+        marker == 0xC9 ||
+        marker == 0xCA ||
+        marker == 0xCB ||
+        marker == 0xCD ||
+        marker == 0xCE ||
+        marker == 0xCF;
+    if (isStartOfFrame) {
+      if (segmentLength < 7) return null;
+      final height = (bytes[offset + 3] << 8) | bytes[offset + 4];
+      final width = (bytes[offset + 5] << 8) | bytes[offset + 6];
+      if (width <= 0 || height <= 0) return null;
+      return Size(width.toDouble(), height.toDouble());
+    }
+    offset += segmentLength;
+  }
+  return null;
+}
 
 class _ScoredFrame {
   const _ScoredFrame({required this.path, required this.score});
@@ -130,11 +184,9 @@ class _FaceRegistrationScreenState extends State<FaceRegistrationScreen> {
       final previous = _camera;
       final controller = CameraController(
         front,
-        ResolutionPreset.high,
+        ResolutionPreset.medium,
         enableAudio: false,
-        imageFormatGroup: Platform.isAndroid
-            ? ImageFormatGroup.nv21
-            : ImageFormatGroup.bgra8888,
+        imageFormatGroup: faceStreamImageFormat(android: Platform.isAndroid),
       );
       await controller.initialize();
       await setCameraZoomOneX(controller);
@@ -162,7 +214,12 @@ class _FaceRegistrationScreenState extends State<FaceRegistrationScreen> {
         unawaited(previous.dispose());
       }
       await _ensureStream();
-    } catch (_) {
+    } catch (error, stack) {
+      FaceCameraDiagnostics.error(
+        'registration camera open failed',
+        error,
+        stack,
+      );
       if (!mounted) return;
       setState(() {
         _cameraStarting = false;
@@ -172,14 +229,35 @@ class _FaceRegistrationScreenState extends State<FaceRegistrationScreen> {
     }
   }
 
+  Future<void> _retryCamera() async {
+    if (!mounted) return;
+    setState(() => _error = null);
+    if (_cameraReady) {
+      await _ensureStream();
+      return;
+    }
+    await _startCamera();
+  }
+
   Future<void> _ensureStream() async {
     final camera = _camera;
     if (camera == null || _streaming || !camera.value.isInitialized) return;
     try {
       _streaming = true;
       await camera.startImageStream(_onPreviewFrame);
-    } catch (_) {
+      FaceCameraDiagnostics.streamStarted(
+        'registration',
+        faceStreamImageFormat(android: Platform.isAndroid).name,
+      );
+    } catch (error, stack) {
       _streaming = false;
+      FaceCameraDiagnostics.streamFailed('registration', error, stack);
+      if (!mounted) return;
+      setState(() {
+        _error =
+            'The camera opened, but face scanning did not start. Close other camera apps and try again.';
+        _guidance = 'Face scanning did not start.';
+      });
     }
   }
 
@@ -189,10 +267,17 @@ class _FaceRegistrationScreenState extends State<FaceRegistrationScreen> {
     _streaming = false;
     try {
       await camera.stopImageStream();
-    } catch (_) {}
+      FaceCameraDiagnostics.streamStopped('registration');
+    } catch (error, stack) {
+      FaceCameraDiagnostics.error(
+        'registration image stream stop failed',
+        error,
+        stack,
+      );
+    }
   }
 
-  Future<void> _onPreviewFrame(CameraImage image) async {
+  void _onPreviewFrame(CameraImage image) {
     if (_bursting ||
         _enrolling ||
         _finished ||
@@ -208,12 +293,33 @@ class _FaceRegistrationScreenState extends State<FaceRegistrationScreen> {
     final camera = _camera;
     if (camera == null) return;
 
+    final CameraFaceConversion conversion;
+    try {
+      conversion = cameraFaceFrame(image, camera);
+    } catch (error, stack) {
+      FaceCameraDiagnostics.error(
+        'registration frame conversion failed',
+        error,
+        stack,
+      );
+      return;
+    }
+    final frame = conversion.frame;
+    _logFrame('registration', image, conversion);
+    if (frame == null) return;
+
     _processingFrame = true;
     _lastProcessedAt = now;
+    unawaited(_analyzePreviewFrame(frame, now));
+  }
+
+  Future<void> _analyzePreviewFrame(
+    CameraFaceFrame frame,
+    DateTime now,
+  ) async {
     try {
-      final input = _inputImageFromCamera(image, camera);
-      if (input == null) return;
-      final faces = await _detector!.processImage(input);
+      final faces = await _detector!.processImage(frame.input);
+      _logFaces('registration', faces);
       if (!mounted || _bursting || _enrolling) return;
 
       if (faces.length != 1) {
@@ -229,7 +335,7 @@ class _FaceRegistrationScreenState extends State<FaceRegistrationScreen> {
 
       final assessment = assessFaceQuality(
         faces.first,
-        Size(image.width.toDouble(), image.height.toDouble()),
+        frame.analysisSize,
         minScore: _minFrameQuality,
         naturalDistance: true,
       );
@@ -237,6 +343,7 @@ class _FaceRegistrationScreenState extends State<FaceRegistrationScreen> {
       if (!assessment.ok) {
         _stableSince = null;
         _updateGuidance(assessment.guidance);
+        _logQualityRejection('registration', faces.first, assessment.guidance);
         return;
       }
 
@@ -251,11 +358,66 @@ class _FaceRegistrationScreenState extends State<FaceRegistrationScreen> {
       if (stableFor >= _stableBeforeBurst) {
         unawaited(_runBurstCapture());
       }
-    } catch (_) {
-      // Drop frame errors.
+    } catch (error, stack) {
+      FaceCameraDiagnostics.error(
+        'registration face detection failed',
+        error,
+        stack,
+      );
+      _updateGuidance('Look naturally at the camera');
     } finally {
       _processingFrame = false;
     }
+  }
+
+  void _logFrame(
+    String screen,
+    CameraImage image,
+    CameraFaceConversion conversion,
+  ) {
+    FaceCameraDiagnostics.frame(
+      screen: screen,
+      planes: image.planes.length,
+      rawFormat: image.format.raw is int ? image.format.raw as int : -1,
+      width: image.width,
+      height: image.height,
+      planeLayout: facePlaneLayout(image.planes),
+      rotation: conversion.frame?.rotationDegrees,
+      converted: conversion.frame != null,
+      outputBytes: conversion.frame?.input.bytes?.length,
+      skipReason: conversion.skipReason,
+    );
+  }
+
+  void _logFaces(String screen, List<Face> faces) {
+    final boxes = faces
+        .map(
+          (face) => faceBoxText(
+            face.boundingBox.left.round(),
+            face.boundingBox.top.round(),
+            face.boundingBox.right.round(),
+            face.boundingBox.bottom.round(),
+          ),
+        )
+        .join(' ');
+    FaceCameraDiagnostics.faces(
+      screen: screen,
+      count: faces.length,
+      boxes: boxes.isEmpty ? 'none' : boxes,
+    );
+  }
+
+  void _logQualityRejection(String screen, Face face, String reason) {
+    FaceCameraDiagnostics.qualityRejected(
+      screen: screen,
+      reason: reason,
+      box: faceBoxText(
+        face.boundingBox.left.round(),
+        face.boundingBox.top.round(),
+        face.boundingBox.right.round(),
+        face.boundingBox.bottom.round(),
+      ),
+    );
   }
 
   void _updateGuidance(String value) {
@@ -264,9 +426,18 @@ class _FaceRegistrationScreenState extends State<FaceRegistrationScreen> {
   }
 
   Future<void> _runBurstCapture() async {
-    if (_bursting || _enrolling || _finished) return;
+    if (_bursting || _enrolling || _finished) {
+      _diag(
+        'burst skipped bursting=$_bursting enrolling=$_enrolling '
+        'finished=$_finished',
+      );
+      return;
+    }
     final camera = _camera;
-    if (camera == null || !camera.value.isInitialized) return;
+    if (camera == null || !camera.value.isInitialized) {
+      _diag('burst skipped camera unavailable');
+      return;
+    }
 
     setState(() {
       _bursting = true;
@@ -281,25 +452,46 @@ class _FaceRegistrationScreenState extends State<FaceRegistrationScreen> {
     final candidates = <_ScoredFrame>[];
     final tempDir = await getTemporaryDirectory();
     final started = DateTime.now();
-    final employeeId = sl<AppState>().session?.userId ?? 'unknown';
+    _diag(
+      'burst start duration_ms=${_burstDuration.inMilliseconds} '
+      'target=$_burstTargetFrames min_accepted=$_minAcceptedFrames',
+    );
 
     try {
       await _stopStream();
 
+      var attempt = 0;
       while (DateTime.now().difference(started) < _burstDuration &&
           _framesCaptured < _burstTargetFrames) {
-        if (!mounted) return;
+        if (!mounted) {
+          _diag(
+            'burst stop reason=unmounted captured=$_framesCaptured '
+            'accepted=${candidates.length}',
+          );
+          return;
+        }
+        attempt += 1;
         await Future<void>.delayed(const Duration(milliseconds: 130));
 
         late final XFile shot;
+        final captureStarted = DateTime.now();
         try {
           shot = await camera.takePicture();
-        } catch (_) {
+          _diag(
+            'capture attempt=$attempt success '
+            'elapsed_ms=${DateTime.now().difference(captureStarted).inMilliseconds}',
+          );
+        } catch (error) {
+          _diag(
+            'capture attempt=$attempt failure '
+            'elapsed_ms=${DateTime.now().difference(captureStarted).inMilliseconds} '
+            'error=${_diagError(error)}',
+          );
           continue;
         }
         _framesCaptured += 1;
 
-        final score = await _scoreStill(shot.path);
+        final score = await _scoreStill(shot.path, attempt: attempt);
         if (score >= _minFrameQuality) {
           final dest = p.join(
             tempDir.path,
@@ -311,7 +503,11 @@ class _FaceRegistrationScreenState extends State<FaceRegistrationScreen> {
         } else {
           try {
             await File(shot.path).delete();
-          } catch (_) {}
+          } catch (error) {
+            _diag(
+              'capture attempt=$attempt delete failed error=${_diagError(error)}',
+            );
+          }
         }
 
         if (mounted) {
@@ -326,16 +522,23 @@ class _FaceRegistrationScreenState extends State<FaceRegistrationScreen> {
 
       candidates.sort((a, b) => b.score.compareTo(a.score));
       final picked = candidates.take(_maxUploadFrames).toList();
+      final elapsed = DateTime.now().difference(started).inMilliseconds;
 
-      developer.log(
-        'FACE_ENROLL_CLIENT employee_id=$employeeId '
-        'captured=$_framesCaptured accepted=${candidates.length} '
-        'selected=${picked.length}',
-        name: 'aroll.face',
+      _diag(
+        'burst end elapsed_ms=$elapsed captured=$_framesCaptured '
+        'accepted=${candidates.length} selected=${picked.length} '
+        'required=$_minAcceptedFrames',
       );
 
       if (picked.length < _minAcceptedFrames) {
-        if (!mounted) return;
+        _diag(
+          'burst rejected reason=below minimum accepted=${candidates.length} '
+          'required=$_minAcceptedFrames',
+        );
+        if (!mounted) {
+          _diag('burst rejected reason=unmounted before error ui');
+          return;
+        }
         setState(() {
           _bursting = false;
           _progress = 0;
@@ -357,7 +560,10 @@ class _FaceRegistrationScreenState extends State<FaceRegistrationScreen> {
         }
       }
 
-      if (!mounted) return;
+      if (!mounted) {
+        _diag('submit skipped reason=unmounted after burst');
+        return;
+      }
       setState(() {
         _selected
           ..clear()
@@ -367,7 +573,11 @@ class _FaceRegistrationScreenState extends State<FaceRegistrationScreen> {
       });
       await _enroll();
     } catch (e) {
-      if (!mounted) return;
+      _diag('burst failed error=${_diagError(e)}');
+      if (!mounted) {
+        _diag('burst failed reason=unmounted before error ui');
+        return;
+      }
       setState(() {
         _bursting = false;
         _stableSince = null;
@@ -380,70 +590,142 @@ class _FaceRegistrationScreenState extends State<FaceRegistrationScreen> {
     }
   }
 
-  Future<double> _scoreStill(String path) async {
+  Future<double> _scoreStill(String path, {required int attempt}) async {
     final detector = _detector;
-    if (detector == null) return 0;
+    if (detector == null) {
+      _diag('still attempt=$attempt accepted=false reason=detector missing');
+      return 0;
+    }
     try {
-      final input = InputImage.fromFilePath(path);
-      final faces = await detector.processImage(input);
-      if (faces.length != 1) return 0;
+      final bytes = await File(path).readAsBytes();
+      final imageSize = _jpegStoredPixelSize(bytes);
+      if (imageSize == null) {
+        _diag(
+          'still attempt=$attempt accepted=false faces=unknown '
+          'reason=jpeg size unreadable',
+        );
+        return 0;
+      }
+      final image =
+          '${imageSize.width.round()}x${imageSize.height.round()}';
+      final faces = await detector.processImage(InputImage.fromFilePath(path));
+      if (faces.length != 1) {
+        _diag(
+          'still attempt=$attempt accepted=false faces=${faces.length} '
+          'image=$image score=0 guidance="face count"',
+        );
+        return 0;
+      }
       final face = faces.first;
-      final box = face.boundingBox;
-      final width = (box.right + 48).clamp(320.0, 2000.0);
-      final height = (box.bottom + 48).clamp(320.0, 2000.0);
-      return assessFaceQuality(
+      final assessment = assessFaceQuality(
         face,
-        Size(width, height),
-        minScore: 0,
+        imageSize,
+        minScore: _minFrameQuality,
         naturalDistance: true,
-      ).score;
-    } catch (_) {
+      );
+      final box = face.boundingBox;
+      final area = imageSize.width * imageSize.height;
+      final fill = area <= 0 ? 0.0 : (box.width * box.height) / area;
+      final centerX =
+          imageSize.width <= 0 ? 0.0 : box.center.dx / imageSize.width;
+      final centerY =
+          imageSize.height <= 0 ? 0.0 : box.center.dy / imageSize.height;
+      _diag(
+        'still attempt=$attempt accepted=${assessment.ok} faces=1 '
+        'image=$image score=${assessment.score.toStringAsFixed(3)} '
+        'fill=${fill.toStringAsFixed(3)} '
+        'center=${centerX.toStringAsFixed(3)},${centerY.toStringAsFixed(3)} '
+        'guidance="${assessment.guidance}"',
+      );
+      return assessment.ok ? assessment.score : 0;
+    } catch (error) {
+      _diag(
+        'still attempt=$attempt accepted=false '
+        'reason=detection failed error=${_diagError(error)}',
+      );
       return 0;
     }
   }
 
+  void _diag(String message) {
+    developer.log('FACE_ENROLL_DIAG $message', name: 'FACE_ENROLL_DIAG');
+  }
+
+  String _diagError(Object error) {
+    if (error is DioException) {
+      final data = error.response?.data;
+      var code = '';
+      if (data is Map) {
+        final detail = data['detail'];
+        if (detail is Map) code = detail['code']?.toString() ?? '';
+      }
+      return 'DioException type=${error.type.name} '
+          'status=${error.response?.statusCode} code=$code';
+    }
+    final text = error.toString();
+    return text.length <= 180 ? text : text.substring(0, 180);
+  }
+
   Future<void> _enroll() async {
-    if (_selected.length < _minAcceptedFrames || _enrolling) return;
+    if (_selected.length < _minAcceptedFrames || _enrolling) {
+      _diag(
+        'submit skipped selected=${_selected.length} enrolling=$_enrolling '
+        'required=$_minAcceptedFrames',
+      );
+      return;
+    }
     setState(() {
       _enrolling = true;
       _error = null;
       _guidance = 'Saving your face…';
     });
-    final employeeId = sl<AppState>().session?.userId ?? 'unknown';
     try {
       await _stopStream();
       final files = _selected.map((e) => File(e.path)).toList();
-      developer.log(
-        'FACE_ENROLL_CLIENT employee_id=$employeeId upload=${files.length}',
-        name: 'aroll.face',
-      );
+      _diag('submit start files=${files.length} path=/employee/face-samples');
 
       final status = await _repo.enrollFaceSamples(files);
+      _diag(
+        'submit response completed=${status.isCompleted} '
+        'status=${status.faceRegistrationStatus} '
+        'samples=${status.sampleCount} model=${status.modelVersion}',
+      );
       if (!status.isCompleted) {
         final refreshed = await _repo.getFaceStatus();
+        _diag(
+          'submit refresh completed=${refreshed.isCompleted} '
+          'status=${refreshed.faceRegistrationStatus} '
+          'samples=${refreshed.sampleCount} model=${refreshed.modelVersion}',
+        );
         if (!refreshed.isCompleted) {
           throw Exception('Enrollment did not complete.');
         }
       }
 
-      developer.log(
-        'FACE_ENROLL_CLIENT employee_id=$employeeId embedding_stored=YES '
-        'samples=${status.sampleCount} model=${status.modelVersion}',
-        name: 'aroll.face',
-      );
+      _diag('submit complete');
 
       sl<AppState>().setFaceEnrolled(true);
-      if (!mounted) return;
+      if (!mounted) {
+        _diag('submit complete reason=unmounted before success ui');
+        return;
+      }
       setState(() {
         _finished = true;
         _enrolling = false;
         _guidance = 'You’re all set';
       });
       await Future<void>.delayed(const Duration(milliseconds: 650));
-      if (!mounted) return;
+      if (!mounted) {
+        _diag('submit complete reason=unmounted before home');
+        return;
+      }
       context.go('/home');
     } catch (e) {
-      if (!mounted) return;
+      _diag('submit failed error=${_diagError(e)}');
+      if (!mounted) {
+        _diag('submit failed reason=unmounted before error ui');
+        return;
+      }
       setState(() {
         _enrolling = false;
         _stableSince = null;
@@ -456,43 +738,6 @@ class _FaceRegistrationScreenState extends State<FaceRegistrationScreen> {
       });
       await _ensureStream();
     }
-  }
-
-  InputImage? _inputImageFromCamera(
-    CameraImage image,
-    CameraController controller,
-  ) {
-    final rotation = InputImageRotationValue.fromRawValue(
-          controller.description.sensorOrientation,
-        ) ??
-        InputImageRotation.rotation0deg;
-
-    if (Platform.isAndroid) {
-      final bytes = image.planes.first.bytes;
-      return InputImage.fromBytes(
-        bytes: bytes,
-        metadata: InputImageMetadata(
-          size: Size(image.width.toDouble(), image.height.toDouble()),
-          rotation: rotation,
-          format: InputImageFormat.nv21,
-          bytesPerRow: image.planes.first.bytesPerRow,
-        ),
-      );
-    }
-
-    final WriteBuffer buffer = WriteBuffer();
-    for (final plane in image.planes) {
-      buffer.putUint8List(plane.bytes);
-    }
-    return InputImage.fromBytes(
-      bytes: buffer.done().buffer.asUint8List(),
-      metadata: InputImageMetadata(
-        size: Size(image.width.toDouble(), image.height.toDouble()),
-        rotation: rotation,
-        format: InputImageFormat.bgra8888,
-        bytesPerRow: image.planes.first.bytesPerRow,
-      ),
-    );
   }
 
   @override
@@ -631,12 +876,14 @@ class _FaceRegistrationScreenState extends State<FaceRegistrationScreen> {
                               ],
                               if (!_bursting &&
                                   !_enrolling &&
-                                  !_cameraReady &&
-                                  !_cameraStarting) ...[
+                                  !_cameraStarting &&
+                                  (!_cameraReady || _error != null)) ...[
                                 const SizedBox(height: 14),
                                 EmployeePrimaryButton(
-                                  label: 'Turn on camera',
-                                  onPressed: _startCamera,
+                                  label: _cameraReady
+                                      ? 'Try face scan again'
+                                      : 'Turn on camera',
+                                  onPressed: _retryCamera,
                                   icon: Icons.photo_camera_rounded,
                                 ),
                               ],
