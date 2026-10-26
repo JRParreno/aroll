@@ -1,0 +1,27 @@
+# Replace the hostname before copying this file to /etc/caddy/Caddyfile.
+# Caddy obtains a Let's Encrypt certificate for that hostname.
+aroll.example.duckdns.org {
+	encode gzip
+
+	handle /api/* {
+		reverse_proxy 127.0.0.1:8000
+	}
+	handle /health {
+		reverse_proxy 127.0.0.1:8000
+	}
+	handle /docs* {
+		reverse_proxy 127.0.0.1:8000
+	}
+	handle /openapi.json {
+		reverse_proxy 127.0.0.1:8000
+	}
+	handle /redoc {
+		reverse_proxy 127.0.0.1:8000
+	}
+
+	handle {
+		root * /opt/aroll/admin-web/dist
+		try_files {path} /index.html
+		file_server
+	}
+}
